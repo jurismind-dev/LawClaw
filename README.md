@@ -1,17 +1,17 @@
 
 <p align="center">
-  <img src="src/assets/logo.svg" width="128" height="128" alt="ClawX Logo" />
+  <img src="src/assets/logo.svg" width="128" height="128" alt="小龙芯 Logo" />
 </p>
 
-<h1 align="center">ClawX</h1>
+<h1 align="center">小龙芯 (Jurismind)</h1>
 
 <p align="center">
-  <strong>The Desktop Interface for OpenClaw AI Agents</strong>
+  <strong>Professional AI Assistant for Legal Professionals</strong>
 </p>
 
 <p align="center">
   <a href="#features">Features</a> •
-  <a href="#why-clawx">Why ClawX</a> •
+  <a href="#why-jurismind">Why Jurismind</a> •
   <a href="#getting-started">Getting Started</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#development">Development</a> •
@@ -37,11 +37,14 @@
 
 ## Overview
 
-**ClawX** bridges the gap between powerful AI agents and everyday users. Built on top of [OpenClaw](https://github.com/OpenClaw), it transforms command-line AI orchestration into an accessible, beautiful desktop experience—no terminal required.
+**小龙芯 (Jurismind)** is a professional AI assistant desktop application built on top of [ClawX](https://github.com/ValueCell-ai/ClawX), customized by the Jurismind Team for lawyers and legal professionals.
 
-Whether you're automating workflows, managing AI-powered channels, or scheduling intelligent tasks, ClawX provides the interface you need to harness AI agents effectively.
+ClawX is the official desktop client for [OpenClaw](https://github.com/OpenClaw), transforming command-line AI orchestration into an accessible, beautiful desktop experience. Jurismind extends this powerful foundation with legal domain specialization, providing intelligent legal research, document analysis, case summary, and contract review capabilities.
 
-ClawX comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. Of course, you can also fine-tune advanced configurations via **Settings → Advanced → Developer Mode**.
+It comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. Advanced configurations can be accessed via **Settings → Advanced → Developer Mode**.
+
+**Developed by**: 法义经纬 (Jurismind Team)
+**Based on**: [ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team
 
 ---
 ## Screenshot
@@ -72,17 +75,17 @@ ClawX comes pre-configured with best-practice model providers and natively suppo
 
 ---
 
-## Why ClawX
+## Why Jurismind
 
-Building AI agents shouldn't require mastering the command line. ClawX was designed with a simple philosophy: **powerful technology deserves an interface that respects your time.**
+Legal professionals deserve AI tools designed for their specific needs. Jurismind (小龙芯) was designed with a simple philosophy: **powerful AI technology tailored for legal practice.**
 
-| Challenge | ClawX Solution |
-|-----------|----------------|
-| Complex CLI setup | One-click installation with guided setup wizard |
-| Configuration files | Visual settings with real-time validation |
-| Process management | Automatic gateway lifecycle management |
-| Multiple AI providers | Unified provider configuration panel |
-| Skill/plugin installation | Built-in skill marketplace and management |
+| Challenge | Jurismind Solution |
+|-----------|------------------|
+| Complex legal research | AI-powered legal document search and analysis |
+| Contract review workload | Intelligent contract review and risk identification |
+| Case law research | Smart case retrieval and summary generation |
+| Document drafting | AI-assisted legal document generation |
+| Multi-language support | Bilingual interface for Chinese/English legal work |
 
 ### OpenClaw Inside
 
@@ -94,26 +97,29 @@ We are committed to maintaining strict alignment with the upstream OpenClaw proj
 
 ## Features
 
-### 🎯 Zero Configuration Barrier
-Complete the entire setup—from installation to your first AI interaction—through an intuitive graphical interface. No terminal commands, no YAML files, no environment variable hunting.
+### 🎯 Professional Legal AI Interface
+Complete the entire setup—from installation to your first AI legal consultation—through an intuitive graphical interface designed for legal professionals.
 
-### 💬 Intelligent Chat Interface
-Communicate with AI agents through a modern chat experience. Support for multiple conversation contexts, message history, and rich content rendering with Markdown.
+### 💬 Intelligent Legal Chat
+Communicate with AI through a modern chat experience specialized for legal queries. Support for multiple case contexts, message history, and rich content rendering with legal citations.
 
-### 📡 Multi-Channel Management
-Configure and monitor multiple AI channels simultaneously. Each channel operates independently, allowing you to run specialized agents for different tasks.
+### 📋 Contract Analysis & Review
+Intelligent contract review with risk identification, clause analysis, and modification suggestions. Support for common contract templates and legal compliance checking.
 
-### ⏰ Cron-Based Automation
-Schedule AI tasks to run automatically. Define triggers, set intervals, and let your AI agents work around the clock without manual intervention.
+### 📚 Case Law Research
+AI-powered case law search and analysis. Quickly retrieve relevant precedents, generate case summaries, and identify key legal points.
 
-### 🧩 Extensible Skill System
-Extend your AI agents with pre-built skills. Browse, install, and manage skills through the integrated skill panel—no package managers required.
+### 📝 Document Drafting Assistant
+Generate legal documents, legal opinions, and case briefs with AI assistance. Support for various legal document templates and formats.
 
-### 🔐 Secure Provider Integration
-Connect to multiple AI providers (OpenAI, Anthropic, and more) with credentials stored securely in your system's native keychain.
+### 🧩 Extensible Legal Skills
+Extend your AI assistant with specialized legal skills. Browse, install, and manage legal domain skills through the integrated skill panel.
+
+### 🔐 Secure & Private
+All data processed locally with secure credential storage. Your legal documents and consultations remain private and protected.
 
 ### 🌙 Adaptive Theming
-Light mode, dark mode, or system-synchronized themes. ClawX adapts to your preferences automatically.
+Light mode, dark mode, or system-synchronized themes. Jurismind adapts to your preferences automatically.
 
 ---
 
@@ -147,18 +153,18 @@ pnpm dev
 
 ### First Launch
 
-When you launch ClawX for the first time, the **Setup Wizard** will guide you through:
+When you launch Jurismind for the first time, the **Setup Wizard** will guide you through:
 
-1. **Language & Region** – Configure your preferred locale
+1. **Language & Region** – Configure your preferred locale (中文/English)
 2. **AI Provider** – Enter your API keys for supported providers
-3. **Skill Bundles** – Select pre-configured skills for common use cases
+3. **Legal Skills** – Select pre-configured legal skill bundles
 4. **Verification** – Test your configuration before entering the main interface
 
 ---
 
 ## Architecture
 
-ClawX employs a **dual-process architecture** that separates UI concerns from AI runtime operations:
+Jurismind employs a **dual-process architecture** that separates UI concerns from AI runtime operations:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -206,17 +212,17 @@ ClawX employs a **dual-process architecture** that separates UI concerns from AI
 
 ## Use Cases
 
-### 🤖 Personal AI Assistant
-Configure a general-purpose AI agent that can answer questions, draft emails, summarize documents, and help with everyday tasks—all from a clean desktop interface.
+### 🤖 Legal Research Assistant
+Quickly search and analyze case law, statutes, and legal precedents. Generate case summaries and identify relevant legal principles for your cases.
 
-### 📊 Automated Monitoring
-Set up scheduled agents to monitor news feeds, track prices, or watch for specific events. Results are delivered to your preferred notification channel.
+### 📋 Contract Review & Analysis
+Automatically identify risks, unusual clauses, and compliance issues in contracts. Generate review reports with modification suggestions.
 
-### 💻 Developer Productivity
-Integrate AI into your development workflow. Use agents to review code, generate documentation, or automate repetitive coding tasks.
+### 💻 Legal Document Drafting
+Generate legal documents, contracts, legal opinions, and case briefs with AI assistance. Use templates for various legal document types.
 
-### 🔄 Workflow Automation
-Chain multiple skills together to create sophisticated automation pipelines. Process data, transform content, and trigger actions—all orchestrated visually.
+### 🔄 Case Management Integration
+Connect with your case management systems to automate routine tasks, schedule reminders, and track case progress.
 
 ---
 
@@ -321,8 +327,9 @@ We welcome contributions from the community! Whether it's bug fixes, new feature
 
 ## Acknowledgments
 
-ClawX is built on the shoulders of excellent open-source projects:
+Jurismind is built on the shoulders of excellent open-source projects:
 
+- **[ClawX](https://github.com/ValueCell-ai/ClawX)** – The upstream project this is based on, developed by ValueCell Team
 - [OpenClaw](https://github.com/OpenClaw) – The AI agent runtime
 - [Electron](https://www.electronjs.org/) – Cross-platform desktop framework
 - [React](https://react.dev/) – UI component library
@@ -348,5 +355,5 @@ ClawX is released under the [MIT License](LICENSE). You're free to use, modify, 
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by the ValueCell Team</sub>
+  <sub>Built with ❤️ by 法义经纬 (Jurismind Team) | Based on <a href="https://github.com/ValueCell-ai/ClawX">ClawX</a></sub>
 </p>

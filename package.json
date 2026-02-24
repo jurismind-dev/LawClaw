@@ -1,5 +1,5 @@
 {
-    "name": "clawx",
+    "name": "jurismind",
     "version": "0.1.16",
     "pnpm": {
         "onlyBuiltDependencies": [
@@ -11,9 +11,9 @@
             "sharp"
         ]
     },
-    "description": "ClawX - Graphical AI Assistant based on OpenClaw",
+    "description": "小龙芯 (Jurismind) - Professional Legal AI Assistant based on OpenClaw",
     "main": "dist-electron/main/index.js",
-    "author": "ClawX Team",
+    "author": "法义经纬 (Jurismind Team)",
     "license": "MIT",
     "private": true,
     "scripts": {

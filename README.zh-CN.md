@@ -3,7 +3,7 @@
   <img src="src/assets/logo.svg" width="128" height="128" alt="小龙芯 Logo" />
 </p>
 
-<h1 align="center">小龙芯 (Jurismind)</h1>
+<h1 align="center">小龙芯 (LawClaw)</h1>
 
 <p align="center">
   <strong>专业律师AI助手桌面应用</strong>
@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#功能特性">功能特性</a> •
-  <a href="#为什么选择-jurismind">为什么选择 Jurismind</a> •
+  <a href="#为什么选择-lawclaw">为什么选择 LawClaw</a> •
   <a href="#快速上手">快速上手</a> •
   <a href="#系统架构">系统架构</a> •
   <a href="#开发指南">开发指南</a> •
@@ -37,13 +37,13 @@
 
 ## 概述
 
-**小龙芯 (Jurismind)** 是基于 [ClawX](https://github.com/ValueCell-ai/ClawX) 项目构建的律师AI助手桌面应用，由法义经纬团队进行法律领域定制开发。
+**小龙芯 (LawClaw)** 是基于 [ClawX](https://github.com/ValueCell-ai/ClawX) 项目构建的律师AI助手桌面应用，由法义经纬 (Jurismind) 进行法律领域定制开发。
 
 ClawX 是 [OpenClaw](https://github.com/OpenClaw) 的官方桌面客户端，将命令行式的 AI 编排转变为易用、美观的桌面体验。小龙芯在此强大基础上，针对法律行业进行深度定制，提供智能法律研究、文档分析、案件摘要和合同审查等专业功能。
 
 应用预置了最佳实践的模型供应商配置，原生支持 Windows 平台以及中英双语界面。高级配置可通过 **设置 → 高级 → 开发者模式** 进行调整。
 
-**开发团队**：法义经纬 (Jurismind Team)
+**开发团队**：法义经纬 (Jurismind)
 **基于项目**：[ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team
 
 ---
@@ -76,11 +76,11 @@ ClawX 是 [OpenClaw](https://github.com/OpenClaw) 的官方桌面客户端，将
 
 ---
 
-## 为什么选择小龙芯
+## 为什么选择 LawClaw
 
 法律专业人士值得拥有专为法律领域定制的AI工具。小龙芯的设计理念很简单：**强大的AI技术结合法律专业场景，提供高效、精准的法律服务支持。**
 
-| 痛点 | 小龙芯解决方案 |
+| 痛点 | LawClaw 解决方案 |
 |------|----------------|
 | 复杂的法律检索 | AI智能法律文献搜索与分析 |
 | 合同审查工作量大 | 智能合同审查与风险识别 |
@@ -356,5 +356,5 @@ ClawX 基于 [MIT 许可证](LICENSE) 发布。你可以自由地使用、修改
 ---
 
 <p align="center">
-  <sub>由 法义经纬 团队用 ❤️ 打造 | 基于 <a href="https://github.com/ValueCell-ai/ClawX">ClawX</a></sub>
+  <sub>由 法义经纬 (Jurismind) 用 ❤️ 打造 | 基于 <a href="https://github.com/ValueCell-ai/ClawX">ClawX</a></sub>
 </p>

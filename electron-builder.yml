@@ -1,6 +1,6 @@
 appId: app.clawx.desktop
-productName: ClawX
-copyright: Copyright © 2026 ClawX
+productName: LawClaw
+copyright: Copyright © 2026 法义经纬 (Jurismind)
 compression: normal
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
@@ -116,8 +116,8 @@ nsis:
   differentialPackage: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: ClawX
-  uninstallDisplayName: ClawX
+  shortcutName: LawClaw
+  uninstallDisplayName: LawClaw
   license: LICENSE
   include: scripts/installer.nsh
   installerIcon: resources/icons/icon.ico
@@ -139,16 +139,15 @@ linux:
       arch:
         - x64
   category: Utility
-  maintainer: ClawX Team <team@clawx.app>
-  vendor: ClawX
-  synopsis: AI Assistant powered by OpenClaw
+  maintainer: 法义经纬 (Jurismind) <team@jurismind.com>
+  vendor: 法义经纬 (Jurismind)
+  synopsis: 小龙芯 (LawClaw) - Professional Legal AI Assistant
   description: |
-    ClawX is a graphical AI assistant application that integrates with
-    OpenClaw Gateway to provide intelligent automation and assistance
-    across multiple messaging platforms.
+    小龙芯 (LawClaw) is a professional AI assistant desktop application
+    tailored for lawyers and legal professionals, based on OpenClaw.
   desktop:
     entry:
-      Name: ClawX
+      Name: LawClaw
       Comment: AI Assistant powered by OpenClaw
       Categories: Utility;Network;
       Keywords: ai;assistant;automation;chat;

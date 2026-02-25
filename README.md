@@ -3,7 +3,7 @@
   <img src="src/assets/logo.svg" width="128" height="128" alt="小龙芯 Logo" />
 </p>
 
-<h1 align="center">小龙芯 (Jurismind)</h1>
+<h1 align="center">小龙芯 (LawClaw)</h1>
 
 <p align="center">
   <strong>Professional AI Assistant for Legal Professionals</strong>
@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#features">Features</a> •
-  <a href="#why-jurismind">Why Jurismind</a> •
+  <a href="#why-lawclaw">Why LawClaw</a> •
   <a href="#getting-started">Getting Started</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#development">Development</a> •
@@ -37,13 +37,13 @@
 
 ## Overview
 
-**小龙芯 (Jurismind)** is a professional AI assistant desktop application built on top of [ClawX](https://github.com/ValueCell-ai/ClawX), customized by the Jurismind Team for lawyers and legal professionals.
+**小龙芯 (LawClaw)** is a professional AI assistant desktop application built on top of [ClawX](https://github.com/ValueCell-ai/ClawX), customized by 法义经纬 (Jurismind) for lawyers and legal professionals.
 
-ClawX is the official desktop client for [OpenClaw](https://github.com/OpenClaw), transforming command-line AI orchestration into an accessible, beautiful desktop experience. Jurismind extends this powerful foundation with legal domain specialization, providing intelligent legal research, document analysis, case summary, and contract review capabilities.
+ClawX is the official desktop client for [OpenClaw](https://github.com/OpenClaw), transforming command-line AI orchestration into an accessible, beautiful desktop experience. 小龙芯 extends this powerful foundation with legal domain specialization, providing intelligent legal research, document analysis, case summary, and contract review capabilities.
 
 It comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. Advanced configurations can be accessed via **Settings → Advanced → Developer Mode**.
 
-**Developed by**: 法义经纬 (Jurismind Team)
+**Developed by**: 法义经纬 (Jurismind)
 **Based on**: [ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team
 
 ---
@@ -75,11 +75,11 @@ It comes pre-configured with best-practice model providers and natively supports
 
 ---
 
-## Why Jurismind
+## Why LawClaw
 
-Legal professionals deserve AI tools designed for their specific needs. Jurismind (小龙芯) was designed with a simple philosophy: **powerful AI technology tailored for legal practice.**
+Legal professionals deserve AI tools designed for their specific needs. 小龙芯 (LawClaw) was designed with a simple philosophy: **powerful AI technology tailored for legal practice.**
 
-| Challenge | Jurismind Solution |
+| Challenge | LawClaw Solution |
 |-----------|------------------|
 | Complex legal research | AI-powered legal document search and analysis |
 | Contract review workload | Intelligent contract review and risk identification |
@@ -119,7 +119,7 @@ Extend your AI assistant with specialized legal skills. Browse, install, and man
 All data processed locally with secure credential storage. Your legal documents and consultations remain private and protected.
 
 ### 🌙 Adaptive Theming
-Light mode, dark mode, or system-synchronized themes. Jurismind adapts to your preferences automatically.
+Light mode, dark mode, or system-synchronized themes. LawClaw adapts to your preferences automatically.
 
 ---
 
@@ -153,7 +153,7 @@ pnpm dev
 
 ### First Launch
 
-When you launch Jurismind for the first time, the **Setup Wizard** will guide you through:
+When you launch LawClaw for the first time, the **Setup Wizard** will guide you through:
 
 1. **Language & Region** – Configure your preferred locale (中文/English)
 2. **AI Provider** – Enter your API keys for supported providers
@@ -164,7 +164,7 @@ When you launch Jurismind for the first time, the **Setup Wizard** will guide yo
 
 ## Architecture
 
-Jurismind employs a **dual-process architecture** that separates UI concerns from AI runtime operations:
+小龙芯 (LawClaw) employs a **dual-process architecture** that separates UI concerns from AI runtime operations:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -327,7 +327,7 @@ We welcome contributions from the community! Whether it's bug fixes, new feature
 
 ## Acknowledgments
 
-Jurismind is built on the shoulders of excellent open-source projects:
+小龙芯 (LawClaw) is built on the shoulders of excellent open-source projects:
 
 - **[ClawX](https://github.com/ValueCell-ai/ClawX)** – The upstream project this is based on, developed by ValueCell Team
 - [OpenClaw](https://github.com/OpenClaw) – The AI agent runtime
@@ -355,5 +355,5 @@ ClawX is released under the [MIT License](LICENSE). You're free to use, modify, 
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by 法义经纬 (Jurismind Team) | Based on <a href="https://github.com/ValueCell-ai/ClawX">ClawX</a></sub>
+  <sub>Built with ❤️ by 法义经纬 (Jurismind) | Based on <a href="https://github.com/ValueCell-ai/ClawX">ClawX</a></sub>
 </p>

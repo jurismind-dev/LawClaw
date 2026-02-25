@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Post-removal script for ClawX on Linux
+# Post-removal script for LawClaw on Linux
 
 set -e
 
@@ -17,4 +17,4 @@ if command -v gtk-update-icon-cache &> /dev/null; then
     gtk-update-icon-cache -q /usr/share/icons/hicolor || true
 fi
 
-echo "ClawX has been removed."
+echo "LawClaw has been removed."

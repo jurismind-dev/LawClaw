@@ -1,6 +1,6 @@
 {
     "title": "设置",
-    "subtitle": "配置您的 ClawX 体验",
+    "subtitle": "配置您的 LawClaw 体验",
     "appearance": {
         "title": "外观",
         "description": "自定义外观和风格",
@@ -18,7 +18,7 @@
         "notRequired": "非必填",
         "empty": {
             "title": "未配置提供商",
-            "desc": "添加 AI 提供商以开始使用 ClawX",
+            "desc": "添加 AI 提供商以开始使用 LawClaw",
             "cta": "添加您的第一个提供商"
         },
         "dialog": {
@@ -65,11 +65,11 @@
         "appLogs": "应用日志",
         "openFolder": "打开文件夹",
         "autoStart": "自动启动网关",
-        "autoStartDesc": "ClawX 启动时自动启动网关"
+        "autoStartDesc": "LawClaw 启动时自动启动网关"
     },
     "updates": {
         "title": "更新",
-        "description": "保持 ClawX 最新",
+        "description": "保持 LawClaw 最新",
         "autoCheck": "自动检查更新",
         "autoCheckDesc": "启动时检查更新",
         "autoDownload": "自动更新",
@@ -128,7 +128,7 @@
     },
     "about": {
         "title": "关于",
-        "appName": "ClawX",
+        "appName": "LawClaw",
         "tagline": "图形化 AI 助手",
         "basedOn": "基于 OpenClaw",
         "version": "版本 {{version}}",

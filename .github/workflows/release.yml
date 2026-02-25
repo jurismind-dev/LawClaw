@@ -1,4 +1,4 @@
-# ClawX Release Workflow
+# LawClaw Release Workflow
 # Builds and publishes releases for macOS, Windows, and Linux
 
 name: Release
@@ -164,28 +164,28 @@ jobs:
           make_latest: false
           generate_release_notes: true
           body: |
-            ## 🚀 ClawX ${{ github.ref_name }}
+            ## 🚀 LawClaw ${{ github.ref_name }}
             
-            ClawX - Graphical AI Assistant based on OpenClaw
+            LawClaw - Graphical AI Assistant based on OpenClaw
             
             ### 📦 Downloads
             
             Please select the appropriate installer for your operating system and architecture:
             
             #### macOS
-            - **Apple Silicon (M1/M2/M3/M4)**: `ClawX-*-mac-arm64.dmg`
-            - **Intel (x64)**: `ClawX-*-mac-x64.dmg`
+            - **Apple Silicon (M1/M2/M3/M4)**: `LawClaw-*-mac-arm64.dmg`
+            - **Intel (x64)**: `LawClaw-*-mac-x64.dmg`
             
             #### Windows
-            - **Installer (x64)**: `ClawX-*-win-x64.exe`
-            - **Installer (ARM64)**: `ClawX-*-win-arm64.exe`
+            - **Installer (x64)**: `LawClaw-*-win-x64.exe`
+            - **Installer (ARM64)**: `LawClaw-*-win-arm64.exe`
             
             #### Linux
-            - **AppImage (x64)**: `ClawX-*-linux-x86_64.AppImage` (Universal format, recommended)
-            - **AppImage (ARM64)**: `ClawX-*-linux-arm64.AppImage`
-            - **Debian/Ubuntu (x64)**: `ClawX-*-linux-amd64.deb`
-            - **Debian/Ubuntu (ARM64)**: `ClawX-*-linux-arm64.deb`
-            - **RPM (x64)**: `ClawX-*-linux-x86_64.rpm`
+            - **AppImage (x64)**: `LawClaw-*-linux-x86_64.AppImage` (Universal format, recommended)
+            - **AppImage (ARM64)**: `LawClaw-*-linux-arm64.AppImage`
+            - **Debian/Ubuntu (x64)**: `LawClaw-*-linux-amd64.deb`
+            - **Debian/Ubuntu (ARM64)**: `LawClaw-*-linux-arm64.deb`
+            - **RPM (x64)**: `LawClaw-*-linux-x86_64.rpm`
             
             ### 📝 Release Notes
             
@@ -195,7 +195,7 @@ jobs:
             
             - **macOS**: On first launch, you may see "cannot verify developer". Go to System Preferences → Security & Privacy to allow the app to run
             - **Windows**: SmartScreen may block the app. Click "More info" → "Run anyway" to proceed
-            - **Linux**: AppImage requires executable permission: `chmod +x ClawX-*.AppImage`
+            - **Linux**: AppImage requires executable permission: `chmod +x LawClaw-*.AppImage`
             
             ---
             
@@ -299,19 +299,19 @@ jobs:
               releaseDate: $date,
               downloads: {
                 mac: {
-                  x64: ($base + "/ClawX-" + $version + "-mac-x64.dmg"),
-                  arm64: ($base + "/ClawX-" + $version + "-mac-arm64.dmg")
+                  x64: ($base + "/LawClaw-" + $version + "-mac-x64.dmg"),
+                  arm64: ($base + "/LawClaw-" + $version + "-mac-arm64.dmg")
                 },
                 win: {
-                  x64: ($base + "/ClawX-" + $version + "-win-x64.exe"),
-                  arm64: ($base + "/ClawX-" + $version + "-win-arm64.exe")
+                  x64: ($base + "/LawClaw-" + $version + "-win-x64.exe"),
+                  arm64: ($base + "/LawClaw-" + $version + "-win-arm64.exe")
                 },
                 linux: {
-                  deb_amd64: ($base + "/ClawX-" + $version + "-linux-amd64.deb"),
-                  deb_arm64: ($base + "/ClawX-" + $version + "-linux-arm64.deb"),
-                  appimage_x64: ($base + "/ClawX-" + $version + "-linux-x86_64.AppImage"),
-                  appimage_arm64: ($base + "/ClawX-" + $version + "-linux-arm64.AppImage"),
-                  rpm_x64: ($base + "/ClawX-" + $version + "-linux-x86_64.rpm")
+                  deb_amd64: ($base + "/LawClaw-" + $version + "-linux-amd64.deb"),
+                  deb_arm64: ($base + "/LawClaw-" + $version + "-linux-arm64.deb"),
+                  appimage_x64: ($base + "/LawClaw-" + $version + "-linux-x86_64.AppImage"),
+                  appimage_arm64: ($base + "/LawClaw-" + $version + "-linux-arm64.AppImage"),
+                  rpm_x64: ($base + "/LawClaw-" + $version + "-linux-x86_64.rpm")
                 }
               },
               changelog: $changelog

@@ -1,4 +1,4 @@
-# ClawX CI Workflow
+# LawClaw CI Workflow
 # Runs on pull requests (main/develop) 
 name: Check and Build
 
@@ -31,6 +31,9 @@ jobs:
 
       - name: Run typecheck
         run: pnpm run typecheck
+
+      - name: Run brand scan
+        run: pnpm run brand:scan
 
       - name: Run tests
         run: pnpm run test

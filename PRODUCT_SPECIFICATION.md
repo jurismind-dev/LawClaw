@@ -10,7 +10,7 @@
 
 ---
 
-> **说明**：小龙芯 (LawClaw) 是基于 ClawX 项目进行法律领域定制开发的律师AI助手桌面应用。ClawX 是 OpenClaw 的官方桌面客户端，提供了完整的 AI 智能体桌面运行框架。
+> **说明**：小龙芯 (LawClaw) 是基于上游 ClawX 项目进行法律领域定制开发的律师AI助手桌面应用，并以 OpenClaw 作为核心运行时，提供完整的 AI 智能体桌面运行框架。
 
 ---
 
@@ -750,7 +750,7 @@ const defaultSkills: DefaultSkill[] = [
 ### A. 文件目录结构
 
 ```
-ClawX/
+LawClaw/
 ├── electron/              # Electron 主进程
 │   ├── main/             # 应用入口、窗口管理
 │   │   ├── index.ts      # 主进程入口

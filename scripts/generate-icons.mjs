@@ -12,7 +12,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const ICONS_DIR = path.join(PROJECT_ROOT, 'resources', 'icons');
 const SVG_SOURCE = path.join(ICONS_DIR, 'icon.svg');
 
-echo`🎨 Generating ClawX icons using Node.js...`;
+echo`🎨 Generating LawClaw icons using Node.js...`;
 
 // Check if SVG source exists
 if (!fs.existsSync(SVG_SOURCE)) {

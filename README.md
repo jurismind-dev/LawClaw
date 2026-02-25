@@ -37,9 +37,9 @@
 
 ## Overview
 
-**小龙芯 (LawClaw)** is a professional AI assistant desktop application built on top of [ClawX](https://github.com/ValueCell-ai/ClawX), customized by 法义经纬 (Jurismind) for lawyers and legal professionals.
+**小龙芯 (LawClaw)** is a professional AI assistant desktop application for lawyers and legal professionals, customized by 法义经纬 (Jurismind).
 
-ClawX is the official desktop client for [OpenClaw](https://github.com/OpenClaw), transforming command-line AI orchestration into an accessible, beautiful desktop experience. 小龙芯 extends this powerful foundation with legal domain specialization, providing intelligent legal research, document analysis, case summary, and contract review capabilities.
+LawClaw is built on top of the official [OpenClaw](https://github.com/OpenClaw) runtime and delivers an accessible desktop experience for AI orchestration. 小龙芯 extends this powerful foundation with legal domain specialization, providing intelligent legal research, document analysis, case summary, and contract review capabilities.
 
 It comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. Advanced configurations can be accessed via **Settings → Advanced → Developer Mode**.
 
@@ -89,7 +89,7 @@ Legal professionals deserve AI tools designed for their specific needs. 小龙�
 
 ### OpenClaw Inside
 
-ClawX is built directly upon the official **OpenClaw** core. Instead of requiring a separate installation, we embed the runtime within the application to provide a seamless "battery-included" experience.
+LawClaw is built directly upon the official **OpenClaw** core. Instead of requiring a separate installation, we embed the runtime within the application to provide a seamless "battery-included" experience.
 
 We are committed to maintaining strict alignment with the upstream OpenClaw project, ensuring that you always have access to the latest capabilities, stability improvements, and ecosystem compatibility provided by the official releases.
 
@@ -169,7 +169,7 @@ When you launch LawClaw for the first time, the **Setup Wizard** will guide you 
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        ClawX Desktop App                         │
+│                       LawClaw Desktop App                        │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │              Electron Main Process                          │  │
@@ -237,7 +237,7 @@ Connect with your case management systems to automate routine tasks, schedule re
 ### Project Structure
 
 ```
-ClawX/
+LawClaw/
 ├── electron/              # Electron Main Process
 │   ├── main/             # Application entry, window management
 │   ├── gateway/          # OpenClaw Gateway process manager
@@ -307,7 +307,7 @@ pnpm package:linux        # Package for Linux
 
 ## Contributing
 
-We welcome contributions from the community! Whether it's bug fixes, new features, documentation improvements, or translations—every contribution helps make ClawX better.
+We welcome contributions from the community! Whether it's bug fixes, new features, documentation improvements, or translations—every contribution helps make LawClaw better.
 
 ### How to Contribute
 
@@ -351,7 +351,7 @@ Join our community to connect with other users, get support, and share your expe
 
 ## License
 
-ClawX is released under the [MIT License](LICENSE). You're free to use, modify, and distribute this software.
+LawClaw is released under the [MIT License](LICENSE). You're free to use, modify, and distribute this software.
 
 ---
 

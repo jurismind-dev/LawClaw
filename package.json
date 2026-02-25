@@ -23,6 +23,7 @@
         "build": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder",
         "build:vite": "vite build",
         "lint": "eslint . --fix",
+        "brand:scan": "node scripts/brand-scan.mjs",
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
         "test:e2e": "playwright test",

@@ -74,8 +74,8 @@ mac:
   entitlementsInherit: entitlements.mac.plist
   notarize: true
   extendInfo:
-    NSMicrophoneUsageDescription: ClawX requires microphone access for voice features
-    NSCameraUsageDescription: ClawX requires camera access for video features
+    NSMicrophoneUsageDescription: LawClaw requires microphone access for voice features
+    NSCameraUsageDescription: LawClaw requires camera access for video features
 
 dmg:
   background: resources/dmg-background.png

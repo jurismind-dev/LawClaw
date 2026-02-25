@@ -18,6 +18,9 @@ import { ClawHubService } from '../gateway/clawhub';
 // Disable GPU acceleration for better compatibility
 app.disableHardwareAcceleration();
 
+// Check for force-setup mode via command line argument or environment variable
+const forceSetup = process.argv.includes('--force-setup') || process.env.FORCE_SETUP === 'true';
+
 // Global references
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
@@ -213,4 +216,4 @@ app.on('before-quit', async () => {
 });
 
 // Export for testing
-export { mainWindow, gatewayManager };
+export { mainWindow, gatewayManager, forceSetup };

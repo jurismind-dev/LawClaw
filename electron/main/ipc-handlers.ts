@@ -46,6 +46,7 @@ import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-set
 import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
+import { forceSetup } from './index';
 
 /**
  * Register all IPC handlers
@@ -1425,6 +1426,11 @@ function registerAppHandlers(): void {
   ipcMain.handle('app:relaunch', () => {
     app.relaunch();
     app.quit();
+  });
+
+  // Check if force-setup mode is enabled
+  ipcMain.handle('app:forceSetup', () => {
+    return forceSetup;
   });
 }
 

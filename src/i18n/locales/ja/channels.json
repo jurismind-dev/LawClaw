@@ -12,7 +12,9 @@
     "available": "利用可能なチャンネル",
     "availableDesc": "新しいチャンネルを接続",
     "showAll": "すべて表示",
+    "configuredBadge": "設定済み",
     "pluginBadge": "プラグイン",
+    "comingSoonBadge": "近日対応",
     "toast": {
         "whatsappConnected": "WhatsApp が正常に接続されました",
         "whatsappFailed": "WhatsApp 接続に失敗しました: {{error}}",
@@ -48,9 +50,17 @@
         "generateQRCode": "QRコードを生成",
         "updateAndReconnect": "更新して再接続",
         "saveAndConnect": "保存して接続",
-        "envVar": "環境変数: {{var}}"
+        "envVar": "環境変数: {{var}}",
+        "comingSoon": "このチャンネルは近日対応予定です。"
     },
     "meta": {
+        "jurismind": {
+            "description": "Jurismind（法義経緯）チャンネルは現在開発中です",
+            "docsUrl": "https://docs.openclaw.ai/channels/feishu",
+            "instructions": [
+                "このチャンネルは現在プレースホルダー表示のみで、まだ設定できません。"
+            ]
+        },
         "telegram": {
             "description": "@BotFather からのボットトークンを使用して Telegram に接続します",
             "fields": {

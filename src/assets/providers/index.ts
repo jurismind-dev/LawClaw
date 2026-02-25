@@ -12,6 +12,7 @@ export const providerIcons: Record<string, string> = {
     openai,
     google,
     openrouter,
+    moonshot_code_plan: moonshot,
     moonshot,
     siliconflow,
     ollama,

@@ -32,6 +32,7 @@ import { useChannelsStore } from '@/stores/channels';
 import { useGatewayStore } from '@/stores/gateway';
 import { StatusBadge, type Status } from '@/components/common/StatusBadge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { cn } from '@/lib/utils';
 import {
   CHANNEL_ICONS,
   CHANNEL_NAMES,
@@ -233,30 +234,39 @@ export function Channels() {
             {displayedChannelTypes.map((type) => {
               const meta = CHANNEL_META[type];
               const isConfigured = configuredTypes.includes(type);
+              const isComingSoon = meta.comingSoon === true;
               return (
                 <button
                   key={type}
-                  className={`p-4 rounded-lg border hover:bg-accent transition-colors text-left relative ${isConfigured ? 'border-green-500/50 bg-green-500/5' : ''}`}
+                  className={`p-4 rounded-lg border transition-colors text-left relative ${isConfigured ? 'border-green-500/50 bg-green-500/5' : ''} ${isComingSoon ? 'opacity-60 cursor-not-allowed' : 'hover:bg-accent'}`}
                   onClick={() => {
+                    if (isComingSoon) {
+                      toast.info(t('dialog.comingSoon'));
+                      return;
+                    }
                     setSelectedChannelType(type);
                     setShowAddDialog(true);
                   }}
+                  disabled={isComingSoon}
                 >
                   <span className="text-3xl">{meta.icon}</span>
                   <p className="font-medium mt-2">{meta.name}</p>
                   <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                    {meta.description}
+                    {t(meta.description)}
                   </p>
-                  {isConfigured && (
+                  {isComingSoon ? (
+                    <Badge variant="secondary" className="absolute top-2 right-2 text-xs">
+                      {t('comingSoonBadge')}
+                    </Badge>
+                  ) : isConfigured ? (
                     <Badge className="absolute top-2 right-2 text-xs bg-green-600 hover:bg-green-600">
                       {t('configuredBadge')}
                     </Badge>
-                  )}
-                  {!isConfigured && meta.isPlugin && (
+                  ) : meta.isPlugin ? (
                     <Badge variant="secondary" className="absolute top-2 right-2 text-xs">
                       {t('pluginBadge')}
                     </Badge>
-                  )}
+                  ) : null}
                 </button>
               );
             })}
@@ -464,6 +474,10 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
 
   const handleValidate = async () => {
     if (!selectedType) return;
+    if (meta?.comingSoon) {
+      toast.info(t('dialog.comingSoon'));
+      return;
+    }
 
     setValidating(true);
     setValidationResult(null);
@@ -508,6 +522,10 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
 
   const handleConnect = async () => {
     if (!selectedType || !meta) return;
+    if (meta.comingSoon) {
+      toast.info(t('dialog.comingSoon'));
+      return;
+    }
 
     setConnecting(true);
     setValidationResult(null);
@@ -621,7 +639,7 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
 
 
   const isFormValid = () => {
-    if (!meta) return false;
+    if (!meta || meta.comingSoon) return false;
 
     // Check all required fields are filled
     return meta.configFields
@@ -665,16 +683,38 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
             <div className="grid grid-cols-2 gap-4">
               {getPrimaryChannels().map((type) => {
                 const channelMeta = CHANNEL_META[type];
+                const isComingSoon = channelMeta.comingSoon === true;
                 return (
                   <button
                     key={type}
-                    onClick={() => onSelectType(type)}
-                    className="p-4 rounded-lg border hover:bg-accent transition-colors text-left"
+                    onClick={() => {
+                      if (isComingSoon) {
+                        toast.info(t('dialog.comingSoon'));
+                        return;
+                      }
+                      onSelectType(type);
+                    }}
+                    disabled={isComingSoon}
+                    className={cn(
+                      'p-4 rounded-lg border transition-colors text-left',
+                      isComingSoon ? 'opacity-60 cursor-not-allowed' : 'hover:bg-accent'
+                    )}
                   >
-                    <span className="text-3xl">{channelMeta.icon}</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-3xl">{channelMeta.icon}</span>
+                      {isComingSoon && (
+                        <Badge variant="secondary" className="text-xs">
+                          {t('comingSoonBadge')}
+                        </Badge>
+                      )}
+                    </div>
                     <p className="font-medium mt-2">{channelMeta.name}</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {channelMeta.connectionType === 'qr' ? t('dialog.qrCode') : t('dialog.token')}
+                      {isComingSoon
+                        ? t('dialog.comingSoon')
+                        : channelMeta.connectionType === 'qr'
+                          ? t('dialog.qrCode')
+                          : t('dialog.token')}
                     </p>
                   </button>
                 );

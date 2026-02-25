@@ -1,119 +1,120 @@
 {
     "steps": {
         "welcome": {
-            "title": "欢迎使用 ClawX",
-            "description": "您的 AI 助手已准备好进行配置"
+            "title": "\u6b22\u8fce\u4f7f\u7528\u5c0f\u9f99\u82af LawClaw",
+            "description": "\u60a8\u7684 AI \u52a9\u624b\u5df2\u51c6\u5907\u597d\u8fdb\u884c\u914d\u7f6e"
         },
         "runtime": {
-            "title": "环境检查",
-            "description": "验证系统要求"
+            "title": "\u73af\u5883\u68c0\u67e5",
+            "description": "\u9a8c\u8bc1\u7cfb\u7edf\u8981\u6c42"
         },
         "provider": {
-            "title": "AI 提供商",
-            "description": "配置您的 AI 服务"
+            "title": "AI \u63d0\u4f9b\u5546",
+            "description": "\u914d\u7f6e\u60a8\u7684 AI \u670d\u52a1"
         },
         "channel": {
-            "title": "连接渠道",
-            "description": "连接消息平台（可选）"
+            "title": "\u8fde\u63a5\u6e20\u9053",
+            "description": "\u8fde\u63a5\u6d88\u606f\u5e73\u53f0\uff08\u53ef\u9009\uff09"
         },
         "installing": {
-            "title": "设置中",
-            "description": "安装必要组件"
+            "title": "\u8bbe\u7f6e\u4e2d",
+            "description": "\u5b89\u88c5\u5fc5\u8981\u7ec4\u4ef6"
         },
         "complete": {
-            "title": "准备就绪！",
-            "description": "ClawX 已准备好使用"
+            "title": "\u51c6\u5907\u5c31\u7eea\uff01",
+            "description": "\u5c0f\u9f99\u82af LawClaw \u5df2\u51c6\u5907\u597d\u4f7f\u7528"
         }
     },
     "welcome": {
-        "title": "欢迎使用 ClawX",
-        "description": "ClawX 是 OpenClaw 的图形界面，让您可以在喜爱的消息平台上轻松使用 AI 助手。",
+        "title": "\u6b22\u8fce\u4f7f\u7528\u5c0f\u9f99\u82af LawClaw",
+        "description": "\u5c0f\u9f99\u82af\uff08LawClaw\uff09\u662f OpenClaw \u7684\u56fe\u5f62\u754c\u9762\uff0c\u8ba9\u60a8\u53ef\u4ee5\u5728\u559c\u7231\u7684\u6d88\u606f\u5e73\u53f0\u4e0a\u8f7b\u677e\u4f7f\u7528 AI \u52a9\u624b\u3002",
         "features": {
-            "noCommand": "无需命令行",
-            "modernUI": "现代美观的界面",
-            "bundles": "预装技能包",
-            "crossPlatform": "跨平台支持"
+            "noCommand": "\u65e0\u9700\u547d\u4ee4\u884c",
+            "modernUI": "\u73b0\u4ee3\u7f8e\u89c2\u7684\u754c\u9762",
+            "bundles": "\u9884\u88c5\u6280\u80fd\u5305",
+            "crossPlatform": "\u8de8\u5e73\u53f0\u652f\u6301"
         }
     },
     "runtime": {
-        "title": "检查环境",
-        "viewLogs": "查看日志",
-        "recheck": "重新检查",
-        "nodejs": "Node.js 运行时",
-        "openclaw": "OpenClaw 包",
-        "gateway": "网关服务",
-        "startGateway": "启动网关",
+        "title": "\u68c0\u67e5\u73af\u5883",
+        "viewLogs": "\u67e5\u770b\u65e5\u5fd7",
+        "recheck": "\u91cd\u65b0\u68c0\u67e5",
+        "nodejs": "Node.js \u8fd0\u884c\u65f6",
+        "openclaw": "OpenClaw \u5305",
+        "gateway": "\u7f51\u5173\u670d\u52a1",
+        "startGateway": "\u542f\u52a8\u7f51\u5173",
         "status": {
-            "checking": "检查中...",
-            "success": "Node.js 可用",
-            "error": "失败",
-            "gatewayRunning": "运行在端口 {{port}}",
-            "packageReady": "OpenClaw 包已就绪"
+            "checking": "\u68c0\u67e5\u4e2d...",
+            "success": "Node.js \u53ef\u7528",
+            "error": "\u5931\u8d25",
+            "gatewayRunning": "\u8fd0\u884c\u5728\u7aef\u53e3 {{port}}",
+            "packageReady": "OpenClaw \u5305\u5df2\u5c31\u7eea"
         },
         "issue": {
-            "title": "检测到环境问题",
-            "desc": "请确保 OpenClaw 已正确安装。查看日志以获取详情。"
+            "title": "\u68c0\u6d4b\u5230\u73af\u5883\u95ee\u9898",
+            "desc": "\u8bf7\u786e\u4fdd OpenClaw \u5df2\u6b63\u786e\u5b89\u88c5\u3002\u67e5\u770b\u65e5\u5fd7\u4ee5\u83b7\u53d6\u8be6\u60c5\u3002"
         },
         "logs": {
-            "title": "应用程序日志",
-            "openFolder": "打开日志文件夹",
-            "close": "关闭",
-            "noLogs": "（暂无日志）"
+            "title": "\u5e94\u7528\u7a0b\u5e8f\u65e5\u5fd7",
+            "openFolder": "\u6253\u5f00\u65e5\u5fd7\u6587\u4ef6\u5939",
+            "close": "\u5173\u95ed",
+            "noLogs": "\uff08\u6682\u65e0\u65e5\u5fd7\uff09"
         }
     },
     "provider": {
-        "label": "模型提供商",
-        "selectPlaceholder": "选择提供商...",
-        "baseUrl": "基础 URL",
-        "modelId": "模型 ID",
-        "modelIdDesc": "提供商的模型标识符（例如 deepseek-ai/DeepSeek-V3）",
-        "apiKey": "API 密钥",
-        "save": "保存",
-        "validateSave": "验证并保存",
-        "valid": "提供商配置成功",
-        "invalid": "无效的 API 密钥",
-        "storedLocally": "您的 API 密钥存储在本地机器上。"
+        "label": "\u6a21\u578b\u63d0\u4f9b\u5546",
+        "selectPlaceholder": "\u9009\u62e9\u63d0\u4f9b\u5546...",
+        "baseUrl": "\u57fa\u7840 URL",
+        "modelId": "\u6a21\u578b ID",
+        "modelIdDesc": "\u63d0\u4f9b\u5546\u7684\u6a21\u578b\u6807\u8bc6\u7b26\uff08\u4f8b\u5982 deepseek-ai/DeepSeek-V3\uff09",
+        "apiKey": "API \u5bc6\u94a5",
+        "save": "\u4fdd\u5b58",
+        "validateSave": "\u9a8c\u8bc1\u5e76\u4fdd\u5b58",
+        "valid": "\u63d0\u4f9b\u5546\u914d\u7f6e\u6210\u529f",
+        "invalid": "\u65e0\u6548\u7684 API \u5bc6\u94a5",
+        "storedLocally": "\u60a8\u7684 API \u5bc6\u94a5\u5b58\u50a8\u5728\u672c\u5730\u673a\u5668\u4e0a\u3002"
     },
     "channel": {
-        "title": "连接消息渠道",
-        "subtitle": "选择要连接 AI 助手的平台。您可以稍后在设置中添加更多渠道。",
-        "configure": "配置 {{name}}",
-        "howTo": "如何连接：",
-        "viewDocs": "查看文档",
-        "validationError": "验证失败",
-        "connected": "{{name}} 已连接",
-        "connectedDesc": "您的渠道已配置。将在网关启动时连接。",
-        "configureAnother": "配置另一个渠道"
+        "title": "\u8fde\u63a5\u6d88\u606f\u6e20\u9053",
+        "subtitle": "\u9009\u62e9\u8981\u8fde\u63a5 AI \u52a9\u624b\u7684\u5e73\u53f0\u3002\u60a8\u53ef\u4ee5\u7a0d\u540e\u5728\u8bbe\u7f6e\u4e2d\u6dfb\u52a0\u66f4\u591a\u6e20\u9053\u3002",
+        "configure": "\u914d\u7f6e {{name}}",
+        "howTo": "\u5982\u4f55\u8fde\u63a5\uff1a",
+        "viewDocs": "\u67e5\u770b\u6587\u6863",
+        "validationError": "\u9a8c\u8bc1\u5931\u8d25",
+        "comingSoon": "\u5373\u5c06\u652f\u6301",
+        "connected": "{{name}} \u5df2\u8fde\u63a5",
+        "connectedDesc": "\u60a8\u7684\u6e20\u9053\u5df2\u914d\u7f6e\u3002\u5c06\u5728\u7f51\u5173\u542f\u52a8\u65f6\u8fde\u63a5\u3002",
+        "configureAnother": "\u914d\u7f6e\u53e6\u4e00\u4e2a\u6e20\u9053"
     },
     "installing": {
-        "title": "安装必要组件",
-        "subtitle": "正在设置 AI 助手所需的工具",
-        "progress": "进度",
+        "title": "\u5b89\u88c5\u5fc5\u8981\u7ec4\u4ef6",
+        "subtitle": "\u6b63\u5728\u8bbe\u7f6e AI \u52a9\u624b\u6240\u9700\u7684\u5de5\u5177",
+        "progress": "\u8fdb\u5ea6",
         "status": {
-            "pending": "等待中",
-            "installing": "安装中...",
-            "installed": "已安装",
-            "failed": "失败"
+            "pending": "\u7b49\u5f85\u4e2d",
+            "installing": "\u5b89\u88c5\u4e2d...",
+            "installed": "\u5df2\u5b89\u88c5",
+            "failed": "\u5931\u8d25"
         },
-        "error": "设置错误：",
-        "restart": "尝试重启应用",
-        "wait": "这可能需要一点时间...",
-        "skip": "跳过此步骤"
+        "error": "\u8bbe\u7f6e\u9519\u8bef\uff1a",
+        "restart": "\u5c1d\u8bd5\u91cd\u542f\u5e94\u7528",
+        "wait": "\u8fd9\u53ef\u80fd\u9700\u8981\u4e00\u70b9\u65f6\u95f4...",
+        "skip": "\u8df3\u8fc7\u6b64\u6b65\u9aa4"
     },
     "complete": {
-        "title": "设置完成！",
-        "subtitle": "ClawX 已配置并准备就绪。您现在可以开始与您的 AI 助手聊天了。",
-        "provider": "AI 提供商",
-        "components": "组件",
-        "gateway": "网关",
-        "running": "运行中",
-        "footer": "您可以在设置中自定义技能并连接渠道"
+        "title": "\u8bbe\u7f6e\u5b8c\u6210\uff01",
+        "subtitle": "\u5c0f\u9f99\u82af LawClaw \u5df2\u914d\u7f6e\u5e76\u51c6\u5907\u5c31\u7eea\u3002\u60a8\u73b0\u5728\u53ef\u4ee5\u5f00\u59cb\u4e0e\u60a8\u7684 AI \u52a9\u624b\u804a\u5929\u4e86\u3002",
+        "provider": "AI \u63d0\u4f9b\u5546",
+        "components": "\u7ec4\u4ef6",
+        "gateway": "\u7f51\u5173",
+        "running": "\u8fd0\u884c\u4e2d",
+        "footer": "\u60a8\u53ef\u4ee5\u5728\u8bbe\u7f6e\u4e2d\u81ea\u5b9a\u4e49\u6280\u80fd\u5e76\u8fde\u63a5\u6e20\u9053"
     },
     "nav": {
-        "next": "下一步",
-        "back": "返回",
-        "skipStep": "跳过此步骤",
-        "skipSetup": "跳过设置",
-        "getStarted": "开始使用"
+        "next": "\u4e0b\u4e00\u6b65",
+        "back": "\u8fd4\u56de",
+        "skipStep": "\u8df3\u8fc7\u6b64\u6b65\u9aa4",
+        "skipSetup": "\u8df3\u8fc7\u8bbe\u7f6e",
+        "getStarted": "\u5f00\u59cb\u4f7f\u7528"
     }
 }

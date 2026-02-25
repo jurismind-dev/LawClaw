@@ -18,7 +18,8 @@
     "private": true,
     "scripts": {
         "init": "pnpm install && pnpm run uv:download",
-        "dev": "vite",
+        "dev": "node scripts/dev.mjs",
+        "dev:setup": "node scripts/dev-setup.mjs",
         "build": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder",
         "build:vite": "vite build",
         "lint": "eslint . --fix",

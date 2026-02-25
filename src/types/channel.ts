@@ -7,6 +7,7 @@
  * Supported channel types
  */
 export type ChannelType =
+  | 'jurismind'
   | 'whatsapp'
   | 'telegram'
   | 'discord'
@@ -71,12 +72,14 @@ export interface ChannelMeta {
   configFields: ChannelConfigField[];
   instructions: string[];
   isPlugin?: boolean;
+  comingSoon?: boolean;
 }
 
 /**
  * Channel icons mapping
  */
 export const CHANNEL_ICONS: Record<ChannelType, string> = {
+  jurismind: '⚖️',
   whatsapp: '📱',
   telegram: '✈️',
   discord: '🎮',
@@ -94,6 +97,7 @@ export const CHANNEL_ICONS: Record<ChannelType, string> = {
  * Channel display names
  */
 export const CHANNEL_NAMES: Record<ChannelType, string> = {
+  jurismind: 'Jurismind（法义经纬）',
   whatsapp: 'WhatsApp',
   telegram: 'Telegram',
   discord: 'Discord',
@@ -111,6 +115,19 @@ export const CHANNEL_NAMES: Record<ChannelType, string> = {
  * Channel metadata with configuration information
  */
 export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
+  jurismind: {
+    id: 'jurismind',
+    name: 'Jurismind（法义经纬）',
+    icon: '⚖️',
+    description: 'channels:meta.jurismind.description',
+    connectionType: 'token',
+    docsUrl: 'channels:meta.jurismind.docsUrl',
+    configFields: [],
+    instructions: [
+      'channels:meta.jurismind.instructions.0',
+    ],
+    comingSoon: true,
+  },
   telegram: {
     id: 'telegram',
     name: 'Telegram',
@@ -441,7 +458,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
  * Get primary supported channels (non-plugin, commonly used)
  */
 export function getPrimaryChannels(): ChannelType[] {
-  return ['telegram', 'discord', 'whatsapp', 'feishu'];
+  return ['jurismind', 'feishu', 'telegram', 'discord', 'whatsapp'];
 }
 
 /**

@@ -27,6 +27,8 @@ let currentLevel = LogLevel.DEBUG; // Default to DEBUG for better diagnostics
 let logFilePath: string | null = null;
 let logDir: string | null = null;
 
+type ConsoleMethod = 'debug' | 'info' | 'warn' | 'error';
+
 /**
  * In-memory ring buffer for recent logs (useful for UI display)
  */
@@ -51,7 +53,7 @@ export function initLogger(): void {
     const sessionHeader = `\n${'='.repeat(80)}\n[${new Date().toISOString()}] === ClawX Session Start (v${app.getVersion()}) ===\n${'='.repeat(80)}\n`;
     appendFileSync(logFilePath, sessionHeader);
   } catch (error) {
-    console.error('Failed to initialize logger:', error);
+    writeToConsole('error', `Failed to initialize logger: ${String(error)}`);
   }
 }
 
@@ -119,12 +121,24 @@ function writeLog(formatted: string): void {
 }
 
 /**
+ * Best-effort console output. Logging must never crash the app.
+ */
+function writeToConsole(method: ConsoleMethod, message: string): void {
+  try {
+    const writer = console[method] as (value: string) => void;
+    writer.call(console, message);
+  } catch {
+    // Ignore broken stdio pipes (e.g. detached terminal sessions).
+  }
+}
+
+/**
  * Log debug message
  */
 export function debug(message: string, ...args: unknown[]): void {
   if (currentLevel <= LogLevel.DEBUG) {
     const formatted = formatMessage('DEBUG', message, ...args);
-    console.debug(formatted);
+    writeToConsole('debug', formatted);
     writeLog(formatted);
   }
 }
@@ -135,7 +149,7 @@ export function debug(message: string, ...args: unknown[]): void {
 export function info(message: string, ...args: unknown[]): void {
   if (currentLevel <= LogLevel.INFO) {
     const formatted = formatMessage('INFO', message, ...args);
-    console.info(formatted);
+    writeToConsole('info', formatted);
     writeLog(formatted);
   }
 }
@@ -146,7 +160,7 @@ export function info(message: string, ...args: unknown[]): void {
 export function warn(message: string, ...args: unknown[]): void {
   if (currentLevel <= LogLevel.WARN) {
     const formatted = formatMessage('WARN', message, ...args);
-    console.warn(formatted);
+    writeToConsole('warn', formatted);
     writeLog(formatted);
   }
 }
@@ -157,7 +171,7 @@ export function warn(message: string, ...args: unknown[]): void {
 export function error(message: string, ...args: unknown[]): void {
   if (currentLevel <= LogLevel.ERROR) {
     const formatted = formatMessage('ERROR', message, ...args);
-    console.error(formatted);
+    writeToConsole('error', formatted);
     writeLog(formatted);
   }
 }

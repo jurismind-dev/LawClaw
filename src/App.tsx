@@ -90,6 +90,7 @@ function App() {
   const theme = useSettingsStore((state) => state.theme);
   const language = useSettingsStore((state) => state.language);
   const setupComplete = useSettingsStore((state) => state.setupComplete);
+  const markSetupIncomplete = useSettingsStore((state) => state.markSetupIncomplete);
   const initGateway = useGatewayStore((state) => state.init);
 
   // Sync i18n language with persisted settings on mount
@@ -103,6 +104,21 @@ function App() {
   useEffect(() => {
     initGateway();
   }, [initGateway]);
+
+  // Check for force-setup command line argument
+  useEffect(() => {
+    const checkForceSetup = async () => {
+      try {
+        const forceSetup = await window.electron.ipcRenderer.invoke('app:forceSetup');
+        if (forceSetup) {
+          markSetupIncomplete();
+        }
+      } catch (error) {
+        console.error('Failed to check force-setup:', error);
+      }
+    };
+    checkForceSetup();
+  }, [markSetupIncomplete]);
 
   // Redirect to setup wizard if not complete
   useEffect(() => {

@@ -1,11 +1,14 @@
 /**
- * Provider Types & UI Metadata — single source of truth for the frontend.
+ * Provider Types & UI Metadata - single source of truth for the frontend.
  *
  * NOTE: When adding a new provider type, also update
  * electron/utils/provider-registry.ts (env vars, models, configs).
  */
 
 export const PROVIDER_TYPES = [
+  'jurismind',
+  'moonshot_code_plan',
+  'glm_code_plan',
   'anthropic',
   'openai',
   'google',
@@ -57,14 +60,17 @@ import { providerIcons } from '@/assets/providers';
 
 /** All supported provider types with UI metadata */
 export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
-  { id: 'anthropic', name: 'Anthropic', icon: '🤖', placeholder: 'sk-ant-api03-...', model: 'Claude', requiresApiKey: true },
-  { id: 'openai', name: 'OpenAI', icon: '💚', placeholder: 'sk-proj-...', model: 'GPT', requiresApiKey: true },
-  { id: 'google', name: 'Google', icon: '🔷', placeholder: 'AIza...', model: 'Gemini', requiresApiKey: true },
-  { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true },
-  { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModelId: 'kimi-k2.5' },
-  { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', defaultModelId: 'Pro/moonshotai/Kimi-K2.5' },
-  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
-  { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
+  { id: 'jurismind', name: 'Jurismind\uff08\u6cd5\u4e49\u7ecf\u7eac\uff09', icon: '\u2696\ufe0f', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
+  { id: 'moonshot_code_plan', name: 'Moonshot - Code Plan\uff08\u6708\u4e4b\u6697\u9762-\u7f16\u7a0b\u5305\u6708\uff09', icon: '\ud83c\udf19', placeholder: 'sk-...', model: 'Kimi Coding', requiresApiKey: true, defaultBaseUrl: 'https://api.kimi.com/coding/v1', defaultModelId: 'kimi-for-coding' },
+  { id: 'glm_code_plan', name: 'GLM - Code Plan\uff08\u667a\u8c31-\u7f16\u7a0b\u5305\u6708\uff09', icon: '\ud83e\udde0', placeholder: 'Bearer token...', model: 'GLM Coding', requiresApiKey: true, defaultBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4', defaultModelId: 'glm-5.0' },
+  { id: 'anthropic', name: 'Anthropic', icon: '\ud83e\udd16', placeholder: 'sk-ant-api03-...', model: 'Claude', requiresApiKey: true },
+  { id: 'openai', name: 'OpenAI', icon: '\ud83d\udc9a', placeholder: 'sk-proj-...', model: 'GPT', requiresApiKey: true },
+  { id: 'google', name: 'Google', icon: '\ud83d\udd37', placeholder: 'AIza...', model: 'Gemini', requiresApiKey: true },
+  { id: 'openrouter', name: 'OpenRouter', icon: '\ud83c\udf10', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true },
+  { id: 'moonshot', name: 'Moonshot (CN)', icon: '\ud83c\udf19', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModelId: 'kimi-k2.5' },
+  { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '\ud83c\udf0a', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', defaultModelId: 'Pro/moonshotai/Kimi-K2.5' },
+  { id: 'ollama', name: 'Ollama', icon: '\ud83e\udd99', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
+  { id: 'custom', name: 'Custom', icon: '\u2699\ufe0f', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
 ];
 
 /** Get the SVG logo URL for a provider type, falls back to undefined */

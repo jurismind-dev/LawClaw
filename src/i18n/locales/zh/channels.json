@@ -12,7 +12,9 @@
     "available": "可用频道",
     "availableDesc": "连接一个新的频道",
     "showAll": "显示全部",
+    "configuredBadge": "已配置",
     "pluginBadge": "插件",
+    "comingSoonBadge": "即将支持",
     "toast": {
         "whatsappConnected": "WhatsApp 连接成功",
         "whatsappFailed": "WhatsApp 连接失败: {{error}}",
@@ -48,9 +50,17 @@
         "generateQRCode": "生成二维码",
         "updateAndReconnect": "更新并重新连接",
         "saveAndConnect": "保存并连接",
-        "envVar": "环境变量: {{var}}"
+        "envVar": "环境变量: {{var}}",
+        "comingSoon": "该渠道即将支持，敬请期待。"
     },
     "meta": {
+        "jurismind": {
+            "description": "Jurismind（法义经纬）渠道正在开发中",
+            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/feishu",
+            "instructions": [
+                "该渠道当前仅提供占位展示，暂不支持配置。"
+            ]
+        },
         "telegram": {
             "description": "使用 @BotFather 提供的机器人令牌连接 Telegram",
             "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/telegram",

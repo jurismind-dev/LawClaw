@@ -1,7 +1,7 @@
 {
     "steps": {
         "welcome": {
-            "title": "Welcome to ClawX",
+            "title": "Welcome to LawClaw",
             "description": "Your AI assistant is ready to be configured"
         },
         "runtime": {
@@ -22,12 +22,12 @@
         },
         "complete": {
             "title": "All Set!",
-            "description": "ClawX is ready to use"
+            "description": "LawClaw is ready to use"
         }
     },
     "welcome": {
-        "title": "Welcome to ClawX",
-        "description": "ClawX is a graphical interface for OpenClaw, making it easy to use AI assistants across your favorite messaging platforms.",
+        "title": "Welcome to LawClaw",
+        "description": "LawClaw is a graphical interface for OpenClaw, making it easy to use AI assistants across your favorite messaging platforms.",
         "features": {
             "noCommand": "Zero command-line required",
             "modernUI": "Modern, beautiful interface",
@@ -81,6 +81,7 @@
         "howTo": "How to connect:",
         "viewDocs": "View docs",
         "validationError": "Validation failed",
+        "comingSoon": "Coming soon",
         "connected": "{{name}} Connected",
         "connectedDesc": "Your channel has been configured. It will connect when the Gateway starts.",
         "configureAnother": "Configure another channel"
@@ -102,7 +103,7 @@
     },
     "complete": {
         "title": "Setup Complete!",
-        "subtitle": "ClawX is configured and ready to use. You can now start chatting with your AI assistant.",
+        "subtitle": "LawClaw is configured and ready to use. You can now start chatting with your AI assistant.",
         "provider": "AI Provider",
         "components": "Components",
         "gateway": "Gateway",

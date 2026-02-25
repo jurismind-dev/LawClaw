@@ -50,7 +50,18 @@ export interface GatewayNotification {
 export interface ProviderConfig {
   id: string;
   name: string;
-  type: 'openai' | 'anthropic' | 'ollama' | 'custom';
+  type:
+  | 'jurismind'
+  | 'moonshot_code_plan'
+  | 'glm_code_plan'
+  | 'moonshot'
+  | 'siliconflow'
+  | 'openrouter'
+  | 'google'
+  | 'openai'
+  | 'anthropic'
+  | 'ollama'
+  | 'custom';
   apiKey?: string;
   baseUrl?: string;
   model?: string;

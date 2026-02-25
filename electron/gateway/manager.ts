@@ -29,6 +29,7 @@ import {
   buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
+import { selectGatewayRuntime } from './runtime-selection';
 
 /**
  * Gateway connection status
@@ -557,36 +558,29 @@ export class GatewayManager extends EventEmitter {
     let command: string;
     let args: string[];
     let mode: 'packaged' | 'dev-built' | 'dev-pnpm';
-    
-    // Determine the Node.js executable
-    // In packaged Electron app, use process.execPath with ELECTRON_RUN_AS_NODE=1
-    // which makes the Electron binary behave as plain Node.js.
-    // In development, use system 'node'.
+    let useElectronRunAsNode = false;
+
     const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
-    
-    if (app.isPackaged) {
-      // Production: use Electron binary as Node.js via ELECTRON_RUN_AS_NODE
-      // On macOS, use the Electron Helper binary to avoid extra dock icons
-      if (existsSync(entryScript)) {
-        command = getNodeExecutablePath();
-        args = [entryScript, ...gatewayArgs];
-        mode = 'packaged';
-      } else {
-        const errMsg = `OpenClaw entry script not found at: ${entryScript}`;
-        logger.error(errMsg);
-        throw new Error(errMsg);
-      }
-    } else if (isOpenClawBuilt() && existsSync(entryScript)) {
-      // Development with built package: use system node
-      command = 'node';
-      args = [entryScript, ...gatewayArgs];
-      mode = 'dev-built';
-    } else {
-      // Development without build: use pnpm dev
-      command = 'pnpm';
-      args = ['run', 'dev', ...gatewayArgs];
-      mode = 'dev-pnpm';
+    const hasBuiltEntry = isOpenClawBuilt() && existsSync(entryScript);
+
+    if (app.isPackaged && !hasBuiltEntry) {
+      const errMsg = `OpenClaw entry script not found at: ${entryScript}`;
+      logger.error(errMsg);
+      throw new Error(errMsg);
     }
+
+    const runtime = selectGatewayRuntime({
+      appIsPackaged: app.isPackaged,
+      hasBuiltEntry,
+      electronExecPath: getNodeExecutablePath(),
+    });
+
+    command = runtime.command;
+    mode = runtime.mode;
+    useElectronRunAsNode = runtime.useElectronRunAsNode;
+    args = mode === 'dev-pnpm'
+      ? ['run', 'dev', ...gatewayArgs]
+      : [entryScript, ...gatewayArgs];
 
     // Resolve bundled bin path for uv
     const platform = process.platform;
@@ -658,9 +652,13 @@ export class GatewayManager extends EventEmitter {
         CLAWDBOT_SKIP_CHANNELS: '',
       };
 
-      // Critical: In packaged mode, make Electron binary act as Node.js
-      if (app.isPackaged) {
+      // When using Electron runtime as Node.js, force non-GUI node mode.
+      if (useElectronRunAsNode) {
         spawnEnv['ELECTRON_RUN_AS_NODE'] = '1';
+      }
+
+      // Prevent OpenClaw from respawning itself in packaged mode.
+      if (app.isPackaged) {
         // Prevent OpenClaw entry.ts from respawning itself (which would create
         // another child process and a second "exec" dock icon on macOS)
         spawnEnv['OPENCLAW_NO_RESPAWN'] = '1';
@@ -676,7 +674,7 @@ export class GatewayManager extends EventEmitter {
         cwd: openclawDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
-        shell: !app.isPackaged && process.platform === 'win32', // shell only in dev on Windows
+        shell: !app.isPackaged && process.platform === 'win32' && mode === 'dev-pnpm',
         env: spawnEnv,
       });
       const child = this.process;

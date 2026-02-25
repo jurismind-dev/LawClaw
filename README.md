@@ -156,9 +156,10 @@ pnpm dev
 When you launch LawClaw for the first time, the **Setup Wizard** will guide you through:
 
 1. **Language & Region** – Configure your preferred locale (中文/English)
-2. **AI Provider** – Enter your API keys for supported providers
-3. **Legal Skills** – Select pre-configured legal skill bundles
-4. **Verification** – Test your configuration before entering the main interface
+2. **AI Provider** – Configure supported providers (including `Jurismind（法义经纬）`, `Moonshot - Code Plan（月之暗面-编程包月）`, and `GLM - Code Plan（智谱-编程包月）`). Code Plan providers only require an API key.
+3. **Messaging Channel (Optional)** – Connect a channel during setup. `Jurismind（法义经纬）` is shown as **Coming Soon**, and `Feishu / Lark` is prioritized.
+4. **Essential Components** – Install uv, managed Python runtime, and default toolchain dependencies.
+5. **Verification** – Confirm your configuration before entering the main interface.
 
 ---
 

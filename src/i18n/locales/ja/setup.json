@@ -1,119 +1,120 @@
 {
     "steps": {
         "welcome": {
-            "title": "ClawXへようこそ",
-            "description": "AIアシスタントの設定準備が整いました"
+            "title": "LawClaw\u3078\u3088\u3046\u3053\u305d",
+            "description": "AI\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8\u306e\u8a2d\u5b9a\u6e96\u5099\u304c\u6574\u3044\u307e\u3057\u305f"
         },
         "runtime": {
-            "title": "環境チェック",
-            "description": "システム要件を確認中"
+            "title": "\u74b0\u5883\u30c1\u30a7\u30c3\u30af",
+            "description": "\u30b7\u30b9\u30c6\u30e0\u8981\u4ef6\u3092\u78ba\u8a8d\u4e2d"
         },
         "provider": {
-            "title": "AIプロバイダー",
-            "description": "AIサービスを構成"
+            "title": "AI\u30d7\u30ed\u30d0\u30a4\u30c0\u30fc",
+            "description": "AI\u30b5\u30fc\u30d3\u30b9\u3092\u69cb\u6210"
         },
         "channel": {
-            "title": "チャンネル接続",
-            "description": "メッセージングプラットフォームを接続（オプション）"
+            "title": "\u30c1\u30e3\u30f3\u30cd\u30eb\u63a5\u7d9a",
+            "description": "\u30e1\u30c3\u30bb\u30fc\u30b8\u30f3\u30b0\u30d7\u30e9\u30c3\u30c8\u30d5\u30a9\u30fc\u30e0\u3092\u63a5\u7d9a\uff08\u30aa\u30d7\u30b7\u30e7\u30f3\uff09"
         },
         "installing": {
-            "title": "セットアップ中",
-            "description": "必須コンポーネントをインストール中"
+            "title": "\u30bb\u30c3\u30c8\u30a2\u30c3\u30d7\u4e2d",
+            "description": "\u5fc5\u9808\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u3092\u30a4\u30f3\u30b9\u30c8\u30fc\u30eb\u4e2d"
         },
         "complete": {
-            "title": "完了！",
-            "description": "ClawXを使用する準備が整いました"
+            "title": "\u5b8c\u4e86\uff01",
+            "description": "LawClaw\u3092\u4f7f\u7528\u3059\u308b\u6e96\u5099\u304c\u6574\u3044\u307e\u3057\u305f"
         }
     },
     "welcome": {
-        "title": "ClawXへようこそ",
-        "description": "ClawXはOpenClawのグラフィカルインターフェースで、お気に入りのメッセージングプラットフォームでAIアシスタントを簡単に使用できます。",
+        "title": "LawClaw\u3078\u3088\u3046\u3053\u305d",
+        "description": "LawClaw\u306fOpenClaw\u306e\u30b0\u30e9\u30d5\u30a3\u30ab\u30eb\u30a4\u30f3\u30bf\u30fc\u30d5\u30a7\u30fc\u30b9\u3067\u3001\u304a\u6c17\u306b\u5165\u308a\u306e\u30e1\u30c3\u30bb\u30fc\u30b8\u30f3\u30b0\u30d7\u30e9\u30c3\u30c8\u30d5\u30a9\u30fc\u30e0\u3067AI\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8\u3092\u7c21\u5358\u306b\u4f7f\u7528\u3067\u304d\u307e\u3059\u3002",
         "features": {
-            "noCommand": "コマンドライン不要",
-            "modernUI": "モダンで美しいインターフェース",
-            "bundles": "プリインストールされたスキルバンドル",
-            "crossPlatform": "クロスプラットフォーム対応"
+            "noCommand": "\u30b3\u30de\u30f3\u30c9\u30e9\u30a4\u30f3\u4e0d\u8981",
+            "modernUI": "\u30e2\u30c0\u30f3\u3067\u7f8e\u3057\u3044\u30a4\u30f3\u30bf\u30fc\u30d5\u30a7\u30fc\u30b9",
+            "bundles": "\u30d7\u30ea\u30a4\u30f3\u30b9\u30c8\u30fc\u30eb\u3055\u308c\u305f\u30b9\u30ad\u30eb\u30d0\u30f3\u30c9\u30eb",
+            "crossPlatform": "\u30af\u30ed\u30b9\u30d7\u30e9\u30c3\u30c8\u30d5\u30a9\u30fc\u30e0\u5bfe\u5fdc"
         }
     },
     "runtime": {
-        "title": "環境をチェック中",
-        "viewLogs": "ログを表示",
-        "recheck": "再チェック",
-        "nodejs": "Node.js ランタイム",
-        "openclaw": "OpenClaw パッケージ",
-        "gateway": "ゲートウェイサービス",
-        "startGateway": "ゲートウェイを起動",
+        "title": "\u74b0\u5883\u3092\u30c1\u30a7\u30c3\u30af\u4e2d",
+        "viewLogs": "\u30ed\u30b0\u3092\u8868\u793a",
+        "recheck": "\u518d\u30c1\u30a7\u30c3\u30af",
+        "nodejs": "Node.js \u30e9\u30f3\u30bf\u30a4\u30e0",
+        "openclaw": "OpenClaw \u30d1\u30c3\u30b1\u30fc\u30b8",
+        "gateway": "\u30b2\u30fc\u30c8\u30a6\u30a7\u30a4\u30b5\u30fc\u30d3\u30b9",
+        "startGateway": "\u30b2\u30fc\u30c8\u30a6\u30a7\u30a4\u3092\u8d77\u52d5",
         "status": {
-            "checking": "確認中...",
-            "success": "Node.js は利用可能です",
-            "error": "失敗",
-            "gatewayRunning": "ポート {{port}} で実行中",
-            "packageReady": "OpenClaw パッケージ準備完了"
+            "checking": "\u78ba\u8a8d\u4e2d...",
+            "success": "Node.js \u306f\u5229\u7528\u53ef\u80fd\u3067\u3059",
+            "error": "\u5931\u6557",
+            "gatewayRunning": "\u30dd\u30fc\u30c8 {{port}} \u3067\u5b9f\u884c\u4e2d",
+            "packageReady": "OpenClaw \u30d1\u30c3\u30b1\u30fc\u30b8\u6e96\u5099\u5b8c\u4e86"
         },
         "issue": {
-            "title": "環境の問題が検出されました",
-            "desc": "OpenClawが正しくインストールされていることを確認してください。詳細はログを確認してください。"
+            "title": "\u74b0\u5883\u306e\u554f\u984c\u304c\u691c\u51fa\u3055\u308c\u307e\u3057\u305f",
+            "desc": "OpenClaw\u304c\u6b63\u3057\u304f\u30a4\u30f3\u30b9\u30c8\u30fc\u30eb\u3055\u308c\u3066\u3044\u308b\u3053\u3068\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002\u8a73\u7d30\u306f\u30ed\u30b0\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002"
         },
         "logs": {
-            "title": "アプリケーションログ",
-            "openFolder": "ログフォルダを開く",
-            "close": "閉じる",
-            "noLogs": "（ログはまだありません）"
+            "title": "\u30a2\u30d7\u30ea\u30b1\u30fc\u30b7\u30e7\u30f3\u30ed\u30b0",
+            "openFolder": "\u30ed\u30b0\u30d5\u30a9\u30eb\u30c0\u3092\u958b\u304f",
+            "close": "\u9589\u3058\u308b",
+            "noLogs": "\uff08\u30ed\u30b0\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093\uff09"
         }
     },
     "provider": {
-        "label": "モデルプロバイダー",
-        "selectPlaceholder": "プロバイダーを選択...",
-        "baseUrl": "ベース URL",
-        "modelId": "モデル ID",
-        "modelIdDesc": "プロバイダーのモデル識別子（例：deepseek-ai/DeepSeek-V3）",
-        "apiKey": "API キー",
-        "save": "保存",
-        "validateSave": "検証して保存",
-        "valid": "プロバイダーが正常に構成されました",
-        "invalid": "無効な API キー",
-        "storedLocally": "API キーはローカルマシンに保存されます。"
+        "label": "\u30e2\u30c7\u30eb\u30d7\u30ed\u30d0\u30a4\u30c0\u30fc",
+        "selectPlaceholder": "\u30d7\u30ed\u30d0\u30a4\u30c0\u30fc\u3092\u9078\u629e...",
+        "baseUrl": "\u30d9\u30fc\u30b9 URL",
+        "modelId": "\u30e2\u30c7\u30eb ID",
+        "modelIdDesc": "\u30d7\u30ed\u30d0\u30a4\u30c0\u30fc\u306e\u30e2\u30c7\u30eb\u8b58\u5225\u5b50\uff08\u4f8b\uff1adeepseek-ai/DeepSeek-V3\uff09",
+        "apiKey": "API \u30ad\u30fc",
+        "save": "\u4fdd\u5b58",
+        "validateSave": "\u691c\u8a3c\u3057\u3066\u4fdd\u5b58",
+        "valid": "\u30d7\u30ed\u30d0\u30a4\u30c0\u30fc\u304c\u6b63\u5e38\u306b\u69cb\u6210\u3055\u308c\u307e\u3057\u305f",
+        "invalid": "\u7121\u52b9\u306a API \u30ad\u30fc",
+        "storedLocally": "API \u30ad\u30fc\u306f\u30ed\u30fc\u30ab\u30eb\u30de\u30b7\u30f3\u306b\u4fdd\u5b58\u3055\u308c\u307e\u3059\u3002"
     },
     "channel": {
-        "title": "メッセージングチャンネルを接続",
-        "subtitle": "AIアシスタントを接続するプラットフォームを選択してください。チャンネルは後で設定で追加できます。",
-        "configure": "{{name}} を構成",
-        "howTo": "接続方法：",
-        "viewDocs": "ドキュメントを表示",
-        "validationError": "検証に失敗しました",
-        "connected": "{{name}} 接続済み",
-        "connectedDesc": "チャンネルが構成されました。ゲートウェイ起動時に接続されます。",
-        "configureAnother": "別のチャンネルを構成"
+        "title": "\u30e1\u30c3\u30bb\u30fc\u30b8\u30f3\u30b0\u30c1\u30e3\u30f3\u30cd\u30eb\u3092\u63a5\u7d9a",
+        "subtitle": "AI\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8\u3092\u63a5\u7d9a\u3059\u308b\u30d7\u30e9\u30c3\u30c8\u30d5\u30a9\u30fc\u30e0\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002\u30c1\u30e3\u30f3\u30cd\u30eb\u306f\u5f8c\u3067\u8a2d\u5b9a\u3067\u8ffd\u52a0\u3067\u304d\u307e\u3059\u3002",
+        "configure": "{{name}} \u3092\u69cb\u6210",
+        "howTo": "\u63a5\u7d9a\u65b9\u6cd5\uff1a",
+        "viewDocs": "\u30c9\u30ad\u30e5\u30e1\u30f3\u30c8\u3092\u8868\u793a",
+        "validationError": "\u691c\u8a3c\u306b\u5931\u6557\u3057\u307e\u3057\u305f",
+        "comingSoon": "\u8fd1\u65e5\u5bfe\u5fdc",
+        "connected": "{{name}} \u63a5\u7d9a\u6e08\u307f",
+        "connectedDesc": "\u30c1\u30e3\u30f3\u30cd\u30eb\u304c\u69cb\u6210\u3055\u308c\u307e\u3057\u305f\u3002\u30b2\u30fc\u30c8\u30a6\u30a7\u30a4\u8d77\u52d5\u6642\u306b\u63a5\u7d9a\u3055\u308c\u307e\u3059\u3002",
+        "configureAnother": "\u5225\u306e\u30c1\u30e3\u30f3\u30cd\u30eb\u3092\u69cb\u6210"
     },
     "installing": {
-        "title": "必須コンポーネントをインストール中",
-        "subtitle": "AIアシスタントに必要なツールをセットアップしています",
-        "progress": "進捗",
+        "title": "\u5fc5\u9808\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8\u3092\u30a4\u30f3\u30b9\u30c8\u30fc\u30eb\u4e2d",
+        "subtitle": "AI\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8\u306b\u5fc5\u8981\u306a\u30c4\u30fc\u30eb\u3092\u30bb\u30c3\u30c8\u30a2\u30c3\u30d7\u3057\u3066\u3044\u307e\u3059",
+        "progress": "\u9032\u6357",
         "status": {
-            "pending": "待機中",
-            "installing": "インストール中...",
-            "installed": "インストール済み",
-            "failed": "失敗"
+            "pending": "\u5f85\u6a5f\u4e2d",
+            "installing": "\u30a4\u30f3\u30b9\u30c8\u30fc\u30eb\u4e2d...",
+            "installed": "\u30a4\u30f3\u30b9\u30c8\u30fc\u30eb\u6e08\u307f",
+            "failed": "\u5931\u6557"
         },
-        "error": "セットアップエラー：",
-        "restart": "アプリを再起動してください",
-        "wait": "これには少し時間がかかる場合があります...",
-        "skip": "この手順をスキップ"
+        "error": "\u30bb\u30c3\u30c8\u30a2\u30c3\u30d7\u30a8\u30e9\u30fc\uff1a",
+        "restart": "\u30a2\u30d7\u30ea\u3092\u518d\u8d77\u52d5\u3057\u3066\u304f\u3060\u3055\u3044",
+        "wait": "\u3053\u308c\u306b\u306f\u5c11\u3057\u6642\u9593\u304c\u304b\u304b\u308b\u5834\u5408\u304c\u3042\u308a\u307e\u3059...",
+        "skip": "\u3053\u306e\u624b\u9806\u3092\u30b9\u30ad\u30c3\u30d7"
     },
     "complete": {
-        "title": "セットアップ完了！",
-        "subtitle": "ClawXの構成が完了し、使用準備が整いました。AIアシスタントとのチャットを開始できます。",
-        "provider": "AI プロバイダー",
-        "components": "コンポーネント",
-        "gateway": "ゲートウェイ",
-        "running": "実行中",
-        "footer": "設定でスキルをカスタマイズしたり、チャンネルを接続したりできます"
+        "title": "\u30bb\u30c3\u30c8\u30a2\u30c3\u30d7\u5b8c\u4e86\uff01",
+        "subtitle": "LawClaw\u306e\u69cb\u6210\u304c\u5b8c\u4e86\u3057\u3001\u4f7f\u7528\u6e96\u5099\u304c\u6574\u3044\u307e\u3057\u305f\u3002AI\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8\u3068\u306e\u30c1\u30e3\u30c3\u30c8\u3092\u958b\u59cb\u3067\u304d\u307e\u3059\u3002",
+        "provider": "AI \u30d7\u30ed\u30d0\u30a4\u30c0\u30fc",
+        "components": "\u30b3\u30f3\u30dd\u30fc\u30cd\u30f3\u30c8",
+        "gateway": "\u30b2\u30fc\u30c8\u30a6\u30a7\u30a4",
+        "running": "\u5b9f\u884c\u4e2d",
+        "footer": "\u8a2d\u5b9a\u3067\u30b9\u30ad\u30eb\u3092\u30ab\u30b9\u30bf\u30de\u30a4\u30ba\u3057\u305f\u308a\u3001\u30c1\u30e3\u30f3\u30cd\u30eb\u3092\u63a5\u7d9a\u3057\u305f\u308a\u3067\u304d\u307e\u3059"
     },
     "nav": {
-        "next": "次へ",
-        "back": "戻る",
-        "skipStep": "この手順をスキップ",
-        "skipSetup": "セットアップをスキップ",
-        "getStarted": "始める"
+        "next": "\u6b21\u3078",
+        "back": "\u623b\u308b",
+        "skipStep": "\u3053\u306e\u624b\u9806\u3092\u30b9\u30ad\u30c3\u30d7",
+        "skipSetup": "\u30bb\u30c3\u30c8\u30a2\u30c3\u30d7\u3092\u30b9\u30ad\u30c3\u30d7",
+        "getStarted": "\u59cb\u3081\u308b"
     }
 }

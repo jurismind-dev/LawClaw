@@ -57,7 +57,7 @@ const STEP = {
 const steps: SetupStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to ClawX',
+    title: 'Welcome to LawClaw',
     description: 'Your AI assistant is ready to be configured',
   },
   {
@@ -83,7 +83,7 @@ const steps: SetupStep[] = [
   {
     id: 'complete',
     title: 'All Set!',
-    description: 'ClawX is ready to use',
+    description: 'LawClaw is ready to use',
   },
 ];
 
@@ -317,7 +317,7 @@ function WelcomeContent() {
   return (
     <div className="text-center space-y-4">
       <div className="mb-4 flex justify-center">
-        <img src={clawxIcon} alt="ClawX" className="h-16 w-16" />
+        <img src={clawxIcon} alt="LawClaw" className="h-16 w-16" />
       </div>
       <h2 className="text-xl font-semibold">{t('welcome.title')}</h2>
       <p className="text-muted-foreground">
@@ -1150,6 +1150,10 @@ function SetupChannelContent() {
 
   const handleSave = async () => {
     if (!selectedChannel || !meta || !isFormValid()) return;
+    if (meta.comingSoon) {
+      toast.info(t('channel.comingSoon'));
+      return;
+    }
 
     setSaving(true);
     setValidationError(null);
@@ -1222,13 +1226,31 @@ function SetupChannelContent() {
           {primaryChannels.map((type) => {
             const channelMeta = CHANNEL_META[type];
             if (channelMeta.connectionType !== 'token') return null;
+            const isComingSoon = channelMeta.comingSoon === true;
             return (
               <button
                 key={type}
-                onClick={() => setSelectedChannel(type)}
-                className="p-4 rounded-lg bg-muted/50 hover:bg-muted transition-all text-left"
+                onClick={() => {
+                  if (isComingSoon) {
+                    toast.info(t('channel.comingSoon'));
+                    return;
+                  }
+                  setSelectedChannel(type);
+                }}
+                disabled={isComingSoon}
+                className={cn(
+                  'p-4 rounded-lg bg-muted/50 transition-all text-left',
+                  isComingSoon ? 'opacity-60 cursor-not-allowed' : 'hover:bg-muted'
+                )}
               >
-                <span className="text-3xl">{channelMeta.icon}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-3xl">{channelMeta.icon}</span>
+                  {isComingSoon && (
+                    <span className="text-xs rounded bg-secondary text-secondary-foreground px-2 py-0.5">
+                      {t('channel.comingSoon')}
+                    </span>
+                  )}
+                </div>
                 <p className="font-medium mt-2">{channelMeta.name}</p>
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                   {t(channelMeta.description)}

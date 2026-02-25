@@ -12,7 +12,9 @@
     "available": "Available Channels",
     "availableDesc": "Connect a new channel",
     "showAll": "Show All",
+    "configuredBadge": "Configured",
     "pluginBadge": "Plugin",
+    "comingSoonBadge": "Coming Soon",
     "toast": {
         "whatsappConnected": "WhatsApp connected successfully",
         "whatsappFailed": "WhatsApp connection failed: {{error}}",
@@ -48,9 +50,17 @@
         "generateQRCode": "Generate QR Code",
         "updateAndReconnect": "Update & Reconnect",
         "saveAndConnect": "Save & Connect",
-        "envVar": "Environment Variable: {{var}}"
+        "envVar": "Environment Variable: {{var}}",
+        "comingSoon": "This channel will be available soon."
     },
     "meta": {
+        "jurismind": {
+            "description": "Jurismind channel integration is coming soon",
+            "docsUrl": "https://docs.openclaw.ai/channels/feishu",
+            "instructions": [
+                "This channel is currently in development and not yet available."
+            ]
+        },
         "telegram": {
             "description": "Connect Telegram using a bot token from @BotFather",
             "docsUrl": "https://docs.openclaw.ai/channels/telegram",

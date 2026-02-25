@@ -60,9 +60,9 @@ import { providerIcons } from '@/assets/providers';
 
 /** All supported provider types with UI metadata */
 export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
-  { id: 'jurismind', name: 'Jurismind\uff08\u6cd5\u4e49\u7ecf\u7eac\uff09', icon: '\u2696\ufe0f', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
-  { id: 'moonshot_code_plan', name: 'Moonshot - Code Plan\uff08\u6708\u4e4b\u6697\u9762-\u7f16\u7a0b\u5305\u6708\uff09', icon: '\ud83c\udf19', placeholder: 'sk-...', model: 'Kimi Coding', requiresApiKey: true, defaultBaseUrl: 'https://api.kimi.com/coding/v1', defaultModelId: 'kimi-for-coding' },
-  { id: 'glm_code_plan', name: 'GLM - Code Plan\uff08\u667a\u8c31-\u7f16\u7a0b\u5305\u6708\uff09', icon: '\ud83e\udde0', placeholder: 'Bearer token...', model: 'GLM Coding', requiresApiKey: true, defaultBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4', defaultModelId: 'glm-5.0' },
+  { id: 'jurismind', name: 'Jurismind\uff08\u6cd5\u4e49\u7ecf\u7eac\uff09', icon: '\u2696\ufe0f', placeholder: 'API key...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'http://101.132.245.215:3001/v1', defaultModelId: 'kimi-k2.5' },
+  { id: 'moonshot_code_plan', name: 'Kimi Coding\uff08\u5b98\u65b9\uff09', icon: '\ud83c\udf19', placeholder: 'sk-...', model: 'Kimi Coding', requiresApiKey: true, defaultBaseUrl: 'https://api.kimi.com/coding/v1', defaultModelId: 'kimi-coding/k2p5', showBaseUrl: false, showModelId: false },
+  { id: 'glm_code_plan', name: 'GLM - Code Plan\uff08\u667a\u8c31-\u7f16\u7a0b\u5305\u6708\uff09', icon: '\ud83e\udde0', placeholder: 'Bearer token...', model: 'GLM Coding', requiresApiKey: true, defaultBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4', defaultModelId: 'glm-4.7' },
   { id: 'anthropic', name: 'Anthropic', icon: '\ud83e\udd16', placeholder: 'sk-ant-api03-...', model: 'Claude', requiresApiKey: true },
   { id: 'openai', name: 'OpenAI', icon: '\ud83d\udc9a', placeholder: 'sk-proj-...', model: 'GPT', requiresApiKey: true },
   { id: 'google', name: 'Google', icon: '\ud83d\udd37', placeholder: 'AIza...', model: 'Gemini', requiresApiKey: true },

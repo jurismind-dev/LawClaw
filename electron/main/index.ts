@@ -12,6 +12,7 @@ import { createMenu } from './menu';
 import { appUpdater, registerUpdateHandlers } from './updater';
 import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
+import { runProviderStartupMigration } from '../utils/provider-migration';
 
 import { ClawHubService } from '../gateway/clawhub';
 
@@ -179,6 +180,9 @@ async function initialize(): Promise<void> {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Startup migration for legacy moonshot_code_plan -> official kimi-coding semantics.
+  await runProviderStartupMigration();
 
   // Start Gateway automatically
   try {

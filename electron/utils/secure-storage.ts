@@ -29,7 +29,18 @@ async function getProviderStore() {
 export interface ProviderConfig {
   id: string;
   name: string;
-  type: 'anthropic' | 'openai' | 'google' | 'openrouter' | 'moonshot' | 'siliconflow' | 'ollama' | 'custom';
+  type:
+    | 'jurismind'
+    | 'moonshot_code_plan'
+    | 'glm_code_plan'
+    | 'anthropic'
+    | 'openai'
+    | 'google'
+    | 'openrouter'
+    | 'moonshot'
+    | 'siliconflow'
+    | 'ollama'
+    | 'custom';
   baseUrl?: string;
   model?: string;
   enabled: boolean;

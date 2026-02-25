@@ -1,16 +1,16 @@
-# 小龙芯 (LawClaw) 产品规格说明书
+# 小龙芯 (LawClaw) 产品规格说明书（实现现状版）
 
-> 本文档详细描述小龙芯桌面应用的页面架构和功能说明，作为后续功能修改的基础参考文档。
+> 本文档用于记录 LawClaw 当前版本的**实际实现状态**，作为开发、测试和产品沟通的基线文档。
 
-**产品名称**：小龙芯 (LawClaw)
-**开发团队**：法义经纬 (Jurismind)
-**基于项目**：[ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team
-**版本**：0.1.16
-**最后更新**：2026-02-24
+**产品名称**：小龙芯 (LawClaw)  
+**开发团队**：法义经纬 (Jurismind)  
+**基于项目**：[ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team  
+**版本**：0.1.16  
+**最后更新**：2026-02-25
 
 ---
 
-> **说明**：小龙芯 (LawClaw) 是基于上游 ClawX 项目进行法律领域定制开发的律师AI助手桌面应用，并以 OpenClaw 作为核心运行时，提供完整的 AI 智能体桌面运行框架。
+> **文档说明**：本规格为“实现快照”，仅描述当前代码中已实现能力；未实现内容会标注为“即将支持”或“需二次开发”，不代表路线图承诺。
 
 ---
 
@@ -31,22 +31,30 @@
 
 ### 1.1 产品定位
 
-小龙芯 (LawClaw) 是一款专为律师和法律专业人士打造的专业AI助手桌面应用。基于OpenClaw AI运行时构建，提供法律研究、合同审查、案例分析和文书生成等专业功能。
+LawClaw 是基于 Electron + OpenClaw Gateway 的桌面 AI 助手应用。当前版本重点提供：
+
+- 首次启动图形化引导（Setup Wizard）
+- AI Provider 配置、验证、默认切换
+- 多频道接入配置（含 token 与 QR 两类流程）
+- Chat 对话、流式输出、工具状态展示、附件发送
+- Skills 浏览/启停/安装/卸载与技能配置
+- Cron 定时任务管理
+- 设置、更新与开发者工具入口
+
+> 说明：法律场景专属能力（如法律模板中心、专用法律工具页）目前**未内置**，属于“需二次开发”范围。
 
 ### 1.2 目标用户
 
-- 执业律师
-- 法律顾问
-- 企业法务
-- 法律研究者
-- 法学院师生
+- 希望使用桌面化 AI 工作流的个人/团队用户
+- 需要统一管理 Provider、Channel、Skill、Cron 的进阶用户
+- 需要本地运行 OpenClaw Gateway 并进行可视化操作的开发/测试用户
 
-### 1.3 核心价值
+### 1.3 当前版本核心价值
 
-- **专业法律场景**：专为法律领域定制的AI助手功能
-- **便捷桌面体验**：无需命令行，图形化界面操作
-- **安全隐私保护**：本地处理，数据安全可控
-- **中英双语支持**：满足涉外法律工作需求
+- **本地桌面体验**：无需命令行完成核心配置流程
+- **可扩展架构**：Provider、Channel、Skill、Cron 均可配置与扩展
+- **可观测可调试**：Gateway 状态、日志、开发者控制台与 token 可视化
+- **多语言支持**：界面支持 en / zh / ja 三语
 
 ---
 
@@ -54,53 +62,39 @@
 
 ### 2.1 双进程架构
 
+```text
+Electron Desktop App
+├─ Main Process
+│  ├─ 应用生命周期与窗口管理
+│  ├─ Gateway 进程管理与 IPC 路由
+│  ├─ Update 流程编排
+│  └─ 本地配置/密钥持久化（electron-store + OpenClaw 配置文件）
+└─ Renderer Process (React)
+   ├─ 页面与组件渲染
+   ├─ Zustand 状态管理
+   ├─ i18n 多语言
+   └─ 与 Main Process 通过 IPC 通信
+
+OpenClaw Gateway
+├─ chat / sessions / skills / cron RPC
+└─ 频道状态与事件上报
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                   小龙芯 (LawClaw) 桌面应用 (Electron)               │
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │              Electron 主进程 (Main Process)                  │  │
-│  │  • 窗口与应用生命周期管理                                      │  │
-│  │  • Gateway 进程监督                                          │  │
-│  │  • 系统集成（托盘、通知、密钥链）                               │  │
-│  │  • 自动更新编排                                               │  │
-│  └────────────────────────────────────────────────────────────┘  │
-│                              │                                    │
-│                              │ IPC                                │
-│                              ▼                                    │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │              React 渲染进程 (Renderer Process)                │  │
-│  │  • 现代组件化 UI (React 19)                                   │  │
-│  │  • Zustand 状态管理                                           │  │
-│  │  • WebSocket 实时通信                                         │  │
-│  │  • Markdown 富文本渲染                                        │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-                               │ WebSocket (JSON-RPC)
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     OpenClaw Gateway                             │
-│  • AI 智能体运行时和编排                                          │
-│  • 消息频道管理                                                   │
-│  • 技能/插件执行环境                                              │
-│  • 供应商抽象层                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+> 安全口径（现状）：Provider API Key 当前存储于本地 `electron-store`（明文），并同步写入 `~/.openclaw/agents/main/agent/auth-profiles.json` 供 Gateway 使用；当前未接入操作系统级密钥管理服务。
 
 ### 2.2 技术栈
 
-| 层级 | 技术 |
-|------|------|
-| 运行时 | Electron 40+ |
-| UI框架 | React 19 + TypeScript |
-| 样式 | Tailwind CSS + shadcn/ui |
-| 状态管理 | Zustand |
-| 构建工具 | Vite + electron-builder |
-| 测试 | Vitest + Playwright |
-| 动画 | Framer Motion |
-| 图标 | Lucide React |
-| 国际化 | i18next + react-i18next |
+| 层级 | 技术（当前实现） |
+|------|------------------|
+| 运行时 | Electron `^40.6.0` |
+| UI 框架 | React `^19.2.4` + TypeScript `^5.9.3` |
+| 样式系统 | Tailwind CSS `^3.4.19` + shadcn/ui |
+| 状态管理 | Zustand `^5.0.11` |
+| 动画 | Framer Motion `^12.34.2` |
+| 图标 | Lucide React `^0.563.0` |
+| 国际化 | i18next `^25.8.11` + react-i18next `^16.5.4` |
+| 构建 | Vite `^7.3.1` + electron-builder `^26.8.1` |
+| 测试 | Vitest + Testing Library + jsdom（另有 Playwright e2e 脚本） |
 
 ---
 
@@ -108,39 +102,42 @@
 
 ### 3.1 页面路由
 
-```
-/                   → 首次启动时重定向到 Setup 或 Chat
-/setup              → 初始设置向导 (Setup Wizard)
-/dashboard          → 仪表盘首页 (Dashboard)
-/chat               → AI对话界面 (Chat)
-/channels           → 频道管理 (Channels)
-/skills             → 技能管理 (Skills)
-/cron               → 定时任务 (Cron)
-/settings           → 系统设置 (Settings)
-```
+应用使用 `HashRouter`。逻辑路由如下：
+
+- `/setup/*` → 初始设置向导
+- `/` → Chat（主对话页）
+- `/dashboard` → Dashboard
+- `/channels` → Channels
+- `/skills` → Skills
+- `/cron` → Cron
+- `/settings/*` → Settings
+
+补充行为：
+
+- 当 `setupComplete=false` 时，应用会自动跳转到 `/setup`
+- 主进程支持 `--force-setup` 或 `FORCE_SETUP=true` 强制进入 setup
 
 ### 3.2 页面层级关系
 
-```
+```text
 App
-├── Setup (首次启动时显示)
-│   ├── Welcome (欢迎页)
-│   ├── Runtime (环境检查)
-│   ├── Provider (AI供应商配置)
-│   ├── Channel (频道连接，可选)
-│   ├── Installing (组件安装)
-│   └── Complete (完成确认)
-│
-└── MainLayout (主布局 - 设置完成后)
-    ├── TitleBar (标题栏)
-    ├── Sidebar (侧边导航)
-    └── Content Area (内容区域)
-        ├── Dashboard (仪表盘)
-        ├── Chat (对话)
-        ├── Channels (频道)
-        ├── Skills (技能)
-        ├── Cron (定时任务)
-        └── Settings (设置)
+├─ /setup/* -> Setup
+│  ├─ Welcome
+│  ├─ Runtime
+│  ├─ Provider
+│  ├─ Channel (optional)
+│  ├─ Installing
+│  └─ Complete
+└─ MainLayout
+   ├─ TitleBar
+   ├─ Sidebar
+   └─ Content
+      ├─ /
+      ├─ /dashboard
+      ├─ /channels
+      ├─ /skills
+      ├─ /cron
+      └─ /settings/*
 ```
 
 ---
@@ -149,476 +146,369 @@ App
 
 ### 4.1 Setup (初始设置向导)
 
-**文件位置**: `src/pages/Setup/index.tsx`
+**文件位置**：`src/pages/Setup/index.tsx`
 
-**功能说明**: 首次启动时引导用户完成应用配置的向导流程。
+Setup 当前保留 6 步流程：Welcome → Runtime → Provider → Channel → Installing → Complete。
 
 #### 4.1.1 Welcome (欢迎页)
 
-- **功能**: 语言选择、产品介绍
-- **组件**: `WelcomeContent`
-- **可配置项**:
-  - 语言选择 (中文/English)
-  - 功能亮点展示
+- 展示品牌信息与功能简介
+- 可直接切换语言，语言来源为 `SUPPORTED_LANGUAGES`（en / zh / ja）
 
 #### 4.1.2 Runtime (环境检查)
 
-- **功能**: 检测系统环境和依赖
-- **组件**: `RuntimeContent`
-- **检查项**:
-  - Node.js 运行时
-  - OpenClaw 包状态
-  - Gateway 服务状态
-- **操作**: 查看日志、重新检测、手动启动Gateway
+- Node.js：前端固定标记为可用
+- OpenClaw：通过 `openclaw:status` 检查 package/built/version/路径
+- Gateway：读取 store 状态，支持手动启动
+- 支持查看最近日志与打开日志目录
 
-#### 4.1.3 Provider (AI供应商配置)
+#### 4.1.3 Provider (AI 供应商配置)
 
-- **功能**: 配置AI模型供应商和API密钥
-- **组件**: `ProviderContent`
-- **支持的供应商**:
-  - OpenAI
-  - Anthropic (Claude)
-  - DeepSeek
-  - 硅基流动 (SiliconFlow)
-  - Ollama (本地)
-  - 自定义供应商
-- **配置字段**:
-  - Base URL (部分供应商)
-  - Model ID (部分供应商)
-  - API Key (密钥安全存储)
+- 使用统一 Provider 元数据驱动 UI，支持 11 种类型：
+  - `jurismind`
+  - `moonshot_code_plan`
+  - `glm_code_plan`
+  - `anthropic`
+  - `openai`
+  - `google`
+  - `openrouter`
+  - `moonshot`
+  - `siliconflow`
+  - `ollama`
+  - `custom`
+- 按 Provider 类型动态显示字段：API Key / Base URL / Model ID
+- 支持实时验证 `provider:validateKey`
+- 保存时执行：`provider:save` + `provider:setDefault`
 
-#### 4.1.4 Channel (频道连接)
+#### 4.1.4 Channel (频道连接，可选)
 
-- **功能**: 连接消息平台 (可选步骤)
-- **组件**: `SetupChannelContent`
-- **支持的平台**:
-  - Discord
-  - Telegram
-  - WhatsApp (二维码登录)
-- **配置字段**:
-  - Bot Token
-  - Channel ID
+- 该步骤可跳过，不阻塞 setup 完成
+- 展示主频道集合：`jurismind`、`feishu`、`telegram`、`discord`、`whatsapp`
+- 当前仅展示 `connectionType=token` 的频道配置入口
+- `jurismind` 在元数据中为 `comingSoon=true`，在 UI 中不可选择
+- 对 token 频道支持：读取历史表单值 → 凭证校验 → 保存配置
 
 #### 4.1.5 Installing (组件安装)
 
-- **功能**: 自动安装必要组件
-- **组件**: `InstallingContent`
-- **安装内容**:
-  - uv (Python包管理器)
-  - Python环境
-  - 预配置技能
+- 该步骤实际调用 `uv:install-all`
+- 后端行为为：
+  1. 检查 `uv` 是否可用
+  2. 若不可用则安装/校验 bundled uv
+  3. 执行 `setupManagedPython()` 安装托管 Python（3.12）
+- 页面中的默认技能列表仅用于进度展示，当前**不是逐技能真实安装流程**
 
 #### 4.1.6 Complete (完成确认)
 
-- **功能**: 确认配置并进入主界面
-- **组件**: `CompleteContent`
-- **显示信息**:
-  - 已配置的供应商
-  - 已安装的技能
-  - Gateway状态
+- 显示选中的 Provider
+- 显示 Installing 步骤记录的组件列表
+- 显示当前 Gateway 状态
+- 点击完成后写入 `setupComplete=true` 并进入主页面
 
 ---
 
 ### 4.2 Dashboard (仪表盘)
 
-**文件位置**: `src/pages/Dashboard/index.tsx`
-
-**功能说明**: 应用主页面，展示系统状态概览和快捷操作。
+**文件位置**：`src/pages/Dashboard/index.tsx`
 
 #### 4.2.1 状态卡片
 
-| 卡片 | 内容 | 数据来源 |
-|------|------|----------|
-| Gateway状态 | 运行状态、端口、进程ID | `useGatewayStore` |
-| 频道统计 | 已连接/总数 | `useChannelsStore` |
-| 技能统计 | 已启用/总数 | `useSkillsStore` |
-| 运行时间 | Gateway运行时长 | 计算值 |
+- Gateway 状态（state / port / pid）
+- Channels 连接统计
+- Skills 启用统计
+- Gateway 运行时长（uptime）
 
 #### 4.2.2 快捷操作
 
-- 添加频道 → 跳转 `/channels`
-- 浏览技能 → 跳转 `/skills`
-- 开始对话 → 跳转 `/` (Chat)
-- 系统设置 → 跳转 `/settings`
-- 开发者控制台 → 仅开发者模式可见
+- 跳转 Channels
+- 跳转 Skills
+- 跳转 Chat（`/`）
+- 跳转 Settings
+- 开发者控制台入口（仅 `devModeUnlocked=true` 显示）
 
 #### 4.2.3 已连接频道列表
 
-- 显示已配置的频道卡片
-- 频道状态标识 (connected/disconnected)
-- 频道类型图标 (WhatsApp/Telegram/Discord)
+- 列出最多 5 个频道
+- 显示频道名称、类型、状态
 
 #### 4.2.4 已启用技能标签
 
-- 以Badge形式展示已启用的技能
-- 显示技能图标和名称
-- 支持快速跳转到技能详情
+- 展示已启用技能标签（最多 12 个）
+- 超出数量显示 “+N”
 
 ---
 
-### 4.3 Chat (AI对话界面)
+### 4.3 Chat (AI 对话界面)
 
-**文件位置**: `src/pages/Chat/index.tsx`
+**文件位置**：`src/pages/Chat/index.tsx`
 
-**子组件**:
-- `ChatInput.tsx` - 消息输入区域
-- `ChatMessage.tsx` - 消息渲染组件
-- `ChatToolbar.tsx` - 工具栏 (会话切换、设置)
-- `message-utils.ts` - 消息处理工具
+**子组件**：
 
-**功能说明**: 与AI智能体进行对话的主要界面。
+- `ChatToolbar.tsx`
+- `ChatMessage.tsx`
+- `ChatInput.tsx`
+- `message-utils.ts`
 
-#### 4.3.1 消息区域
+#### 4.3.1 消息与流式区域
 
-- **历史消息**: 从 `useChatStore` 加载
-- **流式消息**: 实时渲染AI响应
-- **消息类型**:
-  - 用户消息 (user)
-  - AI消息 (assistant)
-  - 思考过程 (thinking, 可选显示)
-  - 工具调用 (tool_use, 可选显示)
-- **渲染特性**:
-  - Markdown渲染
-  - 代码高亮
-  - 图片显示
-  - 打字机效果
+- 历史消息加载：`sessions.list` + `chat.history`
+- 流式显示：支持 text/thinking/tool_use/tool_result/image
+- 工具执行状态条：运行中、完成、错误、耗时、摘要
+- 可切换“显示/隐藏思考过程”
 
-#### 4.3.2 工具栏功能
+#### 4.3.2 输入与发送
 
-- 会话选择器 (Session Selector)
-- 刷新历史记录
-- 显示/隐藏思考过程
-- 清除对话
+- 多行输入：Enter 发送、Shift+Enter 换行
+- 发送中按钮切换为 Stop（可中止 `chat.abort`）
 
-#### 4.3.3 输入区域
+#### 4.3.3 附件能力（已实现）
 
-- 多行文本输入
-- 发送按钮
-- 停止生成按钮 (发送中)
-- 快捷键支持 (Enter发送, Shift+Enter换行)
+- 支持三种入口：
+  - 文件选择器
+  - 粘贴文件（clipboard）
+  - 拖拽文件（drag & drop）
+- 附件先经 `file:stage` / `file:stageBuffer` 暂存到本地目录，再发送
+- 图片可预览，非图片显示文件卡片
 
-#### 4.3.4 欢迎界面
+#### 4.3.4 `chat:sendWithMedia` 媒体发送策略
 
-- 无消息时显示
-- 功能引导卡片:
-  - 开始对话
-  - 创意任务
+- 图像文件走“双通道”：
+  - 作为 base64 `attachments` 发送（视觉模型可直接消费）
+  - 同时在消息文本附加 `[media attached: ...]` 路径引用
+- 非图像文件以路径引用形式附加在消息文本中
 
 ---
 
 ### 4.4 Channels (频道管理)
 
-**文件位置**: `src/pages/Channels/index.tsx`
-
-**功能说明**: 管理AI智能体与外部消息平台的连接。
+**文件位置**：`src/pages/Channels/index.tsx`
 
 #### 4.4.1 统计卡片
 
-| 卡片 | 内容 |
-|------|------|
-| 总频道数 | 已配置的所有频道数量 |
-| 已连接 | 当前连接成功的频道 |
-| 已断开 | 当前断开的频道 |
+- 总频道数
+- 已连接数
+- 未连接数
 
 #### 4.4.2 已配置频道列表
 
-- 频道卡片展示:
-  - 频道图标
-  - 频道名称
-  - 频道类型
-  - 连接状态
-  - 错误信息 (如有)
-- 操作按钮:
-  - 删除频道
+- 卡片展示频道图标、名称、类型、状态、错误
+- 支持删除频道配置
 
-#### 4.4.3 可用频道类型
+#### 4.4.3 主展示频道类型
 
-- **Discord**: Bot Token认证
-- **Telegram**: Bot Token认证
-- **WhatsApp**: 二维码扫码登录
+主展示列表来自 `getPrimaryChannels()`：
+
+- `jurismind`（即将支持）
+- `feishu`
+- `telegram`
+- `discord`
+- `whatsapp`
+
+补充：`CHANNEL_META` 中仍定义了 `signal/imessage/matrix/line/msteams/googlechat/mattermost` 等类型，用于元数据扩展，但当前主页面不全部展示。
 
 #### 4.4.4 添加频道对话框
 
-- 频道类型选择
-- 配置字段输入:
-  - 频道名称
-  - Bot Token (密码输入)
-  - Channel ID (Discord专用)
-- 凭证验证
-- 保存并连接
+- Token 类型频道：
+  - 输入配置字段
+  - 调用 `channel:validateCredentials` 校验
+  - 保存 `channel:saveConfig`
+  - 本地 addChannel 后重启 Gateway
+- WhatsApp（QR）频道：
+  - 请求二维码 `channel:requestWhatsAppQr`
+  - 监听 `channel:whatsapp-qr/success/error`
+  - 成功后保存配置并重启 Gateway
 
 ---
 
 ### 4.5 Skills (技能管理)
 
-**文件位置**: `src/pages/Skills/index.tsx`
-
-**功能说明**: 浏览、安装和管理AI技能扩展。
+**文件位置**：`src/pages/Skills/index.tsx`
 
 #### 4.5.1 标签页
 
-| 标签 | 内容 |
-|------|------|
-| 已安装 | 显示本地已安装的技能 |
-| 技能市场 | 从ClawHub搜索和安装技能 |
+- `已安装`（Installed）
+- `市场`（Marketplace）
+
+> 备注：Bundles 页签目前是注释状态，未启用。
 
 #### 4.5.2 已安装技能
 
-- **搜索过滤**: 按名称或描述搜索
-- **来源筛选**:
-  - 全部
-  - 内置 (Built-in)
-  - 市场安装 (Marketplace)
-- **技能卡片**:
-  - 技能图标
-  - 技能名称
-  - 描述
-  - 版本号
-  - 来源标识
-  - 启用/禁用开关
-  - 卸载按钮
+- 搜索与来源筛选（all / built-in / marketplace）
+- 支持启用/禁用
+- 非 core 且非 built-in 的技能支持卸载
+- 可打开本地 skills 目录
 
 #### 4.5.3 技能详情对话框
 
-- **信息标签页**:
-  - 描述
-  - 版本
-  - 作者
-  - 来源类型
-- **配置标签页**:
-  - API Key配置
-  - 环境变量配置
-  - 保存按钮
+- 信息页：描述、版本、作者、来源
+- 配置页：
+  - API Key
+  - Environment Variables（可增删键值）
+- 保存通过 `skill:updateConfig` 写入，再刷新技能列表
 
 #### 4.5.4 技能市场
 
-- 搜索框
-- 技能卡片 (来自ClawHub):
-  - 名称
-  - 描述
-  - 作者
-  - 下载量/评分
-  - 安装/卸载按钮
+- 通过 ClawHub 搜索技能
+- 支持安装 / 卸载
+- 安装后会尝试自动启用
 
 ---
 
 ### 4.6 Cron (定时任务)
 
-**文件位置**: `src/pages/Cron/index.tsx`
-
-**功能说明**: 管理AI智能体的定时自动化任务。
+**文件位置**：`src/pages/Cron/index.tsx`
 
 #### 4.6.1 统计卡片
 
-| 卡片 | 内容 |
-|------|------|
-| 总任务数 | 所有定时任务数量 |
-| 活跃 | 已启用的任务数 |
-| 暂停 | 已暂停的任务数 |
-| 失败 | 最近执行失败的任务数 |
+- 总任务数
+- 活跃任务数
+- 暂停任务数
+- 最近失败任务数
 
 #### 4.6.2 任务卡片
 
-- **头部**:
-  - 任务图标
-  - 任务名称
-  - 执行计划描述
-  - 状态标签 (Active/Paused)
-  - 启用开关
-- **内容**:
-  - 任务消息预览
-  - 目标频道
-  - 上次执行时间和结果
-  - 下次执行时间
-  - 错误信息 (如有)
-- **操作**:
-  - 立即执行
-  - 编辑
-  - 删除
+- 显示任务名、计划描述、启用状态
+- 显示消息预览、目标频道、上次执行、下次执行
+- 支持操作：立即执行、编辑、删除、启停切换
 
 #### 4.6.3 创建/编辑任务对话框
 
-- **任务名称**: 必填
-- **消息内容**: 必填，AI任务提示词
-- **执行计划**:
-  - 预设选项:
-    - 每分钟
-    - 每5分钟
-    - 每15分钟
-    - 每小时
-    - 每天9点
-    - 每天18点
-    - 每周一9点
-    - 每月1日9点
-  - 自定义Cron表达式
-- **目标频道**: 从已配置频道中选择
-- **Discord频道ID**: Discord专用配置
-- **立即启用**: 开关选项
+- 字段：任务名、消息、计划、目标频道、启用开关
+- 计划支持预设与自定义 cron 表达式
+- 兼容 Gateway `CronSchedule` 对象解析展示
+- 选中 Discord 时要求填写额外 `channelId`
 
 ---
 
 ### 4.7 Settings (系统设置)
 
-**文件位置**: `src/pages/Settings/index.tsx`
-
-**子组件**:
-- `ProvidersSettings.tsx` - AI供应商设置
-- `UpdateSettings.tsx` - 更新设置
-
-**功能说明**: 系统配置和偏好设置。
+**文件位置**：`src/pages/Settings/index.tsx`
 
 #### 4.7.1 外观设置
 
-- **主题**:
-  - 浅色模式
-  - 深色模式
-  - 跟随系统
-- **语言**:
-  - 中文
-  - English
+- 主题：light / dark / system
+- 语言：en / zh / ja
 
-#### 4.7.2 AI供应商设置 (ProvidersSettings)
+#### 4.7.2 AI 供应商设置（ProvidersSettings）
 
-- 供应商列表管理
-- 添加/编辑供应商
-- API密钥配置
-- 设为默认供应商
-- 凭证验证
+- Provider 列表管理（新增、删除、设默认）
+- 编辑 API Key / Base URL / Model ID（按类型）
+- 提交前可执行 API Key 校验
 
-#### 4.7.3 Gateway设置
+#### 4.7.3 Gateway 设置
 
-- **状态显示**: 运行状态、端口
-- **操作**:
-  - 重启Gateway
-  - 查看日志
-- **自动启动**: 应用启动时自动启动Gateway
+- 状态、端口、重启
+- 应用日志查看与打开目录
+- 开机自动启动 Gateway 开关
 
-#### 4.7.4 更新设置 (UpdateSettings)
+#### 4.7.4 更新设置（UpdateSettings）
 
-- 当前版本显示
-- 检查更新
-- 下载进度
-- **自动检查更新**
-- **自动下载更新**
+- 检查、下载、安装更新
+- 下载进度与版本说明展示
+- 自动下载开启后，下载完成进入自动安装倒计时
+- 支持取消自动安装倒计时
 
 #### 4.7.5 高级设置
 
-- **开发者模式**: 解锁高级功能
+- 开发者模式开关（`devModeUnlocked`）
 
-#### 4.7.6 开发者设置 (仅开发者模式)
+#### 4.7.6 开发者设置（仅开发者模式）
 
-- **控制台**: 打开Gateway控制台URL
-- **Gateway Token**: 查看/复制认证令牌
-- **CLI命令**: 获取/复制命令行命令
+- 打开 Gateway 控制台 URL
+- 加载并复制 Gateway token
+- 查看并复制 OpenClaw CLI 命令
+- macOS 非开发环境支持安装 `openclaw` 命令
 
 #### 4.7.7 关于
 
-- 应用名称和版本
-- 基于OpenClaw说明
-- 文档链接
-- GitHub链接
+- 应用信息、当前版本
+- 文档与 GitHub 链接
 
 ---
 
 ## 5. 组件库说明
 
-### 5.1 UI基础组件 (shadcn/ui)
+### 5.1 UI 基础组件（`src/components/ui/`）
 
-**位置**: `src/components/ui/`
+| 组件 | 文件 |
+|------|------|
+| Badge | `badge.tsx` |
+| Button | `button.tsx` |
+| Card | `card.tsx` |
+| Input | `input.tsx` |
+| Label | `label.tsx` |
+| Progress | `progress.tsx` |
+| Select | `select.tsx` |
+| Separator | `separator.tsx` |
+| Switch | `switch.tsx` |
+| Tabs | `tabs.tsx` |
+| Textarea | `textarea.tsx` |
+| Tooltip | `tooltip.tsx` |
 
-| 组件 | 文件 | 用途 |
-|------|------|------|
-| Badge | badge.tsx | 状态标签、计数标识 |
-| Button | button.tsx | 按钮 |
-| Card | card.tsx | 卡片容器 |
-| Input | input.tsx | 文本输入框 |
-| Label | label.tsx | 表单标签 |
-| Progress | progress.tsx | 进度条 |
-| Select | select.tsx | 下拉选择框 |
-| Separator | separator.tsx | 分隔线 |
-| Switch | switch.tsx | 开关控件 |
-| Tabs | tabs.tsx | 标签页 |
-| Textarea | textarea.tsx | 多行文本输入 |
-| Tooltip | tooltip.tsx | 工具提示 |
-
-### 5.2 布局组件
-
-**位置**: `src/components/layout/`
+### 5.2 布局组件（`src/components/layout/`）
 
 | 组件 | 文件 | 用途 |
 |------|------|------|
-| MainLayout | MainLayout.tsx | 主布局框架 |
-| Sidebar | Sidebar.tsx | 侧边导航栏 |
-| TitleBar | TitleBar.tsx | 窗口标题栏 |
+| MainLayout | `MainLayout.tsx` | 主体布局容器 |
+| Sidebar | `Sidebar.tsx` | 左侧导航 |
+| TitleBar | `TitleBar.tsx` | 自定义标题栏 |
 
-### 5.3 通用组件
-
-**位置**: `src/components/common/`
+### 5.3 通用组件（`src/components/common/`）
 
 | 组件 | 文件 | 用途 |
 |------|------|------|
-| ErrorBoundary | ErrorBoundary.tsx | 错误边界 |
-| LoadingSpinner | LoadingSpinner.tsx | 加载动画 |
-| StatusBadge | StatusBadge.tsx | 状态指示徽章 |
+| ErrorBoundary | `ErrorBoundary.tsx` | 错误边界 |
+| LoadingSpinner | `LoadingSpinner.tsx` | 加载动画 |
+| StatusBadge | `StatusBadge.tsx` | 状态标签 |
 
-### 5.4 设置组件
-
-**位置**: `src/components/settings/`
+### 5.4 设置相关组件（`src/components/settings/`）
 
 | 组件 | 文件 | 用途 |
 |------|------|------|
-| ProvidersSettings | ProvidersSettings.tsx | AI供应商配置面板 |
-| UpdateSettings | UpdateSettings.tsx | 更新管理面板 |
+| ProvidersSettings | `ProvidersSettings.tsx` | Provider 管理 |
+| UpdateSettings | `UpdateSettings.tsx` | 更新状态与操作 |
 
 ---
 
 ## 6. 状态管理
 
-### 6.1 Zustand Stores
+### 6.1 Zustand Stores（`src/stores/`）
 
-**位置**: `src/stores/`
-
-| Store | 文件 | 用途 |
-|-------|------|------|
-| chat | chat.ts | 对话消息、会话管理 |
-| channels | channels.ts | 频道配置和状态 |
-| cron | cron.ts | 定时任务管理 |
-| gateway | gateway.ts | Gateway进程状态 |
-| settings | settings.ts | 应用设置和偏好 |
-| skills | skills.ts | 技能管理和市场搜索 |
-| update | update.ts | 应用更新状态 |
+| Store | 文件 | 主要职责 |
+|-------|------|----------|
+| chat | `chat.ts` | 对话消息、流式状态、会话、附件映射 |
+| channels | `channels.ts` | 频道状态、拉取、删除、连接辅助 |
+| cron | `cron.ts` | 定时任务 CRUD 与触发 |
+| gateway | `gateway.ts` | Gateway 状态、RPC、事件转发 |
+| providers | `providers.ts` | Provider 列表、密钥、默认项、校验 |
+| settings | `settings.ts` | 主题、语言、启动/更新/开发者开关、setup 状态 |
+| skills | `skills.ts` | 技能列表、市场搜索、安装/卸载、启停 |
+| update | `update.ts` | 更新状态、下载进度、倒计时 |
 
 ### 6.2 关键状态说明
 
-#### gateway store
+#### gateway store（核心字段）
 
 ```typescript
-interface GatewayState {
-  status: {
-    state: 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
-    port: number;
-    pid: number | null;
-    error: string | null;
-    connectedAt: number | null;
-  };
-  start: () => Promise<void>;
-  stop: () => Promise<void>;
-  restart: () => Promise<void>;
+interface GatewayStatus {
+  state: 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
+  port: number;
+  pid?: number | null;
+  error?: string | null;
+  connectedAt?: number | null;
 }
 ```
 
-#### settings store
+#### settings store（核心字段）
 
 ```typescript
 interface SettingsState {
   theme: 'light' | 'dark' | 'system';
-  language: 'zh' | 'en';
+  language: string; // 实际由 SUPPORTED_LANGUAGES 驱动（en/zh/ja）
   gatewayAutoStart: boolean;
   autoCheckUpdate: boolean;
   autoDownloadUpdate: boolean;
   devModeUnlocked: boolean;
-  setupCompleted: boolean;
-  // ... setters
+  setupComplete: boolean;
 }
 ```
 
@@ -628,35 +518,43 @@ interface SettingsState {
 
 ### 7.1 支持语言
 
-- **中文 (zh)**: 简体中文
-- **English (en)**: 英语
+- English (`en`)
+- 中文 (`zh`)
+- 日本語 (`ja`)
 
-### 7.2 i18n配置
+### 7.2 i18n 资源结构
 
-**位置**: `src/i18n/`
-
-```
+```text
 src/i18n/
-├── index.ts          # i18n配置入口
-└── locales/
-    ├── en/
-    │   ├── chat.json
-    │   ├── channels.json
-    │   ├── common.json
-    │   ├── cron.json
-    │   ├── dashboard.json
-    │   ├── settings.json
-    │   ├── setup.json
-    │   └── skills.json
-    └── zh/
-        ├── chat.json
-        ├── channels.json
-        ├── common.json
-        ├── cron.json
-        ├── dashboard.json
-        ├── settings.json
-        ├── setup.json
-        └── skills.json
+├─ index.ts
+└─ locales/
+   ├─ en/
+   │  ├─ common.json
+   │  ├─ setup.json
+   │  ├─ dashboard.json
+   │  ├─ chat.json
+   │  ├─ channels.json
+   │  ├─ skills.json
+   │  ├─ cron.json
+   │  └─ settings.json
+   ├─ zh/
+   │  ├─ common.json
+   │  ├─ setup.json
+   │  ├─ dashboard.json
+   │  ├─ chat.json
+   │  ├─ channels.json
+   │  ├─ skills.json
+   │  ├─ cron.json
+   │  └─ settings.json
+   └─ ja/
+      ├─ common.json
+      ├─ setup.json
+      ├─ dashboard.json
+      ├─ chat.json
+      ├─ channels.json
+      ├─ skills.json
+      ├─ cron.json
+      └─ settings.json
 ```
 
 ### 7.3 使用方式
@@ -665,139 +563,149 @@ src/i18n/
 import { useTranslation } from 'react-i18next';
 
 const { t } = useTranslation('chat');
-// 使用: t('welcome.title')
+// 示例：t('welcome.title')
 ```
 
 ---
 
 ## 8. 定制化指南
 
+> 本章仅说明当前版本可直接改动点与需二次开发点。
+
 ### 8.1 品牌定制
 
 #### 8.1.1 需要修改的文件
 
-| 文件 | 修改内容 |
-|------|----------|
-| `package.json` | name, description, author |
-| `CLAUDE.md` | 项目概述和品牌信息 |
-| `README.md` | 英文文档 |
-| `README.zh-CN.md` | 中文文档 |
-| `src/assets/logo.svg` | 应用图标 |
-| `electron-builder.yml` | 产品名称、ID |
+**状态：已支持**
+
+| 文件 | 可定制内容 |
+|------|------------|
+| `package.json` | name / description / author |
+| `README.md` / `README.zh-CN.md` | 文案与对外说明 |
+| `src/assets/logo.svg` | 应用 logo |
+| `resources/` | 打包图标资源 |
+| `electron-builder.yml` | 应用标识与打包配置 |
+| `src/components/layout/TitleBar.tsx` | Windows/Linux 标题栏文案与图标 |
 
 #### 8.1.2 应用标题和图标
 
-- 窗口标题: `electron/main/index.ts`
-- 应用图标: `resources/` 目录下的图标文件
-- Dock/任务栏图标: `electron-builder.yml` 配置
+**状态：已支持**
+
+- 窗口标题栏文案可在 `TitleBar` 组件中调整
+- 打包图标由 `resources/` 与 `electron-builder.yml` 管理
 
 ### 8.2 功能定制
 
-#### 8.2.1 添加法律专用功能
+#### 8.2.1 添加法律专用功能页/模块
 
-**建议路径**:
+**状态：需二次开发（未内置）**
 
-1. **新建法律工具页面**: `src/pages/LegalTools/`
-2. **添加法律技能**: 在Setup向导中预装法律技能
-3. **定制欢迎界面**: 修改 `Chat/WelcomeScreen` 组件
-4. **添加法律模板**: 创建合同模板、文书模板组件
+建议方式：
 
-#### 8.2.2 修改AI系统提示词
+1. 在 `src/pages/` 新增业务页面（如 `LegalTools`）
+2. 在 `src/App.tsx` 与 `Sidebar.tsx` 注册路由与导航
+3. 根据需求接入 Gateway RPC 或本地服务
 
-在OpenClaw Gateway配置中设置法律领域专用的系统提示词。
+#### 8.2.2 修改系统提示词/业务策略
+
+**状态：需二次开发（未内置）**
+
+- 当前代码未提供“法律专用系统提示词管理页”
+- 需在 Gateway/OpenClaw 配置层实现并接入设置页面
 
 ### 8.3 界面定制
 
-#### 8.3.1 主题颜色
+#### 8.3.1 主题与视觉变量
 
-修改 `src/index.css` 中的CSS变量:
+**状态：已支持**
 
-```css
-:root {
-  --primary: ...;
-  --secondary: ...;
-  /* 其他主题变量 */
-}
-```
+- 通过全局样式与主题变量调整视觉风格
+- 可配合 `settings.theme` 提供多主题策略
 
-#### 8.3.2 侧边栏导航
+#### 8.3.2 侧边栏导航调整
 
-修改 `src/components/layout/Sidebar.tsx` 添加或移除导航项。
+**状态：已支持**
+
+- `src/components/layout/Sidebar.tsx` 中可调整导航项顺序、名称、图标与可见性
 
 ### 8.4 技能定制
 
-#### 8.4.1 预装法律技能
+#### 8.4.1 Setup 默认组件展示列表
 
-修改 `src/pages/Setup/index.tsx` 中的 `defaultSkills` 数组:
+**状态：部分已支持**
 
-```typescript
-const defaultSkills: DefaultSkill[] = [
-  { id: 'legal-research', name: 'Legal Research', description: '法律文献检索' },
-  { id: 'contract-review', name: 'Contract Review', description: '合同审查' },
-  { id: 'case-analysis', name: 'Case Analysis', description: '案例分析' },
-  // ...
-];
-```
+- `src/pages/Setup/index.tsx` 的 `defaultSkills` 当前用于 Installing 步骤展示
+- 若需“真正预装并逐项安装技能”，需额外实现安装编排逻辑（当前未内置）
 
 #### 8.4.2 技能市场集成
 
-与ClawHub集成，提供法律领域专用技能包。
+**状态：已支持（ClawHub） / 私有市场需二次开发**
+
+- 当前已接入 ClawHub 搜索与安装流程
+- 若需私有法律技能市场，需二次开发市场 API 与鉴权流程
 
 ---
 
 ## 附录
 
-### A. 文件目录结构
+### A. 文件目录结构（核心）
 
-```
-LawClaw/
-├── electron/              # Electron 主进程
-│   ├── main/             # 应用入口、窗口管理
-│   │   ├── index.ts      # 主进程入口
-│   │   ├── ipc-handlers.ts  # IPC处理器
-│   │   ├── menu.ts       # 菜单创建
-│   │   ├── tray.ts       # 系统托盘
-│   │   └── updater.ts    # 自动更新
-│   ├── gateway/          # OpenClaw Gateway 进程管理
-│   │   ├── manager.ts    # Gateway 管理器
-│   │   ├── protocol.ts   # 通信协议定义
-│   │   └── clawhub.ts    # ClawHub 服务
-│   ├── preload/          # 安全 IPC 桥接脚本
-│   └── utils/            # 工具模块
-├── src/                   # React 渲染进程
-│   ├── components/       # 可复用 UI 组件
-│   │   ├── ui/          # 基础组件 (shadcn/ui)
-│   │   ├── layout/      # 布局组件
-│   │   ├── common/      # 共享组件
-│   │   └── settings/    # 设置组件
-│   ├── pages/           # 应用页面
-│   │   ├── Setup/       # 初始设置向导
-│   │   ├── Dashboard/   # 首页仪表盘
-│   │   ├── Chat/        # AI 聊天界面
-│   │   ├── Channels/    # 频道管理
-│   │   ├── Skills/      # 技能浏览器和管理器
-│   │   ├── Cron/        # 定时任务
-│   │   └── Settings/    # 配置面板
-│   ├── stores/          # Zustand 状态仓库
-│   ├── lib/             # 前端工具库
-│   ├── types/           # TypeScript 类型定义
-│   ├── i18n/            # 国际化配置
-│   └── assets/          # 静态资源
-├── resources/            # 静态资源
-├── scripts/              # 构建和实用脚本
-└── tests/               # 测试套件
+```text
+ClawX/
+├─ electron/
+│  ├─ main/
+│  │  ├─ index.ts
+│  │  ├─ ipc-handlers.ts
+│  │  ├─ menu.ts
+│  │  ├─ tray.ts
+│  │  └─ updater.ts
+│  ├─ gateway/
+│  │  ├─ manager.ts
+│  │  ├─ protocol.ts
+│  │  └─ clawhub.ts
+│  ├─ preload/
+│  └─ utils/
+├─ src/
+│  ├─ components/
+│  │  ├─ ui/
+│  │  ├─ layout/
+│  │  ├─ common/
+│  │  └─ settings/
+│  ├─ pages/
+│  │  ├─ Setup/
+│  │  ├─ Dashboard/
+│  │  ├─ Chat/
+│  │  ├─ Channels/
+│  │  ├─ Skills/
+│  │  ├─ Cron/
+│  │  └─ Settings/
+│  ├─ stores/
+│  │  ├─ chat.ts
+│  │  ├─ channels.ts
+│  │  ├─ cron.ts
+│  │  ├─ gateway.ts
+│  │  ├─ providers.ts
+│  │  ├─ settings.ts
+│  │  ├─ skills.ts
+│  │  └─ update.ts
+│  ├─ lib/
+│  ├─ types/
+│  └─ i18n/
+├─ resources/
+├─ scripts/
+└─ tests/
 ```
 
 ### B. 开发命令
 
 ```bash
-# 初始化项目
+# 初始化（依赖 + bundled uv）
 pnpm run init
 
-# 开发模式
+# 开发
 pnpm dev
 
-# 代码检查
+# 代码质量
 pnpm lint
 pnpm typecheck
 
@@ -806,13 +714,18 @@ pnpm test
 pnpm test:e2e
 
 # 构建
+pnpm run build:vite
 pnpm build
-pnpm package
+pnpm package:win
+pnpm package:mac
+pnpm package:linux
 ```
+
+> 说明：仓库当前测试主流程以 Vitest 单测为主，`test:e2e` 为可选补充脚本。
 
 ### C. 相关链接
 
-- [OpenClaw GitHub](https://github.com/OpenClaw)
+- [ClawX GitHub](https://github.com/ValueCell-ai/ClawX)
 - [Electron 文档](https://www.electronjs.org/docs)
 - [React 文档](https://react.dev/)
 - [shadcn/ui](https://ui.shadcn.com/)

@@ -1,11 +1,14 @@
 /**
- * Provider Registry — single source of truth for backend provider metadata.
+ * Provider Registry - single source of truth for backend provider metadata.
  * Centralizes env var mappings, default models, and OpenClaw provider configs.
  *
  * NOTE: When adding a new provider type, also update src/lib/providers.ts
  */
 
 export const BUILTIN_PROVIDER_TYPES = [
+  'jurismind',
+  'moonshot_code_plan',
+  'glm_code_plan',
   'anthropic',
   'openai',
   'google',
@@ -22,8 +25,8 @@ interface ProviderModelEntry extends Record<string, unknown> {
   name: string;
 }
 
-
 interface ProviderBackendMeta {
+  canonicalProviderId?: string;
   envVar?: string;
   defaultModel?: string;
   /** OpenClaw models.providers config (omit for built-in providers like anthropic) */
@@ -36,6 +39,30 @@ interface ProviderBackendMeta {
 }
 
 const REGISTRY: Record<string, ProviderBackendMeta> = {
+  jurismind: {
+    envVar: 'JURISMIND_API_KEY',
+    defaultModel: 'jurismind/kimi-k2.5',
+    providerConfig: {
+      baseUrl: 'http://101.132.245.215:3001/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'JURISMIND_API_KEY',
+    },
+  },
+  moonshot_code_plan: {
+    canonicalProviderId: 'kimi-coding',
+    envVar: 'KIMI_API_KEY',
+    defaultModel: 'kimi-coding/k2p5',
+    // kimi-coding is built-in to OpenClaw; do not write models.providers for it.
+  },
+  glm_code_plan: {
+    envVar: 'GLM_CODE_PLAN_API_KEY',
+    defaultModel: 'glm-4.7',
+    providerConfig: {
+      baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      api: 'openai-completions',
+      apiKeyEnv: 'GLM_CODE_PLAN_API_KEY',
+    },
+  },
   anthropic: {
     envVar: 'ANTHROPIC_API_KEY',
     defaultModel: 'anthropic/claude-opus-4-6',
@@ -102,6 +129,11 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   mistral: { envVar: 'MISTRAL_API_KEY' },
 };
 
+const PROVIDER_ALIASES: Record<string, string[]> = {
+  'kimi-coding': ['moonshot_code_plan'],
+  moonshot_code_plan: ['kimi-coding'],
+};
+
 /** Get the environment variable name for a provider type */
 export function getProviderEnvVar(type: string): string | undefined {
   return REGISTRY[type]?.envVar;
@@ -117,6 +149,24 @@ export function getProviderConfig(
   type: string
 ): { baseUrl: string; api: string; apiKeyEnv: string; models?: ProviderModelEntry[] } | undefined {
   return REGISTRY[type]?.providerConfig;
+}
+
+/** Resolve application provider type to OpenClaw canonical provider ID. */
+export function getCanonicalProviderId(type: string): string {
+  return REGISTRY[type]?.canonicalProviderId || type;
+}
+
+/** Return all alias IDs that should be treated as the same provider. */
+export function getProviderAliasIds(type: string): string[] {
+  const canonical = getCanonicalProviderId(type);
+  return Array.from(
+    new Set<string>([
+      type,
+      canonical,
+      ...(PROVIDER_ALIASES[type] || []),
+      ...(PROVIDER_ALIASES[canonical] || []),
+    ])
+  );
 }
 
 /**

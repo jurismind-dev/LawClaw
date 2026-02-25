@@ -847,10 +847,8 @@ function ProviderContent({
         setKeyValid(true);
       }
 
-      const effectiveModelId =
-        selectedProviderData?.defaultModelId ||
-        modelId.trim() ||
-        undefined;
+      const effectiveBaseUrl = showBaseUrlField ? (baseUrl.trim() || undefined) : undefined;
+      const effectiveModelId = showModelIdField ? (modelId.trim() || undefined) : undefined;
 
       const providerIdForSave =
         selectedProvider === 'custom'
@@ -866,7 +864,7 @@ function ProviderContent({
           id: providerIdForSave,
           name: selectedProvider === 'custom' ? t('settings:aiProviders.custom') : (selectedProviderData?.name || selectedProvider),
           type: selectedProvider,
-          baseUrl: baseUrl.trim() || undefined,
+          baseUrl: effectiveBaseUrl,
           model: effectiveModelId,
           enabled: true,
           createdAt: new Date().toISOString(),

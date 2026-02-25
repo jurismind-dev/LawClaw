@@ -485,8 +485,8 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
         name || (typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name) || selectedType,
         apiKey.trim(),
         {
-          baseUrl: baseUrl.trim() || undefined,
-          model: (typeInfo?.defaultModelId || modelId.trim()) || undefined,
+          baseUrl: typeInfo?.showBaseUrl ? (baseUrl.trim() || undefined) : undefined,
+          model: typeInfo?.showModelId ? (modelId.trim() || undefined) : undefined,
         }
       );
     } catch {

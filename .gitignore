@@ -63,3 +63,4 @@ build/
 .cursor/
 .pnpm-store/
 .claude/
+.worktrees/

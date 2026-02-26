@@ -15,6 +15,12 @@ import { warmupNetworkOptimization } from '../utils/uv-env';
 import { runProviderStartupMigration } from '../utils/provider-migration';
 
 import { ClawHubService } from '../gateway/clawhub';
+import {
+  CLAWHUB_REGISTRY_URL,
+  CLAWHUB_SITE_URL,
+  JURISMINDHUB_REGISTRY_URL,
+  JURISMINDHUB_SITE_URL,
+} from '../gateway/market-source';
 
 // Disable GPU acceleration for better compatibility
 app.disableHardwareAcceleration();
@@ -26,7 +32,16 @@ const forceSetup = process.argv.includes('--force-setup') || process.env.FORCE_S
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 const gatewayManager = new GatewayManager();
-const clawHubService = new ClawHubService();
+const clawHubService = new ClawHubService({
+  market: 'clawhub',
+  siteUrl: CLAWHUB_SITE_URL,
+  registryUrl: CLAWHUB_REGISTRY_URL,
+});
+const jurismindHubService = new ClawHubService({
+  market: 'jurismindhub',
+  siteUrl: JURISMINDHUB_SITE_URL,
+  registryUrl: JURISMINDHUB_REGISTRY_URL,
+});
 
 /**
  * Resolve the icons directory path (works in both dev and packaged mode)
@@ -161,7 +176,7 @@ async function initialize(): Promise<void> {
   });
 
   // Register IPC handlers
-  registerIpcHandlers(gatewayManager, clawHubService, mainWindow);
+  registerIpcHandlers(gatewayManager, clawHubService, jurismindHubService, mainWindow);
 
   // Register update handlers
   registerUpdateHandlers(appUpdater, mainWindow);

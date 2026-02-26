@@ -104,6 +104,13 @@ const electronAPI = {
         'clawhub:uninstall',
         'clawhub:list',
         'clawhub:openSkillReadme',
+        'clawhub:openSkillPage',
+        'jurismindhub:search',
+        'jurismindhub:install',
+        'jurismindhub:uninstall',
+        'jurismindhub:list',
+        'jurismindhub:openSkillReadme',
+        'jurismindhub:openSkillPage',
         // UV
         'uv:check',
         'uv:install-all',

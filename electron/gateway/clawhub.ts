@@ -7,6 +7,12 @@ import fs from 'fs';
 import path from 'path';
 import { app, shell } from 'electron';
 import { getOpenClawConfigDir, ensureDir, getClawHubCliBinPath, getClawHubCliEntryPath } from '../utils/paths';
+import {
+  detectInstallSourceFromRegistry,
+  type SkillInstallSource,
+  type SkillMarket,
+  resolveSkillPageUrl,
+} from './market-source';
 
 export interface ClawHubSearchParams {
     query: string;
@@ -33,18 +39,30 @@ export interface ClawHubSkillResult {
     stars?: number;
 }
 
+export interface ClawHubServiceOptions {
+    market: SkillMarket;
+    siteUrl: string;
+    registryUrl: string;
+}
+
 export class ClawHubService {
     private workDir: string;
     private cliPath: string;
     private cliEntryPath: string;
     private useNodeRunner: boolean;
     private ansiRegex: RegExp;
+    private readonly market: SkillMarket;
+    private readonly siteUrl: string;
+    private readonly registryUrl: string;
 
-    constructor() {
+    constructor(options: ClawHubServiceOptions) {
         // Use the user's OpenClaw config directory (~/.openclaw) for skill management
         // This avoids installing skills into the project's openclaw submodule
         this.workDir = getOpenClawConfigDir();
         ensureDir(this.workDir);
+        this.market = options.market;
+        this.siteUrl = options.siteUrl;
+        this.registryUrl = options.registryUrl;
 
         const binPath = getClawHubCliBinPath();
         const entryPath = getClawHubCliEntryPath();
@@ -65,6 +83,31 @@ export class ClawHubService {
 
     private stripAnsi(line: string): string {
         return line.replace(this.ansiRegex, '').trim();
+    }
+
+    private readInstallSource(slug: string): SkillInstallSource {
+        const skillDir = path.join(this.workDir, 'skills', slug);
+        const candidates = [
+            path.join(skillDir, '.clawhub', 'origin.json'),
+            path.join(skillDir, '.clawhub', 'origin'),
+            path.join(skillDir, 'origin.json'),
+        ];
+
+        for (const candidate of candidates) {
+            try {
+                if (!fs.existsSync(candidate)) {
+                    continue;
+                }
+
+                const content = fs.readFileSync(candidate, 'utf8');
+                const parsed = JSON.parse(content) as { registry?: string };
+                return detectInstallSourceFromRegistry(parsed.registry);
+            } catch (error) {
+                console.warn(`Failed to parse skill origin metadata: ${candidate}`, error);
+            }
+        }
+
+        return 'unknown';
     }
 
     /**
@@ -91,6 +134,8 @@ export class ClawHubService {
                 ...process.env,
                 CI: 'true',
                 FORCE_COLOR: '0', // Disable colors for easier parsing
+                CLAWHUB_SITE: this.siteUrl,
+                CLAWHUB_REGISTRY: this.registryUrl,
             };
             if (this.useNodeRunner) {
                 env.ELECTRON_RUN_AS_NODE = '1';
@@ -267,7 +312,7 @@ export class ClawHubService {
     /**
      * List installed skills
      */
-    async listInstalled(): Promise<Array<{ slug: string; version: string }>> {
+    async listInstalled(): Promise<Array<{ slug: string; version: string; installSource: SkillInstallSource }>> {
         try {
             const output = await this.runCommand(['list']);
             if (!output || output.includes('No installed skills')) {
@@ -282,10 +327,11 @@ export class ClawHubService {
                     return {
                         slug: match[1],
                         version: match[2],
+                        installSource: this.readInstallSource(match[1]),
                     };
                 }
                 return null;
-            }).filter((s): s is { slug: string; version: string } => s !== null);
+            }).filter((s): s is { slug: string; version: string; installSource: SkillInstallSource } => s !== null);
         } catch (error) {
             console.error('ClawHub list error:', error);
             return [];
@@ -327,5 +373,11 @@ export class ClawHubService {
             console.error('Failed to open skill readme:', error);
             throw error;
         }
+    }
+
+    async openSkillPage(slug: string): Promise<boolean> {
+        const url = resolveSkillPageUrl(this.market, slug);
+        await shell.openExternal(url);
+        return true;
     }
 }

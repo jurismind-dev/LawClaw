@@ -55,13 +55,15 @@ import { forceSetup } from './index';
 export function registerIpcHandlers(
   gatewayManager: GatewayManager,
   clawHubService: ClawHubService,
+  jurismindHubService: ClawHubService,
   mainWindow: BrowserWindow
 ): void {
   // Gateway handlers
   registerGatewayHandlers(gatewayManager, mainWindow);
 
-  // ClawHub handlers
-  registerClawHubHandlers(clawHubService);
+  // Skills marketplace handlers
+  registerMarketplaceHandlers('clawhub', clawHubService);
+  registerMarketplaceHandlers('jurismindhub', jurismindHubService);
 
   // OpenClaw handlers
   registerOpenClawHandlers();
@@ -1060,14 +1062,16 @@ function registerShellHandlers(): void {
   });
 }
 
+type SkillsMarketChannel = 'clawhub' | 'jurismindhub';
+
 /**
- * ClawHub-related IPC handlers
+ * Skills marketplace IPC handlers (ClawHub / JurismindHub)
  */
-function registerClawHubHandlers(clawHubService: ClawHubService): void {
+function registerMarketplaceHandlers(channelPrefix: SkillsMarketChannel, service: ClawHubService): void {
   // Search skills
-  ipcMain.handle('clawhub:search', async (_, params: ClawHubSearchParams) => {
+  ipcMain.handle(`${channelPrefix}:search`, async (_, params: ClawHubSearchParams) => {
     try {
-      const results = await clawHubService.search(params);
+      const results = await service.search(params);
       return { success: true, results };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1075,9 +1079,9 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
   });
 
   // Install skill
-  ipcMain.handle('clawhub:install', async (_, params: ClawHubInstallParams) => {
+  ipcMain.handle(`${channelPrefix}:install`, async (_, params: ClawHubInstallParams) => {
     try {
-      await clawHubService.install(params);
+      await service.install(params);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1085,9 +1089,9 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
   });
 
   // Uninstall skill
-  ipcMain.handle('clawhub:uninstall', async (_, params: ClawHubUninstallParams) => {
+  ipcMain.handle(`${channelPrefix}:uninstall`, async (_, params: ClawHubUninstallParams) => {
     try {
-      await clawHubService.uninstall(params);
+      await service.uninstall(params);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1095,9 +1099,9 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
   });
 
   // List installed skills
-  ipcMain.handle('clawhub:list', async () => {
+  ipcMain.handle(`${channelPrefix}:list`, async () => {
     try {
-      const results = await clawHubService.listInstalled();
+      const results = await service.listInstalled();
       return { success: true, results };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1105,9 +1109,19 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
   });
 
   // Open skill readme
-  ipcMain.handle('clawhub:openSkillReadme', async (_, slug: string) => {
+  ipcMain.handle(`${channelPrefix}:openSkillReadme`, async (_, slug: string) => {
     try {
-      await clawHubService.openSkillReadme(slug);
+      await service.openSkillReadme(slug);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Open skill page in external browser
+  ipcMain.handle(`${channelPrefix}:openSkillPage`, async (_, slug: string) => {
+    try {
+      await service.openSkillPage(slug);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };

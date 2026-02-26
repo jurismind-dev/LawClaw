@@ -34,14 +34,29 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useSkillsStore } from '@/stores/skills';
+import { useSkillsStore, type SkillsMarket } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import jurismindHubLogo from '@/assets/logo.svg';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Skill, MarketplaceSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
 
+
+function getReadmeChannelBySkill(skill: Skill): 'clawhub:openSkillReadme' | 'jurismindhub:openSkillReadme' {
+  if (skill.installSource === 'jurismindhub') {
+    return 'jurismindhub:openSkillReadme';
+  }
+  return 'clawhub:openSkillReadme';
+}
+
+function getOpenSkillPageChannel(market: SkillsMarket): 'clawhub:openSkillPage' | 'jurismindhub:openSkillPage' {
+  if (market === 'jurismindhub') {
+    return 'jurismindhub:openSkillPage';
+  }
+  return 'clawhub:openSkillPage';
+}
 
 
 
@@ -82,16 +97,13 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
     }
   }, [skill.config]);
 
-  const handleOpenClawhub = async () => {
-    if (skill.slug) {
-      await window.electron.ipcRenderer.invoke('shell:openExternal', `https://clawhub.ai/s/${skill.slug}`);
-    }
-  };
-
   const handleOpenEditor = async () => {
     if (skill.slug) {
       try {
-        const result = await window.electron.ipcRenderer.invoke('clawhub:openSkillReadme', skill.slug) as { success: boolean; error?: string };
+        const result = await window.electron.ipcRenderer.invoke(
+          getReadmeChannelBySkill(skill),
+          skill.slug
+        ) as { success: boolean; error?: string };
         if (result.success) {
           toast.success(t('toast.openedEditor'));
         } else {
@@ -171,16 +183,10 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
               </CardTitle>
               <div className="flex gap-2 mt-2">
                 {skill.slug && !skill.isBundled && !skill.isCore && (
-                  <>
-                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleOpenClawhub}>
-                      <Globe className="h-3 w-3" />
-                      ClawHub
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleOpenEditor}>
-                      <FileCode className="h-3 w-3" />
-                      {t('detail.openManual')}
-                    </Button>
-                  </>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleOpenEditor}>
+                    <FileCode className="h-3 w-3" />
+                    {t('detail.openManual')}
+                  </Button>
                 )}
               </div>
             </div>
@@ -366,6 +372,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
 
 // Marketplace skill card component
 interface MarketplaceSkillCardProps {
+  market: SkillsMarket;
   skill: MarketplaceSkill;
   isInstalling: boolean;
   isInstalled: boolean;
@@ -374,6 +381,7 @@ interface MarketplaceSkillCardProps {
 }
 
 function MarketplaceSkillCard({
+  market,
   skill,
   isInstalling,
   isInstalled,
@@ -381,7 +389,7 @@ function MarketplaceSkillCard({
   onUninstall
 }: MarketplaceSkillCardProps) {
   const handleCardClick = () => {
-    window.electron.ipcRenderer.invoke('shell:openExternal', `https://clawhub.ai/s/${skill.slug}`);
+    window.electron.ipcRenderer.invoke(getOpenSkillPageChannel(market), skill.slug);
   };
 
   return (
@@ -401,7 +409,7 @@ function MarketplaceSkillCard({
                 <span>v{skill.version}</span>
                 {skill.author && (
                   <>
-                    <span>•</span>
+                    <span>|</span>
                     <span>{skill.author}</span>
                   </>
                 )}
@@ -526,22 +534,28 @@ export function Skills() {
     fetchSkills,
     enableSkill,
     disableSkill,
-    searchResults,
+    searchResultsByMarket,
+    searchingByMarket,
+    searchErrorByMarket,
     searchSkills,
     installSkill,
     uninstallSkill,
-    searching,
-    searchError,
     installing
   } = useSkillsStore();
   const { t } = useTranslation('skills');
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [searchQuery, setSearchQuery] = useState('');
-  const [marketplaceQuery, setMarketplaceQuery] = useState('');
+  const [marketplaceQueries, setMarketplaceQueries] = useState<Record<SkillsMarket, string>>({
+    clawhub: '',
+    jurismindhub: '',
+  });
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
-  const [activeTab, setActiveTab] = useState('all');
-  const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | 'marketplace'>('all');
-  const marketplaceDiscoveryAttemptedRef = useRef(false);
+  const [activeTab, setActiveTab] = useState<'all' | SkillsMarket>('all');
+  const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | SkillsMarket>('all');
+  const marketplaceDiscoveryAttemptedRef = useRef<Record<SkillsMarket, boolean>>({
+    clawhub: false,
+    jurismindhub: false,
+  });
 
   const isGatewayRunning = gatewayStatus.state === 'running';
   const [showGatewayWarning, setShowGatewayWarning] = useState(false);
@@ -571,33 +585,43 @@ export function Skills() {
   }, [fetchSkills, isGatewayRunning]);
 
   // Filter skills
-  const filteredSkills = skills.filter((skill) => {
-    const matchesSearch = skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      skill.description.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredSkills = skills
+    .filter((skill) => {
+      const matchesSearch =
+        skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        skill.description.toLowerCase().includes(searchQuery.toLowerCase());
 
-    let matchesSource = true;
-    if (selectedSource === 'built-in') {
-      matchesSource = !!skill.isBundled;
-    } else if (selectedSource === 'marketplace') {
-      matchesSource = !skill.isBundled;
-    }
+      let matchesSource = true;
+      if (selectedSource === 'built-in') {
+        matchesSource = !!skill.isBundled;
+      } else if (selectedSource === 'clawhub') {
+        matchesSource = !skill.isBundled && skill.installSource === 'clawhub';
+      } else if (selectedSource === 'jurismindhub') {
+        matchesSource = !skill.isBundled && skill.installSource === 'jurismindhub';
+      }
 
-    return matchesSearch && matchesSource;
-  }).sort((a, b) => {
-    // Enabled skills first
-    if (a.enabled && !b.enabled) return -1;
-    if (!a.enabled && b.enabled) return 1;
-    // Then core/bundled
-    if (a.isCore && !b.isCore) return -1;
-    if (!a.isCore && b.isCore) return 1;
-    // Finally alphabetical
-    return a.name.localeCompare(b.name);
-  });
+      return matchesSearch && matchesSource;
+    })
+    .sort((a, b) => {
+      // Enabled skills first
+      if (a.enabled && !b.enabled) return -1;
+      if (!a.enabled && b.enabled) return 1;
+      // Then core/bundled
+      if (a.isCore && !b.isCore) return -1;
+      if (!a.isCore && b.isCore) return 1;
+      // Finally alphabetical
+      return a.name.localeCompare(b.name);
+    });
 
   const sourceStats = {
     all: skills.length,
-    builtIn: skills.filter(s => s.isBundled).length,
-    marketplace: skills.filter(s => !s.isBundled).length,
+    builtIn: skills.filter((skill) => skill.isBundled).length,
+    clawhub: skills.filter(
+      (skill) => !skill.isBundled && skill.installSource === 'clawhub'
+    ).length,
+    jurismindhub: skills.filter(
+      (skill) => !skill.isBundled && skill.installSource === 'jurismindhub'
+    ).length,
   };
 
   // Handle toggle
@@ -637,23 +661,17 @@ export function Skills() {
     }
   }, [t]);
 
-  // Handle marketplace search
-  const handleMarketplaceSearch = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
-    searchSkills(marketplaceQuery);
-  }, [marketplaceQuery, searchSkills]);
-
-  // Auto-reset when query is cleared
-  useEffect(() => {
-    if (activeTab === 'marketplace' && marketplaceQuery === '' && marketplaceDiscoveryAttemptedRef.current) {
-      searchSkills('');
-    }
-  }, [marketplaceQuery, activeTab, searchSkills]);
+  const setMarketplaceQuery = useCallback((market: SkillsMarket, value: string) => {
+    setMarketplaceQueries((state) => ({
+      ...state,
+      [market]: value,
+    }));
+  }, []);
 
   // Handle install
-  const handleInstall = useCallback(async (slug: string) => {
+  const handleInstall = useCallback(async (market: SkillsMarket, slug: string) => {
     try {
-      await installSkill(slug);
+      await installSkill(market, slug);
       // Automatically enable after install
       // We need to find the skill id which is usually the slug
       await enableSkill(slug);
@@ -665,31 +683,180 @@ export function Skills() {
 
   // Initial marketplace load (Discovery)
   useEffect(() => {
-    if (activeTab !== 'marketplace') {
+    if (activeTab === 'all') {
       return;
     }
-    if (marketplaceQuery.trim()) {
+    const market = activeTab;
+    const query = marketplaceQueries[market];
+
+    if (query.trim()) {
       return;
     }
-    if (searching) {
+    if (searchingByMarket[market]) {
       return;
     }
-    if (marketplaceDiscoveryAttemptedRef.current) {
+    if (marketplaceDiscoveryAttemptedRef.current[market]) {
       return;
     }
-    marketplaceDiscoveryAttemptedRef.current = true;
-    searchSkills('');
-  }, [activeTab, marketplaceQuery, searching, searchSkills]);
+    marketplaceDiscoveryAttemptedRef.current[market] = true;
+    searchSkills(market, '');
+  }, [activeTab, marketplaceQueries, searchingByMarket, searchSkills]);
 
   // Handle uninstall
-  const handleUninstall = useCallback(async (slug: string) => {
+  const handleUninstall = useCallback(async (market: SkillsMarket, slug: string) => {
     try {
-      await uninstallSkill(slug);
+      await uninstallSkill(market, slug);
       toast.success(t('toast.uninstalled'));
     } catch (err) {
       toast.error(t('toast.failedUninstall') + ': ' + String(err));
     }
   }, [uninstallSkill, t]);
+
+  const handleMarketplaceSearch = useCallback(
+    (market: SkillsMarket, event: React.FormEvent) => {
+      event.preventDefault();
+      marketplaceDiscoveryAttemptedRef.current[market] = true;
+      searchSkills(market, marketplaceQueries[market]);
+    },
+    [marketplaceQueries, searchSkills]
+  );
+
+  // Auto-reset active market discovery when query is cleared
+  useEffect(() => {
+    if (activeTab === 'all') {
+      return;
+    }
+
+    if (marketplaceQueries[activeTab] === '' && marketplaceDiscoveryAttemptedRef.current[activeTab]) {
+      searchSkills(activeTab, '');
+    }
+  }, [activeTab, marketplaceQueries, searchSkills]);
+
+  const renderMarketplaceContent = (market: SkillsMarket) => {
+    const query = marketplaceQueries[market];
+    const searching = searchingByMarket[market];
+    const searchError = searchErrorByMarket[market];
+    const marketResults = searchResultsByMarket[market] || [];
+
+    return (
+      <div className="flex flex-col gap-4">
+        <Card className="border-muted/50 bg-muted/20">
+          <CardContent className="py-4 flex items-start gap-3">
+            <ShieldCheck className="h-5 w-5 text-muted-foreground mt-0.5" />
+            <div className="text-muted-foreground">
+              {t(`${market}.securityNote`)}
+            </div>
+          </CardContent>
+        </Card>
+        <div className="flex gap-4">
+          <form onSubmit={(event) => handleMarketplaceSearch(market, event)} className="flex-1 flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={t('searchMarketplace')}
+                value={query}
+                onChange={(event) => setMarketplaceQuery(market, event.target.value)}
+                className="pl-9 pr-9"
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                  onClick={() => setMarketplaceQuery(market, '')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <Button type="submit" disabled={searching} className="min-w-[100px]" asChild>
+              <motion.button whileTap={{ scale: 0.98 }}>
+                <AnimatePresence mode="wait" initial={false}>
+                  {searching ? (
+                    <motion.div
+                      key="searching"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="flex items-center justify-center gap-1"
+                    >
+                      {[0, 1, 2].map((i) => (
+                        <motion.span
+                          key={i}
+                          className="w-1.5 h-1.5 bg-current rounded-full"
+                          animate={{
+                            opacity: [0.3, 1, 0.3],
+                            scale: [0.8, 1, 0.8],
+                          }}
+                          transition={{
+                            duration: 0.8,
+                            repeat: Infinity,
+                            delay: i * 0.15,
+                          }}
+                        />
+                      ))}
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="search"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      {t('searchButton')}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.button>
+            </Button>
+          </form>
+        </div>
+
+        {searchError && (
+          <Card className="border-destructive/50 bg-destructive/5">
+            <CardContent className="py-3 text-sm text-destructive flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              <span>{t(`${market}.searchError`)}</span>
+            </CardContent>
+          </Card>
+        )}
+
+        {marketResults.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {marketResults.map((skill) => {
+              const isInstalled = skills.some(
+                (installedSkill) => installedSkill.id === skill.slug || installedSkill.name === skill.name
+              );
+              return (
+                <MarketplaceSkillCard
+                  key={skill.slug}
+                  market={market}
+                  skill={skill}
+                  isInstalling={!!installing[skill.slug]}
+                  isInstalled={isInstalled}
+                  onInstall={() => handleInstall(market, skill.slug)}
+                  onUninstall={() => handleUninstall(market, skill.slug)}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <Package className="h-12 w-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">{t(`${market}.title`)}</h3>
+              <p className="text-muted-foreground text-center max-w-sm">
+                {searching
+                  ? t(`${market}.searching`)
+                  : query
+                    ? t(`${market}.noResults`)
+                    : t(`${market}.emptyPrompt`)}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -736,15 +903,19 @@ export function Skills() {
       )}
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | SkillsMarket)}>
         <TabsList>
           <TabsTrigger value="all" className="gap-2">
             <Puzzle className="h-4 w-4" />
             {t('tabs.installed')}
           </TabsTrigger>
-          <TabsTrigger value="marketplace" className="gap-2">
+          <TabsTrigger value="clawhub" className="gap-2">
             <Globe className="h-4 w-4" />
-            {t('tabs.marketplace')}
+            {t('tabs.clawhub')}
+          </TabsTrigger>
+          <TabsTrigger value="jurismindhub" className="gap-2">
+            <img src={jurismindHubLogo} alt="" aria-hidden className="h-4 w-4 rounded-[2px]" />
+            {t('tabs.jurismindhub')}
           </TabsTrigger>
           {/* <TabsTrigger value="bundles" className="gap-2">
             <Package className="h-4 w-4" />
@@ -771,7 +942,7 @@ export function Skills() {
                 size="sm"
                 onClick={() => setSelectedSource('all')}
               >
-                All ({sourceStats.all})
+                {t('filter.all', { count: sourceStats.all })}
               </Button>
               <Button
                 variant={selectedSource === 'built-in' ? 'default' : 'outline'}
@@ -783,13 +954,22 @@ export function Skills() {
                 {t('filter.builtIn', { count: sourceStats.builtIn })}
               </Button>
               <Button
-                variant={selectedSource === 'marketplace' ? 'default' : 'outline'}
+                variant={selectedSource === 'clawhub' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setSelectedSource('marketplace')}
+                onClick={() => setSelectedSource('clawhub')}
                 className="gap-2"
               >
                 <Globe className="h-3 w-3" />
-                {t('filter.marketplace', { count: sourceStats.marketplace })}
+                {t('filter.clawhub', { count: sourceStats.clawhub })}
+              </Button>
+              <Button
+                variant={selectedSource === 'jurismindhub' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSelectedSource('jurismindhub')}
+                className="gap-2"
+              >
+                <img src={jurismindHubLogo} alt="" aria-hidden className="h-3 w-3 rounded-[2px]" />
+                {t('filter.jurismindhub', { count: sourceStats.jurismindhub })}
               </Button>
             </div>
           </div>
@@ -851,7 +1031,9 @@ export function Skills() {
                             className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleUninstall(skill.id);
+                              const sourceMarket: SkillsMarket =
+                                skill.installSource === 'jurismindhub' ? 'jurismindhub' : 'clawhub';
+                              handleUninstall(sourceMarket, skill.id);
                             }}
                             asChild
                           >
@@ -895,120 +1077,12 @@ export function Skills() {
           )}
         </TabsContent>
 
-        <TabsContent value="marketplace" className="space-y-6 mt-6">
-          <div className="flex flex-col gap-4">
-            <Card className="border-muted/50 bg-muted/20">
-              <CardContent className="py-4 flex items-start gap-3">
-                <ShieldCheck className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="text-muted-foreground">
-                  {t('marketplace.securityNote')}
-                </div>
-              </CardContent>
-            </Card>
-            <div className="flex gap-4">
-              <form onSubmit={handleMarketplaceSearch} className="flex-1 flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder={t('searchMarketplace')}
-                    value={marketplaceQuery}
-                    onChange={(e) => setMarketplaceQuery(e.target.value)}
-                    className="pl-9 pr-9"
-                  />
-                  {marketplaceQuery && (
-                    <button
-                      type="button"
-                      className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
-                      onClick={() => setMarketplaceQuery('')}
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-                <Button type="submit" disabled={searching} className="min-w-[100px]" asChild>
-                  <motion.button whileTap={{ scale: 0.98 }}>
-                    <AnimatePresence mode="wait" initial={false}>
-                      {searching ? (
-                        <motion.div
-                          key="searching"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="flex items-center justify-center gap-1"
-                        >
-                          {[0, 1, 2].map((i) => (
-                            <motion.span
-                              key={i}
-                              className="w-1.5 h-1.5 bg-current rounded-full"
-                              animate={{
-                                opacity: [0.3, 1, 0.3],
-                                scale: [0.8, 1, 0.8],
-                              }}
-                              transition={{
-                                duration: 0.8,
-                                repeat: Infinity,
-                                delay: i * 0.15,
-                              }}
-                            />
-                          ))}
-                        </motion.div>
-                      ) : (
-                        <motion.div
-                          key="search"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                        >
-                          {t('searchButton')}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.button>
-                </Button>
-              </form>
-            </div>
+        <TabsContent value="clawhub" className="space-y-6 mt-6">
+          {renderMarketplaceContent('clawhub')}
+        </TabsContent>
 
-            {searchError && (
-              <Card className="border-destructive/50 bg-destructive/5">
-                <CardContent className="py-3 text-sm text-destructive flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>{t('marketplace.searchError')}</span>
-                </CardContent>
-              </Card>
-            )}
-
-            {searchResults.length > 0 ? (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {searchResults.map((skill) => {
-                  const isInstalled = skills.some(s => s.id === skill.slug || s.name === skill.name); // Simple check, ideally check by ID/slug
-                  return (
-                    <MarketplaceSkillCard
-                      key={skill.slug}
-                      skill={skill}
-                      isInstalling={!!installing[skill.slug]}
-                      isInstalled={isInstalled}
-                      onInstall={() => handleInstall(skill.slug)}
-                      onUninstall={() => handleUninstall(skill.slug)}
-                    />
-                  );
-                })}
-              </div>
-            ) : (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <Package className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">{t('marketplace.title')}</h3>
-                  <p className="text-muted-foreground text-center max-w-sm">
-                    {searching
-                      ? t('marketplace.searching')
-                      : marketplaceQuery
-                        ? t('marketplace.noResults')
-                        : t('marketplace.emptyPrompt')}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+        <TabsContent value="jurismindhub" className="space-y-6 mt-6">
+          {renderMarketplaceContent('jurismindhub')}
         </TabsContent>
 
         {/* <TabsContent value="bundles" className="space-y-6 mt-6">

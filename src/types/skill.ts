@@ -19,6 +19,7 @@ export interface Skill {
   config?: Record<string, unknown>;
   isCore?: boolean;
   isBundled?: boolean;
+  installSource?: 'clawhub' | 'jurismindhub' | 'unknown';
   dependencies?: string[];
 }
 
@@ -45,6 +46,7 @@ export interface MarketplaceSkill {
   name: string;
   description: string;
   version: string;
+  market?: 'clawhub' | 'jurismindhub';
   author?: string;
   downloads?: number;
   stars?: number;

@@ -2,11 +2,21 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import enChat from '@/i18n/locales/en/chat.json';
+import enSkills from '@/i18n/locales/en/skills.json';
 import enSettings from '@/i18n/locales/en/settings.json';
 import jaChat from '@/i18n/locales/ja/chat.json';
+import jaSkills from '@/i18n/locales/ja/skills.json';
 import jaSettings from '@/i18n/locales/ja/settings.json';
 import zhChat from '@/i18n/locales/zh/chat.json';
+import zhSkills from '@/i18n/locales/zh/skills.json';
 import zhSettings from '@/i18n/locales/zh/settings.json';
+
+type SkillsLocale = {
+  tabs?: { clawhub?: string; jurismindhub?: string };
+  filter?: { clawhub?: string; jurismindhub?: string };
+  clawhub?: { securityNote?: string };
+  jurismindhub?: { securityNote?: string };
+};
 
 function collectTermPaths(value: unknown, term: string, basePath = ''): string[] {
   if (typeof value === 'string') {
@@ -42,6 +52,23 @@ describe('branding guard', () => {
     );
 
     expect(findings).toEqual([]);
+  });
+
+  it('defines split market keys for clawhub and jurismindhub locales', () => {
+    const locales: Array<{ name: string; data: SkillsLocale }> = [
+      { name: 'en.skills', data: enSkills },
+      { name: 'zh.skills', data: zhSkills },
+      { name: 'ja.skills', data: jaSkills },
+    ];
+
+    for (const locale of locales) {
+      expect(locale.data.tabs.clawhub).toBeTruthy();
+      expect(locale.data.tabs.jurismindhub).toBeTruthy();
+      expect(locale.data.filter.clawhub).toBeTruthy();
+      expect(locale.data.filter.jurismindhub).toBeTruthy();
+      expect(locale.data.clawhub.securityNote).toBeTruthy();
+      expect(locale.data.jurismindhub.securityNote).toBeTruthy();
+    }
   });
 
   it('uses LawClaw naming in tray labels and tooltip', () => {

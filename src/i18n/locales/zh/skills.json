@@ -8,14 +8,14 @@
     "installed": "已安装",
     "marketplace": "市场",
     "clawhub": "ClawHub",
-    "jurismindhub": "JurismindHub"
+    "jurismindhub": "JurisHub"
   },
   "filter": {
     "all": "全部 ({{count}})",
     "builtIn": "内置 ({{count}})",
     "marketplace": "市场 ({{count}})",
     "clawhub": "ClawHub ({{count}})",
-    "jurismindhub": "JurismindHub ({{count}})"
+    "jurismindhub": "JurisHub ({{count}})"
   },
   "search": "搜索技能...",
   "searchMarketplace": "搜索市场...",
@@ -80,11 +80,11 @@
     "searchError": "ClawHub 搜索失败。请检查您的连接或安装。"
   },
   "jurismindhub": {
-    "title": "JurismindHub 市场",
-    "securityNote": "安装前请点击技能卡片，在 JurismindHub 上查看其文档和安全信息。",
-    "searching": "正在搜索 JurismindHub...",
+    "title": "JurisHub 市场",
+    "securityNote": "安装前请点击技能卡片，在 JurisHub 上查看其文档和安全信息。",
+    "searching": "正在搜索 JurisHub...",
     "noResults": "未找到匹配的技能。",
     "emptyPrompt": "搜索新技能以扩展您的能力。",
-    "searchError": "JurismindHub 搜索失败。请检查您的连接或安装。"
+    "searchError": "JurisHub 搜索失败。请检查您的连接或安装。"
   }
 }

@@ -12,13 +12,14 @@ describe('skills market source', () => {
   it('exposes locked market endpoints', () => {
     expect(CLAWHUB_SITE_URL).toBe('https://clawhub.ai');
     expect(CLAWHUB_REGISTRY_URL).toBe('https://clawhub.ai');
-    expect(JURISMINDHUB_SITE_URL).toBe('http://192.168.31.145:3000');
-    expect(JURISMINDHUB_REGISTRY_URL).toBe('https://calculating-salmon-931.convex.site');
+    expect(JURISMINDHUB_SITE_URL).toBe('https://lawhub.jurismind.com');
+    expect(JURISMINDHUB_REGISTRY_URL).toBe('https://lawhub.jurismind.com');
   });
 
   it('detects install source from registry url', () => {
     expect(detectInstallSourceFromRegistry('https://clawhub.ai')).toBe('clawhub');
     expect(detectInstallSourceFromRegistry('https://auth.clawhub.ai')).toBe('clawhub');
+    expect(detectInstallSourceFromRegistry('https://lawhub.jurismind.com')).toBe('jurismindhub');
     expect(detectInstallSourceFromRegistry('https://calculating-salmon-931.convex.site')).toBe(
       'jurismindhub'
     );
@@ -31,7 +32,7 @@ describe('skills market source', () => {
       'https://clawhub.ai/s/legal-assistant'
     );
     expect(resolveSkillPageUrl('jurismindhub', 'legal-assistant')).toBe(
-      'http://192.168.31.145:3000/s/legal-assistant'
+      'https://lawhub.jurismind.com/s/legal-assistant'
     );
   });
 });

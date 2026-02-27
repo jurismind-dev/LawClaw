@@ -7,8 +7,9 @@ export type SkillInstallSource = SkillMarket | 'unknown';
 export const CLAWHUB_SITE_URL = 'https://clawhub.ai';
 export const CLAWHUB_REGISTRY_URL = 'https://clawhub.ai';
 
-export const JURISMINDHUB_SITE_URL = 'http://192.168.31.145:3000';
-export const JURISMINDHUB_REGISTRY_URL = 'https://calculating-salmon-931.convex.site';
+export const JURISMINDHUB_SITE_URL = 'https://lawhub.jurismind.com';
+export const JURISMINDHUB_REGISTRY_URL = 'https://lawhub.jurismind.com';
+const LEGACY_JURISMIND_REGISTRY_HOSTNAMES = ['calculating-salmon-931.convex.site'];
 
 function normalizeUrl(url?: string): string | null {
   if (!url) {
@@ -69,7 +70,11 @@ function isJurismindRegistry(registry?: string): boolean {
   const hostname = getHostname(normalizedRegistry);
   const jurismindHostname = getHostname(normalizedJurismindRegistry);
 
-  return Boolean(hostname && jurismindHostname && hostname === jurismindHostname);
+  return Boolean(
+    hostname &&
+      jurismindHostname &&
+      (hostname === jurismindHostname || LEGACY_JURISMIND_REGISTRY_HOSTNAMES.includes(hostname))
+  );
 }
 
 export function detectInstallSourceFromRegistry(registry?: string): SkillInstallSource {

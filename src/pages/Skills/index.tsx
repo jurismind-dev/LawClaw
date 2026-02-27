@@ -37,7 +37,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSkillsStore, type SkillsMarket } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import jurismindHubLogo from '@/assets/logo.svg';
+import jurisHubLogo from '@/assets/jurismind.svg';
+import { shouldAutoRefreshMarketplaceOnClear } from '@/pages/Skills/marketplace-query';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Skill, MarketplaceSkill } from '@/types/skill';
@@ -552,6 +553,10 @@ export function Skills() {
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | SkillsMarket>('all');
   const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | SkillsMarket>('all');
+  const previousMarketplaceQueriesRef = useRef<Record<SkillsMarket, string>>({
+    clawhub: '',
+    jurismindhub: '',
+  });
   const marketplaceDiscoveryAttemptedRef = useRef<Record<SkillsMarket, boolean>>({
     clawhub: false,
     jurismindhub: false,
@@ -721,13 +726,22 @@ export function Skills() {
     [marketplaceQueries, searchSkills]
   );
 
-  // Auto-reset active market discovery when query is cleared
+  // Auto-refresh the active marketplace only when query transitions from non-empty to empty.
+  // This avoids duplicate auto-discovery requests when switching tabs.
   useEffect(() => {
     if (activeTab === 'all') {
+      previousMarketplaceQueriesRef.current = marketplaceQueries;
       return;
     }
 
-    if (marketplaceQueries[activeTab] === '' && marketplaceDiscoveryAttemptedRef.current[activeTab]) {
+    const currentQuery = marketplaceQueries[activeTab];
+    const previousQuery = previousMarketplaceQueriesRef.current[activeTab];
+    previousMarketplaceQueriesRef.current = marketplaceQueries;
+
+    if (
+      marketplaceDiscoveryAttemptedRef.current[activeTab] &&
+      shouldAutoRefreshMarketplaceOnClear(previousQuery, currentQuery)
+    ) {
       searchSkills(activeTab, '');
     }
   }, [activeTab, marketplaceQueries, searchSkills]);
@@ -909,13 +923,13 @@ export function Skills() {
             <Puzzle className="h-4 w-4" />
             {t('tabs.installed')}
           </TabsTrigger>
+          <TabsTrigger value="jurismindhub" className="gap-2">
+            <img src={jurisHubLogo} alt="" aria-hidden className="h-4 w-4 rounded-[2px]" />
+            {t('tabs.jurismindhub')}
+          </TabsTrigger>
           <TabsTrigger value="clawhub" className="gap-2">
             <Globe className="h-4 w-4" />
             {t('tabs.clawhub')}
-          </TabsTrigger>
-          <TabsTrigger value="jurismindhub" className="gap-2">
-            <img src={jurismindHubLogo} alt="" aria-hidden className="h-4 w-4 rounded-[2px]" />
-            {t('tabs.jurismindhub')}
           </TabsTrigger>
           {/* <TabsTrigger value="bundles" className="gap-2">
             <Package className="h-4 w-4" />
@@ -968,7 +982,7 @@ export function Skills() {
                 onClick={() => setSelectedSource('jurismindhub')}
                 className="gap-2"
               >
-                <img src={jurismindHubLogo} alt="" aria-hidden className="h-3 w-3 rounded-[2px]" />
+                <img src={jurisHubLogo} alt="" aria-hidden className="h-3 w-3 rounded-[2px]" />
                 {t('filter.jurismindhub', { count: sourceStats.jurismindhub })}
               </Button>
             </div>

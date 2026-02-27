@@ -8,14 +8,14 @@
     "installed": "Installed",
     "marketplace": "Marketplace",
     "clawhub": "ClawHub",
-    "jurismindhub": "JurismindHub"
+    "jurismindhub": "JurisHub"
   },
   "filter": {
     "all": "All ({{count}})",
     "builtIn": "Built-in ({{count}})",
     "marketplace": "Marketplace ({{count}})",
     "clawhub": "ClawHub ({{count}})",
-    "jurismindhub": "JurismindHub ({{count}})"
+    "jurismindhub": "JurisHub ({{count}})"
   },
   "search": "Search skills...",
   "searchMarketplace": "Search marketplace...",
@@ -80,11 +80,11 @@
     "searchError": "ClawHub search failed. Check your connection or installation."
   },
   "jurismindhub": {
-    "title": "JurismindHub Marketplace",
-    "securityNote": "Click skill card to view its documentation and security information on JurismindHub before installation.",
-    "searching": "Searching JurismindHub...",
+    "title": "JurisHub Marketplace",
+    "securityNote": "Click skill card to view its documentation and security information on JurisHub before installation.",
+    "searching": "Searching JurisHub...",
     "noResults": "No skills found matching your search.",
     "emptyPrompt": "Search for new skills to expand your capabilities.",
-    "searchError": "JurismindHub search failed. Check your connection or installation."
+    "searchError": "JurisHub search failed. Check your connection or installation."
   }
 }

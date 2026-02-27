@@ -13,6 +13,7 @@ import {
   type SkillMarket,
   resolveSkillPageUrl,
 } from './market-source';
+import { isClawHubTimeoutFailure } from './clawhub-timeout';
 
 export interface ClawHubSearchParams {
     query: string;
@@ -167,14 +168,34 @@ export class ClawHubService {
 
             child.on('close', (code) => {
                 if (code !== 0 && code !== null) {
+                    const errorOutput = (stderr || stdout).trim();
+                    if (isClawHubTimeoutFailure(errorOutput)) {
+                        reject(new Error(`Timeout: ${errorOutput || 'ClawHub command timed out'}`));
+                        return;
+                    }
                     console.error(`ClawHub command failed with code ${code}`);
                     console.error('Stderr:', stderr);
-                    reject(new Error(`Command failed: ${stderr || stdout}`));
+                    reject(new Error(`Command failed: ${errorOutput}`));
                 } else {
                     resolve(stdout.trim());
                 }
             });
         });
+    }
+
+    private async runCommandWithRetry(args: string[], retries = 1): Promise<string> {
+        let lastError: unknown;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                return await this.runCommand(args);
+            } catch (error) {
+                lastError = error;
+                if (!isClawHubTimeoutFailure(String(error)) || attempt >= retries) {
+                    throw error;
+                }
+            }
+        }
+        throw lastError;
     }
 
     /**
@@ -192,7 +213,7 @@ export class ClawHubService {
                 args.push('--limit', String(params.limit));
             }
 
-            const output = await this.runCommand(args);
+            const output = await this.runCommandWithRetry(args);
             if (!output || output.includes('No skills found')) {
                 return [];
             }
@@ -222,6 +243,10 @@ export class ClawHubService {
                 return null;
             }).filter((s): s is ClawHubSkillResult => s !== null);
         } catch (error) {
+            if (isClawHubTimeoutFailure(String(error))) {
+                console.warn('ClawHub search timed out, returning empty result set.');
+                return [];
+            }
             console.error('ClawHub search error:', error);
             return [];
         }
@@ -237,7 +262,7 @@ export class ClawHubService {
                 args.push('--limit', String(params.limit));
             }
 
-            const output = await this.runCommand(args);
+            const output = await this.runCommandWithRetry(args);
             if (!output) return [];
 
             const lines = output.split('\n').filter(l => l.trim());
@@ -258,6 +283,10 @@ export class ClawHubService {
                 return null;
             }).filter((s): s is ClawHubSkillResult => s !== null);
         } catch (error) {
+            if (isClawHubTimeoutFailure(String(error))) {
+                console.warn('ClawHub explore timed out, returning empty result set.');
+                return [];
+            }
             console.error('ClawHub explore error:', error);
             return [];
         }

@@ -8,6 +8,8 @@ import type { Skill, MarketplaceSkill } from '../types/skill';
 export type SkillsMarket = 'clawhub' | 'jurismindhub';
 
 const MARKETS: SkillsMarket[] = ['clawhub', 'jurismindhub'];
+const inFlightSearches = new Map<string, Promise<void>>();
+let inFlightFetchSkills: Promise<void> | null = null;
 
 type GatewaySkillStatus = {
   skillKey: string;
@@ -48,6 +50,12 @@ type SearchResponse = {
 type MutateResponse = {
   success: boolean;
   error?: string;
+};
+
+type SkillConfigFromDisk = {
+  enabled?: boolean;
+  apiKey?: string;
+  env?: Record<string, string>;
 };
 
 function createEmptySearchResults(): Record<SkillsMarket, MarketplaceSkill[]> {
@@ -121,131 +129,132 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   error: null,
 
   fetchSkills: async () => {
-    // Only show loading state if we have no skills yet (initial load)
-    if (get().skills.length === 0) {
-      set({ loading: true, error: null });
+    if (inFlightFetchSkills) {
+      return inFlightFetchSkills;
     }
 
-    try {
-      // 1. Fetch from Gateway (running skills)
-      const gatewayResult = (await window.electron.ipcRenderer.invoke(
-        'gateway:rpc',
-        'skills.status'
-      )) as GatewayRpcResponse<GatewaySkillsStatusResult>;
-
-      // 2. Fetch from marketplace install records on disk
-      const installedResult = (await window.electron.ipcRenderer.invoke(
-        'clawhub:list'
-      )) as { success: boolean; results?: InstalledSkillResult[]; error?: string };
-
-      // 3. Fetch configurations directly from Electron (Gateway does not return all configs)
-      const configResult = (await window.electron.ipcRenderer.invoke(
-        'skill:getAllConfigs'
-      )) as Record<string, { apiKey?: string; env?: Record<string, string> }>;
-
-      let combinedSkills: Skill[] = [];
-      const currentSkills = get().skills;
-
-      if (gatewayResult.success && gatewayResult.result?.skills) {
-        combinedSkills = gatewayResult.result.skills.map((skillStatus: GatewaySkillStatus) => {
-          const directConfig = configResult[skillStatus.skillKey] || {};
-          const existing = currentSkills.find(
-            (skill) => skill.id === skillStatus.skillKey || skill.slug === skillStatus.slug
-          );
-
-          return {
-            id: skillStatus.skillKey,
-            slug: skillStatus.slug || skillStatus.skillKey,
-            name: skillStatus.name || skillStatus.skillKey,
-            description: skillStatus.description || '',
-            enabled: !skillStatus.disabled,
-            icon: skillStatus.emoji || '\uD83E\uDDE9',
-            version: skillStatus.version || '1.0.0',
-            author: skillStatus.author,
-            config: {
-              ...(skillStatus.config || {}),
-              ...directConfig,
-            },
-            isCore: skillStatus.bundled && skillStatus.always,
-            isBundled: skillStatus.bundled,
-            installSource: skillStatus.bundled
-              ? undefined
-              : resolveInstallSource(existing?.installSource),
-          } satisfies Skill;
-        });
-      } else if (currentSkills.length > 0) {
-        // If gateway is unavailable, keep current skills in UI.
-        combinedSkills = [...currentSkills];
+    const run = (async () => {
+      // Only show loading state if we have no skills yet (initial load)
+      if (get().skills.length === 0) {
+        set({ loading: true, error: null });
       }
 
-      // Merge in all locally installed skills (from marketplace manager)
-      if (installedResult.success && installedResult.results) {
-        installedResult.results.forEach((installedSkill: InstalledSkillResult) => {
-          const existing = combinedSkills.find((skill) => skill.id === installedSkill.slug);
-          if (existing) {
-            existing.version = installedSkill.version || existing.version;
-            existing.installSource = resolveInstallSource(installedSkill.installSource, existing.installSource);
-            return;
-          }
+      try {
+        // 1. Fetch from Gateway (running skills)
+        const gatewayResult = (await window.electron.ipcRenderer.invoke(
+          'gateway:rpc',
+          'skills.status'
+        )) as GatewayRpcResponse<GatewaySkillsStatusResult>;
 
-          const directConfig = configResult[installedSkill.slug] || {};
-          combinedSkills.push({
-            id: installedSkill.slug,
-            slug: installedSkill.slug,
-            name: installedSkill.slug,
-            description: 'Recently installed, initializing...',
-            enabled: false,
-            icon: '\uD83E\uDDE9',
-            version: installedSkill.version || 'unknown',
-            author: undefined,
-            config: directConfig,
-            isCore: false,
-            isBundled: false,
-            installSource: resolveInstallSource(installedSkill.installSource),
+        // 2. Fetch from marketplace install records on disk
+        const installedResult = (await window.electron.ipcRenderer.invoke(
+          'clawhub:list'
+        )) as { success: boolean; results?: InstalledSkillResult[]; error?: string };
+
+        // 3. Fetch configurations directly from Electron (Gateway does not return all configs)
+        const configResult = (await window.electron.ipcRenderer.invoke(
+          'skill:getAllConfigs'
+        )) as Record<string, SkillConfigFromDisk>;
+
+        let combinedSkills: Skill[] = [];
+        const currentSkills = get().skills;
+
+        if (gatewayResult.success && gatewayResult.result?.skills) {
+          combinedSkills = gatewayResult.result.skills.map((skillStatus: GatewaySkillStatus) => {
+            const directConfig = configResult[skillStatus.skillKey] || {};
+            const existing = currentSkills.find(
+              (skill) => skill.id === skillStatus.skillKey || skill.slug === skillStatus.slug
+            );
+
+            return {
+              id: skillStatus.skillKey,
+              slug: skillStatus.slug || skillStatus.skillKey,
+              name: skillStatus.name || skillStatus.skillKey,
+              description: skillStatus.description || '',
+              enabled: !skillStatus.disabled,
+              icon: skillStatus.emoji || '\uD83E\uDDE9',
+              version: skillStatus.version || '1.0.0',
+              author: skillStatus.author,
+              config: {
+                ...(skillStatus.config || {}),
+                ...directConfig,
+              },
+              isCore: skillStatus.bundled && skillStatus.always,
+              isBundled: skillStatus.bundled,
+              installSource: skillStatus.bundled
+                ? undefined
+                : resolveInstallSource(existing?.installSource),
+            } satisfies Skill;
           });
-        });
-      }
+        } else if (currentSkills.length > 0) {
+          // If gateway is unavailable, keep current skills in UI.
+          combinedSkills = [...currentSkills];
+        }
 
-      set({ skills: combinedSkills, loading: false, error: null });
-    } catch (error) {
-      console.error('Failed to fetch skills:', error);
-      set({ loading: false, error: String(error) });
-    }
+        // Merge in all locally installed skills (from marketplace manager)
+        if (installedResult.success && installedResult.results) {
+          installedResult.results.forEach((installedSkill: InstalledSkillResult) => {
+            const existing = combinedSkills.find((skill) => skill.id === installedSkill.slug);
+            if (existing) {
+              existing.version = installedSkill.version || existing.version;
+              existing.installSource = resolveInstallSource(
+                installedSkill.installSource,
+                existing.installSource
+              );
+              return;
+            }
+
+            const directConfig = configResult[installedSkill.slug] || {};
+            const persistedSkillState = currentSkills.find(
+              (skill) => skill.id === installedSkill.slug || skill.slug === installedSkill.slug
+            );
+            combinedSkills.push({
+              id: installedSkill.slug,
+              slug: installedSkill.slug,
+              name: installedSkill.slug,
+              description: 'Recently installed, initializing...',
+              enabled:
+                typeof directConfig.enabled === 'boolean'
+                  ? directConfig.enabled
+                  : (persistedSkillState?.enabled ?? false),
+              icon: '\uD83E\uDDE9',
+              version: installedSkill.version || 'unknown',
+              author: undefined,
+              config: directConfig,
+              isCore: false,
+              isBundled: false,
+              installSource: resolveInstallSource(installedSkill.installSource),
+            });
+          });
+        }
+
+        set({ skills: combinedSkills, loading: false, error: null });
+      } catch (error) {
+        console.error('Failed to fetch skills:', error);
+        set({ loading: false, error: String(error) });
+      }
+    })();
+
+    inFlightFetchSkills = run.finally(() => {
+      inFlightFetchSkills = null;
+    });
+
+    return inFlightFetchSkills;
   },
 
   searchSkills: async (market: SkillsMarket, query: string) => {
-    set((state) => ({
-      searching: true,
-      searchingByMarket: {
-        ...state.searchingByMarket,
-        [market]: true,
-      },
-      searchError: null,
-      searchErrorByMarket: {
-        ...state.searchErrorByMarket,
-        [market]: null,
-      },
-    }));
+    const requestKey = `${market}:${query}`;
+    const inFlight = inFlightSearches.get(requestKey);
+    if (inFlight) {
+      return inFlight;
+    }
 
-    try {
-      const result = (await window.electron.ipcRenderer.invoke(`${market}:search`, {
-        query,
-      })) as SearchResponse;
-
-      if (!result.success) {
-        throw new Error(result.error || 'Search failed');
-      }
-
-      const marketResults = (result.results || []).map((skill) => ({
-        ...skill,
-        market,
-      }));
-
+    const run = (async () => {
       set((state) => ({
-        searchResults: marketResults,
-        searchResultsByMarket: {
-          ...state.searchResultsByMarket,
-          [market]: marketResults,
+        searching: true,
+        searchingByMarket: {
+          ...state.searchingByMarket,
+          [market]: true,
         },
         searchError: null,
         searchErrorByMarket: {
@@ -253,28 +262,62 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
           [market]: null,
         },
       }));
-    } catch (error) {
-      const message = String(error);
-      set((state) => ({
-        searchError: message,
-        searchErrorByMarket: {
-          ...state.searchErrorByMarket,
-          [market]: message,
-        },
-      }));
-    } finally {
-      set((state) => {
-        const searchingByMarket = {
-          ...state.searchingByMarket,
-          [market]: false,
-        };
 
-        return {
-          searching: MARKETS.some((item) => searchingByMarket[item]),
-          searchingByMarket,
-        };
-      });
-    }
+      try {
+        const result = (await window.electron.ipcRenderer.invoke(`${market}:search`, {
+          query,
+        })) as SearchResponse;
+
+        if (!result.success) {
+          throw new Error(result.error || 'Search failed');
+        }
+
+        const marketResults = (result.results || []).map((skill) => ({
+          ...skill,
+          market,
+        }));
+
+        set((state) => ({
+          searchResults: marketResults,
+          searchResultsByMarket: {
+            ...state.searchResultsByMarket,
+            [market]: marketResults,
+          },
+          searchError: null,
+          searchErrorByMarket: {
+            ...state.searchErrorByMarket,
+            [market]: null,
+          },
+        }));
+      } catch (error) {
+        const message = String(error);
+        set((state) => ({
+          searchError: message,
+          searchErrorByMarket: {
+            ...state.searchErrorByMarket,
+            [market]: message,
+          },
+        }));
+      } finally {
+        set((state) => {
+          const searchingByMarket = {
+            ...state.searchingByMarket,
+            [market]: false,
+          };
+
+          return {
+            searching: MARKETS.some((item) => searchingByMarket[item]),
+            searchingByMarket,
+          };
+        });
+      }
+    })();
+
+    inFlightSearches.set(requestKey, run);
+    run.finally(() => {
+      inFlightSearches.delete(requestKey);
+    });
+    return run;
   },
 
   installSkill: async (market: SkillsMarket, slug: string, version?: string) => {

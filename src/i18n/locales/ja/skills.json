@@ -8,14 +8,14 @@
     "installed": "インストール済み",
     "marketplace": "マーケットプレイス",
     "clawhub": "ClawHub",
-    "jurismindhub": "JurismindHub"
+    "jurismindhub": "JurisHub"
   },
   "filter": {
     "all": "すべて ({{count}})",
     "builtIn": "内蔵 ({{count}})",
     "marketplace": "マーケットプレイス ({{count}})",
     "clawhub": "ClawHub ({{count}})",
-    "jurismindhub": "JurismindHub ({{count}})"
+    "jurismindhub": "JurisHub ({{count}})"
   },
   "search": "スキルを検索...",
   "searchMarketplace": "マーケットプレイスを検索...",
@@ -80,11 +80,11 @@
     "searchError": "ClawHub検索に失敗しました。接続またはインストールを確認してください。"
   },
   "jurismindhub": {
-    "title": "JurismindHub マーケットプレイス",
-    "securityNote": "インストール前にスキルカードをクリックして、JurismindHubでドキュメントとセキュリティ情報を確認してください。",
-    "searching": "JurismindHubを検索中...",
+    "title": "JurisHub マーケットプレイス",
+    "securityNote": "インストール前にスキルカードをクリックして、JurisHubでドキュメントとセキュリティ情報を確認してください。",
+    "searching": "JurisHubを検索中...",
     "noResults": "検索に一致するスキルが見つかりません。",
     "emptyPrompt": "新しいスキルを検索して機能を拡張しましょう。",
-    "searchError": "JurismindHub検索に失敗しました。接続またはインストールを確認してください。"
+    "searchError": "JurisHub検索に失敗しました。接続またはインストールを確認してください。"
   }
 }

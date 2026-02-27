@@ -71,6 +71,32 @@ describe('branding guard', () => {
     }
   });
 
+  it('uses JurisHub naming in skills locales', () => {
+    const locales: Array<{ name: string; data: unknown }> = [
+      { name: 'en.skills', data: enSkills },
+      { name: 'zh.skills', data: zhSkills },
+      { name: 'ja.skills', data: jaSkills },
+    ];
+
+    for (const locale of locales) {
+      const legacyPaths = collectTermPaths(locale.data, 'JurismindHub');
+      const newBrandPaths = collectTermPaths(locale.data, 'JurisHub');
+      expect(legacyPaths, `${locale.name} still contains legacy brand`).toEqual([]);
+      expect(newBrandPaths.length, `${locale.name} should contain new brand`).toBeGreaterThan(0);
+    }
+  });
+
+  it('renders JurisHub tab before ClawHub and uses jurismind icon asset', () => {
+    const skillsPageSource = readFileSync(resolve(process.cwd(), 'src/pages/Skills/index.tsx'), 'utf8');
+    const jurishubTab = skillsPageSource.indexOf('<TabsTrigger value="jurismindhub"');
+    const clawhubTab = skillsPageSource.indexOf('<TabsTrigger value="clawhub"');
+
+    expect(skillsPageSource).toContain("from '@/assets/jurismind.svg'");
+    expect(jurishubTab).toBeGreaterThan(-1);
+    expect(clawhubTab).toBeGreaterThan(-1);
+    expect(jurishubTab).toBeLessThan(clawhubTab);
+  });
+
   it('uses LawClaw naming in tray labels and tooltip', () => {
     const traySource = readFileSync(resolve(process.cwd(), 'electron/main/tray.ts'), 'utf8');
     expect(traySource).not.toContain('ClawX - AI Assistant');

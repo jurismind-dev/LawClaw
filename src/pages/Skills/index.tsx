@@ -37,7 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSkillsStore, type SkillsMarket } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import jurismindHubLogo from '@/assets/logo.svg';
+import jurisHubLogo from '@/assets/jurismind.svg';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Skill, MarketplaceSkill } from '@/types/skill';
@@ -909,13 +909,13 @@ export function Skills() {
             <Puzzle className="h-4 w-4" />
             {t('tabs.installed')}
           </TabsTrigger>
+          <TabsTrigger value="jurismindhub" className="gap-2">
+            <img src={jurisHubLogo} alt="" aria-hidden className="h-4 w-4 rounded-[2px]" />
+            {t('tabs.jurismindhub')}
+          </TabsTrigger>
           <TabsTrigger value="clawhub" className="gap-2">
             <Globe className="h-4 w-4" />
             {t('tabs.clawhub')}
-          </TabsTrigger>
-          <TabsTrigger value="jurismindhub" className="gap-2">
-            <img src={jurismindHubLogo} alt="" aria-hidden className="h-4 w-4 rounded-[2px]" />
-            {t('tabs.jurismindhub')}
           </TabsTrigger>
           {/* <TabsTrigger value="bundles" className="gap-2">
             <Package className="h-4 w-4" />
@@ -968,7 +968,7 @@ export function Skills() {
                 onClick={() => setSelectedSource('jurismindhub')}
                 className="gap-2"
               >
-                <img src={jurismindHubLogo} alt="" aria-hidden className="h-3 w-3 rounded-[2px]" />
+                <img src={jurisHubLogo} alt="" aria-hidden className="h-3 w-3 rounded-[2px]" />
                 {t('filter.jurismindhub', { count: sourceStats.jurismindhub })}
               </Button>
             </div>

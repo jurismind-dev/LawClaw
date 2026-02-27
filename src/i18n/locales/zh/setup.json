@@ -99,7 +99,11 @@
         "error": "\u8bbe\u7f6e\u9519\u8bef\uff1a",
         "restart": "\u5c1d\u8bd5\u91cd\u542f\u5e94\u7528",
         "wait": "\u8fd9\u53ef\u80fd\u9700\u8981\u4e00\u70b9\u65f6\u95f4...",
-        "skip": "\u8df3\u8fc7\u6b64\u6b65\u9aa4"
+        "skip": "\u8df3\u8fc7\u6b64\u6b65\u9aa4",
+        "retry": "\u91cd\u8bd5\u5b89\u88c5",
+        "qqInstallFailed": "QQ \u63d2\u4ef6\u5b89\u88c5\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u540e\u7ee7\u7eed\u5b89\u88c5\u3002",
+        "qqPluginName": "QQ \u63d2\u4ef6",
+        "qqPluginDesc": "QQ \u6e20\u9053\u63d2\u4ef6\u5b89\u88c5"
     },
     "complete": {
         "title": "\u8bbe\u7f6e\u5b8c\u6210\uff01",

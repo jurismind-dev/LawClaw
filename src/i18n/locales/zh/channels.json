@@ -268,6 +268,26 @@
                 "创建一个新的 Bot 账户",
                 "复制访问令牌"
             ]
+        },
+        "qqbot": {
+            "description": "通过 @sliverp/qqbot 插件连接 QQ",
+            "docsUrl": "https://www.npmjs.com/package/@sliverp/qqbot",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "您的 QQ App ID"
+                },
+                "clientSecret": {
+                    "label": "Client Secret",
+                    "placeholder": "您的 QQ Client Secret"
+                }
+            },
+            "instructions": [
+                "阅读 @sliverp/qqbot 插件文档并完成基础安装。",
+                "在 QQ 开发者平台获取 App ID 和 Client Secret。",
+                "填写 App ID 和 Client Secret 并保存渠道配置。",
+                "完成 QQ 插件安装后继续引导流程。"
+            ]
         }
     },
     "viewDocs": "查看文档"

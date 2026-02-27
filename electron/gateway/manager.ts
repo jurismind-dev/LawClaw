@@ -6,10 +6,11 @@ import { app } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import { 
+  getOpenClawConfigDir,
   getOpenClawDir, 
   getOpenClawEntryPath, 
   isOpenClawBuilt, 
@@ -22,6 +23,11 @@ import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } fro
 import { logger } from '../utils/logger';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
+import {
+  detectPluginInstallationState,
+  savePluginChannelConfigBackup,
+  stripPluginChannelConfigForStartup,
+} from '../utils/openclaw-plugin-install';
 import {
   loadOrCreateDeviceIdentity,
   signDevicePayload,
@@ -175,6 +181,40 @@ export class GatewayManager extends EventEmitter {
     if (msg.includes('Debugger attached')) return { level: 'debug', normalized: msg };
 
     return { level: 'warn', normalized: msg };
+  }
+
+  private sanitizePluginBackedChannelsBeforeStart(): void {
+    const pluginId = 'qqbot';
+    const configDir = getOpenClawConfigDir();
+    const configPath = path.join(configDir, 'openclaw.json');
+    const pluginDir = path.join(configDir, 'extensions', pluginId);
+
+    if (!existsSync(configPath)) {
+      return;
+    }
+
+    try {
+      const raw = readFileSync(configPath, 'utf-8');
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const detection = detectPluginInstallationState(pluginId, {
+        hasExtensionDir: existsSync(pluginDir),
+        config: parsed,
+      });
+      const stripped = stripPluginChannelConfigForStartup(parsed, pluginId, detection.installed);
+
+      if (!stripped.removedChannelConfig) {
+        return;
+      }
+
+      writeFileSync(configPath, JSON.stringify(stripped.config, null, 2), 'utf-8');
+      savePluginChannelConfigBackup(configDir, pluginId, stripped.removedChannelConfig);
+
+      logger.warn(
+        'Removed channels.qqbot from OpenClaw config because qqbot plugin is not installed; backup saved'
+      );
+    } catch (error) {
+      logger.warn('Failed to sanitize plugin-backed channel config before Gateway start', error);
+    }
   }
   
   /**
@@ -542,6 +582,8 @@ export class GatewayManager extends EventEmitter {
    * Uses OpenClaw npm package from node_modules (dev) or resources (production)
    */
   private async startProcess(): Promise<void> {
+    this.sanitizePluginBackedChannelsBeforeStart();
+
     const openclawDir = getOpenClawDir();
     const entryScript = getOpenClawEntryPath();
     

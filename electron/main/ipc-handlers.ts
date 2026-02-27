@@ -3,8 +3,9 @@
  * Registers all IPC handlers for main-renderer communication
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
-import { existsSync, copyFileSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { existsSync, copyFileSync, statSync, readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
@@ -22,7 +23,14 @@ import {
   getAllProvidersWithKeyInfo,
   type ProviderConfig,
 } from '../utils/secure-storage';
-import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir, ensureDir } from '../utils/paths';
+import {
+  getOpenClawStatus,
+  getOpenClawDir,
+  getOpenClawConfigDir,
+  getOpenClawSkillsDir,
+  getResourcesDir,
+  ensureDir,
+} from '../utils/paths';
 import { getOpenClawCliCommand, installOpenClawCliMac } from '../utils/openclaw-cli';
 import { getSetting } from '../utils/store';
 import {
@@ -47,6 +55,17 @@ import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig, getProviderEnvVar } from '../utils/provider-registry';
 import { validateApiKeyWithProvider } from '../utils/provider-validation';
+import { applyOpenClawConfigEnvFallbacks } from '../utils/openclaw-config-env';
+import {
+  detectPluginInstallationState,
+  clearPluginChannelConfigBackup,
+  isAlreadyInstalledErrorMessage,
+  readPluginChannelConfigBackup,
+  restorePluginChannelConfigAfterInstall,
+  savePluginChannelConfigBackup,
+  sanitizePluginPackageManifestForLocalInstall,
+  stripPluginChannelConfigForInstall,
+} from '../utils/openclaw-plugin-install';
 import { forceSetup } from './index';
 
 /**
@@ -584,6 +603,251 @@ function registerGatewayHandlers(
  * For checking package status and channel configuration
  */
 function registerOpenClawHandlers(): void {
+  const QQ_PLUGIN_ID = 'qqbot';
+  const QQ_PLUGIN_VERSION = '1.5.0';
+  const QQ_PLUGIN_NPM_SPEC = `@sliverp/${QQ_PLUGIN_ID}@${QQ_PLUGIN_VERSION}`;
+
+  const runOpenClawCli = async (args: string[]): Promise<{
+    success: boolean;
+    stdout: string;
+    stderr: string;
+    error?: string;
+  }> => {
+    try {
+      const status = getOpenClawStatus();
+      if (!status.packageExists || !existsSync(status.entryPath)) {
+        return {
+          success: false,
+          stdout: '',
+          stderr: '',
+          error: `OpenClaw entry script not found at: ${status.entryPath}`,
+        };
+      }
+
+      const openclawConfigDir = getOpenClawConfigDir();
+      ensureDir(openclawConfigDir);
+
+      let cliEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+      };
+      try {
+        const configPath = join(openclawConfigDir, 'openclaw.json');
+        if (existsSync(configPath)) {
+          const configRaw = readFileSync(configPath, 'utf-8');
+          cliEnv = applyOpenClawConfigEnvFallbacks(configRaw, cliEnv);
+        }
+      } catch (error) {
+        logger.warn('Failed to apply OpenClaw config env fallbacks for CLI execution', error);
+      }
+
+      return await new Promise((resolve) => {
+        const child = spawn(process.execPath, [status.entryPath, ...args], {
+          cwd: openclawConfigDir,
+          env: cliEnv,
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        child.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        child.on('error', (error) => {
+          resolve({
+            success: false,
+            stdout,
+            stderr,
+            error: String(error),
+          });
+        });
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            resolve({ success: true, stdout, stderr });
+            return;
+          }
+          resolve({
+            success: false,
+            stdout,
+            stderr,
+            error: stderr.trim() || stdout.trim() || `openclaw exited with code ${String(code)}`,
+          });
+        });
+      });
+    } catch (error) {
+      return {
+        success: false,
+        stdout: '',
+        stderr: '',
+        error: String(error),
+      };
+    }
+  };
+
+  const runCommand = async (
+    command: string,
+    args: string[],
+    cwd: string,
+    useShell: boolean
+  ): Promise<{
+    success: boolean;
+    stdout: string;
+    stderr: string;
+    error?: string;
+  }> => {
+    return await new Promise((resolve) => {
+      const child = spawn(command, args, {
+        cwd,
+        shell: useShell,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('error', (error) => {
+        resolve({
+          success: false,
+          stdout,
+          stderr,
+          error: String(error),
+        });
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true, stdout, stderr });
+          return;
+        }
+        resolve({
+          success: false,
+          stdout,
+          stderr,
+          error: stderr.trim() || stdout.trim() || `${command} exited with code ${String(code)}`,
+        });
+      });
+    });
+  };
+
+  const prepareQqbotLocalInstallDir = async (): Promise<{
+    success: boolean;
+    tempDir?: string;
+    installPath?: string;
+    error?: string;
+    details?: string;
+  }> => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'clawx-qqbot-install-'));
+    const extractDir = join(tempDir, 'extract');
+    mkdirSync(extractDir, { recursive: true });
+
+    try {
+      let archivePath = join(
+        getResourcesDir(),
+        'plugins',
+        QQ_PLUGIN_ID,
+        `qqbot-${QQ_PLUGIN_VERSION}.tgz`
+      );
+
+      if (!existsSync(archivePath)) {
+        if (app.isPackaged) {
+          return {
+            success: false,
+            error: `Bundled plugin package not found: ${archivePath}`,
+          };
+        }
+
+        const packResult = await runCommand(
+          'npm',
+          ['pack', QQ_PLUGIN_NPM_SPEC, '--silent'],
+          tempDir,
+          true
+        );
+        if (!packResult.success) {
+          return {
+            success: false,
+            error: packResult.error || 'Failed to download QQ plugin package',
+            details: packResult.stderr || packResult.stdout,
+          };
+        }
+
+        const packedName = packResult.stdout
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .pop();
+
+        if (!packedName) {
+          return {
+            success: false,
+            error: 'npm pack completed but returned no archive filename',
+            details: packResult.stdout,
+          };
+        }
+
+        archivePath = join(tempDir, packedName);
+      }
+
+      // Keep tar execution shell-free so archive paths with spaces are handled safely.
+      const extractResult = await runCommand('tar', ['-xzf', archivePath, '-C', extractDir], tempDir, false);
+      if (!extractResult.success) {
+        return {
+          success: false,
+          error: extractResult.error || 'Failed to extract QQ plugin archive',
+          details: extractResult.stderr || extractResult.stdout,
+        };
+      }
+
+      const installPath = join(extractDir, 'package');
+      sanitizePluginPackageManifestForLocalInstall(installPath);
+
+      return {
+        success: true,
+        tempDir,
+        installPath,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+  };
+
+  const detectPluginInstalled = (
+    pluginId: string
+  ): { installed: boolean; source?: 'extensions' | 'plugins.installs' | 'plugins.load.paths' } => {
+    const openclawConfigDir = getOpenClawConfigDir();
+    const pluginDir = join(openclawConfigDir, 'extensions', pluginId);
+    const configPath = join(openclawConfigDir, 'openclaw.json');
+
+    let parsedConfig: Record<string, unknown> | undefined;
+    if (existsSync(configPath)) {
+      try {
+        const raw = readFileSync(configPath, 'utf-8');
+        parsedConfig = JSON.parse(raw) as Record<string, unknown>;
+      } catch (error) {
+        logger.warn('Failed to parse OpenClaw config while detecting plugin installation state', error);
+      }
+    }
+
+    return detectPluginInstallationState(pluginId, {
+      hasExtensionDir: existsSync(pluginDir),
+      config: parsedConfig,
+    });
+  };
 
   // Get OpenClaw package status
   ipcMain.handle('openclaw:status', () => {
@@ -634,6 +898,168 @@ function registerOpenClawHandlers(): void {
   // Install a system-wide openclaw command on macOS (requires admin prompt)
   ipcMain.handle('openclaw:installCliMac', async () => {
     return installOpenClawCliMac();
+  });
+
+  // Check whether a plugin is installed in ~/.openclaw/extensions/<pluginId>
+  ipcMain.handle('openclaw:isPluginInstalled', async (_, pluginId: string) => {
+    try {
+      if (!pluginId || typeof pluginId !== 'string') {
+        return { success: false, installed: false, error: 'Invalid plugin ID' };
+      }
+      const detection = detectPluginInstalled(pluginId);
+      return { success: true, installed: detection.installed, source: detection.source };
+    } catch (error) {
+      return { success: false, installed: false, error: String(error) };
+    }
+  });
+
+  // Install a bundled plugin tarball from resources/plugins/<pluginId>/
+  ipcMain.handle('openclaw:installBundledPlugin', async (_, pluginId: string) => {
+    const openclawConfigDir = getOpenClawConfigDir();
+    const configPath = join(openclawConfigDir, 'openclaw.json');
+    let strippedChannelConfig: Record<string, unknown> | undefined;
+    let tempInstallDir: string | undefined;
+    let shouldRestoreChannelConfig = false;
+
+    const restoreChannelConfigAfterInstall = (): void => {
+      try {
+        if (!existsSync(configPath)) {
+          return;
+        }
+
+        const backupConfig = readPluginChannelConfigBackup(openclawConfigDir, pluginId);
+        const channelConfigToRestore = strippedChannelConfig ?? backupConfig;
+        if (!channelConfigToRestore) {
+          clearPluginChannelConfigBackup(openclawConfigDir, pluginId);
+          return;
+        }
+
+        const raw = readFileSync(configPath, 'utf-8');
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        const restored = restorePluginChannelConfigAfterInstall(
+          parsed,
+          pluginId,
+          channelConfigToRestore
+        );
+        writeFileSync(configPath, JSON.stringify(restored, null, 2), 'utf-8');
+        clearPluginChannelConfigBackup(openclawConfigDir, pluginId);
+      } catch (error) {
+        logger.warn('Failed to restore plugin channel config after install', error);
+      }
+    };
+
+    try {
+      if (pluginId !== QQ_PLUGIN_ID) {
+        return { success: false, error: `Unsupported bundled plugin: ${pluginId}` };
+      }
+      shouldRestoreChannelConfig =
+        readPluginChannelConfigBackup(openclawConfigDir, pluginId) !== undefined;
+
+      logger.info('openclaw:installBundledPlugin requested', { pluginId });
+
+      const detectionBeforeInstall = detectPluginInstalled(pluginId);
+      if (detectionBeforeInstall.installed) {
+        logger.info('openclaw:installBundledPlugin skipped because plugin is already installed', {
+          pluginId,
+          source: detectionBeforeInstall.source,
+        });
+        return {
+          success: true,
+          installed: true,
+          skipped: true,
+          reason: 'already-installed',
+          source: detectionBeforeInstall.source,
+        };
+      }
+
+      const prepared = await prepareQqbotLocalInstallDir();
+      if (!prepared.success || !prepared.installPath || !prepared.tempDir) {
+        return {
+          success: false,
+          error: prepared.error || 'Failed to prepare QQ plugin package',
+          details: prepared.details,
+        };
+      }
+      tempInstallDir = prepared.tempDir;
+
+      if (existsSync(configPath)) {
+        try {
+          const raw = readFileSync(configPath, 'utf-8');
+          const parsed = JSON.parse(raw) as Record<string, unknown>;
+          const stripped = stripPluginChannelConfigForInstall(parsed, pluginId);
+          strippedChannelConfig = stripped.removedChannelConfig;
+
+          if (strippedChannelConfig) {
+            writeFileSync(configPath, JSON.stringify(stripped.config, null, 2), 'utf-8');
+            savePluginChannelConfigBackup(openclawConfigDir, pluginId, strippedChannelConfig);
+            shouldRestoreChannelConfig = true;
+          }
+        } catch (error) {
+          logger.warn('Failed to strip plugin channel config before install', error);
+        }
+      }
+
+      const installResult = await runOpenClawCli(['plugins', 'install', prepared.installPath]);
+      if (!installResult.success) {
+        const installErrorText = [
+          installResult.error,
+          installResult.stderr,
+          installResult.stdout,
+        ]
+          .filter((item): item is string => typeof item === 'string' && item.length > 0)
+          .join('\n');
+
+        if (isAlreadyInstalledErrorMessage(installErrorText)) {
+          const detectionAfterFailedInstall = detectPluginInstalled(pluginId);
+          if (detectionAfterFailedInstall.installed) {
+            logger.warn(
+              'openclaw:installBundledPlugin detected already-installed response and converted to skip success',
+              {
+                pluginId,
+                source: detectionAfterFailedInstall.source,
+              }
+            );
+            return {
+              success: true,
+              installed: true,
+              skipped: true,
+              reason: 'already-installed',
+              source: detectionAfterFailedInstall.source,
+            };
+          }
+        }
+
+        return {
+          success: false,
+          error: installResult.error || 'Failed to install bundled plugin',
+          details: installResult.stderr || installResult.stdout,
+        };
+      }
+
+      const detectionAfterInstall = detectPluginInstalled(pluginId);
+      if (!detectionAfterInstall.installed) {
+        return {
+          success: false,
+          error: 'Plugin install command finished but install state could not be detected',
+          details: installResult.stdout,
+        };
+      }
+
+      logger.info('openclaw:installBundledPlugin completed successfully', {
+        pluginId,
+        source: detectionAfterInstall.source,
+      });
+      return { success: true, installed: true, source: detectionAfterInstall.source };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    } finally {
+      if (shouldRestoreChannelConfig) {
+        restoreChannelConfigAfterInstall();
+      }
+      if (tempInstallDir) {
+        rmSync(tempInstallDir, { recursive: true, force: true });
+      }
+    }
   });
 
   // ==================== Channel Configuration Handlers ====================

@@ -190,6 +190,44 @@ export function saveChannelConfig(
         transformedConfig.allowFrom = allowFrom;
     }
 
+    // Special handling for QQ Bot:
+    // - allowFrom: comma separated string -> string[]
+    // - markdownSupport: string -> boolean
+    if (channelType === 'qqbot') {
+        const existingConfig = currentConfig.channels[channelType] || {};
+        const { allowFrom, markdownSupport, ...restConfig } = transformedConfig;
+        transformedConfig = { ...restConfig };
+
+        let allowFromList: string[] = [];
+        if (Array.isArray(allowFrom)) {
+            allowFromList = allowFrom
+                .filter((value): value is string => typeof value === 'string')
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0);
+        } else if (typeof allowFrom === 'string') {
+            allowFromList = allowFrom.split(',')
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0);
+        } else if (Array.isArray(existingConfig.allowFrom)) {
+            allowFromList = existingConfig.allowFrom
+                .filter((value): value is string => typeof value === 'string')
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0);
+        }
+
+        transformedConfig.allowFrom = allowFromList.length > 0 ? allowFromList : ['*'];
+
+        if (typeof markdownSupport === 'boolean') {
+            transformedConfig.markdownSupport = markdownSupport;
+        } else if (typeof markdownSupport === 'string') {
+            transformedConfig.markdownSupport = markdownSupport.toLowerCase() !== 'false';
+        } else if (typeof existingConfig.markdownSupport === 'boolean') {
+            transformedConfig.markdownSupport = existingConfig.markdownSupport;
+        } else {
+            transformedConfig.markdownSupport = true;
+        }
+    }
+
     // Merge with existing config
     currentConfig.channels[channelType] = {
         ...currentConfig.channels[channelType],
@@ -261,6 +299,22 @@ export function getChannelFormValues(channelType: string): Record<string, string
         }
 
         // Also extract other string values
+        for (const [key, value] of Object.entries(saved)) {
+            if (typeof value === 'string' && key !== 'enabled') {
+                values[key] = value;
+            }
+        }
+    } else if (channelType === 'qqbot') {
+        if (Array.isArray(saved.allowFrom)) {
+            values.allowFrom = saved.allowFrom.join(', ');
+        }
+
+        if (typeof saved.markdownSupport === 'boolean') {
+            values.markdownSupport = saved.markdownSupport ? 'true' : 'false';
+        } else {
+            values.markdownSupport = 'true';
+        }
+
         for (const [key, value] of Object.entries(saved)) {
             if (typeof value === 'string' && key !== 'enabled') {
                 values[key] = value;

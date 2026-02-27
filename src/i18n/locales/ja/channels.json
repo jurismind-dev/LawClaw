@@ -257,6 +257,26 @@
                 "新しい Bot アカウントを作成します",
                 "アクセストークンをコピーします"
             ]
+        },
+        "qqbot": {
+            "description": "@sliverp/qqbot プラグインで QQ を接続します",
+            "docsUrl": "https://www.npmjs.com/package/@sliverp/qqbot",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "QQ App ID"
+                },
+                "clientSecret": {
+                    "label": "Client Secret",
+                    "placeholder": "QQ Client Secret"
+                }
+            },
+            "instructions": [
+                "@sliverp/qqbot のドキュメントを確認してプラグインを準備します。",
+                "QQ 開発者プラットフォームで App ID と Client Secret を取得します。",
+                "App ID と Client Secret を入力してチャンネル設定を保存します。",
+                "QQ プラグインのインストール完了後にセットアップを続行します。"
+            ]
         }
     },
     "viewDocs": "ドキュメントを表示"

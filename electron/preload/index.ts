@@ -26,6 +26,8 @@ const electronAPI = {
         // OpenClaw
         'openclaw:status',
         'openclaw:isReady',
+        'openclaw:isPluginInstalled',
+        'openclaw:installBundledPlugin',
         // Shell
         'shell:openExternal',
         'shell:showItemInFolder',

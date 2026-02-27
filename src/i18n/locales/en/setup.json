@@ -99,7 +99,11 @@
         "error": "Setup Error:",
         "restart": "Try restarting the app",
         "wait": "This may take a few moments...",
-        "skip": "Skip this step"
+        "skip": "Skip this step",
+        "retry": "Retry installation",
+        "qqInstallFailed": "QQ plugin installation failed. Please retry to continue setup.",
+        "qqPluginName": "QQ Plugin",
+        "qqPluginDesc": "QQ channel plugin installation"
     },
     "complete": {
         "title": "Setup Complete!",

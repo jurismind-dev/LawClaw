@@ -25,6 +25,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
@@ -54,6 +55,7 @@ export function Channels() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null);
   const [configuredTypes, setConfiguredTypes] = useState<string[]>([]);
+  const [isQqPluginInstalled, setIsQqPluginInstalled] = useState(false);
 
   // Fetch channels on mount
   useEffect(() => {
@@ -75,28 +77,49 @@ export function Channels() {
     }
   }, []);
 
+  const fetchPluginInstallStatus = useCallback(async () => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke(
+        'openclaw:isPluginInstalled',
+        'qqbot'
+      ) as { success?: boolean; installed?: boolean };
+      if (result?.success) {
+        setIsQqPluginInstalled(result.installed === true);
+      } else {
+        setIsQqPluginInstalled(false);
+      }
+    } catch {
+      setIsQqPluginInstalled(false);
+    }
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchConfiguredTypes();
-  }, [fetchConfiguredTypes]);
+
+    void fetchPluginInstallStatus();
+  }, [fetchConfiguredTypes, fetchPluginInstallStatus]);
 
   useEffect(() => {
     const unsubscribe = window.electron.ipcRenderer.on('gateway:channel-status', () => {
       fetchChannels();
       fetchConfiguredTypes();
+      fetchPluginInstallStatus();
     });
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
     };
-  }, [fetchChannels, fetchConfiguredTypes]);
+  }, [fetchChannels, fetchConfiguredTypes, fetchPluginInstallStatus]);
 
   // Get channel types to display
-  const displayedChannelTypes = getPrimaryChannels();
+  const displayedChannelTypes = getPrimaryChannels().filter(
+    (type) => type !== 'qqbot' || isQqPluginInstalled
+  );
 
   // Connected/disconnected channel counts
-  const connectedCount = channels.filter((c) => c.status === 'connected').length;
+  const connectedCount = channels.filter((channel) => channel.status === 'connected').length;
 
   if (loading) {
     return (
@@ -117,7 +140,14 @@ export function Channels() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchChannels}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              fetchChannels();
+              fetchConfiguredTypes();
+              fetchPluginInstallStatus();
+            }}
+          >
             <RefreshCw className="h-4 w-4 mr-2" />
             {t('refresh')}
           </Button>
@@ -277,6 +307,7 @@ export function Channels() {
       {/* Add Channel Dialog */}
       {showAddDialog && (
         <AddChannelDialog
+          availableTypes={displayedChannelTypes}
           selectedType={selectedChannelType}
           onSelectType={setSelectedChannelType}
           onClose={() => {
@@ -343,13 +374,20 @@ function ChannelCard({ channel, onDelete }: ChannelCardProps) {
 // ==================== Add Channel Dialog ====================
 
 interface AddChannelDialogProps {
+  availableTypes: ChannelType[];
   selectedType: ChannelType | null;
   onSelectType: (type: ChannelType | null) => void;
   onClose: () => void;
   onChannelAdded: () => void;
 }
 
-function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded }: AddChannelDialogProps) {
+function AddChannelDialog({
+  availableTypes,
+  selectedType,
+  onSelectType,
+  onClose,
+  onChannelAdded,
+}: AddChannelDialogProps) {
   const { t } = useTranslation('channels');
   const { addChannel } = useChannelsStore();
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -681,7 +719,7 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
           {!selectedType ? (
             // Channel type selection
             <div className="grid grid-cols-2 gap-4">
-              {getPrimaryChannels().map((type) => {
+              {availableTypes.map((type) => {
                 const channelMeta = CHANNEL_META[type];
                 const isComingSoon = channelMeta.comingSoon === true;
                 return (
@@ -916,6 +954,7 @@ interface ConfigFieldProps {
 function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: ConfigFieldProps) {
   const { t } = useTranslation('channels');
   const isPassword = field.type === 'password';
+  const isSelect = field.type === 'select';
 
   return (
     <div className="space-y-2">
@@ -923,26 +962,36 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
         {t(field.label)}
         {field.required && <span className="text-destructive ml-1">*</span>}
       </Label>
-      <div className="flex gap-2">
-        <Input
-          id={field.key}
-          type={isPassword && !showSecret ? 'password' : 'text'}
-          placeholder={field.placeholder ? t(field.placeholder) : undefined}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="font-mono text-sm"
-        />
-        {isPassword && (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={onToggleSecret}
-          >
-            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </Button>
-        )}
-      </div>
+      {isSelect ? (
+        <Select id={field.key} value={value} onChange={(e) => onChange(e.target.value)}>
+          {field.options?.map((option) => (
+            <option key={option.value} value={option.value}>
+              {t(option.label)}
+            </option>
+          ))}
+        </Select>
+      ) : (
+        <div className="flex gap-2">
+          <Input
+            id={field.key}
+            type={isPassword && !showSecret ? 'password' : 'text'}
+            placeholder={field.placeholder ? t(field.placeholder) : undefined}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="font-mono text-sm"
+          />
+          {isPassword && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={onToggleSecret}
+            >
+              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          )}
+        </div>
+      )}
       {field.description && (
         <p className="text-xs text-muted-foreground">
           {t(field.description)}

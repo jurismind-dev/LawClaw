@@ -13,6 +13,7 @@ export type ChannelType =
   | 'discord'
   | 'signal'
   | 'feishu'
+  | 'qqbot'
   | 'imessage'
   | 'matrix'
   | 'line'
@@ -85,6 +86,7 @@ export const CHANNEL_ICONS: Record<ChannelType, string> = {
   discord: '🎮',
   signal: '🔒',
   feishu: '🐦',
+  qqbot: 'QQ',
   imessage: '💬',
   matrix: '🔗',
   line: '🟢',
@@ -103,6 +105,7 @@ export const CHANNEL_NAMES: Record<ChannelType, string> = {
   discord: 'Discord',
   signal: 'Signal',
   feishu: 'Feishu / Lark',
+  qqbot: 'QQ',
   imessage: 'iMessage',
   matrix: 'Matrix',
   line: 'LINE',
@@ -275,6 +278,40 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     ],
     isPlugin: true,
   },
+  qqbot: {
+    id: 'qqbot',
+    name: 'QQ',
+    icon: 'QQ',
+    description: 'channels:meta.qqbot.description',
+    connectionType: 'token',
+    docsUrl: 'channels:meta.qqbot.docsUrl',
+    configFields: [
+      {
+        key: 'appId',
+        label: 'channels:meta.qqbot.fields.appId.label',
+        type: 'text',
+        placeholder: 'channels:meta.qqbot.fields.appId.placeholder',
+        required: true,
+        envVar: 'QQBOT_APP_ID',
+      },
+      {
+        key: 'clientSecret',
+        label: 'channels:meta.qqbot.fields.clientSecret.label',
+        type: 'password',
+        placeholder: 'channels:meta.qqbot.fields.clientSecret.placeholder',
+        required: true,
+        envVar: 'QQBOT_CLIENT_SECRET',
+      },
+    ],
+    instructions: [
+      'channels:meta.qqbot.instructions.0',
+      'channels:meta.qqbot.instructions.1',
+      'channels:meta.qqbot.instructions.2',
+      'channels:meta.qqbot.instructions.3',
+    ],
+    isPlugin: true,
+  },
+
   imessage: {
     id: 'imessage',
     name: 'iMessage',
@@ -458,7 +495,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
  * Get primary supported channels (non-plugin, commonly used)
  */
 export function getPrimaryChannels(): ChannelType[] {
-  return ['jurismind', 'feishu', 'telegram', 'discord', 'whatsapp'];
+  return ['jurismind', 'feishu', 'qqbot'];
 }
 
 /**

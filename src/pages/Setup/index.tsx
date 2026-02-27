@@ -23,6 +23,7 @@ import {
 import { TitleBar } from '@/components/layout/TitleBar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
@@ -38,6 +39,10 @@ import {
   type ChannelMeta,
   type ChannelConfigField,
 } from '@/types/channel';
+import {
+  shouldInstallQqPluginForSetupSession,
+  shouldRestartGatewayAfterQqPluginInstall,
+} from './qq-plugin-install';
 
 interface SetupStep {
   id: string;
@@ -104,6 +109,7 @@ const defaultSkills: DefaultSkill[] = [
 
 import { SETUP_PROVIDERS, type ProviderTypeInfo, getProviderIconUrl, shouldInvertInDark } from '@/lib/providers';
 import clawxIcon from '@/assets/logo.svg';
+import qqChannelIcon from '@/assets/channels/qq.png';
 
 // Use the shared provider registry for setup providers
 const providers = SETUP_PROVIDERS;
@@ -120,6 +126,9 @@ export function Setup() {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [providerConfigured, setProviderConfigured] = useState(false);
   const [apiKey, setApiKey] = useState('');
+  const [configuredChannelsInSession, setConfiguredChannelsInSession] = useState<Set<ChannelType>>(
+    () => new Set()
+  );
   // Installation state for the Installing step
   const [installedSkills, setInstalledSkills] = useState<string[]>([]);
   // Runtime check status
@@ -250,10 +259,21 @@ export function Setup() {
                   onConfiguredChange={setProviderConfigured}
                 />
               )}
-              {safeStepIndex === STEP.CHANNEL && <SetupChannelContent />}
+              {safeStepIndex === STEP.CHANNEL && (
+                <SetupChannelContent
+                  onChannelConfigured={(channelType) => {
+                    setConfiguredChannelsInSession((prev) => {
+                      const next = new Set(prev);
+                      next.add(channelType);
+                      return next;
+                    });
+                  }}
+                />
+              )}
               {safeStepIndex === STEP.INSTALLING && (
                 <InstallingContent
                   skills={defaultSkills}
+                  installQqPlugin={shouldInstallQqPluginForSetupSession(configuredChannelsInSession)}
                   onComplete={handleInstallationComplete}
                   onSkip={() => setCurrentStep((i) => i + 1)}
                 />
@@ -1103,7 +1123,25 @@ function ProviderContent({
 
 // ==================== Setup Channel Content ====================
 
-function SetupChannelContent() {
+interface SetupChannelContentProps {
+  onChannelConfigured: (channelType: ChannelType) => void;
+}
+
+function renderSetupChannelIcon(type: ChannelType, icon: string) {
+  if (type === 'qqbot') {
+    return (
+      <img
+        src={qqChannelIcon}
+        alt="QQ"
+        className="h-9 w-9 rounded-sm object-contain bg-muted/40 p-0.5"
+      />
+    );
+  }
+
+  return <span className="text-3xl">{icon}</span>;
+}
+
+function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) {
   const { t } = useTranslation(['setup', 'channels']);
   const [selectedChannel, setSelectedChannel] = useState<ChannelType | null>(null);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -1171,7 +1209,10 @@ function SetupChannelContent() {
       }
 
       // Save config
-      await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedChannel, { ...configValues });
+      await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedChannel, {
+        ...configValues,
+      });
+      onChannelConfigured(selectedChannel);
 
       const botName = validation.details?.botUsername ? ` (@${validation.details.botUsername})` : '';
       toast.success(`${meta.name} configured${botName}`);
@@ -1242,7 +1283,7 @@ function SetupChannelContent() {
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-3xl">{channelMeta.icon}</span>
+                  {renderSetupChannelIcon(type, channelMeta.icon)}
                   {isComingSoon && (
                     <span className="text-xs rounded bg-secondary text-secondary-foreground px-2 py-0.5">
                       {t('channel.comingSoon')}
@@ -1273,7 +1314,8 @@ function SetupChannelContent() {
         </button>
         <div>
           <h2 className="text-xl font-semibold flex items-center gap-2">
-            <span>{meta?.icon}</span> {t('channel.configure', { name: meta?.name })}
+            {meta && renderSetupChannelIcon(selectedChannel, meta.icon)}
+            {t('channel.configure', { name: meta?.name })}
           </h2>
           <p className="text-muted-foreground text-sm mt-1">{t(meta?.description || '')}</p>
         </div>
@@ -1315,34 +1357,49 @@ function SetupChannelContent() {
       {/* Config fields */}
       {meta?.configFields.map((field: ChannelConfigField) => {
         const isPassword = field.type === 'password';
+        const isSelect = field.type === 'select';
         return (
           <div key={field.key} className="space-y-1.5">
             <Label htmlFor={`setup-${field.key}`} className="text-foreground">
               {t(field.label)}
               {field.required && <span className="text-red-400 ml-1">*</span>}
             </Label>
-            <div className="flex gap-2">
-              <Input
+            {isSelect ? (
+              <Select
                 id={`setup-${field.key}`}
-                type={isPassword && !showSecrets[field.key] ? 'password' : 'text'}
-                placeholder={field.placeholder ? t(field.placeholder) : undefined}
                 value={configValues[field.key] || ''}
                 onChange={(e) => setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                autoComplete="off"
-                className="font-mono text-sm bg-background border-input"
-              />
-              {isPassword && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={() => setShowSecrets((prev) => ({ ...prev, [field.key]: !prev[field.key] }))}
-                >
-                  {showSecrets[field.key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              )}
-            </div>
+              >
+                {field.options?.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {t(option.label)}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  id={`setup-${field.key}`}
+                  type={isPassword && !showSecrets[field.key] ? 'password' : 'text'}
+                  placeholder={field.placeholder ? t(field.placeholder) : undefined}
+                  value={configValues[field.key] || ''}
+                  onChange={(e) => setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                  autoComplete="off"
+                  className="font-mono text-sm bg-background border-input"
+                />
+                {isPassword && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={() => setShowSecrets((prev) => ({ ...prev, [field.key]: !prev[field.key] }))}
+                  >
+                    {showSecrets[field.key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                )}
+              </div>
+            )}
             {field.description && (
               <p className="text-xs text-slate-500 mt-1">{t(field.description)}</p>
             )}
@@ -1394,26 +1451,35 @@ interface SkillInstallState {
 
 interface InstallingContentProps {
   skills: DefaultSkill[];
+  installQqPlugin: boolean;
   onComplete: (installedSkills: string[]) => void;
   onSkip: () => void;
 }
 
-function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProps) {
+function InstallingContent({ skills, installQqPlugin, onComplete, onSkip }: InstallingContentProps) {
   const { t } = useTranslation('setup');
   const [skillStates, setSkillStates] = useState<SkillInstallState[]>(
     skills.map((s) => ({ ...s, status: 'pending' as InstallStatus }))
   );
+  const [qqPluginStatus, setQqPluginStatus] = useState<InstallStatus>(
+    installQqPlugin ? 'pending' : 'completed'
+  );
   const [overallProgress, setOverallProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const installStarted = useRef(false);
+  const [retrySeed, setRetrySeed] = useState(0);
 
   // Real installation process
   useEffect(() => {
-    if (installStarted.current) return;
-    installStarted.current = true;
+    let cancelled = false;
 
     const runRealInstall = async () => {
       try {
+        setErrorMessage(null);
+        setSkillStates(skills.map((s) => ({ ...s, status: 'pending' as InstallStatus })));
+        if (installQqPlugin) {
+          setQqPluginStatus('pending');
+        }
+
         // Step 1: Initialize all skills to 'installing' state for UI
         setSkillStates(prev => prev.map(s => ({ ...s, status: 'installing' })));
         setOverallProgress(10);
@@ -1424,26 +1490,85 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
           error?: string
         };
 
-        if (result.success) {
-          setSkillStates(prev => prev.map(s => ({ ...s, status: 'completed' })));
-          setOverallProgress(100);
-
-          await new Promise((resolve) => setTimeout(resolve, 800));
-          onComplete(skills.map(s => s.id));
-        } else {
+        if (!result.success) {
           setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
+          if (installQqPlugin) {
+            setQqPluginStatus('failed');
+          }
           setErrorMessage(result.error || 'Unknown error during installation');
           toast.error('Environment setup failed');
+          return;
+        }
+
+        setSkillStates(prev => prev.map(s => ({ ...s, status: 'completed' })));
+        setOverallProgress(70);
+
+        if (installQqPlugin) {
+          setQqPluginStatus('installing');
+          setOverallProgress(85);
+          let shouldRestartGateway = false;
+          const installedCheck = await window.electron.ipcRenderer.invoke(
+            'openclaw:isPluginInstalled',
+            'qqbot'
+          ) as {
+            success?: boolean;
+            installed?: boolean;
+          };
+
+          if (installedCheck?.success && installedCheck.installed) {
+            setQqPluginStatus('completed');
+          } else {
+            const pluginResult = await window.electron.ipcRenderer.invoke(
+              'openclaw:installBundledPlugin',
+              'qqbot'
+            ) as {
+              success?: boolean;
+              skipped?: boolean;
+              reason?: string;
+              error?: string;
+            };
+
+            if (!pluginResult?.success) {
+              setQqPluginStatus('failed');
+              setErrorMessage(pluginResult?.error || 'QQ plugin installation failed');
+              toast.error(t('installing.qqInstallFailed'));
+              return;
+            }
+
+            setQqPluginStatus('completed');
+            shouldRestartGateway = shouldRestartGatewayAfterQqPluginInstall(false, pluginResult);
+          }
+
+          if (shouldRestartGateway) {
+            // Best effort: restart gateway after actual installation to reload plugin list.
+            await window.electron.ipcRenderer.invoke('gateway:restart').catch(() => {});
+          }
+        }
+
+        if (cancelled) return;
+        setOverallProgress(100);
+
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        if (!cancelled) {
+          onComplete(skills.map(s => s.id));
         }
       } catch (err) {
+        if (cancelled) return;
         setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
+        if (installQqPlugin) {
+          setQqPluginStatus('failed');
+        }
         setErrorMessage(String(err));
         toast.error('Installation error');
       }
     };
 
-    runRealInstall();
-  }, [skills, onComplete]);
+    void runRealInstall();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [skills, onComplete, installQqPlugin, retrySeed, t]);
 
   const getStatusIcon = (status: InstallStatus) => {
     switch (status) {
@@ -1458,8 +1583,8 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
     }
   };
 
-  const getStatusText = (skill: SkillInstallState) => {
-    switch (skill.status) {
+  const getStatusText = (status: InstallStatus) => {
+    switch (status) {
       case 'pending':
         return <span className="text-muted-foreground">{t('installing.status.pending')}</span>;
       case 'installing':
@@ -1470,6 +1595,18 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
         return <span className="text-red-400">{t('installing.status.failed')}</span>;
     }
   };
+
+  const installItems: SkillInstallState[] = installQqPlugin
+    ? [
+      ...skillStates,
+      {
+        id: 'qq-plugin',
+        name: t('installing.qqPluginName'),
+        description: t('installing.qqPluginDesc'),
+        status: qqPluginStatus,
+      },
+    ]
+    : skillStates;
 
   return (
     <div className="space-y-6">
@@ -1499,7 +1636,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
 
       {/* Skill list */}
       <div className="space-y-2 max-h-48 overflow-y-auto">
-        {skillStates.map((skill) => (
+        {installItems.map((skill) => (
           <motion.div
             key={skill.id}
             initial={{ opacity: 0, y: 10 }}
@@ -1516,7 +1653,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
                 <p className="text-xs text-muted-foreground">{skill.description}</p>
               </div>
             </div>
-            {getStatusText(skill)}
+            {getStatusText(skill.status)}
           </motion.div>
         ))}
       </div>
@@ -1538,9 +1675,9 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
               <Button
                 variant="link"
                 className="text-red-400 p-0 h-auto text-xs underline"
-                onClick={() => window.location.reload()}
+                onClick={() => setRetrySeed((prev) => prev + 1)}
               >
-                {t('installing.restart')}
+                {t('installing.retry')}
               </Button>
             </div>
           </div>
@@ -1552,15 +1689,17 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
           {t('installing.wait')}
         </p>
       )}
-      <div className="flex justify-end">
-        <Button
-          variant="ghost"
-          className="text-muted-foreground"
-          onClick={onSkip}
-        >
-          {t('installing.skip')}
-        </Button>
-      </div>
+      {!installQqPlugin && (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            className="text-muted-foreground"
+            onClick={onSkip}
+          >
+            {t('installing.skip')}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

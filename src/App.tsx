@@ -18,6 +18,7 @@ import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
 import { useSettingsStore } from './stores/settings';
 import { useGatewayStore } from './stores/gateway';
+import { useAgentPresetMigrationStore } from './stores/agent-preset-migration';
 
 
 /**
@@ -92,6 +93,7 @@ function App() {
   const setupComplete = useSettingsStore((state) => state.setupComplete);
   const markSetupIncomplete = useSettingsStore((state) => state.markSetupIncomplete);
   const initGateway = useGatewayStore((state) => state.init);
+  const initAgentPresetMigration = useAgentPresetMigrationStore((state) => state.init);
 
   // Sync i18n language with persisted settings on mount
   useEffect(() => {
@@ -104,6 +106,10 @@ function App() {
   useEffect(() => {
     initGateway();
   }, [initGateway]);
+
+  useEffect(() => {
+    initAgentPresetMigration();
+  }, [initAgentPresetMigration]);
 
   // Check for force-setup command line argument
   useEffect(() => {

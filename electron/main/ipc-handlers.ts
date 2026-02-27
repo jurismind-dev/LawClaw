@@ -48,6 +48,13 @@ import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig, getProviderEnvVar } from '../utils/provider-registry';
 import { validateApiKeyWithProvider } from '../utils/provider-validation';
 import { forceSetup } from './index';
+import {
+  getAgentPresetMigrationStatus,
+  onAgentPresetMigrationChatLock,
+  onAgentPresetMigrationStatus,
+  resolveAgentPresetMigrationConflict,
+  retryAgentPresetMigrationNow,
+} from '../utils/agent-preset-migration';
 
 /**
  * Register all IPC handlers
@@ -98,6 +105,9 @@ export function registerIpcHandlers(
 
   // File staging handlers (upload/send separation)
   registerFileHandlers();
+
+  // Agent preset migration handlers
+  registerAgentPresetMigrationHandlers(mainWindow);
 }
 
 /**
@@ -573,6 +583,45 @@ function registerGatewayHandlers(
   gatewayManager.on('error', (error) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:error', error.message);
+    }
+  });
+}
+
+export function registerAgentPresetMigrationHandlers(mainWindow: BrowserWindow): void {
+  ipcMain.handle('agentPresetMigration:getStatus', () => {
+    return getAgentPresetMigrationStatus();
+  });
+
+  ipcMain.handle('agentPresetMigration:resolveConflict', async (_, decision: string) => {
+    if (
+      decision !== 'preserve_user' &&
+      decision !== 'prefer_preset' &&
+      decision !== 'skip_this_time'
+    ) {
+      return {
+        success: false,
+        message: `invalid conflict decision: ${decision}`,
+      };
+    }
+    return resolveAgentPresetMigrationConflict(
+      decision as 'preserve_user' | 'prefer_preset' | 'skip_this_time'
+    );
+  });
+
+  ipcMain.handle('agentPresetMigration:retryNow', async () => {
+    await retryAgentPresetMigrationNow();
+    return { success: true };
+  });
+
+  onAgentPresetMigrationStatus((status) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('agentPresetMigration:statusChanged', status);
+    }
+  });
+
+  onAgentPresetMigrationChatLock((locked) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('agentPresetMigration:chatLockChanged', { locked });
     }
   });
 }

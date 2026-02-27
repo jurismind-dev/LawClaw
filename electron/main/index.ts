@@ -13,6 +13,7 @@ import { appUpdater, registerUpdateHandlers } from './updater';
 import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
 import { runProviderStartupMigration } from '../utils/provider-migration';
+import { runAgentPresetStartupMigration } from '../utils/agent-preset-migration';
 
 import { ClawHubService } from '../gateway/clawhub';
 
@@ -21,6 +22,8 @@ app.disableHardwareAcceleration();
 
 // Check for force-setup mode via command line argument or environment variable
 const forceSetup = process.argv.includes('--force-setup') || process.env.FORCE_SETUP === 'true';
+const forceLawclawAgentPreset =
+  process.argv.includes('--force-lawclaw-agent-preset') || process.env.FORCE_LAWCLAW_AGENT_PRESET === 'true';
 
 // Global references
 let mainWindow: BrowserWindow | null = null;
@@ -193,6 +196,18 @@ async function initialize(): Promise<void> {
     logger.error('Gateway auto-start failed:', error);
     mainWindow?.webContents.send('gateway:error', String(error));
   }
+
+  // Agent preset migration now runs after Gateway startup so it can use
+  // skill-driven LLM merge and interactive confirmation flows.
+  await runAgentPresetStartupMigration({
+    forceLawclawAgentPreset,
+    gatewayRpc: (method, params, timeoutMs) => gatewayManager.rpc(method, params, timeoutMs),
+    restartGateway: async () => {
+      await gatewayManager.restart();
+    },
+    isGatewayRunning: () => gatewayManager.getStatus().state === 'running',
+    interactiveWindow: !!mainWindow && !mainWindow.isDestroyed(),
+  });
 }
 
 // Application lifecycle
@@ -220,4 +235,4 @@ app.on('before-quit', async () => {
 });
 
 // Export for testing
-export { mainWindow, gatewayManager, forceSetup };
+export { mainWindow, gatewayManager, forceSetup, forceLawclawAgentPreset };

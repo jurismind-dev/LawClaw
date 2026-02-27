@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "templateRoot": "template",
+  "workspaceFiles": [
+    {
+      "agentId": "lawclaw-main",
+      "source": "workspaces/lawclaw-main/SOUL.md",
+      "target": "SOUL.md",
+      "conflictStrategy": "append_capabilities"
+    },
+    {
+      "agentId": "lawclaw-main",
+      "source": "workspaces/lawclaw-main/AGENTS.md",
+      "target": "AGENTS.md"
+    },
+    {
+      "agentId": "lawclaw-main",
+      "source": "workspaces/lawclaw-main/skills/lawclaw-upgrade/SKILL.md",
+      "target": "skills/lawclaw-upgrade/SKILL.md"
+    }
+  ],
+  "configPatch": "openclaw.patch.json"
+}

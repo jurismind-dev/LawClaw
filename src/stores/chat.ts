@@ -85,6 +85,7 @@ interface ChatState {
   // Sessions
   sessions: ChatSession[];
   currentSessionKey: string;
+  hasAppliedStartupDefault: boolean;
 
   // Thinking
   showThinking: boolean;
@@ -109,7 +110,7 @@ interface ChatState {
 // between tool-result finals and the next delta.
 let _lastChatEventAt = 0;
 
-const DEFAULT_CANONICAL_PREFIX = 'agent:main';
+const DEFAULT_CANONICAL_PREFIX = 'agent:lawclaw-main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
 
 // ── Local image cache ─────────────────────────────────────────
@@ -881,6 +882,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sessions: [],
   currentSessionKey: DEFAULT_SESSION_KEY,
+  hasAppliedStartupDefault: false,
 
   showThinking: true,
   thinkingLevel: null,
@@ -926,15 +928,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return true;
         });
 
-        const { currentSessionKey } = get();
-        let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
+        const { currentSessionKey, hasAppliedStartupDefault } = get();
+        const shouldForceDedicatedSession = !hasAppliedStartupDefault;
+        let nextSessionKey = shouldForceDedicatedSession
+          ? DEFAULT_SESSION_KEY
+          : currentSessionKey || DEFAULT_SESSION_KEY;
         if (!nextSessionKey.startsWith('agent:')) {
           const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
           if (canonicalMatch) {
             nextSessionKey = canonicalMatch;
           }
         }
-        if (!dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
+        if (
+          !shouldForceDedicatedSession &&
+          !dedupedSessions.find((s) => s.key === nextSessionKey) &&
+          dedupedSessions.length > 0
+        ) {
           // Current session not found at all — switch to the first available session
           nextSessionKey = dedupedSessions[0].key;
         }
@@ -946,7 +955,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ]
           : dedupedSessions;
 
-        set({ sessions: sessionsWithCurrent, currentSessionKey: nextSessionKey });
+        set({
+          sessions: sessionsWithCurrent,
+          currentSessionKey: nextSessionKey,
+          hasAppliedStartupDefault: true,
+        });
 
         if (currentSessionKey !== nextSessionKey) {
           get().loadHistory();

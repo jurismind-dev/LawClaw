@@ -65,6 +65,9 @@ importers:
       i18next:
         specifier: ^25.8.11
         version: 25.8.11(typescript@5.9.3)
+      json5:
+        specifier: ^2.2.3
+        version: 2.2.3
       lucide-react:
         specifier: ^0.563.0
         version: 0.563.0(react@19.2.4)

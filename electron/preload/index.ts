@@ -23,6 +23,10 @@ const electronAPI = {
         'gateway:rpc',
         'gateway:health',
         'gateway:getControlUiUrl',
+        // Agent preset migration
+        'agentPresetMigration:getStatus',
+        'agentPresetMigration:resolveConflict',
+        'agentPresetMigration:retryNow',
         // OpenClaw
         'openclaw:status',
         'openclaw:isReady',
@@ -158,6 +162,8 @@ const electronAPI = {
         'gateway:notification',
         'gateway:channel-status',
         'gateway:chat-message',
+        'agentPresetMigration:statusChanged',
+        'agentPresetMigration:chatLockChanged',
         'channel:whatsapp-qr',
         'channel:whatsapp-success',
         'channel:whatsapp-error',
@@ -201,6 +207,8 @@ const electronAPI = {
         'gateway:notification',
         'gateway:channel-status',
         'gateway:chat-message',
+        'agentPresetMigration:statusChanged',
+        'agentPresetMigration:chatLockChanged',
         'gateway:exit',
         'gateway:error',
         'navigate',

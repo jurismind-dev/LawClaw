@@ -15,6 +15,7 @@ import { ChatInput } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
 import { useTranslation } from 'react-i18next';
+import { useAgentPresetMigrationStore } from '@/stores/agent-preset-migration';
 
 export function Chat() {
   const { t } = useTranslation('chat');
@@ -33,6 +34,10 @@ export function Chat() {
   const sendMessage = useChatStore((s) => s.sendMessage);
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
+  const migrationStatus = useAgentPresetMigrationStore((s) => s.status);
+  const migrationChatLocked = useAgentPresetMigrationStore((s) => s.chatLocked);
+  const resolveConflict = useAgentPresetMigrationStore((s) => s.resolveConflict);
+  const retryMigration = useAgentPresetMigrationStore((s) => s.retryNow);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
@@ -100,6 +105,51 @@ export function Chat() {
       <div className="flex shrink-0 items-center justify-end px-4 py-2">
         <ChatToolbar />
       </div>
+
+      {migrationChatLocked && (
+        <div className="px-4 pb-2">
+          <div className="mx-auto max-w-4xl rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-300">
+            <p className="font-medium">LawClaw 正在执行智能升级迁移，暂时锁定聊天输入。</p>
+            {migrationStatus?.message && <p className="mt-1">{migrationStatus.message}</p>}
+            {migrationStatus?.state === 'awaiting_confirmation' && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className="rounded border border-border bg-background px-3 py-1 text-xs"
+                  onClick={() => { void resolveConflict('preserve_user'); }}
+                >
+                  保留用户设定并继续
+                </button>
+                <button
+                  className="rounded border border-border bg-background px-3 py-1 text-xs"
+                  onClick={() => { void resolveConflict('prefer_preset'); }}
+                >
+                  优先新预设并继续
+                </button>
+                <button
+                  className="rounded border border-border bg-background px-3 py-1 text-xs"
+                  onClick={() => { void resolveConflict('skip_this_time'); }}
+                >
+                  本次跳过
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!migrationChatLocked && migrationStatus?.state === 'queued' && (
+        <div className="px-4 pb-2">
+          <div className="mx-auto max-w-4xl rounded-lg border border-border/60 bg-muted/40 p-3 text-xs text-muted-foreground">
+            <span>Agent 预设升级任务已排队（{migrationStatus.queueLength}）。</span>
+            <button
+              className="ml-2 rounded border border-border bg-background px-2 py-1"
+              onClick={() => { void retryMigration(); }}
+            >
+              立即重试
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -175,7 +225,7 @@ export function Chat() {
       <ChatInput
         onSend={sendMessage}
         onStop={abortRun}
-        disabled={!isGatewayRunning}
+        disabled={!isGatewayRunning || migrationChatLocked}
         sending={sending}
       />
     </div>

@@ -94,7 +94,15 @@ function createFixture(): FixtureContext {
     JSON.stringify(
       {
         agents: {
-          list: [{ id: 'lawclaw-main', name: 'LawClaw 主智能体' }],
+          list: [
+            {
+              id: 'lawclaw-main',
+              name: 'LawClaw 主智能体',
+              model: {
+                primary: 'jurismind/kimi-k2.5',
+              },
+            },
+          ],
         },
       },
       null,
@@ -244,6 +252,51 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
     expect(queue.tasks.length).toBe(0);
   });
 
+  it('模板 hash 不变时仍会回正 lawclaw-main workspace', async () => {
+    const fixture = createFixture();
+    const planner = vi.fn().mockResolvedValue({
+      schemaVersion: 1,
+      decision: 'apply',
+      files: [],
+    });
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner,
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    const configPath = join(fixture.openclawDir, 'openclaw.json');
+    const config = JSON.parse(readText(configPath)) as {
+      agents: { list: Array<{ id: string; workspace?: string; workspaceDir?: string }> };
+    };
+    const lawclawMain = config.agents.list.find((item) => item.id === 'lawclaw-main');
+    expect(lawclawMain).toBeDefined();
+    lawclawMain!.workspace = 'C:\\Users\\umx_a\\.openclaw\\workspace';
+    lawclawMain!.workspaceDir = 'C:\\Users\\umx_a\\Downloads\\README\\README';
+    writeText(configPath, JSON.stringify(config, null, 2));
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner,
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    expect(planner).toHaveBeenCalledTimes(1);
+    const next = JSON.parse(readText(configPath)) as {
+      agents: { list: Array<{ id: string; workspace?: string; workspaceDir?: string }> };
+    };
+    const normalizedLawclawMain = next.agents.list.find((item) => item.id === 'lawclaw-main');
+    expect(normalizedLawclawMain?.workspace).toBe('~/.openclaw/workspace-lawclaw-main');
+    expect(normalizedLawclawMain).not.toHaveProperty('workspaceDir');
+  });
+
   it('模板 hash 变化时会再次迁移并更新 v_current hash', async () => {
     const fixture = createFixture();
 
@@ -373,6 +426,208 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
       expect(entries.some((entry) => entry.includes('contract-review-workspace'))).toBe(false);
       expect(entries.some((entry) => entry.includes('litigation-strategy-workspace'))).toBe(false);
     }
+  });
+
+  it('lawclaw-main 缺少 model 时会补齐且不改全局 defaults.model', async () => {
+    const fixture = createFixture();
+    writeText(
+      join(fixture.openclawDir, 'openclaw.json'),
+      JSON.stringify(
+        {
+          agents: {
+            defaults: {
+              model: {
+                primary: 'openai/gpt-5.2',
+              },
+            },
+            list: [
+              {
+                id: 'lawclaw-main',
+                name: 'LawClaw 主智能体',
+              },
+            ],
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    // 模拟旧模板不包含 model 字段，验证运行时兜底逻辑。
+    writeText(
+      join(fixture.resourcesDir, 'agent-presets', 'template', 'openclaw.patch.json'),
+      JSON.stringify(
+        {
+          agents: {
+            list: [{ id: 'lawclaw-main', name: 'LawClaw 主智能体' }],
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner: async () => ({
+        schemaVersion: 1,
+        decision: 'apply',
+        files: [],
+      }),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    const config = JSON.parse(readText(join(fixture.openclawDir, 'openclaw.json')));
+    const lawclawMain = (config.agents.list as Array<{ id: string; model?: { primary?: string } }>).find(
+      (item) => item.id === 'lawclaw-main'
+    );
+    expect(lawclawMain?.model?.primary).toBe('jurismind/kimi-k2.5');
+    expect(config.agents.defaults.model.primary).toBe('openai/gpt-5.2');
+  });
+
+  it('lawclaw-main 已有 model.primary 时保持原值', async () => {
+    const fixture = createFixture();
+    writeText(
+      join(fixture.openclawDir, 'openclaw.json'),
+      JSON.stringify(
+        {
+          agents: {
+            defaults: {
+              model: {
+                primary: 'openai/gpt-5.2',
+              },
+            },
+            list: [
+              {
+                id: 'lawclaw-main',
+                name: 'LawClaw 主智能体',
+                model: {
+                  primary: 'moonshot/kimi-k2.5',
+                },
+              },
+            ],
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    writeText(
+      join(fixture.resourcesDir, 'agent-presets', 'template', 'openclaw.patch.json'),
+      JSON.stringify(
+        {
+          agents: {
+            list: [{ id: 'lawclaw-main', name: 'LawClaw 主智能体' }],
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner: async () => ({
+        schemaVersion: 1,
+        decision: 'apply',
+        files: [],
+      }),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    const config = JSON.parse(readText(join(fixture.openclawDir, 'openclaw.json')));
+    const lawclawMain = (config.agents.list as Array<{ id: string; model?: { primary?: string } }>).find(
+      (item) => item.id === 'lawclaw-main'
+    );
+    expect(lawclawMain?.model?.primary).toBe('moonshot/kimi-k2.5');
+    expect(config.agents.defaults.model.primary).toBe('openai/gpt-5.2');
+  });
+
+  it('lawclaw-main workspace 会被强制为专用目录，并清理 legacy workspaceDir', async () => {
+    const fixture = createFixture();
+    writeText(
+      join(fixture.openclawDir, 'openclaw.json'),
+      JSON.stringify(
+        {
+          agents: {
+            list: [
+              {
+                id: 'lawclaw-main',
+                name: 'LawClaw 主智能体',
+                workspace: 'C:\\Users\\umx_a\\.openclaw\\workspace',
+                workspaceDir: 'C:\\Users\\umx_a\\Downloads\\README\\README',
+              },
+            ],
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner: async () => ({
+        schemaVersion: 1,
+        decision: 'apply',
+        files: [],
+      }),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    const config = JSON.parse(
+      readText(join(fixture.openclawDir, 'openclaw.json'))
+    ) as {
+      agents: { list: Array<{ id: string; workspace?: string; workspaceDir?: string }> };
+    };
+    const lawclawMain = config.agents.list.find((item) => item.id === 'lawclaw-main');
+    expect(lawclawMain?.workspace).toBe('~/.openclaw/workspace-lawclaw-main');
+    expect(lawclawMain).not.toHaveProperty('workspaceDir');
+  });
+
+  it('planner configPatch 尝试改写 workspace 时会被回正为专用目录', async () => {
+    const fixture = createFixture();
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner: async () => ({
+        schemaVersion: 1,
+        decision: 'apply',
+        files: [],
+        configPatch: {
+          agents: {
+            list: [
+              {
+                id: 'lawclaw-main',
+                workspace: 'C:\\Users\\umx_a\\.openclaw\\workspace',
+              },
+            ],
+          },
+        },
+      }),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    const config = JSON.parse(
+      readText(join(fixture.openclawDir, 'openclaw.json'))
+    ) as {
+      agents: { list: Array<{ id: string; workspace?: string }> };
+    };
+    const lawclawMain = config.agents.list.find((item) => item.id === 'lawclaw-main');
+    expect(lawclawMain?.workspace).toBe('~/.openclaw/workspace-lawclaw-main');
   });
 
   it('planner 默认会话 key 使用 agent:lawclaw-main 前缀', async () => {

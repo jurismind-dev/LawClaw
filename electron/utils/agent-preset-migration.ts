@@ -152,6 +152,8 @@ const V_UPDATE_DIR = 'v_update';
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const MANUAL_SKIP_DELAY_MS = 24 * 60 * 60 * 1000;
 const DEDICATED_AGENT_ID = 'lawclaw-main';
+const DEDICATED_AGENT_DEFAULT_MODEL = 'jurismind/kimi-k2.5';
+const DEDICATED_AGENT_WORKSPACE = '~/.openclaw/workspace-lawclaw-main';
 const CAPABILITY_BLOCK_RE =
   /<!--\s*LAWCLAW_CAPABILITY_START:([a-zA-Z0-9_-]+)\s*-->([\s\S]*?)<!--\s*LAWCLAW_CAPABILITY_END:\1\s*-->/g;
 
@@ -533,15 +535,39 @@ function ensureDedicatedAgentInConfig(config: Record<string, unknown>): {
     changed = true;
   }
 
-  const hasDedicated = currentList.some(
-    (item) => isRecord(item) && item.id === DEDICATED_AGENT_ID
+  const dedicatedAgent = currentList.find(
+    (item): item is Record<string, unknown> => isRecord(item) && item.id === DEDICATED_AGENT_ID
   );
-  if (!hasDedicated) {
+  if (!dedicatedAgent) {
     currentList.push({
       id: DEDICATED_AGENT_ID,
       name: 'LawClaw 主智能体',
+      workspace: DEDICATED_AGENT_WORKSPACE,
+      model: {
+        primary: DEDICATED_AGENT_DEFAULT_MODEL,
+      },
     });
     changed = true;
+  } else {
+    if (dedicatedAgent.workspace !== DEDICATED_AGENT_WORKSPACE) {
+      dedicatedAgent.workspace = DEDICATED_AGENT_WORKSPACE;
+      changed = true;
+    }
+
+    if ('workspaceDir' in dedicatedAgent) {
+      delete dedicatedAgent.workspaceDir;
+      changed = true;
+    }
+
+    if (!isRecord(dedicatedAgent.model)) {
+      dedicatedAgent.model = {
+        primary: DEDICATED_AGENT_DEFAULT_MODEL,
+      };
+      changed = true;
+    } else if (typeof dedicatedAgent.model.primary !== 'string' || !dedicatedAgent.model.primary.trim()) {
+      dedicatedAgent.model.primary = DEDICATED_AGENT_DEFAULT_MODEL;
+      changed = true;
+    }
   }
 
   agents.list = currentList;
@@ -552,8 +578,10 @@ function ensureDedicatedAgentInConfig(config: Record<string, unknown>): {
 function resolveAgentWorkspace(config: Record<string, unknown>, openClawConfigDir: string, agentId: string): string {
   const agent = findAgentConfig(config, agentId);
   const workspaceDir =
-    typeof agent?.workspaceDir === 'string'
-      ? agent.workspaceDir
+    typeof agent?.workspace === 'string' && agent.workspace.trim()
+      ? agent.workspace
+      : typeof agent?.workspaceDir === 'string' && agent.workspaceDir.trim()
+        ? agent.workspaceDir
       : agentId === 'main'
         ? '~/.openclaw/workspace'
         : `~/.openclaw/workspace-${agentId}`;
@@ -786,15 +814,15 @@ function prepareRuntimeContext(options: AgentPresetMigrationOptions): RuntimeTas
   const state = loadState(getStatePath(clawXConfigDir));
   const sourceHash = currentMeta?.presetHash ?? state?.currentHash;
 
-  if (sourceHash === targetHash && !forceLawclawAgentPreset) {
-    return undefined;
-  }
-
   const configPath = join(openClawConfigDir, 'openclaw.json');
   const rawConfig = readJson5File<Record<string, unknown>>(configPath, {});
   const ensured = ensureDedicatedAgentInConfig(rawConfig);
   if (ensured.changed) {
     writeJsonFile(configPath, ensured.next);
+  }
+
+  if (sourceHash === targetHash && !forceLawclawAgentPreset) {
+    return undefined;
   }
 
   return {
@@ -893,6 +921,13 @@ function applyPlannerOutput(context: RuntimeTaskContext, input: PlannerInput, ou
       nextConfig = merged.next;
       summary.configUpdated = true;
     }
+  }
+
+  // Guarantee dedicated agent invariants even if template/configPatch contains stale workspace fields.
+  const ensuredDedicated = ensureDedicatedAgentInConfig(nextConfig);
+  if (ensuredDedicated.changed) {
+    nextConfig = ensuredDedicated.next;
+    summary.configUpdated = true;
   }
 
   if (summary.configUpdated) {
@@ -1426,4 +1461,3 @@ export async function runAgentPresetStartupMigration(
 export function stopAgentPresetMigrationCoordinator(): void {
   coordinator.stop();
 }
-

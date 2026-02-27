@@ -36,8 +36,8 @@ import { getSetting } from '../utils/store';
 import {
   saveProviderKeyToOpenClaw,
   removeProviderKeyFromOpenClaw,
-  setOpenClawDefaultModel,
-  setOpenClawDefaultModelWithOverride,
+  setOpenClawAgentModel,
+  setOpenClawAgentModelWithOverride,
 } from '../utils/openclaw-auth';
 import { logger } from '../utils/logger';
 import {
@@ -74,6 +74,8 @@ import {
   resolveAgentPresetMigrationConflict,
   retryAgentPresetMigrationNow,
 } from '../utils/agent-preset-migration';
+
+const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
 
 /**
  * Register all IPC handlers
@@ -1260,6 +1262,16 @@ function registerWhatsAppHandlers(mainWindow: BrowserWindow): void {
  * Provider-related IPC handlers
  */
 function registerProviderHandlers(gatewayManager: GatewayManager): void {
+  const saveProviderKeyToOpenClawAgents = (providerType: string, apiKey: string): void => {
+    saveProviderKeyToOpenClaw(providerType, apiKey);
+    saveProviderKeyToOpenClaw(providerType, apiKey, LAWCLAW_MAIN_AGENT_ID);
+  };
+
+  const removeProviderKeyFromOpenClawAgents = (providerType: string): void => {
+    removeProviderKeyFromOpenClaw(providerType);
+    removeProviderKeyFromOpenClaw(providerType, LAWCLAW_MAIN_AGENT_ID);
+  };
+
   // Get all providers with key info
   ipcMain.handle('provider:list', async () => {
     return await getAllProvidersWithKeyInfo();
@@ -1282,7 +1294,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
         // Also write to OpenClaw auth-profiles.json so the gateway can use it
         try {
-          saveProviderKeyToOpenClaw(config.type, apiKey);
+          saveProviderKeyToOpenClawAgents(config.type, apiKey);
         } catch (err) {
           console.warn('Failed to save key to OpenClaw auth-profiles:', err);
         }
@@ -1303,7 +1315,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       // Best-effort cleanup in OpenClaw auth profiles
       if (existing?.type) {
         try {
-          removeProviderKeyFromOpenClaw(existing.type);
+          removeProviderKeyFromOpenClawAgents(existing.type);
         } catch (err) {
           console.warn('Failed to remove key from OpenClaw auth-profiles:', err);
         }
@@ -1325,7 +1337,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const provider = await getProvider(providerId);
       const providerType = provider?.type || providerId;
       try {
-        saveProviderKeyToOpenClaw(providerType, apiKey);
+        saveProviderKeyToOpenClawAgents(providerType, apiKey);
       } catch (err) {
         console.warn('Failed to save key to OpenClaw auth-profiles:', err);
       }
@@ -1366,10 +1378,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const trimmedKey = apiKey.trim();
           if (trimmedKey) {
             await storeApiKey(providerId, trimmedKey);
-            saveProviderKeyToOpenClaw(nextConfig.type, trimmedKey);
+            saveProviderKeyToOpenClawAgents(nextConfig.type, trimmedKey);
           } else {
             await deleteApiKey(providerId);
-            removeProviderKeyFromOpenClaw(nextConfig.type);
+            removeProviderKeyFromOpenClawAgents(nextConfig.type);
           }
         }
 
@@ -1380,10 +1392,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           await saveProvider(existing);
           if (previousKey) {
             await storeApiKey(providerId, previousKey);
-            saveProviderKeyToOpenClaw(previousProviderType, previousKey);
+            saveProviderKeyToOpenClawAgents(previousProviderType, previousKey);
           } else {
             await deleteApiKey(providerId);
-            removeProviderKeyFromOpenClaw(previousProviderType);
+            removeProviderKeyFromOpenClawAgents(previousProviderType);
           }
         } catch (rollbackError) {
           console.warn('Failed to rollback provider updateWithKey:', rollbackError);
@@ -1403,7 +1415,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const provider = await getProvider(providerId);
       const providerType = provider?.type || providerId;
       try {
-        removeProviderKeyFromOpenClaw(providerType);
+        removeProviderKeyFromOpenClawAgents(providerType);
       } catch (err) {
         console.warn('Failed to remove key from OpenClaw auth-profiles:', err);
       }
@@ -1424,12 +1436,12 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
     return await getApiKey(providerId);
   });
 
-  // Set default provider and update OpenClaw default model
+  // Set default provider and update LawClaw dedicated agent model
   ipcMain.handle('provider:setDefault', async (_, providerId: string) => {
     try {
       await setDefaultProvider(providerId);
 
-      // Update OpenClaw config to use this provider's default model
+      // Update OpenClaw config to use this provider's model for lawclaw-main only.
       const provider = await getProvider(providerId);
       if (provider) {
         try {
@@ -1444,20 +1456,20 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
           if (shouldUseRuntimeOverride) {
             // For runtime-configured providers, use user-entered base URL/api.
-            setOpenClawDefaultModelWithOverride(provider.type, modelOverride, {
+            setOpenClawAgentModelWithOverride(LAWCLAW_MAIN_AGENT_ID, provider.type, modelOverride, {
               baseUrl: provider.baseUrl,
               api: registryProviderConfig?.api || 'openai-completions',
               apiKeyEnv: getProviderEnvVar(provider.type),
             });
           } else {
-            setOpenClawDefaultModel(provider.type, modelOverride);
+            setOpenClawAgentModel(LAWCLAW_MAIN_AGENT_ID, provider.type, modelOverride);
           }
 
           // Keep auth-profiles in sync with the default provider instance.
           // This is especially important when multiple custom providers exist.
           const providerKey = await getApiKey(providerId);
           if (providerKey) {
-            saveProviderKeyToOpenClaw(provider.type, providerKey);
+            saveProviderKeyToOpenClawAgents(provider.type, providerKey);
           }
 
           // Restart Gateway so it picks up the new config and env vars.
@@ -1470,7 +1482,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             });
           }
         } catch (err) {
-          console.warn('Failed to set OpenClaw default model:', err);
+          console.warn('Failed to set OpenClaw agent model:', err);
         }
       }
 

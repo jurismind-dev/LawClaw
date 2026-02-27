@@ -29,7 +29,7 @@ describe('provider migration', () => {
       savedProviders.push(config);
     });
     const saveProviderKeyToOpenClaw = vi.fn();
-    const setOpenClawDefaultModel = vi.fn();
+    const setOpenClawAgentModel = vi.fn();
 
     const result = await migrateMoonshotCodePlanProvider({
       getAllProviders: vi.fn(async () => providers),
@@ -38,7 +38,7 @@ describe('provider migration', () => {
       getDefaultProvider: vi.fn(async () => 'moonshot_code_plan'),
       saveProviderKeyToOpenClaw,
       cleanupLegacyProviderProfiles: vi.fn(() => true),
-      setOpenClawDefaultModel,
+      setOpenClawAgentModel,
       cleanupOpenClawProviderEntries: vi.fn(() => true),
     });
 
@@ -60,13 +60,22 @@ describe('provider migration', () => {
       model: undefined,
     });
     expect(saveProviderKeyToOpenClaw).toHaveBeenCalledWith('moonshot_code_plan', 'sk-test');
-    expect(setOpenClawDefaultModel).toHaveBeenCalledWith('moonshot_code_plan', 'kimi-coding/k2p5');
+    expect(saveProviderKeyToOpenClaw).toHaveBeenCalledWith(
+      'moonshot_code_plan',
+      'sk-test',
+      'lawclaw-main'
+    );
+    expect(setOpenClawAgentModel).toHaveBeenCalledWith(
+      'lawclaw-main',
+      'moonshot_code_plan',
+      'kimi-coding/k2p5'
+    );
   });
 
   it('is idempotent when provider is already normalized and has no key', async () => {
     const saveProvider = vi.fn();
     const saveProviderKeyToOpenClaw = vi.fn();
-    const setOpenClawDefaultModel = vi.fn();
+    const setOpenClawAgentModel = vi.fn();
 
     const result = await migrateMoonshotCodePlanProvider({
       getAllProviders: vi.fn(async () => [
@@ -84,7 +93,7 @@ describe('provider migration', () => {
       getDefaultProvider: vi.fn(async () => 'jurismind'),
       saveProviderKeyToOpenClaw,
       cleanupLegacyProviderProfiles: vi.fn(() => false),
-      setOpenClawDefaultModel,
+      setOpenClawAgentModel,
       cleanupOpenClawProviderEntries: vi.fn(() => false),
     });
 
@@ -98,6 +107,6 @@ describe('provider migration', () => {
     });
     expect(saveProvider).not.toHaveBeenCalled();
     expect(saveProviderKeyToOpenClaw).not.toHaveBeenCalled();
-    expect(setOpenClawDefaultModel).not.toHaveBeenCalled();
+    expect(setOpenClawAgentModel).not.toHaveBeenCalled();
   });
 });

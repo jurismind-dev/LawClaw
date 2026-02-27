@@ -9,13 +9,14 @@ import {
   cleanupLegacyProviderProfiles,
   cleanupOpenClawProviderEntries,
   saveProviderKeyToOpenClaw,
-  setOpenClawDefaultModel,
+  setOpenClawAgentModel,
 } from './openclaw-auth';
 import { logger } from './logger';
 
 const LEGACY_PROVIDER_TYPE = 'moonshot_code_plan';
 const OFFICIAL_KIMI_MODEL = 'kimi-coding/k2p5';
 const OFFICIAL_PROVIDER_LABEL = 'Kimi Coding（官方）';
+const LAWCLAW_AGENT_ID = 'lawclaw-main';
 
 export interface ProviderMigrationSummary {
   touchedProviders: number;
@@ -33,7 +34,7 @@ interface ProviderMigrationDependencies {
   getDefaultProvider: typeof getDefaultProvider;
   saveProviderKeyToOpenClaw: typeof saveProviderKeyToOpenClaw;
   cleanupLegacyProviderProfiles: typeof cleanupLegacyProviderProfiles;
-  setOpenClawDefaultModel: typeof setOpenClawDefaultModel;
+  setOpenClawAgentModel: typeof setOpenClawAgentModel;
   cleanupOpenClawProviderEntries: typeof cleanupOpenClawProviderEntries;
 }
 
@@ -44,7 +45,7 @@ const defaultDeps: ProviderMigrationDependencies = {
   getDefaultProvider,
   saveProviderKeyToOpenClaw,
   cleanupLegacyProviderProfiles,
-  setOpenClawDefaultModel,
+  setOpenClawAgentModel,
   cleanupOpenClawProviderEntries,
 };
 
@@ -108,11 +109,14 @@ export async function migrateMoonshotCodePlanProvider(
     const apiKey = await deps.getApiKey(provider.id);
     if (apiKey?.trim()) {
       deps.saveProviderKeyToOpenClaw(LEGACY_PROVIDER_TYPE, apiKey.trim());
+      deps.saveProviderKeyToOpenClaw(LEGACY_PROVIDER_TYPE, apiKey.trim(), LAWCLAW_AGENT_ID);
       syncedKeys += 1;
     }
   }
 
-  const cleanedLegacyProfiles = deps.cleanupLegacyProviderProfiles(LEGACY_PROVIDER_TYPE);
+  const cleanedLegacyProfiles =
+    deps.cleanupLegacyProviderProfiles(LEGACY_PROVIDER_TYPE)
+    || deps.cleanupLegacyProviderProfiles(LEGACY_PROVIDER_TYPE, LAWCLAW_AGENT_ID);
   const removedStaleProviderEntries =
     deps.cleanupOpenClawProviderEntries(LEGACY_PROVIDER_TYPE);
 
@@ -121,7 +125,7 @@ export async function migrateMoonshotCodePlanProvider(
   if (defaultProviderId) {
     const defaultProvider = providers.find((provider) => provider.id === defaultProviderId);
     if (defaultProvider?.type === LEGACY_PROVIDER_TYPE) {
-      deps.setOpenClawDefaultModel(LEGACY_PROVIDER_TYPE, OFFICIAL_KIMI_MODEL);
+      deps.setOpenClawAgentModel(LAWCLAW_AGENT_ID, LEGACY_PROVIDER_TYPE, OFFICIAL_KIMI_MODEL);
       rewroteDefaultModel = true;
     }
   }

@@ -6,7 +6,7 @@
 **开发团队**：法义经纬 (Jurismind)  
 **基于项目**：[ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team  
 **版本**：0.1.16  
-**最后更新**：2026-02-25
+**最后更新**：2026-02-27
 
 ---
 
@@ -80,7 +80,7 @@ OpenClaw Gateway
 └─ 频道状态与事件上报
 ```
 
-> 安全口径（现状）：Provider API Key 当前存储于本地 `electron-store`（明文），并同步写入 `~/.openclaw/agents/main/agent/auth-profiles.json` 供 Gateway 使用；当前未接入操作系统级密钥管理服务。
+> 安全口径（现状）：Provider API Key 当前存储于本地 `electron-store`（明文），并同步写入 `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`（当前主流程涉及 `main` 与 `lawclaw-main`）供 Gateway 使用；当前未接入操作系统级密钥管理服务。
 
 ### 2.2 技术栈
 
@@ -95,6 +95,23 @@ OpenClaw Gateway
 | 国际化 | i18next `^25.8.11` + react-i18next `^16.5.4` |
 | 构建 | Vite `^7.3.1` + electron-builder `^26.8.1` |
 | 测试 | Vitest + Testing Library + jsdom（另有 Playwright e2e 脚本） |
+
+### 2.3 LawClaw 与既有 OpenClaw 兼容策略（最小侵入）
+
+**状态：已实施**
+
+为兼容用户已有 OpenClaw 环境并降低配置扰动，LawClaw 在模型默认值策略上采用“专用 Agent 定向写入”：
+
+- LawClaw 仅对 `lawclaw-main` 维护默认模型（默认值：`jurismind/kimi-k2.5`）
+- 不主动覆盖全局 `agents.defaults.model`（避免影响用户既有主 Agent 与其他 Agent）
+- 启动迁移会强制 `lawclaw-main.workspace = ~/.openclaw/workspace-lawclaw-main`，确保专用 Agent 与主工作区隔离
+- 启动迁移仅做缺失补齐：当 `lawclaw-main.model.primary` 缺失时自动补齐；若用户已显式配置则保持原值
+- Provider 默认切换（Setup/Settings）仅更新 `lawclaw-main.model.primary`，不写全局默认模型
+
+兼容性边界：
+
+- 仅 `lawclaw-main` 的工作区会执行强一致修正；`agents.defaults` 与其他 Agent 配置保持原状
+- 对旧版/残缺配置采取“增量修复”而非“整体重写”
 
 ---
 
@@ -643,6 +660,21 @@ const { t } = useTranslation('chat');
 
 - 当前已接入 ClawHub 搜索与安装流程
 - 若需私有法律技能市场，需二次开发市场 API 与鉴权流程
+
+### 8.5 QQBot 打包产物策略
+
+**状态：已实施**
+
+`@sliverp/qqbot` 插件包（`resources/plugins/qqbot/*.tgz`）采用“构建时自动下载”策略：
+
+- tgz 不作为源码资产入库（默认忽略，不参与版本管理）
+- `pnpm package*` 流程在打包前自动下载并写入 `resources/plugins/qqbot/`
+- 安装包产物仍会包含插件安装所需内容，普通 clone 用户可直接执行打包命令
+
+离线/受限网络构建说明：
+
+- 若 CI/内网无法访问 npm registry，需额外配置镜像或内部制品缓存作为兜底
+- 该兜底方案不属于当前默认实现
 
 ---
 

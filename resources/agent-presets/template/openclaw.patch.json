@@ -11,7 +11,11 @@
     "list": [
       {
         "id": "lawclaw-main",
-        "name": "LawClaw 主智能体"
+        "name": "LawClaw 主智能体",
+        "workspace": "~/.openclaw/workspace-lawclaw-main",
+        "model": {
+          "primary": "jurismind/kimi-k2.5"
+        }
       }
     ]
   }

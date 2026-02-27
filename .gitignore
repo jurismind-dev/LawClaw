@@ -7,6 +7,7 @@ node_modules/
 dist/
 dist-electron/
 release/
+resources/plugins/qqbot/*.tgz
 *.local
 
 # IDE

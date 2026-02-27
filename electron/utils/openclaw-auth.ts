@@ -36,6 +36,10 @@ interface RuntimeProviderConfigOverride {
   apiKeyEnv?: string;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function getAuthProfilesPath(agentId = 'main'): string {
   return join(homedir(), '.openclaw', 'agents', agentId, 'agent', AUTH_PROFILE_FILENAME);
 }
@@ -233,6 +237,30 @@ function ensureGatewayMode(config: Record<string, unknown>): void {
     gateway.mode = 'local';
   }
   config.gateway = gateway;
+}
+
+function setAgentModelPrimary(config: Record<string, unknown>, agentId: string, model: string): void {
+  const agents = isRecord(config.agents) ? { ...config.agents } : {};
+  const list = Array.isArray(agents.list) ? [...agents.list] : [];
+
+  const index = list.findIndex((item) => isRecord(item) && item.id === agentId);
+  const agent =
+    index >= 0 && isRecord(list[index])
+      ? ({ ...(list[index] as Record<string, unknown>) } as Record<string, unknown>)
+      : ({ id: agentId } as Record<string, unknown>);
+
+  const agentModel = isRecord(agent.model) ? { ...agent.model } : {};
+  agentModel.primary = model;
+  agent.model = agentModel;
+
+  if (index >= 0) {
+    list[index] = agent;
+  } else {
+    list.push(agent);
+  }
+
+  agents.list = list;
+  config.agents = agents;
 }
 
 /**
@@ -496,6 +524,157 @@ export function setOpenClawDefaultModelWithOverride(
   writeOpenClawConfig(config);
   console.log(
     `Set OpenClaw default model to "${model}" for provider "${provider}" (runtime override, canonical: ${canonicalProviderId})`
+  );
+}
+
+/**
+ * Update ~/.openclaw/openclaw.json model for a specific agent and (if needed)
+ * models.providers entry.
+ */
+export function setOpenClawAgentModel(agentId: string, provider: string, modelOverride?: string): void {
+  const canonicalProviderId = getCanonicalProviderId(provider);
+  const aliasIds = getProviderAliasIds(provider);
+
+  // moonshot_code_plan is always pinned to official kimi-coding/k2p5.
+  const forcedKimiCodingDefault = provider === 'moonshot_code_plan';
+  const normalizedOverride = forcedKimiCodingDefault
+    ? undefined
+    : normalizeModelOverride(provider, canonicalProviderId, modelOverride);
+
+  const model = normalizedOverride || getMappedDefaultModel(provider);
+  if (!model) {
+    console.warn(`No default model mapping for provider "${provider}"`);
+    return;
+  }
+
+  const config = readOpenClawConfig();
+  setAgentModelPrimary(config, agentId, model);
+
+  const modelId = parseModelId(model, [canonicalProviderId, ...aliasIds]);
+  const providerCfg = getProviderConfig(provider) || getProviderConfig(canonicalProviderId);
+
+  if (providerCfg) {
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+
+    const existingProvider =
+      providers[canonicalProviderId] && typeof providers[canonicalProviderId] === 'object'
+        ? (providers[canonicalProviderId] as Record<string, unknown>)
+        : {};
+
+    const existingModels = Array.isArray(existingProvider.models)
+      ? (existingProvider.models as Array<Record<string, unknown>>)
+      : [];
+    const registryModels = (providerCfg.models ?? []).map((m) => ({ ...m })) as Array<
+      Record<string, unknown>
+    >;
+
+    const mergedModels = [...registryModels];
+    for (const item of existingModels) {
+      const id = typeof item?.id === 'string' ? item.id : '';
+      if (id && !mergedModels.some((m) => m.id === id)) {
+        mergedModels.push(item);
+      }
+    }
+    if (modelId && !mergedModels.some((m) => m.id === modelId)) {
+      mergedModels.push({ id: modelId, name: modelId });
+    }
+
+    providers[canonicalProviderId] = {
+      ...existingProvider,
+      baseUrl: providerCfg.baseUrl,
+      api: providerCfg.api,
+      apiKey: `\${${providerCfg.apiKeyEnv}}`,
+      models: mergedModels,
+    };
+
+    // Remove stale alias entries when canonical id differs.
+    for (const alias of aliasIds) {
+      if (alias !== canonicalProviderId && providers[alias]) {
+        delete providers[alias];
+      }
+    }
+
+    models.providers = providers;
+    config.models = models;
+  } else {
+    removeModelProviderEntries(config, aliasIds);
+  }
+
+  ensureGatewayMode(config);
+  writeOpenClawConfig(config);
+  console.log(
+    `Set OpenClaw model to "${model}" for agent "${agentId}" via provider "${provider}" (canonical: ${canonicalProviderId})`
+  );
+}
+
+/**
+ * Update a specific agent model + provider config using runtime config values.
+ * Useful for runtime providers such as custom/ollama.
+ */
+export function setOpenClawAgentModelWithOverride(
+  agentId: string,
+  provider: string,
+  modelOverride: string | undefined,
+  override: RuntimeProviderConfigOverride
+): void {
+  const canonicalProviderId = getCanonicalProviderId(provider);
+  const aliasIds = getProviderAliasIds(provider);
+
+  const model =
+    normalizeModelOverride(provider, canonicalProviderId, modelOverride) || getMappedDefaultModel(provider);
+  if (!model) {
+    console.warn(`No default model mapping for provider "${provider}"`);
+    return;
+  }
+
+  const config = readOpenClawConfig();
+  setAgentModelPrimary(config, agentId, model);
+
+  const modelId = parseModelId(model, [canonicalProviderId, ...aliasIds]);
+
+  if (override.baseUrl && override.api) {
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+
+    const existingProvider =
+      providers[canonicalProviderId] && typeof providers[canonicalProviderId] === 'object'
+        ? (providers[canonicalProviderId] as Record<string, unknown>)
+        : {};
+
+    const existingModels = Array.isArray(existingProvider.models)
+      ? (existingProvider.models as Array<Record<string, unknown>>)
+      : [];
+    const mergedModels = [...existingModels];
+    if (modelId && !mergedModels.some((m) => m.id === modelId)) {
+      mergedModels.push({ id: modelId, name: modelId });
+    }
+
+    const nextProvider: Record<string, unknown> = {
+      ...existingProvider,
+      baseUrl: override.baseUrl,
+      api: override.api,
+      models: mergedModels,
+    };
+    if (override.apiKeyEnv) {
+      nextProvider.apiKey = `\${${override.apiKeyEnv}}`;
+    }
+
+    providers[canonicalProviderId] = nextProvider;
+    for (const alias of aliasIds) {
+      if (alias !== canonicalProviderId && providers[alias]) {
+        delete providers[alias];
+      }
+    }
+
+    models.providers = providers;
+    config.models = models;
+  }
+
+  ensureGatewayMode(config);
+  writeOpenClawConfig(config);
+  console.log(
+    `Set OpenClaw model to "${model}" for agent "${agentId}" via provider "${provider}" (runtime override, canonical: ${canonicalProviderId})`
   );
 }
 

@@ -56,10 +56,8 @@ async function setupTarget(id) {
 
   echo(chalk.blue`\n📦 Setting up uv for ${id}...`);
 
-  // Cleanup & Prep
-  await fs.remove(targetDir);
+  // Cleanup temp workspace only. Keep existing target binaries until new ones are ready.
   await fs.remove(tempDir);
-  await fs.ensureDir(targetDir);
   await fs.ensureDir(tempDir);
 
   try {
@@ -92,11 +90,13 @@ async function setupTarget(id) {
     const destBin = path.join(targetDir, target.binName);
 
     if (await fs.pathExists(sourceBin)) {
+      await fs.ensureDir(targetDir);
       await fs.move(sourceBin, destBin, { overwrite: true });
     } else {
       echo(chalk.yellow`🔍 Binary not found in expected subfolder, searching...`);
       const files = await glob(`**/${target.binName}`, { cwd: tempDir, absolute: true });
       if (files.length > 0) {
+        await fs.ensureDir(targetDir);
         await fs.move(files[0], destBin, { overwrite: true });
       } else {
         throw new Error(`Could not find ${target.binName} in extracted files.`);

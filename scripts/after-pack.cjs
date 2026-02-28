@@ -15,8 +15,13 @@
  * to reduce the number of files that need to be code-signed on macOS.
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync } = require('fs');
 const { join } = require('path');
+
+function getBundledUvPath(resourcesDir, platform) {
+  const binName = platform === 'win32' ? 'uv.exe' : 'uv';
+  return join(resourcesDir, 'bin', binName);
+}
 
 /**
  * Recursively remove unnecessary files to reduce code signing overhead
@@ -83,6 +88,14 @@ exports.default = async function afterPack(context) {
     resourcesDir = join(appOutDir, `${appName}.app`, 'Contents', 'Resources');
   } else {
     resourcesDir = join(appOutDir, 'resources');
+  }
+
+  const uvPath = getBundledUvPath(resourcesDir, platform);
+  if (!existsSync(uvPath)) {
+    const platformHint = platform === 'darwin' ? 'mac' : platform === 'win32' ? 'win' : 'linux';
+    throw new Error(
+      `[after-pack] Missing bundled uv binary at ${uvPath}. Run "pnpm run uv:ensure:${platformHint}" before packaging.`
+    );
   }
 
   const dest = join(resourcesDir, 'openclaw', 'node_modules');

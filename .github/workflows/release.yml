@@ -60,17 +60,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Download uv binaries for macOS
+      - name: Ensure bundled uv for macOS
         if: matrix.platform == 'mac'
-        run: pnpm run uv:download:mac
+        run: pnpm run uv:ensure:mac
 
-      - name: Download uv binaries for Windows
+      - name: Ensure bundled uv for Windows
         if: matrix.platform == 'win'
-        run: pnpm run uv:download:win
+        run: pnpm run uv:ensure:win
 
-      - name: Download uv binaries for Linux
+      - name: Ensure bundled uv for Linux
         if: matrix.platform == 'linux'
-        run: pnpm run uv:download:linux
+        run: pnpm run uv:ensure:linux
 
       # macOS specific steps
       # --publish never: prevent electron-builder from auto-publishing to GitHub.
@@ -95,6 +95,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --win --publish never
+
+      - name: Verify bundled uv in Windows unpacked outputs
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $required = @(
+            "release/win-unpacked/resources/bin/uv.exe",
+            "release/win-arm64-unpacked/resources/bin/uv.exe"
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path $file)) {
+              Write-Error "Missing bundled uv binary: $file"
+              exit 1
+            }
+          }
 
       # Linux specific steps
       - name: Build Linux

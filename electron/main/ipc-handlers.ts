@@ -32,7 +32,7 @@ import {
   ensureDir,
 } from '../utils/paths';
 import { getOpenClawCliCommand, installOpenClawCliMac } from '../utils/openclaw-cli';
-import { getSetting } from '../utils/store';
+import { getSetting, setSetting } from '../utils/store';
 import {
   saveProviderKeyToOpenClaw,
   removeProviderKeyFromOpenClaw,
@@ -49,6 +49,8 @@ import {
   setChannelEnabled,
   validateChannelConfig,
   validateChannelCredentials,
+  enforceLawClawChannelBinding,
+  clearLawClawChannelBinding,
 } from '../utils/channel-config';
 import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
 import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
@@ -75,8 +77,34 @@ import {
   resolveAgentPresetMigrationConflict,
   retryAgentPresetMigrationNow,
 } from '../utils/agent-preset-migration';
+import {
+  filterLawClawSessions,
+  normalizeLawClawSessionKey,
+  normalizeSessionKeyParam,
+} from '../utils/lawclaw-session';
 
 const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
+
+function normalizeChannelType(channelType: string): string {
+  return channelType.trim().toLowerCase();
+}
+
+async function getLawClawManagedChannels(): Promise<string[]> {
+  const value = await getSetting('lawclawManagedChannels');
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const channels = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const normalized = normalizeChannelType(item);
+    if (normalized) {
+      channels.add(normalized);
+    }
+  }
+  return Array.from(channels);
+}
 
 /**
  * Register all IPC handlers
@@ -453,8 +481,10 @@ function registerGatewayHandlers(
   // Gateway RPC call
   ipcMain.handle('gateway:rpc', async (_, method: string, params?: unknown, timeoutMs?: number) => {
     try {
-      const result = await gatewayManager.rpc(method, params, timeoutMs);
-      return { success: true, result };
+      const normalizedParams = normalizeSessionKeyParam(params);
+      const result = await gatewayManager.rpc(method, normalizedParams, timeoutMs);
+      const finalResult = method === 'sessions.list' ? filterLawClawSessions(result) : result;
+      return { success: true, result: finalResult };
     } catch (error) {
       return { success: false, error: String(error) };
     }
@@ -476,6 +506,7 @@ function registerGatewayHandlers(
     media?: Array<{ filePath: string; mimeType: string; fileName: string }>;
   }) => {
     try {
+      const normalizedSessionKey = normalizeLawClawSessionKey(params.sessionKey);
       let message = params.message;
       // The Gateway processes image attachments through TWO parallel paths:
       // Path A: `attachments` param → parsed via `parseMessageWithAttachments` →
@@ -520,7 +551,7 @@ function registerGatewayHandlers(
       }
 
       const rpcParams: Record<string, unknown> = {
-        sessionKey: params.sessionKey,
+        sessionKey: normalizedSessionKey,
         message,
         deliver: params.deliver ?? false,
         idempotencyKey: params.idempotencyKey,
@@ -1125,6 +1156,17 @@ function registerOpenClawHandlers(): void {
     try {
       logger.info('channel:saveConfig', { channelType, keys: Object.keys(config || {}) });
       saveChannelConfig(channelType, config);
+
+      const normalizedChannelType = normalizeChannelType(channelType);
+      if (normalizedChannelType) {
+        const managedChannels = await getLawClawManagedChannels();
+        if (!managedChannels.includes(normalizedChannelType)) {
+          managedChannels.push(normalizedChannelType);
+          await setSetting('lawclawManagedChannels', managedChannels);
+        }
+        enforceLawClawChannelBinding(normalizedChannelType);
+      }
+
       return { success: true };
     } catch (error) {
       console.error('Failed to save channel config:', error);
@@ -1158,6 +1200,19 @@ function registerOpenClawHandlers(): void {
   ipcMain.handle('channel:deleteConfig', async (_, channelType: string) => {
     try {
       deleteChannelConfig(channelType);
+
+      const normalizedChannelType = normalizeChannelType(channelType);
+      if (normalizedChannelType) {
+        const managedChannels = await getLawClawManagedChannels();
+        if (managedChannels.includes(normalizedChannelType)) {
+          clearLawClawChannelBinding(normalizedChannelType);
+          await setSetting(
+            'lawclawManagedChannels',
+            managedChannels.filter((item) => item !== normalizedChannelType)
+          );
+        }
+      }
+
       return { success: true };
     } catch (error) {
       console.error('Failed to delete channel config:', error);

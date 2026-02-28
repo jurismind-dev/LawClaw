@@ -68,7 +68,7 @@ describe('chat store default session binding', () => {
     useChatStore.getState().switchSession('agent:main:main');
     await useChatStore.getState().loadSessions();
 
-    expect(useChatStore.getState().currentSessionKey).toBe('agent:main:main');
+    expect(useChatStore.getState().currentSessionKey).toBe(DEDICATED_SESSION_KEY);
   });
 
   it('filters internal migration sessions from list', async () => {
@@ -98,9 +98,34 @@ describe('chat store default session binding', () => {
     await useChatStore.getState().loadSessions();
 
     const sessionKeys = useChatStore.getState().sessions.map((session) => session.key);
-    expect(sessionKeys).toEqual(expect.arrayContaining(['agent:main:main', DEDICATED_SESSION_KEY]));
+    expect(sessionKeys).toEqual([DEDICATED_SESSION_KEY]);
     expect(sessionKeys).not.toContain('agent:lawclaw-main:__internal_migration__:task-1');
     expect(sessionKeys).not.toContain('agent:lawclaw-main:lawclaw-upgrade-migration');
+  });
+
+  it('sessions.list 鍙繑鍥為潪 lawclaw 浼氳瘽鏃朵粛鍥炶惤鍒伴粯璁?lawclaw 浼氳瘽', async () => {
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'sessions.list') {
+        return {
+          success: true,
+          result: {
+            sessions: [{ key: 'agent:main:main' }],
+          },
+        };
+      }
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: { messages: [] },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    expect(useChatStore.getState().currentSessionKey).toBe(DEDICATED_SESSION_KEY);
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([DEDICATED_SESSION_KEY]);
   });
 
   it('falls back to dedicated default when current session is internal migration session', async () => {

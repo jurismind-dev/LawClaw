@@ -10,6 +10,7 @@ import * as logger from './logger';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
+const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
 
 // Channels that are managed as plugins (config goes under plugins.entries, not channels)
 const PLUGIN_CHANNELS = ['whatsapp'];
@@ -27,7 +28,110 @@ export interface PluginsConfig {
 export interface OpenClawConfig {
     channels?: Record<string, ChannelConfigData>;
     plugins?: PluginsConfig;
+    bindings?: unknown[];
     [key: string]: unknown;
+}
+
+interface BindingMatch {
+    channel: string;
+    accountId?: string;
+    [key: string]: unknown;
+}
+
+interface BindingRule {
+    agentId: string;
+    match: BindingMatch;
+    [key: string]: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isBindingRule(value: unknown): value is BindingRule {
+    return isRecord(value) && typeof value.agentId === 'string' && isRecord(value.match) && typeof value.match.channel === 'string';
+}
+
+function normalizeChannelId(channelType: string): string {
+    return channelType.trim().toLowerCase();
+}
+
+/**
+ * Ensure the target channel is routed to lawclaw-main with a single wildcard account binding.
+ * Existing bindings for this channel are removed first to guarantee deterministic routing.
+ */
+export function upsertLawClawChannelBinding(config: OpenClawConfig, channelType: string): boolean {
+    const normalizedChannel = normalizeChannelId(channelType);
+    if (!normalizedChannel) return false;
+
+    const existingBindings = Array.isArray(config.bindings) ? config.bindings : [];
+    const nextBindings = existingBindings.filter((binding) => {
+        return !(isBindingRule(binding) && normalizeChannelId(binding.match.channel) === normalizedChannel);
+    });
+
+    nextBindings.push({
+        agentId: LAWCLAW_MAIN_AGENT_ID,
+        match: {
+            channel: normalizedChannel,
+            accountId: '*',
+        },
+    });
+
+    const changed = JSON.stringify(existingBindings) !== JSON.stringify(nextBindings);
+    if (!changed) {
+        return false;
+    }
+
+    config.bindings = nextBindings;
+    return true;
+}
+
+/**
+ * Remove LawClaw-managed binding for a channel without touching unrelated routing rules.
+ */
+export function removeLawClawChannelBinding(config: OpenClawConfig, channelType: string): boolean {
+    const normalizedChannel = normalizeChannelId(channelType);
+    if (!normalizedChannel || !Array.isArray(config.bindings)) {
+        return false;
+    }
+
+    const existingBindings = config.bindings;
+    const nextBindings = existingBindings.filter((binding) => {
+        return !(
+            isBindingRule(binding) &&
+            binding.agentId === LAWCLAW_MAIN_AGENT_ID &&
+            normalizeChannelId(binding.match.channel) === normalizedChannel
+        );
+    });
+
+    if (nextBindings.length === existingBindings.length) {
+        return false;
+    }
+
+    if (nextBindings.length === 0) {
+        delete config.bindings;
+    } else {
+        config.bindings = nextBindings;
+    }
+    return true;
+}
+
+export function enforceLawClawChannelBinding(channelType: string): boolean {
+    const config = readOpenClawConfig();
+    const changed = upsertLawClawChannelBinding(config, channelType);
+    if (changed) {
+        writeOpenClawConfig(config);
+    }
+    return changed;
+}
+
+export function clearLawClawChannelBinding(channelType: string): boolean {
+    const config = readOpenClawConfig();
+    const changed = removeLawClawChannelBinding(config, channelType);
+    if (changed) {
+        writeOpenClawConfig(config);
+    }
+    return changed;
 }
 
 /**

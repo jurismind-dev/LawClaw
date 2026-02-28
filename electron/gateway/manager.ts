@@ -602,7 +602,7 @@ export class GatewayManager extends EventEmitter {
     let mode: 'packaged' | 'dev-built' | 'dev-pnpm';
     let useElectronRunAsNode = false;
 
-    const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+    const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--allow-unconfigured'];
     const hasBuiltEntry = isOpenClawBuilt() && existsSync(entryScript);
 
     if (app.isPackaged && !hasBuiltEntry) {

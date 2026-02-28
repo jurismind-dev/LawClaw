@@ -45,6 +45,7 @@ export interface AppSettings {
   selectedBundles: string[];
   enabledSkills: string[];
   disabledSkills: string[];
+  lawclawManagedChannels: string[];
 }
 
 /**
@@ -76,6 +77,7 @@ const defaults: AppSettings = {
   selectedBundles: ['productivity', 'developer'],
   enabledSkills: [],
   disabledSkills: [],
+  lawclawManagedChannels: [],
 };
 
 /**

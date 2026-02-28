@@ -112,6 +112,7 @@ let _lastChatEventAt = 0;
 
 const DEFAULT_CANONICAL_PREFIX = 'agent:lawclaw-main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
+const DEFAULT_CANONICAL_SESSION_PREFIX = `${DEFAULT_CANONICAL_PREFIX}:`;
 const INTERNAL_MIGRATION_SESSION_PREFIX = `${DEFAULT_CANONICAL_PREFIX}:__internal_migration__:`;
 const LEGACY_MIGRATION_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:lawclaw-upgrade-migration`;
 
@@ -610,14 +611,6 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
   }
 }
 
-function getCanonicalPrefixFromSessions(sessions: ChatSession[]): string | null {
-  const canonical = sessions.find((s) => s.key.startsWith('agent:'))?.key;
-  if (!canonical) return null;
-  const parts = canonical.split(':');
-  if (parts.length < 2) return null;
-  return `${parts[0]}:${parts[1]}`;
-}
-
 function isInternalMigrationSessionKey(key: string): boolean {
   return (
     key === LEGACY_MIGRATION_SESSION_KEY ||
@@ -916,7 +909,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
           model: s.model ? String(s.model) : undefined,
         })).filter((s: ChatSession) => s.key);
-        const visibleSessions = sessions.filter((session) => !isInternalMigrationSessionKey(session.key));
+        const visibleSessions = sessions.filter(
+          (session) =>
+            session.key.startsWith(DEFAULT_CANONICAL_SESSION_PREFIX) &&
+            !isInternalMigrationSessionKey(session.key)
+        );
 
         const canonicalBySuffix = new Map<string, string>();
         for (const session of visibleSessions) {
@@ -944,6 +941,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? DEFAULT_SESSION_KEY
           : currentSessionKey || DEFAULT_SESSION_KEY;
         if (isInternalMigrationSessionKey(nextSessionKey)) {
+          nextSessionKey = DEFAULT_SESSION_KEY;
+        }
+        if (!nextSessionKey.startsWith(DEFAULT_CANONICAL_SESSION_PREFIX)) {
           nextSessionKey = DEFAULT_SESSION_KEY;
         }
         if (!nextSessionKey.startsWith('agent:')) {
@@ -986,8 +986,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Switch session ──
 
   switchSession: (key: string) => {
+    const nextSessionKey = key.startsWith(DEFAULT_CANONICAL_SESSION_PREFIX)
+      ? key
+      : DEFAULT_SESSION_KEY;
     set({
-      currentSessionKey: key,
+      currentSessionKey: nextSessionKey,
       messages: [],
       streamingText: '',
       streamingMessage: null,
@@ -1005,9 +1008,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── New session ──
 
   newSession: () => {
-    // Generate a new unique session key and switch to it
-    const prefix = getCanonicalPrefixFromSessions(get().sessions) ?? DEFAULT_CANONICAL_PREFIX;
-    const newKey = `${prefix}:session-${Date.now()}`;
+    const newKey = `${DEFAULT_CANONICAL_PREFIX}:session-${Date.now()}`;
     const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
     set((s) => ({
       currentSessionKey: newKey,

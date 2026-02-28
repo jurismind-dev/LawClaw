@@ -68,6 +68,7 @@ import {
 } from '../utils/openclaw-plugin-install';
 import { forceSetup } from './index';
 import {
+  getAgentPresetMigrationArtifactsDir,
   getAgentPresetMigrationStatus,
   onAgentPresetMigrationChatLock,
   onAgentPresetMigrationStatus,
@@ -613,6 +614,10 @@ function registerGatewayHandlers(
 export function registerAgentPresetMigrationHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('agentPresetMigration:getStatus', () => {
     return getAgentPresetMigrationStatus();
+  });
+
+  ipcMain.handle('agentPresetMigration:getArtifactsDir', () => {
+    return getAgentPresetMigrationArtifactsDir();
   });
 
   ipcMain.handle('agentPresetMigration:resolveConflict', async (_, decision: string) => {

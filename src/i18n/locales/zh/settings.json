@@ -62,6 +62,7 @@
         "status": "状态",
         "port": "端口",
         "logs": "日志",
+        "migrationArtifacts": "迁移工件目录",
         "appLogs": "应用日志",
         "openFolder": "打开文件夹",
         "autoStart": "自动启动网关",

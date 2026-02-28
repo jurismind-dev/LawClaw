@@ -11,6 +11,8 @@ import {
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import {
+  getAgentPresetMigrationStatus,
+  onAgentPresetMigrationStatus,
   retryAgentPresetMigrationNow,
   runAgentPresetStartupMigration,
   stopAgentPresetMigrationCoordinator,
@@ -205,6 +207,18 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
       resourcesDir: fixture.resourcesDir,
       openClawConfigDir: fixture.openclawDir,
       clawXConfigDir: fixture.lawclawDir,
+      planner: vi.fn(),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+    writeText(
+      join(fixture.resourcesDir, 'agent-presets', 'template', 'workspaces', 'lawclaw-main', 'SOUL.md'),
+      `${fixture.templateLawclawSoul}\n\n<!-- LAWCLAW_CAPABILITY_START:skill-bootstrap-test -->\nnew\n<!-- LAWCLAW_CAPABILITY_END:skill-bootstrap-test -->`
+    );
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
       planner: async () => {
         skillExistsWhenPlannerRuns = existsSync(skillPath);
         return {
@@ -247,7 +261,7 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
       heartbeatIntervalMs: 60_000,
     });
 
-    expect(planner).toHaveBeenCalledTimes(1);
+    expect(planner).toHaveBeenCalledTimes(0);
     const queue = readAgentPresetQueue(join(fixture.lawclawDir, 'agent-presets', 'queue.json'));
     expect(queue.tasks.length).toBe(0);
   });
@@ -288,7 +302,7 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
       heartbeatIntervalMs: 60_000,
     });
 
-    expect(planner).toHaveBeenCalledTimes(1);
+    expect(planner).toHaveBeenCalledTimes(0);
     const next = JSON.parse(readText(configPath)) as {
       agents: { list: Array<{ id: string; workspace?: string; workspaceDir?: string }> };
     };
@@ -638,6 +652,20 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
       resourcesDir: fixture.resourcesDir,
       openClawConfigDir: fixture.openclawDir,
       clawXConfigDir: fixture.lawclawDir,
+      planner: vi.fn(),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    writeText(
+      join(fixture.resourcesDir, 'agent-presets', 'template', 'workspaces', 'lawclaw-main', 'SOUL.md'),
+      `${fixture.templateLawclawSoul}\n\n<!-- LAWCLAW_CAPABILITY_START:session-key-test -->\nnew\n<!-- LAWCLAW_CAPABILITY_END:session-key-test -->`
+    );
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
       planner: undefined,
       gatewayRpc: async (method, params) => {
         if (method === 'chat.send') {
@@ -662,11 +690,23 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
 
     expect(sendCalls.length).toBeGreaterThan(0);
     const firstParams = sendCalls[0] as { sessionKey?: string };
-    expect(firstParams.sessionKey).toBe('agent:lawclaw-main:lawclaw-upgrade-migration');
+    expect(firstParams.sessionKey).toMatch(/^agent:lawclaw-main:__internal_migration__:/);
   });
 
   it('forceLawclawAgentPreset + 模型不可用时，会立即覆盖 lawclaw-main 并保留队列任务', async () => {
     const fixture = createFixture();
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner: vi.fn(),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+    writeText(
+      join(fixture.resourcesDir, 'agent-presets', 'template', 'workspaces', 'lawclaw-main', 'SOUL.md'),
+      `${fixture.templateLawclawSoul}\n\n<!-- LAWCLAW_CAPABILITY_START:force-fallback-test -->\nnew\n<!-- LAWCLAW_CAPABILITY_END:force-fallback-test -->`
+    );
     writeText(join(fixture.openclawDir, 'workspace-lawclaw-main', 'SOUL.md'), '# custom lawclaw-main');
 
     await runAgentPresetStartupMigration({
@@ -720,4 +760,108 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
       'v2 lawclaw-main'
     );
   });
+
+  it('bootstrap should copy presets directly without planner', async () => {
+    const fixture = createFixture();
+    const planner = vi.fn();
+    const soulPath = join(fixture.openclawDir, 'workspace-lawclaw-main', 'SOUL.md');
+    writeText(soulPath, '# custom soul');
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner,
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    expect(planner).not.toHaveBeenCalled();
+    expect(readText(soulPath)).toContain('v2 lawclaw-main');
+
+    const backupDir = join(fixture.lawclawDir, 'agent-presets', 'backups');
+    expect(existsSync(backupDir)).toBe(true);
+    expect(readdirSync(backupDir).length).toBeGreaterThan(0);
+  });
+
+  it('treat missing v_current as bootstrap even when state.currentHash exists', async () => {
+    const fixture = createFixture();
+    const planner = vi.fn();
+    writeText(
+      join(fixture.lawclawDir, 'agent-presets', 'state.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 2,
+          currentHash: 'from-state-only',
+          updateHash: 'from-state-only',
+          managedFiles: {},
+          updatedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      )
+    );
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner,
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    expect(planner).not.toHaveBeenCalled();
+    expect(existsSync(join(fixture.lawclawDir, 'agent-presets', 'v_current', 'meta.json'))).toBe(true);
+  });
+
+  it('running keeps chat unlocked while awaiting_confirmation locks chat', async () => {
+    const fixture = createFixture();
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner: vi.fn(),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    writeText(
+      join(fixture.resourcesDir, 'agent-presets', 'template', 'workspaces', 'lawclaw-main', 'SOUL.md'),
+      `${fixture.templateLawclawSoul}
+
+<!-- LAWCLAW_CAPABILITY_START:status-test -->
+status test
+<!-- LAWCLAW_CAPABILITY_END:status-test -->`
+    );
+
+    const statuses: Array<{ state: string; chatLocked: boolean }> = [];
+    const off = onAgentPresetMigrationStatus((status) => {
+      statuses.push({ state: status.state, chatLocked: status.chatLocked });
+    });
+
+    try {
+      await runAgentPresetStartupMigration({
+        resourcesDir: fixture.resourcesDir,
+        openClawConfigDir: fixture.openclawDir,
+        clawXConfigDir: fixture.lawclawDir,
+        planner: vi.fn().mockResolvedValue({
+          schemaVersion: 1,
+          decision: 'need_confirmation',
+          files: [],
+        }),
+        isGatewayRunning: () => true,
+        heartbeatIntervalMs: 60_000,
+      });
+    } finally {
+      off();
+    }
+
+    expect(statuses.some((item) => item.state === 'running' && item.chatLocked === false)).toBe(true);
+    const latest = getAgentPresetMigrationStatus();
+    expect(latest.state).toBe('awaiting_confirmation');
+    expect(latest.chatLocked).toBe(true);
+  });
+
 });

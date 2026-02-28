@@ -25,6 +25,7 @@ const electronAPI = {
         'gateway:getControlUiUrl',
         // Agent preset migration
         'agentPresetMigration:getStatus',
+        'agentPresetMigration:getArtifactsDir',
         'agentPresetMigration:resolveConflict',
         'agentPresetMigration:retryNow',
         // OpenClaw

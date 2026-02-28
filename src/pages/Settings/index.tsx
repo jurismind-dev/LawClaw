@@ -91,6 +91,19 @@ export function Settings() {
     }
   };
 
+  const handleOpenMigrationArtifactsDir = async () => {
+    try {
+      const artifactsDir = await window.electron.ipcRenderer.invoke(
+        'agentPresetMigration:getArtifactsDir'
+      ) as string;
+      if (artifactsDir) {
+        await window.electron.ipcRenderer.invoke('shell:showItemInFolder', artifactsDir);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   // Open developer console
   const openDevConsole = async () => {
     try {
@@ -324,6 +337,10 @@ export function Settings() {
               <Button variant="outline" size="sm" onClick={handleShowLogs}>
                 <FileText className="h-4 w-4 mr-2" />
                 {t('gateway.logs')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleOpenMigrationArtifactsDir}>
+                <ExternalLink className="h-4 w-4 mr-2" />
+                {t('gateway.migrationArtifacts')}
               </Button>
             </div>
           </div>

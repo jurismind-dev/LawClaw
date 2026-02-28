@@ -62,6 +62,7 @@
         "status": "Status",
         "port": "Port",
         "logs": "Logs",
+        "migrationArtifacts": "Migration Artifacts",
         "appLogs": "Application Logs",
         "openFolder": "Open Folder",
         "autoStart": "Auto-start Gateway",

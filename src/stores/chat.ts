@@ -112,6 +112,8 @@ let _lastChatEventAt = 0;
 
 const DEFAULT_CANONICAL_PREFIX = 'agent:lawclaw-main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
+const INTERNAL_MIGRATION_SESSION_PREFIX = `${DEFAULT_CANONICAL_PREFIX}:__internal_migration__:`;
+const LEGACY_MIGRATION_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:lawclaw-upgrade-migration`;
 
 // ── Local image cache ─────────────────────────────────────────
 // The Gateway doesn't store image attachments in session content blocks,
@@ -616,6 +618,13 @@ function getCanonicalPrefixFromSessions(sessions: ChatSession[]): string | null 
   return `${parts[0]}:${parts[1]}`;
 }
 
+function isInternalMigrationSessionKey(key: string): boolean {
+  return (
+    key === LEGACY_MIGRATION_SESSION_KEY ||
+    key.startsWith(INTERNAL_MIGRATION_SESSION_PREFIX)
+  );
+}
+
 function isToolOnlyMessage(message: RawMessage | undefined): boolean {
   if (!message) return false;
   if (isToolResultRole(message.role)) return true;
@@ -907,9 +916,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
           model: s.model ? String(s.model) : undefined,
         })).filter((s: ChatSession) => s.key);
+        const visibleSessions = sessions.filter((session) => !isInternalMigrationSessionKey(session.key));
 
         const canonicalBySuffix = new Map<string, string>();
-        for (const session of sessions) {
+        for (const session of visibleSessions) {
           if (!session.key.startsWith('agent:')) continue;
           const parts = session.key.split(':');
           if (parts.length < 3) continue;
@@ -921,7 +931,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         // Deduplicate: if both short and canonical existed, keep canonical only
         const seen = new Set<string>();
-        const dedupedSessions = sessions.filter((s) => {
+        const dedupedSessions = visibleSessions.filter((s) => {
           if (!s.key.startsWith('agent:') && canonicalBySuffix.has(s.key)) return false;
           if (seen.has(s.key)) return false;
           seen.add(s.key);
@@ -933,6 +943,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         let nextSessionKey = shouldForceDedicatedSession
           ? DEFAULT_SESSION_KEY
           : currentSessionKey || DEFAULT_SESSION_KEY;
+        if (isInternalMigrationSessionKey(nextSessionKey)) {
+          nextSessionKey = DEFAULT_SESSION_KEY;
+        }
         if (!nextSessionKey.startsWith('agent:')) {
           const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
           if (canonicalMatch) {

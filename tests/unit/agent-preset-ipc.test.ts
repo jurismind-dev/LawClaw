@@ -33,6 +33,9 @@ describe('agent preset migration IPC preload channels', () => {
     await api.ipcRenderer.invoke('agentPresetMigration:retryNow');
     expect(invoke).toHaveBeenCalledWith('agentPresetMigration:retryNow');
 
+    await api.ipcRenderer.invoke('agentPresetMigration:getArtifactsDir');
+    expect(invoke).toHaveBeenCalledWith('agentPresetMigration:getArtifactsDir');
+
     const unsubscribe = api.ipcRenderer.on('agentPresetMigration:statusChanged', () => {});
     expect(on).toHaveBeenCalled();
     expect(typeof unsubscribe).toBe('function');

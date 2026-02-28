@@ -35,9 +35,11 @@ export function Chat() {
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
   const migrationStatus = useAgentPresetMigrationStore((s) => s.status);
-  const migrationChatLocked = useAgentPresetMigrationStore((s) => s.chatLocked);
   const resolveConflict = useAgentPresetMigrationStore((s) => s.resolveConflict);
   const retryMigration = useAgentPresetMigrationStore((s) => s.retryNow);
+  const migrationAwaitingConfirmation = migrationStatus?.state === 'awaiting_confirmation';
+  const showQueuedConflictHint =
+    migrationStatus?.state === 'queued' && migrationStatus.reason === 'CONFLICT_NEED_CONFIRM';
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
@@ -106,7 +108,7 @@ export function Chat() {
         <ChatToolbar />
       </div>
 
-      {migrationChatLocked && (
+      {migrationAwaitingConfirmation && (
         <div className="px-4 pb-2">
           <div className="mx-auto max-w-4xl rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-300">
             <p className="font-medium">LawClaw 正在执行智能升级迁移，暂时锁定聊天输入。</p>
@@ -137,7 +139,7 @@ export function Chat() {
         </div>
       )}
 
-      {!migrationChatLocked && migrationStatus?.state === 'queued' && (
+      {showQueuedConflictHint && (
         <div className="px-4 pb-2">
           <div className="mx-auto max-w-4xl rounded-lg border border-border/60 bg-muted/40 p-3 text-xs text-muted-foreground">
             <span>Agent 预设升级任务已排队（{migrationStatus.queueLength}）。</span>
@@ -225,7 +227,7 @@ export function Chat() {
       <ChatInput
         onSend={sendMessage}
         onStop={abortRun}
-        disabled={!isGatewayRunning || migrationChatLocked}
+        disabled={!isGatewayRunning || migrationAwaitingConfirmation}
         sending={sending}
       />
     </div>

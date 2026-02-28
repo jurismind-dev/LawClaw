@@ -83,6 +83,8 @@ interface PlannerOutput {
 }
 
 interface RuntimeTaskContext {
+  migrationMode: MigrationMode;
+  hasCurrentSnapshot: boolean;
   manifest: PresetManifest;
   openClawConfigDir: string;
   clawXConfigDir: string;
@@ -140,6 +142,7 @@ interface AgentPresetMigrationSummary {
 }
 
 export type AgentPresetPlanner = (input: PlannerInput) => Promise<PlannerOutput>;
+type MigrationMode = 'bootstrap' | 'upgrade' | 'noop';
 
 const PRESET_ROOT_DIR = 'agent-presets';
 const LOCAL_PRESET_ROOT = 'agent-presets';
@@ -154,6 +157,7 @@ const MANUAL_SKIP_DELAY_MS = 24 * 60 * 60 * 1000;
 const DEDICATED_AGENT_ID = 'lawclaw-main';
 const DEDICATED_AGENT_DEFAULT_MODEL = 'jurismind/kimi-k2.5';
 const DEDICATED_AGENT_WORKSPACE = '~/.openclaw/workspace-lawclaw-main';
+const INTERNAL_MIGRATION_SESSION_PREFIX = `agent:${DEDICATED_AGENT_ID}:__internal_migration__`;
 const CAPABILITY_BLOCK_RE =
   /<!--\s*LAWCLAW_CAPABILITY_START:([a-zA-Z0-9_-]+)\s*-->([\s\S]*?)<!--\s*LAWCLAW_CAPABILITY_END:\1\s*-->/g;
 
@@ -693,7 +697,7 @@ async function defaultPlannerFactory(
     throw new Error('gateway rpc unavailable');
   }
 
-  const sessionKey = `agent:${DEDICATED_AGENT_ID}:lawclaw-upgrade-migration`;
+  const sessionKey = `${INTERNAL_MIGRATION_SESSION_PREFIX}:${input.taskId}`;
   const prompt = [
     '请调用 lawclaw-upgrade skill 并完成三方合并。',
     '三方上下文含义：v_current(旧默认快照)、v_update(新默认快照)、user_current(用户当前文件)。',
@@ -788,7 +792,22 @@ function writeSnapshot(clawXConfigDir: string, input: PlannerInput): string {
   return taskDir;
 }
 
-function prepareRuntimeContext(options: AgentPresetMigrationOptions): RuntimeTaskContext | undefined {
+function resolveMigrationMode(
+  hasCurrentSnapshot: boolean,
+  sourceHash: string | undefined,
+  targetHash: string,
+  forceLawclawAgentPreset: boolean
+): MigrationMode {
+  if (!hasCurrentSnapshot) {
+    return 'bootstrap';
+  }
+  if (sourceHash === targetHash && !forceLawclawAgentPreset) {
+    return 'noop';
+  }
+  return 'upgrade';
+}
+
+function prepareRuntimeContext(options: AgentPresetMigrationOptions): RuntimeTaskContext {
   const resourcesDir = options.resourcesDir ?? getResourcesDir();
   const openClawConfigDir = options.openClawConfigDir ?? getOpenClawConfigDir();
   const clawXConfigDir = options.clawXConfigDir ?? getClawXConfigDir();
@@ -811,8 +830,15 @@ function prepareRuntimeContext(options: AgentPresetMigrationOptions): RuntimeTas
 
   const vCurrentDir = getVCurrentPath(clawXConfigDir);
   const currentMeta = readSnapshotMeta(vCurrentDir);
+  const hasCurrentSnapshot = Boolean(currentMeta?.presetHash);
   const state = loadState(getStatePath(clawXConfigDir));
   const sourceHash = currentMeta?.presetHash ?? state?.currentHash;
+  const migrationMode = resolveMigrationMode(
+    hasCurrentSnapshot,
+    sourceHash,
+    targetHash,
+    forceLawclawAgentPreset
+  );
 
   const configPath = join(openClawConfigDir, 'openclaw.json');
   const rawConfig = readJson5File<Record<string, unknown>>(configPath, {});
@@ -821,11 +847,9 @@ function prepareRuntimeContext(options: AgentPresetMigrationOptions): RuntimeTas
     writeJsonFile(configPath, ensured.next);
   }
 
-  if (sourceHash === targetHash && !forceLawclawAgentPreset) {
-    return undefined;
-  }
-
   return {
+    migrationMode,
+    hasCurrentSnapshot,
     manifest,
     openClawConfigDir,
     clawXConfigDir,
@@ -884,6 +908,73 @@ function preseedDedicatedWorkspaceFiles(context: RuntimeTaskContext): number {
   }
 
   return seeded;
+}
+
+function runBootstrapInstall(context: RuntimeTaskContext): AgentPresetMigrationSummary {
+  const summary: AgentPresetMigrationSummary = {
+    addedFiles: 0,
+    updatedFiles: 0,
+    skippedFiles: 0,
+    configUpdated: false,
+    forcedLawclawOverwritten: false,
+  };
+
+  const basePatch = loadConfigPatchFromVUpdate(context.vUpdateDir, context.manifest);
+  let nextConfig = context.config;
+  if (basePatch) {
+    const merged = mergeRecordAdditive(nextConfig, basePatch);
+    if (merged.changed) {
+      nextConfig = merged.next;
+      summary.configUpdated = true;
+    }
+  }
+
+  const ensuredDedicated = ensureDedicatedAgentInConfig(nextConfig);
+  if (ensuredDedicated.changed) {
+    nextConfig = ensuredDedicated.next;
+    summary.configUpdated = true;
+  }
+
+  if (summary.configUpdated) {
+    writeJsonFile(context.configPath, nextConfig);
+  }
+
+  const managedFiles: Record<string, string> = {};
+  for (const presetFile of context.manifest.workspaceFiles) {
+    const workspace = resolveAgentWorkspace(nextConfig, context.openClawConfigDir, presetFile.agentId);
+    const destinationPath = join(workspace, presetFile.target);
+    const targetContent = loadSnapshotFile(context.vUpdateDir, presetFile.source);
+    const existingContent = readTextFileIfExists(destinationPath);
+
+    if (existingContent === undefined) {
+      writeTextFile(destinationPath, targetContent);
+      summary.addedFiles += 1;
+      managedFiles[getWorkspaceFileKey(presetFile)] = hashContent(targetContent);
+      continue;
+    }
+
+    if (existingContent === targetContent) {
+      summary.skippedFiles += 1;
+      managedFiles[getWorkspaceFileKey(presetFile)] = hashContent(existingContent);
+      continue;
+    }
+
+    createBackupFile(context.clawXConfigDir, presetFile.agentId, presetFile.target, existingContent);
+    writeTextFile(destinationPath, targetContent);
+    summary.updatedFiles += 1;
+    managedFiles[getWorkspaceFileKey(presetFile)] = hashContent(targetContent);
+  }
+
+  promoteVUpdateToVCurrent(context.vUpdateDir, context.vCurrentDir);
+  persistState(getStatePath(context.clawXConfigDir), {
+    schemaVersion: 2,
+    currentHash: context.targetHash,
+    updateHash: context.targetHash,
+    managedFiles,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return summary;
 }
 
 function applyPlannerOutput(context: RuntimeTaskContext, input: PlannerInput, output: PlannerOutput): AgentPresetMigrationSummary {
@@ -1062,19 +1153,25 @@ class AgentPresetMigrationCoordinator extends EventEmitter {
         chatLocked: true,
         queueLength: queue.tasks.length,
         currentTaskId: awaiting.taskId,
+        reason: awaiting.reason as AgentPresetMigrationFailureReason,
+        message: awaiting.lastError,
         targetHash: awaiting.targetHash,
       });
       return;
     }
 
+    const queuedTask = queue.tasks
+      .filter((task) => task.status === 'pending' || task.status === 'failed')
+      .sort((a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt))[0];
+
     this.setStatus({
       state: queue.tasks.length > 0 ? 'queued' : 'idle',
       chatLocked: false,
       queueLength: queue.tasks.length,
-      reason: undefined,
-      message: undefined,
-      currentTaskId: undefined,
-      targetHash: queue.tasks[0]?.targetHash,
+      reason: queuedTask?.reason as AgentPresetMigrationFailureReason | undefined,
+      message: queuedTask?.lastError,
+      currentTaskId: queuedTask?.taskId,
+      targetHash: queuedTask?.targetHash,
     });
   }
 
@@ -1107,7 +1204,7 @@ class AgentPresetMigrationCoordinator extends EventEmitter {
     this.running = true;
     this.setStatus({
       state: 'running',
-      chatLocked: true,
+      chatLocked: false,
       currentTaskId: task.taskId,
       queueLength: readAgentPresetQueue(this.queuePath()).tasks.length,
       reason: undefined,
@@ -1117,9 +1214,25 @@ class AgentPresetMigrationCoordinator extends EventEmitter {
 
     try {
       const context = prepareRuntimeContext(this.options);
-      if (!context) {
+      if (context.migrationMode === 'noop') {
         removeAgentPresetQueueTask(this.queuePath(), task.taskId);
         this.refreshQueueStatus();
+        return;
+      }
+      if (context.migrationMode === 'bootstrap') {
+        const summary = runBootstrapInstall(context);
+        removeAgentPresetQueueTask(this.queuePath(), task.taskId);
+        this.refreshQueueStatus();
+
+        if (
+          (summary.addedFiles > 0 ||
+            summary.updatedFiles > 0 ||
+            summary.configUpdated ||
+            summary.forcedLawclawOverwritten) &&
+          this.options.restartGateway
+        ) {
+          await this.options.restartGateway();
+        }
         return;
       }
 
@@ -1297,7 +1410,29 @@ class AgentPresetMigrationCoordinator extends EventEmitter {
     }
 
     const context = prepareRuntimeContext(this.options);
-    if (context) {
+    if (context.migrationMode === 'bootstrap') {
+      writeAgentPresetQueue(queuePath, { schemaVersion: 1, tasks: [] });
+      this.setStatus({
+        state: 'running',
+        chatLocked: false,
+        queueLength: 0,
+        currentTaskId: undefined,
+        reason: undefined,
+        message: undefined,
+        targetHash: context.targetHash,
+      });
+      const summary = runBootstrapInstall(context);
+      this.refreshQueueStatus();
+      if (
+        (summary.addedFiles > 0 ||
+          summary.updatedFiles > 0 ||
+          summary.configUpdated ||
+          summary.forcedLawclawOverwritten) &&
+        this.options.restartGateway
+      ) {
+        await this.options.restartGateway();
+      }
+    } else if (context.migrationMode === 'upgrade') {
       const queue = readAgentPresetQueue(queuePath);
       const existsTask = queue.tasks.find(
         (task) => task.targetHash === context.targetHash && task.status !== 'running'
@@ -1318,6 +1453,11 @@ class AgentPresetMigrationCoordinator extends EventEmitter {
           createdAt: nowIso,
           updatedAt: nowIso,
         });
+      }
+    } else {
+      const queue = readAgentPresetQueue(queuePath);
+      if (queue.tasks.length > 0) {
+        writeAgentPresetQueue(queuePath, { schemaVersion: 1, tasks: [] });
       }
     }
 
@@ -1423,6 +1563,10 @@ class AgentPresetMigrationCoordinator extends EventEmitter {
 }
 
 const coordinator = new AgentPresetMigrationCoordinator();
+
+export function getAgentPresetMigrationArtifactsDir(): string {
+  return getLocalPresetRoot(getClawXConfigDir());
+}
 
 export function getAgentPresetMigrationStatus(): AgentPresetMigrationStatus {
   return coordinator.getStatus();

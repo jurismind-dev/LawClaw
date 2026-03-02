@@ -350,6 +350,14 @@ pnpm package:linux        # 为 Linux 打包
 
 ---
 
+## Stars 历史
+
+<p align="center">
+  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Stars 历史图表" />
+</p>
+
+---
+
 ## 许可证
 
 LawClaw 基于 [MIT 许可证](LICENSE) 发布。你可以自由地使用、修改和分发本软件。

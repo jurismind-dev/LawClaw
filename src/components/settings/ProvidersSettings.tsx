@@ -2,7 +2,7 @@
  * Providers Settings Component
  * Manage AI provider configurations and API keys
  */
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   Trash2,
@@ -14,6 +14,9 @@ import {
   Loader2,
   Star,
   Key,
+  ExternalLink,
+  Copy,
+  XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -76,8 +79,8 @@ export function ProvidersSettings() {
         apiKey.trim() || undefined
       );
 
-      // Auto-set as default if this is the first provider
-      if (providers.length === 0) {
+      // Auto-set as default if no default is currently configured
+      if (!defaultProviderId) {
         await setDefaultProvider(id);
       }
 
@@ -228,7 +231,7 @@ function ProviderCard({
       if (newKey.trim()) {
         setValidating(true);
         const result = await onValidateKey(newKey, {
-          baseUrl: baseUrl.trim() || undefined,
+          baseUrl: typeInfo?.showBaseUrl ? (baseUrl.trim() || undefined) : undefined,
         });
         setValidating(false);
         if (!result.valid) {
@@ -324,6 +327,19 @@ function ProviderCard({
                 )}
               </>
             )}
+            {typeInfo?.apiKeyUrl && (
+              <div className="flex justify-start mb-1">
+                <a
+                  href={typeInfo.apiKeyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                  tabIndex={-1}
+                >
+                  {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
@@ -370,16 +386,25 @@ function ProviderCard({
         ) : (
           <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
             <div className="flex items-center gap-2 min-w-0">
-              <Key className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-sm font-mono text-muted-foreground truncate">
-                {provider.hasKey
-                  ? (provider.keyMasked && provider.keyMasked.length > 12
-                    ? `${provider.keyMasked.substring(0, 4)}...${provider.keyMasked.substring(provider.keyMasked.length - 4)}`
-                    : provider.keyMasked)
-                  : t('aiProviders.card.noKey')}
-              </span>
-              {provider.hasKey && (
-                <Badge variant="secondary" className="text-xs shrink-0">{t('aiProviders.card.configured')}</Badge>
+              {typeInfo?.isOAuth ? (
+                <>
+                  <Key className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <Badge variant="secondary" className="text-xs shrink-0">{t('aiProviders.card.configured')}</Badge>
+                </>
+              ) : (
+                <>
+                  <Key className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-sm font-mono text-muted-foreground truncate">
+                    {provider.hasKey
+                      ? (provider.keyMasked && provider.keyMasked.length > 12
+                        ? `${provider.keyMasked.substring(0, 4)}...${provider.keyMasked.substring(provider.keyMasked.length - 4)}`
+                        : provider.keyMasked)
+                      : t('aiProviders.card.noKey')}
+                  </span>
+                  {provider.hasKey && (
+                    <Badge variant="secondary" className="text-xs shrink-0">{t('aiProviders.card.configured')}</Badge>
+                  )}
+                </>
               )}
             </div>
             <div className="flex gap-0.5 shrink-0 ml-2">
@@ -441,7 +466,105 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // OAuth Flow State
+  const [oauthFlowing, setOauthFlowing] = useState(false);
+  const [oauthData, setOauthData] = useState<{
+    verificationUri: string;
+    userCode: string;
+    expiresIn: number;
+  } | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  // For providers that support both OAuth and API key, let the user choose
+  const [authMode, setAuthMode] = useState<'oauth' | 'apikey'>('oauth');
+
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
+  const isOAuth = typeInfo?.isOAuth ?? false;
+  const supportsApiKey = typeInfo?.supportsApiKey ?? false;
+  // Effective OAuth mode: pure OAuth providers, or dual-mode with oauth selected
+  const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
+
+  // Keep a ref to the latest values so the effect closure can access them
+  const latestRef = React.useRef({ selectedType, typeInfo, onAdd, onClose, t });
+  useEffect(() => {
+    latestRef.current = { selectedType, typeInfo, onAdd, onClose, t };
+  });
+
+  // Manage OAuth events
+  useEffect(() => {
+    const handleCode = (data: unknown) => {
+      setOauthData(data as { verificationUri: string; userCode: string; expiresIn: number });
+      setOauthError(null);
+    };
+
+    const handleSuccess = async () => {
+      setOauthFlowing(false);
+      setOauthData(null);
+      setValidationError(null);
+
+      const { onClose: close, t: translate } = latestRef.current;
+
+      // device-oauth.ts already saved the provider config to the backend,
+      // including the dynamically resolved baseUrl for the region (e.g. CN vs Global).
+      // If we call add() here with undefined baseUrl, it will overwrite and erase it!
+      // So we just fetch the latest list from the backend to update the UI.
+      try {
+        await useProviderStore.getState().fetchProviders();
+      } catch (err) {
+        console.error('Failed to refresh providers after OAuth:', err);
+      }
+
+      close();
+      toast.success(translate('aiProviders.toast.added'));
+    };
+
+    const handleError = (data: unknown) => {
+      setOauthError((data as { message: string }).message);
+      setOauthData(null);
+    };
+
+    window.electron.ipcRenderer.on('oauth:code', handleCode);
+    window.electron.ipcRenderer.on('oauth:success', handleSuccess);
+    window.electron.ipcRenderer.on('oauth:error', handleError);
+
+    return () => {
+      if (typeof window.electron.ipcRenderer.off === 'function') {
+        window.electron.ipcRenderer.off('oauth:code', handleCode);
+        window.electron.ipcRenderer.off('oauth:success', handleSuccess);
+        window.electron.ipcRenderer.off('oauth:error', handleError);
+      }
+    };
+  }, []);
+
+  const handleStartOAuth = async () => {
+    if (!selectedType) return;
+
+    if (selectedType === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+    if (selectedType === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+
+    setOauthFlowing(true);
+    setOauthData(null);
+    setOauthError(null);
+
+    try {
+      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedType);
+    } catch (e) {
+      setOauthError(String(e));
+      setOauthFlowing(false);
+    }
+  };
+
+  const handleCancelOAuth = async () => {
+    setOauthFlowing(false);
+    setOauthData(null);
+    setOauthError(null);
+    await window.electron.ipcRenderer.invoke('provider:cancelOAuth');
+  };
 
   // Only custom can be added multiple times.
   const availableTypes = PROVIDER_TYPE_INFO.filter(
@@ -450,6 +573,15 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
   const handleAdd = async () => {
     if (!selectedType) return;
+
+    if (selectedType === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+    if (selectedType === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
 
     setSaving(true);
     setValidationError(null);
@@ -464,7 +596,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       }
       if (requiresKey && apiKey) {
         const result = await onValidateKey(selectedType, apiKey, {
-          baseUrl: baseUrl.trim() || undefined,
+          baseUrl: typeInfo?.showBaseUrl ? (baseUrl.trim() || undefined) : undefined,
         });
         if (!result.valid) {
           setValidationError(result.error || t('aiProviders.toast.invalidKey'));
@@ -562,35 +694,75 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="apiKey">{t('aiProviders.dialog.apiKey')}</Label>
-                <div className="relative">
-                  <Input
-                    id="apiKey"
-                    type={showKey ? 'text' : 'password'}
-                    placeholder={typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : typeInfo?.placeholder}
-                    value={apiKey}
-                    onChange={(e) => {
-                      setApiKey(e.target.value);
-                      setValidationError(null);
-                    }}
-                    className="pr-10"
-                  />
+              {/* Auth mode toggle for providers supporting both */}
+              {isOAuth && supportsApiKey && (
+                <div className="flex rounded-lg border overflow-hidden text-sm">
                   <button
-                    type="button"
-                    onClick={() => setShowKey(!showKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setAuthMode('oauth')}
+                    className={cn(
+                      'flex-1 py-2 px-3 transition-colors',
+                      authMode === 'oauth' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'
+                    )}
                   >
-                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {t('aiProviders.oauth.loginMode')}
+                  </button>
+                  <button
+                    onClick={() => setAuthMode('apikey')}
+                    className={cn(
+                      'flex-1 py-2 px-3 transition-colors',
+                      authMode === 'apikey' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'
+                    )}
+                  >
+                    {t('aiProviders.oauth.apikeyMode')}
                   </button>
                 </div>
-                {validationError && (
-                  <p className="text-xs text-destructive">{validationError}</p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  {t('aiProviders.dialog.apiKeyStored')}
-                </p>
-              </div>
+              )}
+
+              {/* API Key input — shown for non-OAuth providers or when apikey mode is selected */}
+              {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="apiKey">{t('aiProviders.dialog.apiKey')}</Label>
+                    {typeInfo?.apiKeyUrl && (
+                      <a
+                        href={typeInfo.apiKeyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                        tabIndex={-1}
+                      >
+                        {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Input
+                      id="apiKey"
+                      type={showKey ? 'text' : 'password'}
+                      placeholder={typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : typeInfo?.placeholder}
+                      value={apiKey}
+                      onChange={(e) => {
+                        setApiKey(e.target.value);
+                        setValidationError(null);
+                      }}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey(!showKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {validationError && (
+                    <p className="text-xs text-destructive">{validationError}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {t('aiProviders.dialog.apiKeyStored')}
+                  </p>
+                </div>
+              )}
 
               {typeInfo?.showBaseUrl && (
                 <div className="space-y-2">
@@ -618,6 +790,98 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   />
                 </div>
               )}
+              {/* Device OAuth Trigger — only shown when in OAuth mode */}
+              {useOAuthFlow && (
+                <div className="space-y-4 pt-2">
+                  <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
+                    <p className="text-sm text-blue-200 mb-3 block">
+                      {t('aiProviders.oauth.loginPrompt')}
+                    </p>
+                    <Button
+                      onClick={handleStartOAuth}
+                      disabled={oauthFlowing}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {oauthFlowing ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('aiProviders.oauth.waiting')}</>
+                      ) : (
+                        t('aiProviders.oauth.loginButton')
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* OAuth Active State Modal / Inline View */}
+                  {oauthFlowing && (
+                    <div className="mt-4 p-4 border rounded-xl bg-card relative overflow-hidden">
+                      {/* Background pulse effect */}
+                      <div className="absolute inset-0 bg-primary/5 animate-pulse" />
+
+                      <div className="relative z-10 flex flex-col items-center justify-center text-center space-y-4">
+                        {oauthError ? (
+                          <div className="text-red-400 space-y-2">
+                            <XCircle className="h-8 w-8 mx-auto" />
+                            <p className="font-medium">{t('aiProviders.oauth.authFailed')}</p>
+                            <p className="text-sm opacity-80">{oauthError}</p>
+                            <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2 text-foreground">
+                              Try Again
+                            </Button>
+                          </div>
+                        ) : !oauthData ? (
+                          <div className="space-y-3 py-4">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+                            <p className="text-sm text-muted-foreground animate-pulse">{t('aiProviders.oauth.requestingCode')}</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4 w-full">
+                            <div className="space-y-1">
+                              <h3 className="font-medium text-lg text-foreground">{t('aiProviders.oauth.approveLogin')}</h3>
+                              <div className="text-sm text-muted-foreground text-left mt-2 space-y-1">
+                                <p>1. {t('aiProviders.oauth.step1')}</p>
+                                <p>2. {t('aiProviders.oauth.step2')}</p>
+                                <p>3. {t('aiProviders.oauth.step3')}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-center gap-2 p-3 bg-background border rounded-lg">
+                              <code className="text-2xl font-mono tracking-widest font-bold text-primary">
+                                {oauthData.userCode}
+                              </code>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(oauthData.userCode);
+                                  toast.success(t('aiProviders.oauth.codeCopied'));
+                                }}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            <Button
+                              variant="secondary"
+                              className="w-full"
+                              onClick={() => window.electron.ipcRenderer.invoke('shell:openExternal', oauthData.verificationUri)}
+                            >
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              {t('aiProviders.oauth.openLoginPage')}
+                            </Button>
+
+                            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <span>{t('aiProviders.oauth.waitingApproval')}</span>
+                            </div>
+
+                            <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleCancelOAuth}>
+                              Cancel
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -629,6 +893,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
             </Button>
             <Button
               onClick={handleAdd}
+              className={cn(useOAuthFlow && "hidden")}
               disabled={!selectedType || saving || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)}
             >
               {saving ? (

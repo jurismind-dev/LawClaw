@@ -74,26 +74,62 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
           const p = payload.params;
           const data = (p.data && typeof p.data === 'object') ? (p.data as Record<string, unknown>) : {};
-          const normalizedEvent: Record<string, unknown> = {
-            // Spread data sub-object first (nested layout)
-            ...data,
-            // Then override with top-level params fields (flat layout takes precedence)
-            runId: p.runId ?? data.runId,
-            sessionKey: p.sessionKey ?? data.sessionKey,
-            stream: p.stream ?? data.stream,
-            seq: p.seq ?? data.seq,
-            // Critical: also pick up state and message from params (flat layout)
-            state: p.state ?? data.state,
-            message: p.message ?? data.message,
-          };
+          const phase = data.phase ?? p.phase;
 
-          import('./chat')
-            .then(({ useChatStore }) => {
-              useChatStore.getState().handleChatEvent(normalizedEvent);
-            })
-            .catch((err) => {
-              console.warn('Failed to forward gateway notification event:', err);
-            });
+          const hasChatData = (p.state ?? data.state) || (p.message ?? data.message);
+          if (hasChatData) {
+            const normalizedEvent: Record<string, unknown> = {
+              ...data,
+              runId: p.runId ?? data.runId,
+              sessionKey: p.sessionKey ?? data.sessionKey,
+              stream: p.stream ?? data.stream,
+              seq: p.seq ?? data.seq,
+              state: p.state ?? data.state,
+              message: p.message ?? data.message,
+            };
+            import('./chat')
+              .then(({ useChatStore }) => {
+                useChatStore.getState().handleChatEvent(normalizedEvent);
+              })
+              .catch(() => {});
+          }
+
+          // When a run starts (e.g. user clicked Send on console), show loading in the app immediately.
+          const runId = p.runId ?? data.runId;
+          const sessionKey = p.sessionKey ?? data.sessionKey;
+          if (phase === 'started' && runId != null && sessionKey != null) {
+            import('./chat')
+              .then(({ useChatStore }) => {
+                useChatStore.getState().handleChatEvent({
+                  state: 'started',
+                  runId,
+                  sessionKey,
+                });
+              })
+              .catch(() => {});
+          }
+
+          // When the agent run completes, reload history to get the final response.
+          if (phase === 'completed' || phase === 'done' || phase === 'finished' || phase === 'end') {
+            import('./chat')
+              .then(({ useChatStore }) => {
+                const state = useChatStore.getState();
+                // Always reload history on agent completion, regardless of
+                // the `sending` flag. After a transient error the flag may
+                // already be false, but the Gateway may have retried and
+                // completed successfully in the background.
+                state.loadHistory(true);
+                if (state.sending) {
+                  useChatStore.setState({
+                    sending: false,
+                    activeRunId: null,
+                    pendingFinal: false,
+                    lastUserMessageAt: null,
+                  });
+                }
+              })
+              .catch(() => {});
+          }
         });
 
         // Listen for chat events from the gateway and forward to chat store.
@@ -102,32 +138,48 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         // or the raw chat message itself. We need to handle both.
         window.electron.ipcRenderer.on('gateway:chat-message', (data) => {
           try {
-            // Dynamic import to avoid circular dependency
             import('./chat').then(({ useChatStore }) => {
               const chatData = data as Record<string, unknown>;
-              // Unwrap the { message: payload } wrapper from handleProtocolEvent
               const payload = ('message' in chatData && typeof chatData.message === 'object')
                 ? chatData.message as Record<string, unknown>
                 : chatData;
 
-              // If payload has a 'state' field, it's already a proper event wrapper
               if (payload.state) {
                 useChatStore.getState().handleChatEvent(payload);
                 return;
               }
 
-              // Otherwise, payload is the raw message — wrap it as a 'final' event
-              // so handleChatEvent can process it (this happens when the Gateway
-              // sends protocol events with the message directly as payload).
-              const syntheticEvent: Record<string, unknown> = {
+              // Raw message without state wrapper — treat as final
+              useChatStore.getState().handleChatEvent({
                 state: 'final',
                 message: payload,
                 runId: chatData.runId ?? payload.runId,
-              };
-              useChatStore.getState().handleChatEvent(syntheticEvent);
-            });
-          } catch (err) {
-            console.warn('Failed to forward chat event:', err);
+              });
+            }).catch(() => {});
+          } catch {
+            // Silently ignore forwarding failures
+          }
+        });
+
+        // Catch-all: handle unmatched gateway messages that fell through
+        // all protocol/notification handlers in the main process.
+        // This prevents events from being silently lost.
+        window.electron.ipcRenderer.on('gateway:message', (data) => {
+          if (!data || typeof data !== 'object') return;
+          const msg = data as Record<string, unknown>;
+
+          // Try to detect if this is a chat-related event and forward it
+          if (msg.state && msg.message) {
+            import('./chat').then(({ useChatStore }) => {
+              useChatStore.getState().handleChatEvent(msg);
+            }).catch(() => {});
+          } else if (msg.role && msg.content) {
+            import('./chat').then(({ useChatStore }) => {
+              useChatStore.getState().handleChatEvent({
+                state: 'final',
+                message: msg,
+              });
+            }).catch(() => {});
           }
         });
 

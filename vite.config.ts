@@ -47,6 +47,8 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
       '@electron': resolve(__dirname, 'electron'),
     },
+    // Prevent duplicate React instances when dependencies are resolved from nested/parent node_modules.
+    dedupe: ['react', 'react-dom'],
   },
   server: {
     port: 5173,

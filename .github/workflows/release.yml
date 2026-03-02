@@ -125,6 +125,7 @@ jobs:
           path: |
             release/*.dmg
             release/*.zip
+            release/*.blockmap
             release/*.exe
             release/*.AppImage
             release/*.deb

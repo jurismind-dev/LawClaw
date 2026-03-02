@@ -1,5 +1,3 @@
-#!/usr/bin/env zx
-
 import 'zx/globals';
 import os from 'node:os';
 import path from 'node:path';

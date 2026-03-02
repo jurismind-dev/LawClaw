@@ -22,6 +22,13 @@ const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
 const NODE_MODULES = path.join(ROOT, 'node_modules');
 
+// On Windows, pnpm virtual store paths can exceed MAX_PATH (260 chars).
+function normWin(p) {
+  if (process.platform !== 'win32') return p;
+  if (p.startsWith('\\\\?\\')) return p;
+  return '\\\\?\\' + p.replace(/\//g, '\\');
+}
+
 echo`📦 Bundling openclaw for electron-builder...`;
 
 // 1. Resolve the real path of node_modules/openclaw (follows pnpm symlink)
@@ -31,7 +38,7 @@ if (!fs.existsSync(openclawLink)) {
   process.exit(1);
 }
 
-const openclawReal = fs.realpathSync(openclawLink);
+const openclawReal = fs.realpathSync(normWin(openclawLink));
 echo`   openclaw resolved: ${openclawReal}`;
 
 // 2. Clean and create output directory
@@ -85,30 +92,26 @@ function getVirtualStoreNodeModules(realPkgPath) {
  */
 function listPackages(nodeModulesDir) {
   const result = [];
-  if (!fs.existsSync(nodeModulesDir)) return result;
+  const nDir = normWin(nodeModulesDir);
+  if (!fs.existsSync(nDir)) return result;
 
-  for (const entry of fs.readdirSync(nodeModulesDir)) {
+  for (const entry of fs.readdirSync(nDir)) {
     if (entry === '.bin') continue;
-
+    // Use original (non-normWin) path so callers can call
+    // getVirtualStoreNodeModules() on fullPath correctly.
     const entryPath = path.join(nodeModulesDir, entry);
-    const stat = fs.lstatSync(entryPath);
 
     if (entry.startsWith('@')) {
-      // Scoped package: read sub-entries
-      if (stat.isDirectory() || stat.isSymbolicLink()) {
-        const resolvedScope = stat.isSymbolicLink() ? fs.realpathSync(entryPath) : entryPath;
-        // Check if this is actually a scoped directory or a package
-        try {
-          const scopeEntries = fs.readdirSync(entryPath);
-          for (const sub of scopeEntries) {
-            result.push({
-              name: `${entry}/${sub}`,
-              fullPath: path.join(entryPath, sub),
-            });
-          }
-        } catch {
-          // Not a directory, skip
+      try {
+        const scopeEntries = fs.readdirSync(normWin(entryPath));
+        for (const sub of scopeEntries) {
+          result.push({
+            name: `${entry}/${sub}`,
+            fullPath: path.join(entryPath, sub),
+          });
         }
+      } catch {
+        // Not a directory, skip
       }
     } else {
       result.push({ name: entry, fullPath: entryPath });
@@ -127,6 +130,13 @@ if (!openclawVirtualNM) {
 echo`   Virtual store root: ${openclawVirtualNM}`;
 queue.push({ nodeModulesDir: openclawVirtualNM, skipPkg: 'openclaw' });
 
+const SKIP_PACKAGES = new Set([
+  'typescript',
+  '@playwright/test',
+]);
+const SKIP_SCOPES = ['@cloudflare/', '@types/'];
+let skippedDevCount = 0;
+
 while (queue.length > 0) {
   const { nodeModulesDir, skipPkg } = queue.shift();
   const packages = listPackages(nodeModulesDir);
@@ -135,9 +145,14 @@ while (queue.length > 0) {
     // Skip the package that owns this virtual store entry (it's the package itself, not a dep)
     if (name === skipPkg) continue;
 
+    if (SKIP_PACKAGES.has(name) || SKIP_SCOPES.some(s => name.startsWith(s))) {
+      skippedDevCount++;
+      continue;
+    }
+
     let realPath;
     try {
-      realPath = fs.realpathSync(fullPath);
+      realPath = fs.realpathSync(normWin(fullPath));
     } catch {
       continue; // broken symlink, skip
     }
@@ -156,6 +171,7 @@ while (queue.length > 0) {
 }
 
 echo`   Found ${collected.size} total packages (direct + transitive)`;
+echo`   Skipped ${skippedDevCount} dev-only package references`;
 
 // 5. Copy all collected packages into OUTPUT/node_modules/ (flat structure)
 //
@@ -181,22 +197,168 @@ for (const [realPath, pkgName] of collected) {
   const dest = path.join(outputNodeModules, pkgName);
 
   try {
-    // Ensure parent directory exists (for scoped packages like @clack/core)
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.cpSync(realPath, dest, { recursive: true, dereference: true });
+    fs.mkdirSync(normWin(path.dirname(dest)), { recursive: true });
+    fs.cpSync(normWin(realPath), normWin(dest), { recursive: true, dereference: true });
     copiedCount++;
   } catch (err) {
     echo`   ⚠️  Skipped ${pkgName}: ${err.message}`;
   }
 }
 
-// 6. Verify the bundle
+// 6. Clean up the bundle to reduce package size
+//
+// This removes platform-agnostic waste: dev artifacts, docs, source maps,
+// type definitions, test directories, and known large unused subdirectories.
+// Platform-specific cleanup (e.g. koffi binaries) is handled in after-pack.cjs
+// which has access to the target platform/arch context.
+
+function getDirSize(dir) {
+  let total = 0;
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) total += getDirSize(p);
+      else if (entry.isFile()) total += fs.statSync(p).size;
+    }
+  } catch { /* ignore */ }
+  return total;
+}
+
+function formatSize(bytes) {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)}G`;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}M`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}K`;
+  return `${bytes}B`;
+}
+
+function rmSafe(target) {
+  try {
+    const stat = fs.lstatSync(target);
+    if (stat.isDirectory()) fs.rmSync(target, { recursive: true, force: true });
+    else fs.rmSync(target, { force: true });
+    return true;
+  } catch { return false; }
+}
+
+function cleanupBundle(outputDir) {
+  let removedCount = 0;
+  const nm = path.join(outputDir, 'node_modules');
+  const ext = path.join(outputDir, 'extensions');
+
+  // --- openclaw root junk ---
+  for (const name of ['CHANGELOG.md', 'README.md']) {
+    if (rmSafe(path.join(outputDir, name))) removedCount++;
+  }
+
+  // docs/ is kept — contains prompt templates and other runtime-used prompts
+
+  // --- extensions: clean junk from source, aggressively clean nested node_modules ---
+  // Extension source (.ts files) are runtime entry points — must be preserved.
+  // Only nested node_modules/ inside extensions get the aggressive cleanup.
+  if (fs.existsSync(ext)) {
+    const JUNK_EXTS = new Set(['.prose', '.ignored_openclaw', '.keep']);
+    const NM_REMOVE_DIRS = new Set([
+      'test', 'tests', '__tests__', '.github', 'docs', 'examples', 'example',
+    ]);
+    const NM_REMOVE_FILE_EXTS = ['.d.ts', '.d.ts.map', '.js.map', '.mjs.map', '.ts.map', '.markdown'];
+    const NM_REMOVE_FILE_NAMES = new Set([
+      '.DS_Store', 'README.md', 'CHANGELOG.md', 'LICENSE.md', 'CONTRIBUTING.md',
+      'tsconfig.json', '.npmignore', '.eslintrc', '.prettierrc', '.editorconfig',
+    ]);
+
+    function walkExt(dir, insideNodeModules) {
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (insideNodeModules && NM_REMOVE_DIRS.has(entry.name)) {
+            if (rmSafe(full)) removedCount++;
+          } else {
+            walkExt(full, insideNodeModules || entry.name === 'node_modules');
+          }
+        } else if (entry.isFile()) {
+          if (insideNodeModules) {
+            const name = entry.name;
+            if (NM_REMOVE_FILE_NAMES.has(name) || NM_REMOVE_FILE_EXTS.some(e => name.endsWith(e))) {
+              if (rmSafe(full)) removedCount++;
+            }
+          } else {
+            if (JUNK_EXTS.has(path.extname(entry.name)) || entry.name.endsWith('.md')) {
+              if (rmSafe(full)) removedCount++;
+            }
+          }
+        }
+      }
+    }
+    walkExt(ext, false);
+  }
+
+  // --- node_modules: remove unnecessary file types and directories ---
+  if (fs.existsSync(nm)) {
+    const REMOVE_DIRS = new Set([
+      'test', 'tests', '__tests__', '.github', 'docs', 'examples', 'example',
+    ]);
+    const REMOVE_FILE_EXTS = ['.d.ts', '.d.ts.map', '.js.map', '.mjs.map', '.ts.map', '.markdown'];
+    const REMOVE_FILE_NAMES = new Set([
+      '.DS_Store', 'README.md', 'CHANGELOG.md', 'LICENSE.md', 'CONTRIBUTING.md',
+      'tsconfig.json', '.npmignore', '.eslintrc', '.prettierrc', '.editorconfig',
+    ]);
+
+    function walkClean(dir) {
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (REMOVE_DIRS.has(entry.name)) {
+            if (rmSafe(full)) removedCount++;
+          } else {
+            walkClean(full);
+          }
+        } else if (entry.isFile()) {
+          const name = entry.name;
+          if (REMOVE_FILE_NAMES.has(name) || REMOVE_FILE_EXTS.some(e => name.endsWith(e))) {
+            if (rmSafe(full)) removedCount++;
+          }
+        }
+      }
+    }
+    walkClean(nm);
+  }
+
+  // --- known large unused subdirectories ---
+  const LARGE_REMOVALS = [
+    'node_modules/pdfjs-dist/legacy',
+    'node_modules/pdfjs-dist/types',
+    'node_modules/node-llama-cpp/llama',
+    'node_modules/koffi/src',
+    'node_modules/koffi/vendor',
+    'node_modules/koffi/doc',
+  ];
+  for (const rel of LARGE_REMOVALS) {
+    if (rmSafe(path.join(outputDir, rel))) removedCount++;
+  }
+
+  return removedCount;
+}
+
+echo``;
+echo`🧹 Cleaning up bundle (removing dev artifacts, docs, source maps, type defs)...`;
+const sizeBefore = getDirSize(OUTPUT);
+const cleanedCount = cleanupBundle(OUTPUT);
+const sizeAfter = getDirSize(OUTPUT);
+echo`   Removed ${cleanedCount} files/directories`;
+echo`   Size: ${formatSize(sizeBefore)} → ${formatSize(sizeAfter)} (saved ${formatSize(sizeBefore - sizeAfter)})`;
+
+// 7. Verify the bundle
 const entryExists = fs.existsSync(path.join(OUTPUT, 'openclaw.mjs'));
 const distExists = fs.existsSync(path.join(OUTPUT, 'dist', 'entry.js'));
 
 echo``;
 echo`✅ Bundle complete: ${OUTPUT}`;
 echo`   Unique packages copied: ${copiedCount}`;
+echo`   Dev-only packages skipped: ${skippedDevCount}`;
 echo`   Duplicate versions skipped: ${skippedDupes}`;
 echo`   Total discovered: ${collected.size}`;
 echo`   openclaw.mjs: ${entryExists ? '✓' : '✗'}`;

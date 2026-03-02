@@ -214,21 +214,48 @@ async function validateOpenAiCompatibleKey(
   const headers = { Authorization: `Bearer ${apiKey}` };
 
   const modelsUrl = buildOpenAiModelsUrl(trimmedBaseUrl);
-  const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers, {
-    requireJsonBodyOnSuccess: true,
-  });
+  try {
+    logValidationRequest(providerType, 'GET', modelsUrl, headers);
+    const response = await fetch(modelsUrl, { headers });
+    logValidationStatus(providerType, response.status);
+    const data = await response.json().catch(() => ({}));
+    const modelsResult = classifyAuthResponse(response.status, data, {
+      contentType: response.headers.get('content-type'),
+      requireJsonBodyOnSuccess: true,
+    });
 
-  // Some OpenAI-compatible services do not implement /models.
-  if (shouldFallbackToChatCompletions(modelsResult)) {
-    console.log(
-      `[clawx-validate] ${providerType} /models returned 404, falling back to /chat/completions probe`
-    );
-    const base = normalizeBaseUrl(trimmedBaseUrl);
-    const chatUrl = `${base}/chat/completions`;
-    return await performChatCompletionsProbe(providerType, chatUrl, headers);
+    // Some OpenAI-compatible services do not implement /models.
+    // Jurismind may also reject /models while accepting /chat/completions.
+    if (
+      shouldFallbackToChatCompletions(modelsResult)
+      || shouldFallbackToChatCompletionsForProvider(providerType, response.status, modelsResult.error)
+    ) {
+      console.log(
+        `[clawx-validate] ${providerType} /models returned ${response.status}, falling back to /chat/completions probe`
+      );
+      const base = normalizeBaseUrl(trimmedBaseUrl);
+      const chatUrl = `${base}/chat/completions`;
+      return await performChatCompletionsProbe(providerType, chatUrl, headers);
+    }
+
+    return modelsResult;
+  } catch (error) {
+    return {
+      valid: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
+}
 
-  return modelsResult;
+function shouldFallbackToChatCompletionsForProvider(
+  providerType: string,
+  status: number,
+  error?: string
+): boolean {
+  if (providerType === 'jurismind') {
+    return status === 401 || status === 403 || status === 405 || error === NON_JSON_SUCCESS_ERROR;
+  }
+  return false;
 }
 
 /**

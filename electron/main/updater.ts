@@ -8,7 +8,9 @@
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
 import { BrowserWindow, app, ipcMain } from 'electron';
+import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
+import { setQuitting } from './app-state';
 
 /** Base CDN URL (without trailing channel path) */
 const OSS_BASE_URL = 'https://oss.intelli-spectrum.com';
@@ -51,16 +53,14 @@ export class AppUpdater extends EventEmitter {
   constructor() {
     super();
     
-    // Configure auto-updater
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
     
-    // Use logger
     autoUpdater.logger = {
-      info: (msg: string) => console.log('[Updater]', msg),
-      warn: (msg: string) => console.warn('[Updater]', msg),
-      error: (msg: string) => console.error('[Updater]', msg),
-      debug: (msg: string) => console.debug('[Updater]', msg),
+      info: (msg: string) => logger.info('[Updater]', msg),
+      warn: (msg: string) => logger.warn('[Updater]', msg),
+      error: (msg: string) => logger.error('[Updater]', msg),
+      debug: (msg: string) => logger.debug('[Updater]', msg),
     };
 
     // Override feed URL for prerelease channels so that
@@ -69,7 +69,7 @@ export class AppUpdater extends EventEmitter {
     const channel = detectChannel(version);
     const feedUrl = `${OSS_BASE_URL}/${channel}`;
 
-    console.log(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
+    logger.info(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
 
     // Set channel so electron-updater requests the correct yml filename.
     // e.g. channel "alpha" → requests alpha-mac.yml, channel "latest" → requests latest-mac.yml
@@ -141,7 +141,12 @@ export class AppUpdater extends EventEmitter {
    * Update status and notify renderer
    */
   private updateStatus(newStatus: Partial<UpdateStatus>): void {
-    this.status = { ...this.status, ...newStatus };
+    this.status = {
+      status: newStatus.status ?? this.status.status,
+      info: newStatus.info,
+      progress: newStatus.progress,
+      error: newStatus.error,
+    };
     this.sendToRenderer('update:status-changed', this.status);
   }
 
@@ -184,7 +189,7 @@ export class AppUpdater extends EventEmitter {
 
       return result.updateInfo || null;
     } catch (error) {
-      console.error('[Updater] Check for updates failed:', error);
+      logger.error('[Updater] Check for updates failed:', error);
       this.updateStatus({ status: 'error', error: (error as Error).message || String(error) });
       throw error;
     }
@@ -197,15 +202,25 @@ export class AppUpdater extends EventEmitter {
     try {
       await autoUpdater.downloadUpdate();
     } catch (error) {
-      console.error('[Updater] Download update failed:', error);
+      logger.error('[Updater] Download update failed:', error);
       throw error;
     }
   }
 
   /**
-   * Install update and restart app
+   * Install update and restart.
+   *
+   * On macOS, electron-updater delegates to Squirrel.Mac (ShipIt). The
+   * native quitAndInstall() spawns ShipIt then internally calls app.quit().
+   * However, the tray close handler in index.ts intercepts window close
+   * and hides to tray unless isQuitting is true. Squirrel's internal quit
+   * sometimes fails to trigger before-quit in time, so we set isQuitting
+   * BEFORE calling quitAndInstall(). This lets the native quit flow close
+   * the window cleanly while ShipIt runs independently to replace the app.
    */
   quitAndInstall(): void {
+    logger.info('[Updater] quitAndInstall called');
+    setQuitting();
     autoUpdater.quitAndInstall();
   }
 
@@ -229,9 +244,6 @@ export class AppUpdater extends EventEmitter {
     }, 1000);
   }
 
-  /**
-   * Cancel a running auto-install countdown.
-   */
   cancelAutoInstall(): void {
     this.clearAutoInstallTimer();
     this.sendToRenderer('update:auto-install-countdown', { seconds: -1, cancelled: true });

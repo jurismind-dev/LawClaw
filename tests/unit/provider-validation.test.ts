@@ -153,4 +153,58 @@ describe('provider validation', () => {
       })
     ).resolves.toEqual({ valid: true });
   });
+
+  it('falls back from /models 401 for jurismind and accepts chat probe 400', async () => {
+    mockFetchWithStatuses([401, 400], {});
+    await expect(
+      validateApiKeyWithProvider('jurismind', 'sk-test', {
+        baseUrl: 'http://example.com/v1',
+      })
+    ).resolves.toEqual({ valid: true });
+  });
+
+  it('falls back from /models 401 for jurismind but still rejects chat probe 401', async () => {
+    mockFetchWithStatuses([401, 401], {});
+    await expect(
+      validateApiKeyWithProvider('jurismind', 'sk-test', {
+        baseUrl: 'http://example.com/v1',
+      })
+    ).resolves.toEqual({ valid: false, error: 'Invalid API key' });
+  });
+
+  it('falls back from /models 200 html for jurismind and accepts chat probe 400', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        if ((vi.mocked(fetch).mock.calls.length ?? 0) <= 1) {
+          return {
+            status: 200,
+            json: async () => ({}),
+            headers: {
+              get: (headerName: string) =>
+                headerName.toLowerCase() === 'content-type'
+                  ? 'text/html; charset=utf-8'
+                  : null,
+            },
+          } as Response;
+        }
+        return {
+          status: 400,
+          json: async () => ({}),
+          headers: {
+            get: (headerName: string) =>
+              headerName.toLowerCase() === 'content-type'
+                ? 'application/json'
+                : null,
+          },
+        } as Response;
+      }) as unknown as typeof fetch
+    );
+
+    await expect(
+      validateApiKeyWithProvider('jurismind', 'sk-test', {
+        baseUrl: 'http://example.com/v1',
+      })
+    ).resolves.toEqual({ valid: true });
+  });
 });

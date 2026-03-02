@@ -110,6 +110,31 @@ interface ChatState {
 // between tool-result finals and the next delta.
 let _lastChatEventAt = 0;
 
+/** Normalize a timestamp to milliseconds. Handles both seconds and ms. */
+function toMs(ts: number): number {
+  return ts < 1e12 ? ts * 1000 : ts;
+}
+
+// Timer for fallback history polling during active sends.
+let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Timer for delayed error finalization when the Gateway may still recover.
+let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearErrorRecoveryTimer(): void {
+  if (_errorRecoveryTimer) {
+    clearTimeout(_errorRecoveryTimer);
+    _errorRecoveryTimer = null;
+  }
+}
+
+function clearHistoryPoll(): void {
+  if (_historyPollTimer) {
+    clearTimeout(_historyPollTimer);
+    _historyPollTimer = null;
+  }
+}
+
 const DEFAULT_CANONICAL_PREFIX = 'agent:lawclaw-main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
 const DEFAULT_CANONICAL_SESSION_PREFIX = `${DEFAULT_CANONICAL_PREFIX}:`;
@@ -231,10 +256,11 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   const refs: Array<{ filePath: string; mimeType: string }> = [];
   const seen = new Set<string>();
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
-  // Unix absolute paths (/... or ~/...)
-  const unixRegex = new RegExp(`((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
-  // Windows absolute paths (C:\... D:\...)
-  const winRegex = new RegExp(`([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  // Unix absolute paths (/... or ~/...) — lookbehind rejects mid-token slashes
+  // (e.g. "path/to/file.mp4", "https://example.com/file.mp4")
+  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  // Windows absolute paths (C:\... D:\...) — lookbehind rejects drive letter glued to a word
+  const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
   for (const regex of [unixRegex, winRegex]) {
     let match;
     while ((match = regex.exec(text)) !== null) {
@@ -1041,22 +1067,45 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (result.success && result.result) {
         const data = result.result;
         const rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
+
         // Before filtering: attach images/files from tool_result messages to the next assistant message
         const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
         const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role));
         // Restore file attachments for user/assistant messages (from cache + text patterns)
         const enrichedMessages = enrichWithCachedImages(filteredMessages);
         const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
-        set({ messages: enrichedMessages, thinkingLevel, loading: false });
+
+        // Preserve the optimistic user message during an active send.
+        // The Gateway may not include the user's message in chat.history
+        // until the run completes, causing it to flash out of the UI.
+        let finalMessages = enrichedMessages;
+        const userMsgAt = get().lastUserMessageAt;
+        if (get().sending && userMsgAt) {
+          const userMsMs = toMs(userMsgAt);
+          const hasRecentUser = enrichedMessages.some(
+            (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
+          );
+          if (!hasRecentUser) {
+            const currentMsgs = get().messages;
+            const optimistic = [...currentMsgs].reverse().find(
+              (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
+            );
+            if (optimistic) {
+              finalMessages = [...enrichedMessages, optimistic];
+            }
+          }
+        }
+
+        set({ messages: finalMessages, thinkingLevel, loading: false });
 
         // Async: load missing image previews from disk (updates in background)
-        loadMissingPreviews(enrichedMessages).then((updated) => {
+        loadMissingPreviews(finalMessages).then((updated) => {
           if (updated) {
             // Create new object references so React.memo detects changes.
             // loadMissingPreviews mutates AttachedFileMeta in place, so we
             // must produce fresh message + file references for each affected msg.
             set({
-              messages: enrichedMessages.map(msg =>
+              messages: finalMessages.map(msg =>
                 msg._attachedFiles
                   ? { ...msg, _attachedFiles: msg._attachedFiles.map(f => ({ ...f })) }
                   : msg
@@ -1064,15 +1113,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
           }
         });
-        const { pendingFinal, lastUserMessageAt } = get();
-        if (pendingFinal) {
+        const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
+
+        // If we're sending but haven't received streaming events, check
+        // whether the loaded history reveals intermediate tool-call activity.
+        // This surfaces progress via the pendingFinal → ActivityIndicator path.
+        const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
+        const isAfterUserMsg = (msg: RawMessage): boolean => {
+          if (!userMsTs || !msg.timestamp) return true;
+          return toMs(msg.timestamp) >= userMsTs;
+        };
+
+        if (isSendingNow && !pendingFinal) {
+          const hasRecentAssistantActivity = [...filteredMessages].reverse().some((msg) => {
+            if (msg.role !== 'assistant') return false;
+            return isAfterUserMsg(msg);
+          });
+          if (hasRecentAssistantActivity) {
+            set({ pendingFinal: true });
+          }
+        }
+
+        // If pendingFinal, check whether the AI produced a final text response.
+        if (pendingFinal || get().pendingFinal) {
           const recentAssistant = [...filteredMessages].reverse().find((msg) => {
             if (msg.role !== 'assistant') return false;
             if (!hasNonToolAssistantContent(msg)) return false;
-            if (lastUserMessageAt && msg.timestamp && msg.timestamp < lastUserMessageAt) return false;
-            return true;
+            return isAfterUserMsg(msg);
           });
           if (recentAssistant) {
+            clearHistoryPoll();
             set({ sending: false, activeRunId: null, pendingFinal: false });
           }
         }
@@ -1094,10 +1164,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { currentSessionKey } = get();
 
     // Add user message optimistically (with local file metadata for UI display)
+    const nowMs = Date.now();
     const userMsg: RawMessage = {
       role: 'user',
       content: trimmed || (attachments?.length ? '(file attached)' : ''),
-      timestamp: Date.now() / 1000,
+      timestamp: nowMs / 1000,
       id: crypto.randomUUID(),
       _attachedFiles: attachments?.map(a => ({
         fileName: a.fileName,
@@ -1115,13 +1186,56 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingMessage: null,
       streamingTools: [],
       pendingFinal: false,
-      lastUserMessageAt: userMsg.timestamp ?? null,
+      lastUserMessageAt: nowMs,
     }));
+
+    // Start the history poll and safety timeout IMMEDIATELY (before the
+    // RPC await) because the gateway's chat.send RPC may block until the
+    // entire agentic conversation finishes — the poll must run in parallel.
+    _lastChatEventAt = Date.now();
+    clearHistoryPoll();
+    clearErrorRecoveryTimer();
+
+    const POLL_START_DELAY = 3_000;
+    const POLL_INTERVAL = 4_000;
+    const pollHistory = () => {
+      const state = get();
+      if (!state.sending) { clearHistoryPoll(); return; }
+      if (state.streamingMessage) {
+        _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
+        return;
+      }
+      state.loadHistory(true);
+      _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
+    };
+    _historyPollTimer = setTimeout(pollHistory, POLL_START_DELAY);
+
+    const SAFETY_TIMEOUT_MS = 90_000;
+    const checkStuck = () => {
+      const state = get();
+      if (!state.sending) return;
+      if (state.streamingMessage || state.streamingText) return;
+      if (state.pendingFinal) {
+        setTimeout(checkStuck, 10_000);
+        return;
+      }
+      if (Date.now() - _lastChatEventAt < SAFETY_TIMEOUT_MS) {
+        setTimeout(checkStuck, 10_000);
+        return;
+      }
+      clearHistoryPoll();
+      set({
+        error: 'No response received from the model. The provider may be unavailable or the API key may have insufficient quota. Please check your provider settings.',
+        sending: false,
+        activeRunId: null,
+        lastUserMessageAt: null,
+      });
+    };
+    setTimeout(checkStuck, 30_000);
 
     try {
       const idempotencyKey = crypto.randomUUID();
       const hasMedia = attachments && attachments.length > 0;
-      console.log(`[sendMessage] hasMedia=${hasMedia}, attachmentCount=${attachments?.length ?? 0}`);
       if (hasMedia) {
         console.log('[sendMessage] Media paths:', attachments!.map(a => a.stagedPath));
       }
@@ -1144,8 +1258,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       let result: { success: boolean; result?: { runId?: string }; error?: string };
 
       if (hasMedia) {
-        // Use dedicated chat:sendWithMedia handler — main process reads staged files
-        // from disk and builds base64 attachments, avoiding large IPC transfers
         result = await window.electron.ipcRenderer.invoke(
           'chat:sendWithMedia',
           {
@@ -1161,7 +1273,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           },
         ) as { success: boolean; result?: { runId?: string }; error?: string };
       } else {
-        // No media — use standard lightweight RPC
         result = await window.electron.ipcRenderer.invoke(
           'gateway:rpc',
           'chat.send',
@@ -1174,50 +1285,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ) as { success: boolean; result?: { runId?: string }; error?: string };
       }
 
-      console.log(`[sendMessage] RPC result: success=${result.success}, error=${result.error || 'none'}, runId=${result.result?.runId || 'none'}`);
+      console.log(`[sendMessage] RPC result: success=${result.success}, runId=${result.result?.runId || 'none'}`);
 
       if (!result.success) {
+        clearHistoryPoll();
         set({ error: result.error || 'Failed to send message', sending: false });
       } else if (result.result?.runId) {
         set({ activeRunId: result.result.runId });
-      } else {
-        // No runId from gateway; keep sending state and wait for events.
-      }
-
-      // Safety timeout: if we're still in "sending" state without receiving
-      // any chat event for SAFETY_TIMEOUT_MS, the run likely failed silently
-      // (e.g. provider error not surfaced as a chat event). Surface the error
-      // to the user instead of leaving an infinite spinner.
-      //
-      // The timeout is based on the last received event (not the original send
-      // time) so that long-running tool-use conversations don't trigger false
-      // positives — each received event resets the clock.
-      if (result.success) {
-        _lastChatEventAt = Date.now();
-        const SAFETY_TIMEOUT_MS = 90_000;
-        const checkStuck = () => {
-          const state = get();
-          if (!state.sending) return;
-          if (state.streamingMessage || state.streamingText) return;
-          // Still between tool cycles (pendingFinal) — the model is working
-          if (state.pendingFinal) {
-            setTimeout(checkStuck, 10_000);
-            return;
-          }
-          if (Date.now() - _lastChatEventAt < SAFETY_TIMEOUT_MS) {
-            setTimeout(checkStuck, 10_000);
-            return;
-          }
-          set({
-            error: 'No response received from the model. The provider may be unavailable or the API key may have insufficient quota. Please check your provider settings.',
-            sending: false,
-            activeRunId: null,
-            lastUserMessageAt: null,
-          });
-        };
-        setTimeout(checkStuck, 30_000);
       }
     } catch (err) {
+      clearHistoryPoll();
       set({ error: String(err), sending: false });
     }
   },
@@ -1225,6 +1302,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Abort active run ──
 
   abortRun: async () => {
+    clearHistoryPoll();
+    clearErrorRecoveryTimer();
     const { currentSessionKey } = get();
     set({ sending: false, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null, pendingToolImages: [] });
     set({ streamingTools: [] });
@@ -1245,7 +1324,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   handleChatEvent: (event: Record<string, unknown>) => {
     const runId = String(event.runId || '');
     const eventState = String(event.state || '');
-    const { activeRunId } = get();
+    const eventSessionKey = event.sessionKey != null ? String(event.sessionKey) : null;
+    const { activeRunId, currentSessionKey } = get();
+
+    // Only process events for the current session (when sessionKey is present)
+    if (eventSessionKey != null && eventSessionKey !== currentSessionKey) return;
 
     // Only process events for the active run (or if no active run set)
     if (activeRunId && runId && runId !== activeRunId) return;
@@ -1253,24 +1336,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
     _lastChatEventAt = Date.now();
 
     // Defensive: if state is missing but we have a message, try to infer state.
-    // This handles the case where the Gateway sends events without a state wrapper
-    // (e.g., protocol events where payload is the raw message).
     let resolvedState = eventState;
     if (!resolvedState && event.message && typeof event.message === 'object') {
       const msg = event.message as Record<string, unknown>;
       const stopReason = msg.stopReason ?? msg.stop_reason;
       if (stopReason) {
-        // Message has a stopReason → it's a final message
         resolvedState = 'final';
       } else if (msg.role || msg.content) {
-        // Message has role/content but no stopReason → treat as delta (streaming)
         resolvedState = 'delta';
       }
     }
 
+    // Only pause the history poll when we receive actual streaming data.
+    // The gateway sends "agent" events with { phase, startedAt } that carry
+    // no message — these must NOT kill the poll, since the poll is our only
+    // way to track progress when the gateway doesn't stream intermediate turns.
+    const hasUsefulData = resolvedState === 'delta' || resolvedState === 'final'
+      || resolvedState === 'error' || resolvedState === 'aborted';
+    if (hasUsefulData) {
+      clearHistoryPoll();
+      // Adopt run started from another client (e.g. console at 127.0.0.1:18789):
+      // show loading/streaming in the app when this session has an active run.
+      const { sending } = get();
+      if (!sending && runId) {
+        set({ sending: true, activeRunId: runId, error: null });
+      }
+    }
+
     switch (resolvedState) {
+      case 'started': {
+        // Run just started (e.g. from console); show loading immediately.
+        const { sending: currentSending } = get();
+        if (!currentSending && runId) {
+          set({ sending: true, activeRunId: runId, error: null });
+        }
+        break;
+      }
       case 'delta': {
-        // Streaming update - store the cumulative message
+        // If we're receiving new deltas, the Gateway has recovered from any
+        // prior error — cancel the error finalization timer and clear the
+        // stale error banner so the user sees the live stream again.
+        if (_errorRecoveryTimer) {
+          clearErrorRecoveryTimer();
+          set({ error: null });
+        }
         const updates = collectToolUpdates(event.message, resolvedState);
         set((s) => ({
           streamingMessage: (() => {
@@ -1285,6 +1394,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         break;
       }
       case 'final': {
+        clearErrorRecoveryTimer();
+        if (get().error) set({ error: null });
         // Message complete - add to history and clear streaming
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
@@ -1412,6 +1523,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           // After the final response, quietly reload history to surface all intermediate
           // tool-use turns (thinking + tool blocks) from the Gateway's authoritative record.
           if (hasOutput && !toolOnly) {
+            clearHistoryPoll();
             void get().loadHistory(true);
           }
         } else {
@@ -1423,20 +1535,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       case 'error': {
         const errorMsg = String(event.errorMessage || 'An error occurred');
+        const wasSending = get().sending;
+
+        // Snapshot the current streaming message into messages[] so partial
+        // content ("Let me get that written down...") is preserved in the UI
+        // rather than being silently discarded.
+        const currentStream = get().streamingMessage as RawMessage | null;
+        if (currentStream && (currentStream.role === 'assistant' || currentStream.role === undefined)) {
+          const snapId = (currentStream as RawMessage).id
+            || `error-snap-${Date.now()}`;
+          const alreadyExists = get().messages.some(m => m.id === snapId);
+          if (!alreadyExists) {
+            set((s) => ({
+              messages: [...s.messages, { ...currentStream, role: 'assistant' as const, id: snapId }],
+            }));
+          }
+        }
+
         set({
           error: errorMsg,
-          sending: false,
-          activeRunId: null,
           streamingText: '',
           streamingMessage: null,
           streamingTools: [],
           pendingFinal: false,
-          lastUserMessageAt: null,
           pendingToolImages: [],
         });
+
+        // Don't immediately give up: the Gateway often retries internally
+        // after transient API failures (e.g. "terminated"). Keep `sending`
+        // true for a grace period so that recovery events are processed and
+        // the agent-phase-completion handler can still trigger loadHistory.
+        if (wasSending) {
+          clearErrorRecoveryTimer();
+          const ERROR_RECOVERY_GRACE_MS = 15_000;
+          _errorRecoveryTimer = setTimeout(() => {
+            _errorRecoveryTimer = null;
+            const state = get();
+            if (state.sending && !state.streamingMessage) {
+              clearHistoryPoll();
+              // Grace period expired with no recovery — finalize the error
+              set({
+                sending: false,
+                activeRunId: null,
+                lastUserMessageAt: null,
+              });
+              // One final history reload in case the Gateway completed in the
+              // background and we just missed the event.
+              state.loadHistory(true);
+            }
+          }, ERROR_RECOVERY_GRACE_MS);
+        } else {
+          clearHistoryPoll();
+          set({ sending: false, activeRunId: null, lastUserMessageAt: null });
+        }
         break;
       }
       case 'aborted': {
+        clearHistoryPoll();
+        clearErrorRecoveryTimer();
         set({
           sending: false,
           activeRunId: null,

@@ -330,6 +330,12 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       })) as MutateResponse;
 
       if (!result.success) {
+        if (result.error?.includes('Timeout')) {
+          throw new Error('installTimeoutError');
+        }
+        if (result.error?.toLowerCase().includes('rate limit')) {
+          throw new Error('installRateLimitError');
+        }
         throw new Error(result.error || 'Install failed');
       }
 

@@ -5,7 +5,7 @@
  * are in the toolbar; messages render with markdown + streaming.
  */
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, Bot, MessageSquare, Sparkles } from 'lucide-react';
+import { AlertCircle, Bot, Loader2, MessageSquare, Sparkles } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -29,6 +29,7 @@ export function Chat() {
   const showThinking = useChatStore((s) => s.showThinking);
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
+  const pendingFinal = useChatStore((s) => s.pendingFinal);
   const loadHistory = useChatStore((s) => s.loadHistory);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const sendMessage = useChatStore((s) => s.sendMessage);
@@ -44,24 +45,29 @@ export function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
 
-  // Load data when gateway is running
+  // Load data when gateway is running.
+  // When the store already holds messages for this session (i.e. the user
+  // is navigating *back* to Chat), use quiet mode so the existing messages
+  // stay visible while fresh data loads in the background.  This avoids
+  // an unnecessary messages → spinner → messages flicker.
   useEffect(() => {
     if (!isGatewayRunning) return;
     let cancelled = false;
+    const hasExistingMessages = useChatStore.getState().messages.length > 0;
     (async () => {
       await loadSessions();
       if (cancelled) return;
-      await loadHistory();
+      await loadHistory(hasExistingMessages);
     })();
     return () => {
       cancelled = true;
     };
   }, [isGatewayRunning, loadHistory, loadSessions]);
 
-  // Auto-scroll on new messages or streaming
+  // Auto-scroll on new messages, streaming, or activity changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingMessage, sending]);
+  }, [messages, streamingMessage, sending, pendingFinal]);
 
   // Update timestamp when sending starts
   useEffect(() => {
@@ -86,7 +92,6 @@ export function Chat() {
     );
   }
 
-  // Extract streaming text for display
   const streamMsg = streamingMessage && typeof streamingMessage === 'object'
     ? streamingMessage as unknown as { role?: string; content?: unknown; timestamp?: number }
     : null;
@@ -95,11 +100,12 @@ export function Chat() {
   const streamThinking = streamMsg ? extractThinking(streamMsg) : null;
   const hasStreamThinking = showThinking && !!streamThinking && streamThinking.trim().length > 0;
   const streamTools = streamMsg ? extractToolUse(streamMsg) : [];
-  const hasStreamTools = showThinking && streamTools.length > 0;
+  const hasStreamTools = streamTools.length > 0;
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
   const hasStreamImages = streamImages.length > 0;
-  const hasStreamToolStatus = showThinking && streamingTools.length > 0;
+  const hasStreamToolStatus = streamingTools.length > 0;
   const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
+  const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
   return (
     <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 2.5rem)' }}>
@@ -156,7 +162,7 @@ export function Chat() {
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="max-w-4xl mx-auto space-y-4">
-          {loading ? (
+          {loading && !sending ? (
             <div className="flex h-full items-center justify-center py-20">
               <LoadingSpinner size="lg" />
             </div>
@@ -193,8 +199,13 @@ export function Chat() {
                 />
               )}
 
-              {/* Typing indicator when sending but no stream yet */}
-              {sending && !hasStreamText && !hasStreamThinking && !hasStreamTools && !hasStreamImages && !hasStreamToolStatus && (
+              {/* Activity indicator: waiting for next AI turn after tool execution */}
+              {sending && pendingFinal && !shouldRenderStreaming && (
+                <ActivityIndicator phase="tool_processing" />
+              )}
+
+              {/* Typing indicator when sending but no stream content yet */}
+              {sending && !pendingFinal && !hasAnyStreamContent && (
                 <TypingIndicator />
               )}
             </>
@@ -279,6 +290,25 @@ function TypingIndicator() {
           <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
           <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
           <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Activity Indicator (shown between tool cycles) ─────────────
+
+function ActivityIndicator({ phase }: { phase: 'tool_processing' }) {
+  void phase;
+  return (
+    <div className="flex gap-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+        <Sparkles className="h-4 w-4" />
+      </div>
+      <div className="bg-muted rounded-2xl px-4 py-3">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+          <span>Processing tool results…</span>
         </div>
       </div>
     </div>

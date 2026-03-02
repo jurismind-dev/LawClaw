@@ -626,7 +626,18 @@ function AddChannelDialog({
 
       // Step 2: Save channel configuration via IPC
       const config: Record<string, unknown> = { ...configValues };
-      await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedType, config);
+      const saveResult = await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedType, config) as {
+        success?: boolean;
+        error?: string;
+        warning?: string;
+        pluginInstalled?: boolean;
+      };
+      if (!saveResult?.success) {
+        throw new Error(saveResult?.error || 'Failed to save channel config');
+      }
+      if (typeof saveResult.warning === 'string' && saveResult.warning) {
+        toast.warning(saveResult.warning);
+      }
 
       // Step 3: Add a local channel entry for the UI
       await addChannel({
@@ -637,16 +648,12 @@ function AddChannelDialog({
 
       toast.success(t('toast.channelSaved', { name: meta.name }));
 
-      // Step 4: Restart the Gateway so it picks up the new channel config
-      // The Gateway watches the config file, but a restart ensures a clean start
-      // especially when adding a channel for the first time.
-      try {
-        await window.electron.ipcRenderer.invoke('gateway:restart');
-        toast.success(t('toast.channelConnecting', { name: meta.name }));
-      } catch (restartError) {
-        console.warn('Gateway restart after channel config:', restartError);
-        toast.info(t('toast.restartManual'));
-      }
+      // Gateway restart is now handled server-side via debouncedRestart()
+      // inside the channel:saveConfig IPC handler, so we don't need to
+      // trigger it explicitly here.  This avoids cascading restarts when
+      // multiple config changes happen in quick succession (e.g. during
+      // the setup wizard).
+      toast.success(t('toast.channelConnecting', { name: meta.name }));
 
       // Brief delay so user can see the success state before dialog closes
       await new Promise((resolve) => setTimeout(resolve, 800));

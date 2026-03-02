@@ -131,6 +131,7 @@ export class ClawHubService {
             console.log(`Running ClawHub command: ${displayCommand}`);
 
             const isWin = process.platform === 'win32';
+            const useShell = isWin && !this.useNodeRunner;
             const env = {
                 ...process.env,
                 CI: 'true',
@@ -141,9 +142,11 @@ export class ClawHubService {
             if (this.useNodeRunner) {
                 env.ELECTRON_RUN_AS_NODE = '1';
             }
-            const child = spawn(this.cliPath, commandArgs, {
+            const spawnCmd = useShell ? quoteForCmd(this.cliPath) : this.cliPath;
+            const spawnArgs = useShell ? commandArgs.map(a => quoteForCmd(a)) : commandArgs;
+            const child = spawn(spawnCmd, spawnArgs, {
                 cwd: this.workDir,
-                shell: isWin && !this.useNodeRunner,
+                shell: useShell,
                 env: {
                     ...env,
                     CLAWHUB_WORKDIR: this.workDir,
@@ -248,7 +251,7 @@ export class ClawHubService {
                 return [];
             }
             console.error('ClawHub search error:', error);
-            return [];
+            throw error;
         }
     }
 
@@ -288,7 +291,7 @@ export class ClawHubService {
                 return [];
             }
             console.error('ClawHub explore error:', error);
-            return [];
+            throw error;
         }
     }
 

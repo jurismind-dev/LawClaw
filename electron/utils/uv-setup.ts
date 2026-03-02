@@ -1,8 +1,10 @@
 import { app } from 'electron';
-import { spawn } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { getUvMirrorEnv } from './uv-env';
+import { logger } from './logger';
+import { quoteForCmd, needsWinShell } from './paths';
 
 /**
  * Get the path to the bundled uv binary
@@ -14,31 +16,59 @@ function getBundledUvPath(): string {
   const binName = platform === 'win32' ? 'uv.exe' : 'uv';
   
   if (app.isPackaged) {
-    // In production, we flattened the structure to 'bin/'
     return join(process.resourcesPath, 'bin', binName);
   } else {
-    // In dev, resources are at project root/resources/bin/<platform>-<arch>
     return join(process.cwd(), 'resources', 'bin', target, binName);
   }
 }
 
 /**
- * Check if uv is available (either in system PATH or bundled)
+ * Resolve the best uv binary to use.
+ *
+ * In packaged mode we always prefer the bundled binary so we never accidentally
+ * pick up a system-wide uv that may be a different (possibly broken) version.
+ * In dev we fall through to the system PATH for convenience.
+ */
+function resolveUvBin(): { bin: string; source: 'bundled' | 'path' | 'bundled-fallback' } {
+  const bundled = getBundledUvPath();
+
+  if (app.isPackaged) {
+    if (existsSync(bundled)) {
+      return { bin: bundled, source: 'bundled' };
+    }
+    logger.warn(`Bundled uv binary not found at ${bundled}, falling back to system PATH`);
+  }
+
+  // Dev mode or missing bundled binary — check system PATH
+  const found = findUvInPathSync();
+  if (found) return { bin: 'uv', source: 'path' };
+
+  if (existsSync(bundled)) {
+    return { bin: bundled, source: 'bundled-fallback' };
+  }
+
+  return { bin: 'uv', source: 'path' };
+}
+
+function findUvInPathSync(): boolean {
+  try {
+    const cmd = process.platform === 'win32' ? 'where.exe uv' : 'which uv';
+    execSync(cmd, { stdio: 'ignore', timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if uv is available (either bundled or in system PATH)
  */
 export async function checkUvInstalled(): Promise<boolean> {
-  // 1. Check system PATH first
-  const inPath = await new Promise<boolean>((resolve) => {
-    const cmd = process.platform === 'win32' ? 'where.exe' : 'which';
-    const child = spawn(cmd, ['uv']);
-    child.on('close', (code) => resolve(code === 0));
-    child.on('error', () => resolve(false));
-  });
-
-  if (inPath) return true;
-
-  // 2. Check bundled path
-  const bin = getBundledUvPath();
-  return existsSync(bin);
+  const { bin, source } = resolveUvBin();
+  if (source === 'bundled' || source === 'bundled-fallback') {
+    return existsSync(bin);
+  }
+  return findUvInPathSync();
 }
 
 /**
@@ -51,27 +81,20 @@ export async function installUv(): Promise<void> {
     const bin = getBundledUvPath();
     throw new Error(`uv not found in system PATH and bundled binary missing at ${bin}`);
   }
-  console.log('uv is available and ready to use');
+  logger.info('uv is available and ready to use');
 }
 
 /**
  * Check if a managed Python 3.12 is ready and accessible
  */
 export async function isPythonReady(): Promise<boolean> {
-  // Use 'uv' if in PATH, otherwise use full bundled path
-  const inPath = await new Promise<boolean>((resolve) => {
-    const cmd = process.platform === 'win32' ? 'where.exe' : 'which';
-    const child = spawn(cmd, ['uv']);
-    child.on('close', (code) => resolve(code === 0));
-    child.on('error', () => resolve(false));
-  });
-
-  const uvBin = inPath ? 'uv' : getBundledUvPath();
+  const { bin: uvBin } = resolveUvBin();
+  const useShell = needsWinShell(uvBin);
 
   return new Promise<boolean>((resolve) => {
     try {
-      const child = spawn(uvBin, ['python', 'find', '3.12'], {
-        shell: process.platform === 'win32',
+      const child = spawn(useShell ? quoteForCmd(uvBin) : uvBin, ['python', 'find', '3.12'], {
+        shell: useShell,
       });
       child.on('close', (code) => resolve(code === 0));
       child.on('error', () => resolve(false));
@@ -82,58 +105,111 @@ export async function isPythonReady(): Promise<boolean> {
 }
 
 /**
- * Use bundled uv to install a managed Python version (default 3.12)
- * Automatically picks the best available uv binary
+ * Run `uv python install 3.12` once with the given environment.
+ * Returns on success, throws with captured stderr on failure.
  */
-export async function setupManagedPython(): Promise<void> {
-  // Use 'uv' if in PATH, otherwise use full bundled path
-  const inPath = await new Promise<boolean>((resolve) => {
-    const cmd = process.platform === 'win32' ? 'where.exe' : 'which';
-    const child = spawn(cmd, ['uv']);
-    child.on('close', (code) => resolve(code === 0));
-    child.on('error', () => resolve(false));
-  });
+async function runPythonInstall(
+  uvBin: string,
+  env: Record<string, string | undefined>,
+  label: string,
+): Promise<void> {
+  const useShell = needsWinShell(uvBin);
+  return new Promise<void>((resolve, reject) => {
+    const stderrChunks: string[] = [];
+    const stdoutChunks: string[] = [];
 
-  const uvBin = inPath ? 'uv' : getBundledUvPath();
-  
-  console.log(`Setting up python with: ${uvBin}`);
-  const uvEnv = await getUvMirrorEnv();
-
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(uvBin, ['python', 'install', '3.12'], {
-      shell: process.platform === 'win32',
-      env: {
-        ...process.env,
-        ...uvEnv,
-      },
+    const child = spawn(useShell ? quoteForCmd(uvBin) : uvBin, ['python', 'install', '3.12'], {
+      shell: useShell,
+      env,
     });
 
     child.stdout?.on('data', (data) => {
-      console.log(`python setup stdout: ${data}`);
+      const line = data.toString().trim();
+      if (line) {
+        stdoutChunks.push(line);
+        logger.debug(`[python-setup:${label}] stdout: ${line}`);
+      }
     });
 
     child.stderr?.on('data', (data) => {
-      // uv prints progress to stderr, so we log it as info
-      console.log(`python setup info: ${data.toString().trim()}`);
+      const line = data.toString().trim();
+      if (line) {
+        stderrChunks.push(line);
+        logger.info(`[python-setup:${label}] stderr: ${line}`);
+      }
     });
 
     child.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`Python installation failed with code ${code}`));
+      if (code === 0) {
+        resolve();
+      } else {
+        const stderr = stderrChunks.join('\n');
+        const stdout = stdoutChunks.join('\n');
+        const detail = stderr || stdout || '(no output captured)';
+        reject(new Error(
+          `Python installation failed with code ${code} [${label}]\n` +
+          `  uv binary: ${uvBin}\n` +
+          `  platform: ${process.platform}/${process.arch}\n` +
+          `  output: ${detail}`
+        ));
+      }
     });
 
-    child.on('error', (err) => reject(err));
+    child.on('error', (err) => {
+      reject(new Error(
+        `Python installation spawn error [${label}]: ${err.message}\n` +
+        `  uv binary: ${uvBin}\n` +
+        `  platform: ${process.platform}/${process.arch}`
+      ));
+    });
   });
+}
 
-  // After installation, find and print where the Python executable is
+/**
+ * Use bundled uv to install a managed Python version (default 3.12).
+ *
+ * Tries with mirror env first (for CN region), then retries without mirror
+ * if the first attempt fails, to rule out mirror-specific issues.
+ */
+export async function setupManagedPython(): Promise<void> {
+  const { bin: uvBin, source } = resolveUvBin();
+  const uvEnv = await getUvMirrorEnv();
+  const hasMirror = Object.keys(uvEnv).length > 0;
+
+  logger.info(
+    `Setting up managed Python 3.12 ` +
+    `(uv=${uvBin}, source=${source}, arch=${process.arch}, mirror=${hasMirror})`
+  );
+
+  const baseEnv: Record<string, string | undefined> = { ...process.env };
+
+  // Attempt 1: with mirror (if applicable)
+  try {
+    await runPythonInstall(uvBin, { ...baseEnv, ...uvEnv }, hasMirror ? 'mirror' : 'default');
+  } catch (firstError) {
+    logger.warn('Python install attempt 1 failed:', firstError);
+
+    if (hasMirror) {
+      // Attempt 2: retry without mirror to rule out mirror issues
+      logger.info('Retrying Python install without mirror...');
+      try {
+        await runPythonInstall(uvBin, baseEnv, 'no-mirror');
+      } catch (secondError) {
+        logger.error('Python install attempt 2 (no mirror) also failed:', secondError);
+        throw secondError;
+      }
+    } else {
+      throw firstError;
+    }
+  }
+
+  // After installation, verify and log the Python path
+  const verifyShell = needsWinShell(uvBin);
   try {
     const findPath = await new Promise<string>((resolve) => {
-      const child = spawn(uvBin, ['python', 'find', '3.12'], {
-        shell: process.platform === 'win32',
-        env: {
-          ...process.env,
-          ...uvEnv,
-        },
+      const child = spawn(verifyShell ? quoteForCmd(uvBin) : uvBin, ['python', 'find', '3.12'], {
+        shell: verifyShell,
+        env: { ...process.env, ...uvEnv },
       });
       let output = '';
       child.stdout?.on('data', (data) => { output += data; });
@@ -141,11 +217,9 @@ export async function setupManagedPython(): Promise<void> {
     });
     
     if (findPath) {
-      console.log(`✅ Managed Python 3.12 path: ${findPath}`);
-      // Note: uv stores environments in a central cache, 
-      // Individual skills will create their own venvs in ~/.cache/uv or similar.
+      logger.info(`Managed Python 3.12 installed at: ${findPath}`);
     }
   } catch (err) {
-    console.warn('Could not determine Python path:', err);
+    logger.warn('Could not determine Python path after install:', err);
   }
 }

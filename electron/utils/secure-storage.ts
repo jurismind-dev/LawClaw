@@ -4,6 +4,9 @@
  * Keys are stored in plain text alongside provider configs in a single electron-store.
  */
 
+import { BUILTIN_PROVIDER_TYPES } from './provider-registry';
+import { getActiveOpenClawProviders } from './openclaw-auth';
+
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let providerStore: any = null;
@@ -215,14 +218,34 @@ export async function getProviderWithKeyInfo(
 
 /**
  * Get all providers with key info (for UI display)
+ * Also synchronizes ClawX local provider list with OpenClaw's actual config.
  */
 export async function getAllProvidersWithKeyInfo(): Promise<
   Array<ProviderConfig & { hasKey: boolean; keyMasked: string | null }>
 > {
   const providers = await getAllProviders();
   const results: Array<ProviderConfig & { hasKey: boolean; keyMasked: string | null }> = [];
+  const activeOpenClawProviders = await getActiveOpenClawProviders();
 
   for (const provider of providers) {
+    // Sync check: If it's a custom/OAuth provider and it no longer exists in OpenClaw config
+    // (e.g. wiped by Gateway due to missing plugin, or manually deleted by user)
+    // we should remove it from ClawX UI to stay consistent.
+    const isBuiltin = BUILTIN_PROVIDER_TYPES.includes(provider.type);
+    // For custom/ollama providers, the OpenClaw config key is derived as
+    // "<type>-<suffix>" where suffix = first 8 chars of providerId with hyphens stripped.
+    // e.g. provider.id "custom-a1b2c3d4-..." → strip hyphens → "customa1b2c3d4..." → slice(0,8) → "customa1"
+    // → openClawKey = "custom-customa1"
+    // This must match getOpenClawProviderKey() in ipc-handlers.ts exactly.
+    const openClawKey = (provider.type === 'custom' || provider.type === 'ollama')
+      ? `${provider.type}-${provider.id.replace(/-/g, '').slice(0, 8)}`
+      : provider.type === 'minimax-portal-cn' ? 'minimax-portal' : provider.type;
+    if (!isBuiltin && !activeOpenClawProviders.has(provider.type) && !activeOpenClawProviders.has(provider.id) && !activeOpenClawProviders.has(openClawKey)) {
+      console.log(`[Sync] Provider ${provider.id} (${provider.type}) missing from OpenClaw, dropping from ClawX UI`);
+      await deleteProvider(provider.id);
+      continue;
+    }
+
     const apiKey = await getApiKey(provider.id);
     let keyMasked: string | null = null;
 

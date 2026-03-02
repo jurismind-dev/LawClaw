@@ -10,6 +10,7 @@ import { createTray } from './tray';
 import { createMenu } from './menu';
 
 import { appUpdater, registerUpdateHandlers } from './updater';
+import { isQuitting, setQuitting } from './app-state';
 import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
 import { runProviderStartupMigration } from '../utils/provider-migration';
@@ -23,7 +24,20 @@ import {
   JURISMINDHUB_SITE_URL,
 } from '../gateway/market-source';
 
-// Disable GPU acceleration for better compatibility
+// Disable GPU hardware acceleration globally for maximum stability across
+// all GPU configurations (no GPU, integrated, discrete).
+//
+// Rationale (following VS Code's philosophy):
+// - Page/file loading is async data fetching — zero GPU dependency.
+// - The original per-platform GPU branching was added to avoid CPU rendering
+//   competing with sync I/O on Windows, but all file I/O is now async
+//   (fs/promises), so that concern no longer applies.
+// - Software rendering is deterministic across all hardware; GPU compositing
+//   behaviour varies between vendors (Intel, AMD, NVIDIA, Apple Silicon) and
+//   driver versions, making it the #1 source of rendering bugs in Electron.
+//
+// Users who want GPU acceleration can pass `--enable-gpu` on the CLI or
+// set `"disable-hardware-acceleration": false` in the app config (future).
 app.disableHardwareAcceleration();
 
 // Check for force-setup mode via command line argument or environment variable
@@ -33,7 +47,6 @@ const forceLawclawAgentPreset =
 
 // Global references
 let mainWindow: BrowserWindow | null = null;
-let isQuitting = false;
 const gatewayManager = new GatewayManager();
 const clawHubService = new ClawHubService({
   market: 'clawhub',
@@ -143,40 +156,17 @@ async function initialize(): Promise<void> {
   // Create system tray
   createTray(mainWindow);
 
-  // Inject OpenRouter site headers (HTTP-Referer & X-Title) for rankings on openrouter.ai
-  session.defaultSession.webRequest.onBeforeSendHeaders(
-    { urls: ['https://openrouter.ai/*'] },
+  // Override security headers ONLY for the OpenClaw Gateway Control UI.
+  // The URL filter ensures this callback only fires for gateway requests,
+  // avoiding unnecessary overhead on every other HTTP response.
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['http://127.0.0.1:18789/*', 'http://localhost:18789/*'] },
     (details, callback) => {
       details.requestHeaders['HTTP-Referer'] = 'https://lawclaw.com';
       details.requestHeaders['X-Title'] = 'LawClaw';
       callback({ requestHeaders: details.requestHeaders });
     },
   );
-
-  // Override security headers ONLY for the OpenClaw Gateway Control UI
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const isGatewayUrl = details.url.includes('127.0.0.1:18789') || details.url.includes('localhost:18789');
-
-    if (!isGatewayUrl) {
-      callback({ responseHeaders: details.responseHeaders });
-      return;
-    }
-
-    const headers = { ...details.responseHeaders };
-    delete headers['X-Frame-Options'];
-    delete headers['x-frame-options'];
-    if (headers['Content-Security-Policy']) {
-      headers['Content-Security-Policy'] = headers['Content-Security-Policy'].map(
-        (csp) => csp.replace(/frame-ancestors\s+'none'/g, "frame-ancestors 'self' *")
-      );
-    }
-    if (headers['content-security-policy']) {
-      headers['content-security-policy'] = headers['content-security-policy'].map(
-        (csp) => csp.replace(/frame-ancestors\s+'none'/g, "frame-ancestors 'self' *")
-      );
-    }
-    callback({ responseHeaders: headers });
-  });
 
   // Register IPC handlers
   registerIpcHandlers(gatewayManager, clawHubService, jurismindHubService, mainWindow);
@@ -189,7 +179,7 @@ async function initialize(): Promise<void> {
 
   // Minimize to tray on close instead of quitting (macOS & Windows)
   mainWindow.on('close', (event) => {
-    if (!isQuitting) {
+    if (!isQuitting()) {
       event.preventDefault();
       mainWindow?.hide();
     }
@@ -234,6 +224,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow();
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      // On macOS, clicking the dock icon should show the window if it's hidden
+      mainWindow.show();
+      mainWindow.focus();
     }
   });
 });
@@ -244,9 +238,13 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', async () => {
-  isQuitting = true;
-  await gatewayManager.stop();
+app.on('before-quit', () => {
+  setQuitting();
+  // Fire-and-forget: do not await gatewayManager.stop() here.
+  // Awaiting inside before-quit can stall Electron's quit sequence.
+  void gatewayManager.stop().catch((err) => {
+    logger.warn('gatewayManager.stop() error during quit:', err);
+  });
 });
 
 // Export for testing

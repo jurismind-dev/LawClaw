@@ -154,9 +154,9 @@ linux:
   category: Utility
   maintainer: 法义经纬 (Jurismind) <team@jurismind.com>
   vendor: 法义经纬 (Jurismind)
-  synopsis: 小龙芯 (LawClaw) - Professional Legal AI Assistant
+  synopsis: 劳有钳 (LawClaw) - Professional Legal AI Assistant
   description: |
-    小龙芯 (LawClaw) is a professional AI assistant desktop application
+    劳有钳 (LawClaw) is a professional AI assistant desktop application
     tailored for lawyers and legal professionals, based on OpenClaw.
   desktop:
     entry:

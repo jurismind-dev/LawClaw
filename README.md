@@ -1,9 +1,9 @@
 
 <p align="center">
-  <img src="src/assets/logo.svg" width="128" height="128" alt="小龙芯 Logo" />
+  <img src="src/assets/logo.svg" width="128" height="128" alt="劳有钳 Logo" />
 </p>
 
-<h1 align="center">小龙芯 (LawClaw)</h1>
+<h1 align="center">劳有钳 (LawClaw)</h1>
 
 <p align="center">
   <strong>Professional AI Assistant for Legal Professionals</strong>
@@ -37,9 +37,9 @@
 
 ## Overview
 
-**小龙芯 (LawClaw)** is a professional AI assistant desktop application for lawyers and legal professionals, customized by 法义经纬 (Jurismind).
+**劳有钳 (LawClaw)** is a professional AI assistant desktop application for lawyers and legal professionals, customized by 法义经纬 (Jurismind).
 
-LawClaw is built on top of the official [OpenClaw](https://github.com/OpenClaw) runtime and delivers an accessible desktop experience for AI orchestration. 小龙芯 extends this powerful foundation with legal domain specialization, providing intelligent legal research, document analysis, case summary, and contract review capabilities.
+LawClaw is built on top of the official [OpenClaw](https://github.com/OpenClaw) runtime and delivers an accessible desktop experience for AI orchestration. 劳有钳 extends this powerful foundation with legal domain specialization, providing intelligent legal research, document analysis, case summary, and contract review capabilities.
 
 It comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. Advanced configurations can be accessed via **Settings → Advanced → Developer Mode**.
 
@@ -77,7 +77,7 @@ It comes pre-configured with best-practice model providers and natively supports
 
 ## Why LawClaw
 
-Legal professionals deserve AI tools designed for their specific needs. 小龙芯 (LawClaw) was designed with a simple philosophy: **powerful AI technology tailored for legal practice.**
+Legal professionals deserve AI tools designed for their specific needs. 劳有钳 (LawClaw) was designed with a simple philosophy: **powerful AI technology tailored for legal practice.**
 
 | Challenge | LawClaw Solution |
 |-----------|------------------|
@@ -165,7 +165,7 @@ When you launch LawClaw for the first time, the **Setup Wizard** will guide you 
 
 ## Architecture
 
-小龙芯 (LawClaw) employs a **dual-process architecture** that separates UI concerns from AI runtime operations:
+劳有钳 (LawClaw) employs a **dual-process architecture** that separates UI concerns from AI runtime operations:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -328,7 +328,7 @@ We welcome contributions from the community! Whether it's bug fixes, new feature
 
 ## Acknowledgments
 
-小龙芯 (LawClaw) is built on the shoulders of excellent open-source projects:
+劳有钳 (LawClaw) is built on the shoulders of excellent open-source projects:
 
 - **[ClawX](https://github.com/ValueCell-ai/ClawX)** – The upstream project this is based on, developed by ValueCell Team
 - [OpenClaw](https://github.com/OpenClaw) – The AI agent runtime

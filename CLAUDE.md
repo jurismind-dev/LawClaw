@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**小龙芯 (LawClaw)** is a professional AI assistant desktop application tailored for lawyers and legal professionals. It is built on top of [ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team, with customizations for the legal domain.
+**劳有钳 (LawClaw)** is a professional AI assistant desktop application tailored for lawyers and legal professionals. It is built on top of [ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team, with customizations for the legal domain.
 
 **开发团队**：法义经纬 (Jurismind)
 **基于项目**：[ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team
@@ -36,7 +36,7 @@ pnpm package:linux # Package for Linux
 
 ## Architecture
 
-小龙芯 (LawClaw) uses a **dual-process architecture**:
+劳有钳 (LawClaw) uses a **dual-process architecture**:
 
 ### Electron Main Process (`electron/`)
 - **main/**: Application entry, window management, IPC handlers, tray, auto-updater

@@ -1,8 +1,8 @@
-# 小龙芯 (LawClaw) 产品规格说明书（实现现状版）
+# 劳有钳 (LawClaw) 产品规格说明书（实现现状版）
 
 > 本文档用于记录 LawClaw 当前版本的**实际实现状态**，作为开发、测试和产品沟通的基线文档。
 
-**产品名称**：小龙芯 (LawClaw)  
+**产品名称**：劳有钳 (LawClaw)  
 **开发团队**：法义经纬 (Jurismind)  
 **基于项目**：[ClawX](https://github.com/ValueCell-ai/ClawX) by ValueCell Team  
 **版本**：0.1.16  

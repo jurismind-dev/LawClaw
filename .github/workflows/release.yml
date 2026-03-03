@@ -1,64 +1,189 @@
-# LawClaw Release Workflow
-# Builds and publishes releases for macOS, Windows, and Linux
-
 name: Release
 
 on:
   push:
+    branches:
+      - "main"
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to release (e.g., 1.0.0)'
-        required: true
+      bump:
+        description: "自动递增版本号类型"
+        required: false
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      tag:
+        description: "可选：指定发布标签（例如 v1.0.0），留空则自动递增"
+        required: false
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref_name || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
 
 jobs:
-  release:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            platform: mac
-          - os: windows-latest
-            platform: win
-          - os: ubuntu-latest
-            platform: linux
+  prepare:
+    name: Prepare Release Tag
+    if: ${{ github.event_name != 'push' || github.ref_type != 'tag' || github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      release_version: ${{ steps.meta.outputs.release_version }}
+      build_ref: ${{ steps.meta.outputs.build_ref }}
+      target_commitish: ${{ steps.meta.outputs.target_commitish }}
 
-    runs-on: ${{ matrix.os }}
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Resolve and create release tag
+        id: meta
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag || '' }}
+          INPUT_BUMP: ${{ github.event.inputs.bump || 'patch' }}
+        run: |
+          set -euo pipefail
+
+          tag_regex='^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+          tag=""
+          build_ref=""
+          target_commitish="${GITHUB_SHA}"
+
+          if [[ "${EVENT_NAME}" == "push" && "${REF_TYPE}" == "tag" ]]; then
+            tag="${REF_NAME}"
+            if [[ ! "${tag}" =~ ${tag_regex} ]]; then
+              echo "Invalid pushed tag: ${tag}"
+              exit 1
+            fi
+            build_ref="${GITHUB_REF}"
+          else
+            bump_type="${INPUT_BUMP}"
+            if [[ "${EVENT_NAME}" == "push" && "${REF_TYPE}" == "branch" ]]; then
+              bump_type="patch"
+            fi
+
+            if [[ -n "${INPUT_TAG}" ]]; then
+              tag="${INPUT_TAG}"
+            else
+              latest_tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n 1)"
+              if [[ -z "${latest_tag}" ]]; then
+                latest_version="0.0.0"
+              else
+                latest_version="${latest_tag#v}"
+              fi
+
+              next_version="$(node -e '
+                const [current, bump] = process.argv.slice(1);
+                const parts = current.split(".").map((x) => Number.parseInt(x, 10));
+                if (parts.length !== 3 || parts.some(Number.isNaN)) {
+                  throw new Error(`Invalid base version: ${current}`);
+                }
+                if (bump === "major") {
+                  parts[0] += 1; parts[1] = 0; parts[2] = 0;
+                } else if (bump === "minor") {
+                  parts[1] += 1; parts[2] = 0;
+                } else {
+                  parts[2] += 1;
+                }
+                process.stdout.write(parts.join("."));
+              ' "${latest_version}" "${bump_type}")"
+
+              tag="v${next_version}"
+            fi
+
+            if [[ ! "${tag}" =~ ${tag_regex} ]]; then
+              echo "Invalid release tag: ${tag}"
+              echo "Expected format like v1.0.0 or v1.0.0-beta.1"
+              exit 1
+            fi
+
+            if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+              echo "Tag ${tag} already exists on origin; reusing it."
+              build_ref="refs/tags/${tag}"
+              target_commitish="$(git rev-list -n 1 "${build_ref}" 2>/dev/null || true)"
+              if [[ -z "${target_commitish}" ]]; then
+                target_commitish="${GITHUB_SHA}"
+              fi
+            else
+              echo "Tag ${tag} does not exist yet; it will be created during release publish."
+              build_ref="${GITHUB_SHA}"
+            fi
+          fi
+
+          echo "release_tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "release_version=${tag#v}" >> "${GITHUB_OUTPUT}"
+          echo "build_ref=${build_ref}" >> "${GITHUB_OUTPUT}"
+          echo "target_commitish=${target_commitish}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: prepare
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Intel + Apple Silicon)
+            os: macos-latest
+            platform: mac
+          - name: Windows
+            os: windows-latest
+            platform: win
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          node-version: '20'
+          ref: ${{ needs.prepare.outputs.build_ref }}
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Align app version with release tag
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const path = "package.json";
+            const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
+            pkg.version = process.env.RELEASE_VERSION;
+            fs.writeFileSync(path, `${JSON.stringify(pkg, null, 4)}\n`);
+            console.log(`package.json version set to ${pkg.version}`);
+          '
+          node -p "require('./package.json').version"
 
       - name: Ensure bundled uv for macOS
         if: matrix.platform == 'mac'
@@ -68,381 +193,196 @@ jobs:
         if: matrix.platform == 'win'
         run: pnpm run uv:ensure:win
 
-      - name: Ensure bundled uv for Linux
-        if: matrix.platform == 'linux'
-        run: pnpm run uv:ensure:linux
-
-      # macOS specific steps
-      # --publish never: prevent electron-builder from auto-publishing to GitHub.
-      # All artifacts are collected and published atomically in the publish job.
-      - name: Build macOS
+      - name: Build macOS packages (x64 + arm64)
         if: matrix.platform == 'mac'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.MAC_CERTS }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MAC_CERTS: ${{ secrets.MAC_CERTS }}
+          MAC_CERTS_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          MAC_APPLE_ID: ${{ secrets.APPLE_ID }}
+          MAC_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          MAC_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          ulimit -n 65536
-          echo "File descriptor limit: $(ulimit -n)"
-          pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --mac --publish never
+          pnpm run build:vite
+          pnpm exec zx scripts/bundle-openclaw.mjs
+          pnpm exec zx scripts/bundle-qq-plugin.mjs
 
-      # Windows specific steps
-      - name: Build Windows
+          if [[ -n "${MAC_CERTS:-}" && -n "${MAC_CERTS_PASSWORD:-}" && -n "${MAC_APPLE_ID:-}" && -n "${MAC_APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${MAC_APPLE_TEAM_ID:-}" ]]; then
+            echo "Mac signing secrets are set. Building signed and notarized artifacts."
+            export CSC_LINK="${MAC_CERTS}"
+            export CSC_KEY_PASSWORD="${MAC_CERTS_PASSWORD}"
+            export APPLE_ID="${MAC_APPLE_ID}"
+            export APPLE_APP_SPECIFIC_PASSWORD="${MAC_APPLE_APP_SPECIFIC_PASSWORD}"
+            export APPLE_TEAM_ID="${MAC_APPLE_TEAM_ID}"
+            pnpm exec electron-builder --mac --x64 --arm64 --publish never
+          else
+            echo "Mac signing secrets are missing. Building unsigned artifacts."
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID CSC_NAME
+            CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --x64 --arm64 --publish never -c.mac.hardenedRuntime=false -c.mac.notarize=false
+          fi
+
+      - name: Build Windows packages (x64 + arm64)
         if: matrix.platform == 'win'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --win --publish never
-
-      - name: Verify bundled uv in Windows unpacked outputs
-        if: matrix.platform == 'win'
         shell: pwsh
         run: |
-          $required = @(
-            "release/win-unpacked/resources/bin/uv.exe",
-            "release/win-arm64-unpacked/resources/bin/uv.exe"
-          )
-          foreach ($file in $required) {
-            if (-not (Test-Path $file)) {
-              Write-Error "Missing bundled uv binary: $file"
-              exit 1
-            }
-          }
+          $ErrorActionPreference = 'Stop'
+          pnpm run build:vite
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm exec zx scripts/bundle-openclaw.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm exec zx scripts/bundle-qq-plugin.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm exec electron-builder --win --x64 --arm64 --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      # Linux specific steps
-      - name: Build Linux
-        if: matrix.platform == 'linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --linux --publish never
-
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 7
           path: |
             release/*.dmg
-            release/*.zip
-            release/*.blockmap
             release/*.exe
-            release/*.AppImage
-            release/*.deb
-            release/*.rpm
-            release/*.yml
             !release/builder-debug.yml
-          retention-days: 7
+            !release/builder-effective-config.yaml
 
-  # ──────────────────────────────────────────────────────────────
-  # Job: Publish to GitHub Releases
-  # ──────────────────────────────────────────────────────────────
   publish:
-    needs: release
+    needs:
+      - prepare
+      - build
+    name: Publish GitHub Release
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
     steps:
-      - name: Checkout code
+      - name: Validate release tag format
+        shell: bash
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.].+)?$ ]]; then
+            echo "Invalid release tag: ${RELEASE_TAG}"
+            echo "Expected format like v1.2.3 or v1.2.3-beta.1"
+            exit 1
+          fi
+
+      - name: Checkout code for release notes
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.target_commitish }}
+          fetch-depth: 0
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
 
-      - name: List all downloaded artifacts
+      - name: Show release files
+        shell: bash
         run: |
-          echo "=== All artifacts downloaded ==="
-          find release-artifacts/ -type f -exec ls -lh {} \;
-          echo ""
-          echo "=== File tree ==="
-          tree release-artifacts/ || find release-artifacts/ -print
+          echo "Release tag: ${RELEASE_TAG}"
+          find release-artifacts -type f -print | sort
 
-      - name: Remove duplicate builder-debug files
+      - name: Generate release body from commits and merges
+        id: release_body
+        shell: bash
+        env:
+          TARGET_COMMITISH: ${{ needs.prepare.outputs.target_commitish }}
         run: |
-          echo "Removing builder-debug.yml files to avoid duplicate asset upload conflicts..."
-          find release-artifacts/ -name "builder-debug.yml" -delete -print || true
+          set -euo pipefail
 
-      - name: Create GitHub Release (as pre-release)
+          previous_tag="$(
+            git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname \
+              | grep -Fxv "${RELEASE_TAG}" \
+              | head -n 1 || true
+          )"
+
+          range="${TARGET_COMMITISH}"
+          compare_url="https://github.com/${GITHUB_REPOSITORY}/commit/${TARGET_COMMITISH}"
+          if [[ -n "${previous_tag}" ]]; then
+            range="${previous_tag}..${TARGET_COMMITISH}"
+            compare_url="https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${TARGET_COMMITISH}"
+          fi
+
+          merge_commits="$(git log "${range}" --merges --pretty=format:'- %s (%h)' -n 20 || true)"
+          direct_commits="$(git log "${range}" --no-merges --pretty=format:'- %s (%h)' -n 20 || true)"
+
+          body_file="${RUNNER_TEMP}/release-body.md"
+
+          {
+            echo "## 发布概览"
+            echo
+            echo "- 版本：\`${RELEASE_TAG}\`"
+            if [[ -n "${previous_tag}" ]]; then
+              echo "- 变更范围：\`${previous_tag}..${RELEASE_TAG}\`"
+            else
+              echo "- 变更范围：首次发布"
+            fi
+            echo "- 对比链接：${compare_url}"
+            echo
+            echo "## 合并记录（最近 20 条）"
+            if [[ -n "${merge_commits}" ]]; then
+              echo "${merge_commits}"
+            else
+              echo "- 无合并提交记录"
+            fi
+            echo
+            echo "## 提交记录（最近 20 条）"
+            if [[ -n "${direct_commits}" ]]; then
+              echo "${direct_commits}"
+            else
+              echo "- 无普通提交记录"
+            fi
+            echo
+            echo "## 安装包下载"
+            echo
+            echo "请按系统与芯片架构选择安装包："
+            echo
+            echo "### macOS"
+            echo "- Apple Silicon (M1/M2/M3/M4): \`LawClaw-*-mac-arm64.dmg\`"
+            echo "- Intel (x64): \`LawClaw-*-mac-x64.dmg\`"
+            echo
+            echo "### Windows"
+            echo "- 安装包 (x64): \`LawClaw-*-win-x64.exe\`"
+            echo "- 安装包 (ARM64): \`LawClaw-*-win-arm64.exe\`"
+            echo
+            echo "## 安装提示"
+            echo
+            echo "- macOS（未签名版本）可能出现“已损坏，无法打开。你应该将它移到废纸篓”或“无法验证开发者”提示，请按以下步骤操作："
+            echo "  1. 将 \`LawClaw.app\` 从 DMG 拖入“应用程序”目录。"
+            echo "  2. 完成复制后，先退出（Eject）磁盘映像，再从“应用程序”中启动。"
+            echo "  3. 首次启动时按住 \`Control\` 键点击应用，选择“打开”，并在弹窗中确认。"
+            echo "  4. 如仍被系统拦截，在终端执行：\`xattr -dr com.apple.quarantine /Applications/LawClaw.app\`，然后重新打开应用。"
+            echo "- Windows 若触发 SmartScreen，请点击“更多信息”后选择“仍要运行”继续安装。"
+            echo
+            echo "---"
+            echo
+            echo "如遇问题，请在 GitHub Issues 反馈："
+            echo "https://github.com/${GITHUB_REPOSITORY}/issues"
+            echo
+            echo "## 自动生成发行说明（GitHub）"
+            echo
+          } > "${body_file}"
+
+          echo "body_path=${body_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ needs.prepare.outputs.target_commitish }}
+          name: LawClaw ${{ env.RELEASE_TAG }}
+          draft: false
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          make_latest: ${{ contains(env.RELEASE_TAG, '-') && 'false' || 'true' }}
+          generate_release_notes: true
+          body_path: ${{ steps.release_body.outputs.body_path }}
           files: |
             release-artifacts/**/*.dmg
-            release-artifacts/**/*.zip
             release-artifacts/**/*.exe
-            release-artifacts/**/*.AppImage
-            release-artifacts/**/*.deb
-            release-artifacts/**/*.rpm
-            release-artifacts/**/*.yml
-          draft: false
-          prerelease: true
-          make_latest: false
-          generate_release_notes: true
-          body: |
-            ## 🚀 LawClaw ${{ github.ref_name }}
-            
-            LawClaw - Graphical AI Assistant based on OpenClaw
-            
-            ### 📦 Downloads
-            
-            Please select the appropriate installer for your operating system and architecture:
-            
-            #### macOS
-            - **Apple Silicon (M1/M2/M3/M4)**: `LawClaw-*-mac-arm64.dmg`
-            - **Intel (x64)**: `LawClaw-*-mac-x64.dmg`
-            
-            #### Windows
-            - **Installer (x64)**: `LawClaw-*-win-x64.exe`
-            - **Installer (ARM64)**: `LawClaw-*-win-arm64.exe`
-            
-            #### Linux
-            - **AppImage (x64)**: `LawClaw-*-linux-x86_64.AppImage` (Universal format, recommended)
-            - **AppImage (ARM64)**: `LawClaw-*-linux-arm64.AppImage`
-            - **Debian/Ubuntu (x64)**: `LawClaw-*-linux-amd64.deb`
-            - **Debian/Ubuntu (ARM64)**: `LawClaw-*-linux-arm64.deb`
-            - **RPM (x64)**: `LawClaw-*-linux-x86_64.rpm`
-            
-            ### 📝 Release Notes
-            
-            See the auto-generated release notes below for detailed changes.
-            
-            ### ⚠️ Installation Notes
-            
-            - **macOS**: On first launch, you may see "cannot verify developer". Go to System Preferences → Security & Privacy to allow the app to run
-            - **Windows**: SmartScreen may block the app. Click "More info" → "Run anyway" to proceed
-            - **Linux**: AppImage requires executable permission: `chmod +x LawClaw-*.AppImage`
-            
-            ---
-            
-            💬 Found an issue? Please submit an [Issue](https://github.com/${{ github.repository }}/issues)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ──────────────────────────────────────────────────────────────
-  # Job: Upload to Alibaba Cloud OSS
-  # Uploads all release artifacts to OSS for:
-  #   - Official website downloads (via release-info.json)
-  #   - electron-updater auto-update (via {channel}-*.yml)
-  #
-  # Directory structure on OSS (channel-separated):
-  #   latest/          → stable releases (latest.yml, latest-mac.yml, …)
-  #   alpha/           → alpha  releases (alpha.yml,  alpha-mac.yml, …)
-  #   beta/            → beta   releases (beta.yml,   beta-mac.yml,  …)
-  #   releases/vX.Y.Z/ → permanent archive, never deleted
-  # ──────────────────────────────────────────────────────────────
-  upload-oss:
-    needs: release
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-artifacts
-
-      - name: Extract version and channel
-        id: version
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          else
-            VERSION="${{ github.event.inputs.version }}"
-          fi
-
-          # Detect channel from semver prerelease tag
-          # e.g. 0.1.8-alpha.0 → alpha, 1.0.0-beta.1 → beta, 1.0.0 → latest
-          if [[ "$VERSION" =~ -([a-zA-Z]+) ]]; then
-            CHANNEL="${BASH_REMATCH[1]}"
-          else
-            CHANNEL="latest"
-          fi
-
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
-          echo "channel=${CHANNEL}" >> $GITHUB_OUTPUT
-          echo "Detected version: ${VERSION}, channel: ${CHANNEL}"
-
-      - name: Prepare upload directories
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ steps.version.outputs.tag }}"
-          CHANNEL="${{ steps.version.outputs.channel }}"
-
-          mkdir -p staging/${CHANNEL}
-          mkdir -p staging/releases/${TAG}
-
-          # Flatten all platform artifacts into staging directories
-          find release-artifacts/ -type f | while read file; do
-            filename=$(basename "$file")
-            cp "$file" "staging/${CHANNEL}/${filename}"
-            cp "$file" "staging/releases/${TAG}/${filename}"
-          done
-
-          echo "=== staging/${CHANNEL}/ ==="
-          ls -lh staging/${CHANNEL}/
-          echo ""
-          echo "=== staging/releases/${TAG}/ ==="
-          ls -lh staging/releases/${TAG}/
-
-      # Note: Do NOT rename yml files. electron-updater (generic provider) always
-      # requests "latest-mac.yml", "latest.yml", etc. regardless of feed URL.
-      # Channel separation is achieved by directory: /alpha/, /beta/, /latest/.
-      - name: Verify yml files present
-        run: |
-          CHANNEL="${{ steps.version.outputs.channel }}"
-          echo "=== staging/${CHANNEL}/ (update metadata) ==="
-          ls -la staging/${CHANNEL}/*.yml 2>/dev/null || echo "No yml files found (check electron-builder outputs)"
-
-      - name: Generate release-info.json
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          CHANNEL="${{ steps.version.outputs.channel }}"
-          BASE_URL="https://oss.intelli-spectrum.com/${CHANNEL}"
-
-          jq -n \
-            --arg version "$VERSION" \
-            --arg channel "$CHANNEL" \
-            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg base "$BASE_URL" \
-            --arg changelog "https://github.com/${{ github.repository }}/releases/tag/v${VERSION}" \
-            '{
-              version: $version,
-              channel: $channel,
-              releaseDate: $date,
-              downloads: {
-                mac: {
-                  x64: ($base + "/LawClaw-" + $version + "-mac-x64.dmg"),
-                  arm64: ($base + "/LawClaw-" + $version + "-mac-arm64.dmg")
-                },
-                win: {
-                  x64: ($base + "/LawClaw-" + $version + "-win-x64.exe"),
-                  arm64: ($base + "/LawClaw-" + $version + "-win-arm64.exe")
-                },
-                linux: {
-                  deb_amd64: ($base + "/LawClaw-" + $version + "-linux-amd64.deb"),
-                  deb_arm64: ($base + "/LawClaw-" + $version + "-linux-arm64.deb"),
-                  appimage_x64: ($base + "/LawClaw-" + $version + "-linux-x86_64.AppImage"),
-                  appimage_arm64: ($base + "/LawClaw-" + $version + "-linux-arm64.AppImage"),
-                  rpm_x64: ($base + "/LawClaw-" + $version + "-linux-x86_64.rpm")
-                }
-              },
-              changelog: $changelog
-            }' > staging/${CHANNEL}/release-info.json
-
-          echo "=== release-info.json ==="
-          cat staging/${CHANNEL}/release-info.json
-
-      - name: Install and configure ossutil
-        env:
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-        run: |
-          curl -sL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
-
-          # Write config file for non-interactive use
-          cat > $HOME/.ossutilconfig << EOF
-          [Credentials]
-          language=EN
-          endpoint=oss-cn-hangzhou.aliyuncs.com
-          accessKeyID=${OSS_ACCESS_KEY_ID}
-          accessKeySecret=${OSS_ACCESS_KEY_SECRET}
-          EOF
-
-          ossutil --version
-
-      - name: "Upload to OSS: {channel}/ (overwrite)"
-        run: |
-          CHANNEL="${{ steps.version.outputs.channel }}"
-
-          # Only clean the current channel's directory — never touch other channels
-          ossutil rm -r -f oss://valuecell-clawx/${CHANNEL}/ || true
-
-          # Upload all files with no-cache so clients always get the freshest version
-          ossutil cp -r -f \
-            --meta="Cache-Control:no-cache,no-store,must-revalidate" \
-            staging/${CHANNEL}/ \
-            oss://valuecell-clawx/${CHANNEL}/
-
-          echo "Uploaded to ${CHANNEL}/"
-
-      - name: "Upload to OSS: releases/vX.Y.Z/ (archive)"
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-
-          # Upload to permanent archive (long cache, immutable)
-          ossutil cp -r \
-            staging/releases/${TAG}/ \
-            oss://valuecell-clawx/releases/${TAG}/ \
-            --meta "Cache-Control:public,max-age=31536000,immutable"
-
-          echo "Uploaded to releases/${TAG}/"
-
-      - name: Verify OSS upload
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          CHANNEL="${{ steps.version.outputs.channel }}"
-
-          echo "=== ${CHANNEL}/ ==="
-          ossutil ls oss://valuecell-clawx/${CHANNEL}/ --short
-
-          echo ""
-          echo "=== releases/${TAG}/ ==="
-          ossutil ls oss://valuecell-clawx/releases/${TAG}/ --short
-
-          echo ""
-          echo "=== Verify release-info.json ==="
-          ossutil cp oss://valuecell-clawx/${CHANNEL}/release-info.json /tmp/release-info.json -f
-          jq . /tmp/release-info.json
-
-          echo ""
-          echo "=== Verify update yml ==="
-          if [ "${CHANNEL}" = "latest" ]; then
-            YML_PREFIX="latest"
-          else
-            YML_PREFIX="${CHANNEL}"
-          fi
-          echo "electron-updater expects ${YML_PREFIX}-mac.yml, ${YML_PREFIX}.yml, etc. in ${CHANNEL}/:"
-          ossutil ls oss://valuecell-clawx/${CHANNEL}/ --short | grep "${YML_PREFIX}.*\\.yml" || echo "(none found)"
-          
-          echo ""
-          echo "All files uploaded and verified successfully!"
-
-  # ──────────────────────────────────────────────────────────────
-  # Job: Finalize Release
-  # Promotes the GitHub Release from pre-release to latest AFTER
-  # both GitHub Release assets and OSS uploads are fully complete.
-  # This ensures /releases/latest API never returns an incomplete
-  # release — the website and electron-updater only see it when
-  # all platform artifacts are ready.
-  # ──────────────────────────────────────────────────────────────
-  finalize:
-    needs: [publish, upload-oss]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-
-    steps:
-      - name: Promote release from pre-release to latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          IS_PRERELEASE_CHANNEL=false
-
-          if [[ "$TAG" == *"alpha"* ]] || [[ "$TAG" == *"beta"* ]]; then
-            IS_PRERELEASE_CHANNEL=true
-          fi
-
-          if [ "$IS_PRERELEASE_CHANNEL" = "true" ]; then
-            echo "Tag $TAG is an alpha/beta release — keeping as pre-release."
-          else
-            echo "Promoting $TAG from pre-release to latest release..."
-            gh release edit "$TAG" \
-              --prerelease=false \
-              --latest \
-              --repo "${{ github.repository }}"
-            echo "Release $TAG is now the latest release."
-          fi

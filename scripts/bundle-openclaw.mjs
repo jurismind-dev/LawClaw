@@ -29,6 +29,15 @@ function normWin(p) {
   return '\\\\?\\' + p.replace(/\//g, '\\');
 }
 
+function realpathSafe(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch (err) {
+    if (process.platform !== 'win32') throw err;
+    return fs.realpathSync(normWin(p));
+  }
+}
+
 echo`📦 Bundling openclaw for electron-builder...`;
 
 // 1. Resolve the real path of node_modules/openclaw (follows pnpm symlink)
@@ -38,7 +47,7 @@ if (!fs.existsSync(openclawLink)) {
   process.exit(1);
 }
 
-const openclawReal = fs.realpathSync(normWin(openclawLink));
+const openclawReal = realpathSafe(openclawLink);
 echo`   openclaw resolved: ${openclawReal}`;
 
 // 2. Clean and create output directory
@@ -152,7 +161,7 @@ while (queue.length > 0) {
 
     let realPath;
     try {
-      realPath = fs.realpathSync(normWin(fullPath));
+      realPath = realpathSafe(fullPath);
     } catch {
       continue; // broken symlink, skip
     }

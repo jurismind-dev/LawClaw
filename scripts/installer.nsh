@@ -8,11 +8,8 @@
   ReadRegStr $0 HKCU "Environment" "Path"
   StrCmp $0 "" _cu_pathDone
 
-  ; Remove our entry (with leading or trailing semicolons)
-  Push $0
-  Push "$INSTDIR\resources\cli"
-  Call un._cu_RemoveFromPath
-  Pop $0
+  ; Keep existing PATH as-is for uninstall.
+  ; (Custom string helper calls can break NSIS multi-arch build resolution.)
   WriteRegExpandStr HKCU "Environment" "Path" $0
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
 

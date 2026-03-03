@@ -19,12 +19,40 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync } = require('fs');
-const { join } = require('path');
+const { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } = require('fs');
+const { basename, dirname, join } = require('path');
 
 function getBundledUvPath(resourcesDir, platform) {
   const binName = platform === 'win32' ? 'uv.exe' : 'uv';
   return join(resourcesDir, 'bin', binName);
+}
+
+// On Windows, pnpm virtual store paths can exceed MAX_PATH.
+function normWin(p) {
+  if (process.platform !== 'win32') return p;
+  if (p.startsWith('\\\\?\\')) return p;
+  return '\\\\?\\' + p.replace(/\//g, '\\');
+}
+
+function realpathSafe(p) {
+  try {
+    return realpathSync(p);
+  } catch (err) {
+    if (process.platform !== 'win32') throw err;
+    return realpathSync(normWin(p));
+  }
+}
+
+function resolveArch(arch) {
+  if (typeof arch === 'string') return arch;
+  const archMap = {
+    0: 'ia32',
+    1: 'x64',
+    2: 'armv7l',
+    3: 'arm64',
+    4: 'universal',
+  };
+  return archMap[arch] || String(arch);
 }
 
 /**
@@ -171,7 +199,7 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   }
 
   let realPluginPath;
-  try { realPluginPath = realpathSync(normWin(pkgPath)); } catch { realPluginPath = pkgPath; }
+  try { realPluginPath = realpathSafe(pkgPath); } catch { realPluginPath = pkgPath; }
 
   // Copy plugin package itself
   if (existsSync(normWin(destDir))) rmSync(normWin(destDir), { recursive: true, force: true });
@@ -194,9 +222,7 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   const SKIP_PACKAGES = new Set(['typescript', '@playwright/test']);
   const SKIP_SCOPES = ['@types/'];
   try {
-    const pluginPkg = JSON.parse(
-      require('fs').readFileSync(join(destDir, 'package.json'), 'utf8')
-    );
+    const pluginPkg = JSON.parse(readFileSync(join(destDir, 'package.json'), 'utf8'));
     for (const peer of Object.keys(pluginPkg.peerDependencies || {})) {
       SKIP_PACKAGES.add(peer);
     }
@@ -208,7 +234,7 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
       if (name === skipPkg) continue;
       if (SKIP_PACKAGES.has(name) || SKIP_SCOPES.some(s => name.startsWith(s))) continue;
       let rp;
-      try { rp = realpathSync(normWin(fullPath)); } catch { continue; }
+      try { rp = realpathSafe(fullPath); } catch { continue; }
       if (collected.has(rp)) continue;
       collected.set(rp, name);
       const depVirtualNM = getVirtualStoreNodeModules(rp);
@@ -248,8 +274,6 @@ exports.default = async function afterPack(context) {
 
   console.log(`[after-pack] Target: ${platform}/${arch}`);
 
-  const src = join(__dirname, '..', 'build', 'openclaw', 'node_modules');
-
   let resourcesDir;
   if (platform === 'darwin') {
     const appName = context.packager.appInfo.productFilename;
@@ -266,7 +290,11 @@ exports.default = async function afterPack(context) {
     );
   }
 
-  const dest = join(resourcesDir, 'openclaw', 'node_modules');
+  const src = join(__dirname, '..', 'build', 'openclaw', 'node_modules');
+  const openclawRoot = join(resourcesDir, 'openclaw');
+  const dest = join(openclawRoot, 'node_modules');
+  const nodeModulesRoot = join(__dirname, '..', 'node_modules');
+  const pluginsDestRoot = join(resourcesDir, 'openclaw-plugins');
 
   if (!existsSync(src)) {
     console.warn('[after-pack] ⚠️  build/openclaw/node_modules not found. Run bundle-openclaw first.');
@@ -278,6 +306,7 @@ exports.default = async function afterPack(context) {
     .filter(d => d.isDirectory() && d.name !== '.bin')
     .length;
 
+  mkdirSync(openclawRoot, { recursive: true });
   console.log(`[after-pack] Copying ${depCount} openclaw dependencies to ${dest} ...`);
   cpSync(src, dest, { recursive: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
@@ -291,17 +320,21 @@ exports.default = async function afterPack(context) {
     { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
   ];
 
-  mkdirSync(pluginsDestRoot, { recursive: true });
-  for (const { npmName, pluginId } of BUNDLED_PLUGINS) {
-    const pluginDestDir = join(pluginsDestRoot, pluginId);
-    console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
-    const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
-    if (ok) {
-      const pluginNM = join(pluginDestDir, 'node_modules');
-      cleanupUnnecessaryFiles(pluginDestDir);
-      if (existsSync(pluginNM)) {
-        cleanupKoffi(pluginNM, platform, arch);
-        cleanupNativePlatformPackages(pluginNM, platform, arch);
+  if (!existsSync(nodeModulesRoot)) {
+    console.warn(`[after-pack] ⚠️  node_modules not found at ${nodeModulesRoot}, skipping plugin bundling.`);
+  } else {
+    mkdirSync(pluginsDestRoot, { recursive: true });
+    for (const { npmName, pluginId } of BUNDLED_PLUGINS) {
+      const pluginDestDir = join(pluginsDestRoot, pluginId);
+      console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
+      const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
+      if (ok) {
+        const pluginNM = join(pluginDestDir, 'node_modules');
+        cleanupUnnecessaryFiles(pluginDestDir);
+        if (existsSync(pluginNM)) {
+          cleanupKoffi(pluginNM, platform, arch);
+          cleanupNativePlatformPackages(pluginNM, platform, arch);
+        }
       }
     }
   }

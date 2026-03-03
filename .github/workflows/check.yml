@@ -10,8 +10,6 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -42,8 +40,6 @@ jobs:
 
   build:
     runs-on: windows-latest
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -62,3 +58,4 @@ jobs:
 
       - name: Build
         run: pnpm run build:vite
+

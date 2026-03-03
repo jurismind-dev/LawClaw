@@ -6,7 +6,13 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { app, shell } from 'electron';
-import { getOpenClawConfigDir, ensureDir, getClawHubCliBinPath, getClawHubCliEntryPath } from '../utils/paths';
+import {
+  getOpenClawConfigDir,
+  ensureDir,
+  getClawHubCliBinPath,
+  getClawHubCliEntryPath,
+  quoteForCmd,
+} from '../utils/paths';
 import {
   detectInstallSourceFromRegistry,
   type SkillInstallSource,

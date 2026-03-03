@@ -1,13 +1,15 @@
 /**
  * Auto-Updater Module
- * Handles automatic application updates using electron-updater
+ * Hybrid updater:
+ * 1) Tries electron-updater metadata flow first (latest-*.yml)
+ * 2) Falls back to OSS installer checks when only .dmg/.exe are published
  *
- * Update provider is Alibaba Cloud OSS (configured in electron-builder.yml).
- * For prerelease channels (alpha, beta), the feed URL is overridden at runtime
- * to point at the channel-specific OSS directory (e.g. /alpha/, /beta/).
+ * OSS fallback checks version via installer object metadata:
+ * - x-oss-meta-version
+ * and opens installer URLs directly for download/install.
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
-import { BrowserWindow, app, ipcMain } from 'electron';
+import { BrowserWindow, app, ipcMain, shell } from 'electron';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
 import { setQuitting } from './app-state';
@@ -47,11 +49,67 @@ function detectChannel(version: string): string {
   return match ? match[1] : 'latest';
 }
 
+function normalizeVersion(version: string): string {
+  return version.trim().replace(/^v/, '');
+}
+
+function compareNumericParts(a: number[], b: number[]): number {
+  const max = Math.max(a.length, b.length);
+  for (let i = 0; i < max; i++) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    if (av > bv) return 1;
+    if (av < bv) return -1;
+  }
+  return 0;
+}
+
+function compareSemverLike(aRaw: string, bRaw: string): number {
+  const a = normalizeVersion(aRaw);
+  const b = normalizeVersion(bRaw);
+
+  const [aCore, aPre] = a.split('-', 2);
+  const [bCore, bPre] = b.split('-', 2);
+
+  const aParts = aCore.split('.').map((item) => Number.parseInt(item, 10));
+  const bParts = bCore.split('.').map((item) => Number.parseInt(item, 10));
+
+  const coreCmp = compareNumericParts(aParts, bParts);
+  if (coreCmp !== 0) return coreCmp;
+
+  if (!aPre && bPre) return 1;
+  if (aPre && !bPre) return -1;
+  if (!aPre && !bPre) return 0;
+
+  return (aPre || '').localeCompare(bPre || '', undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function resolveChannelFromPreference(channel: 'stable' | 'beta' | 'dev'): string {
+  return channel === 'stable' ? 'latest' : channel;
+}
+
+function normalizeRuntimeArch(arch: string): 'x64' | 'arm64' | null {
+  if (arch === 'x64' || arch === 'arm64') return arch;
+  return null;
+}
+
+function fileNameFromUrl(urlOrPath: string): string {
+  try {
+    const parsed = new URL(urlOrPath);
+    return decodeURIComponent(parsed.pathname.split('/').pop() || '');
+  } catch {
+    const normalized = urlOrPath.replace(/\\/g, '/');
+    return decodeURIComponent(normalized.split('/').pop() || normalized);
+  }
+}
+
 export class AppUpdater extends EventEmitter {
   private mainWindow: BrowserWindow | null = null;
   private status: UpdateStatus = { status: 'idle' };
   private autoInstallTimer: NodeJS.Timeout | null = null;
   private autoInstallCountdown = 0;
+  private activeChannel: string;
+  private manualDownloadUrl: string | null = null;
 
   /** Delay (in seconds) before auto-installing a downloaded update. */
   private static readonly AUTO_INSTALL_DELAY_SECONDS = 5;
@@ -69,23 +127,10 @@ export class AppUpdater extends EventEmitter {
       debug: (msg: string) => logger.debug('[Updater]', msg),
     };
 
-    // Override feed URL for prerelease channels so that
-    // alpha -> /alpha/alpha-mac.yml, beta -> /beta/beta-mac.yml, etc.
+    // Resolve initial channel from app version (stable -> latest).
     const version = app.getVersion();
-    const channel = detectChannel(version);
-    const feedUrl = `${OSS_BASE_URL}/${channel}`;
-
-    logger.info(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
-
-    // Set channel so electron-updater requests the correct yml filename.
-    // e.g. channel "alpha" → requests alpha-mac.yml, channel "latest" → requests latest-mac.yml
-    autoUpdater.channel = channel;
-
-    autoUpdater.setFeedURL({
-      provider: 'generic',
-      url: feedUrl,
-      useMultipleRangeRequest: false,
-    });
+    this.activeChannel = detectChannel(version);
+    this.applyFeedConfig();
 
     this.setupListeners();
   }
@@ -102,6 +147,111 @@ export class AppUpdater extends EventEmitter {
    */
   getStatus(): UpdateStatus {
     return this.status;
+  }
+
+  private applyFeedConfig(): void {
+    const feedUrl = `${OSS_BASE_URL}/${this.activeChannel}`;
+    logger.info(
+      `[Updater] Version: ${app.getVersion()}, channel: ${this.activeChannel}, feedUrl: ${feedUrl}`
+    );
+
+    autoUpdater.channel = this.activeChannel;
+    autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: feedUrl,
+      useMultipleRangeRequest: false,
+    });
+  }
+
+  private getManualArtifactName(): string | null {
+    const runtimeArch = normalizeRuntimeArch(process.arch);
+    if (!runtimeArch) return null;
+
+    if (process.platform === 'darwin') {
+      return runtimeArch === 'arm64' ? 'LawClaw-mac-arm64.dmg' : 'LawClaw-mac-x64.dmg';
+    }
+
+    if (process.platform === 'win32') {
+      return runtimeArch === 'arm64' ? 'LawClaw-win-arm64.exe' : 'LawClaw-win-x64.exe';
+    }
+
+    return null;
+  }
+
+  private getManualArtifactUrl(): string | null {
+    const artifactName = this.getManualArtifactName();
+    if (!artifactName) return null;
+    return `${OSS_BASE_URL}/${this.activeChannel}/${artifactName}`;
+  }
+
+  private isMissingUpdaterMetadataError(error: unknown): boolean {
+    const message = (error as Error)?.message || String(error);
+    return message.includes('.yml') && message.includes('404');
+  }
+
+  private hasMatchingArchInUpdateInfo(info: UpdateInfo): boolean {
+    const runtimeArch = normalizeRuntimeArch(process.arch);
+    if (!runtimeArch) return false;
+
+    const files = Array.isArray((info as { files?: Array<{ url?: string; path?: string }> }).files)
+      ? ((info as { files?: Array<{ url?: string; path?: string }> }).files || [])
+      : [];
+
+    if (files.length === 0) return true;
+
+    const expectedPlatformToken = process.platform === 'darwin' ? '-mac-' : '-win-';
+    return files.some((file) => {
+      const candidate = file.url || file.path || '';
+      const fileName = fileNameFromUrl(candidate);
+      return fileName.includes(expectedPlatformToken) && fileName.includes(`-${runtimeArch}.`);
+    });
+  }
+
+  private async checkForUpdatesViaInstallerMetadata(): Promise<UpdateInfo | null> {
+    const artifactUrl = this.getManualArtifactUrl();
+    if (!artifactUrl) {
+      this.updateStatus({
+        status: 'error',
+        error: `Manual update is not supported on ${process.platform}-${process.arch}`,
+      });
+      return null;
+    }
+
+    const response = await fetch(artifactUrl, { method: 'HEAD', cache: 'no-store' });
+    if (!response.ok) {
+      if (response.status === 404) {
+        this.manualDownloadUrl = null;
+        this.updateStatus({ status: 'not-available' });
+        return null;
+      }
+      throw new Error(`Failed to request installer metadata: ${response.status} ${response.statusText}`);
+    }
+
+    const latestVersion = response.headers.get('x-oss-meta-version')?.trim();
+    if (!latestVersion) {
+      throw new Error(
+        `Missing x-oss-meta-version header on ${artifactUrl}. CI must set object metadata for installer files.`
+      );
+    }
+
+    const releaseDate = response.headers.get('x-oss-meta-release-date') || response.headers.get('last-modified');
+    const releaseNotes = response.headers.get('x-oss-meta-release-notes') || null;
+    const currentVersion = app.getVersion();
+
+    if (compareSemverLike(latestVersion, currentVersion) > 0) {
+      this.manualDownloadUrl = artifactUrl;
+      const info: UpdateInfo = {
+        version: latestVersion,
+        releaseDate: releaseDate || undefined,
+        releaseNotes,
+      };
+      this.updateStatus({ status: 'available', info });
+      return info;
+    }
+
+    this.manualDownloadUrl = null;
+    this.updateStatus({ status: 'not-available' });
+    return null;
   }
 
   /**
@@ -174,6 +324,9 @@ export class AppUpdater extends EventEmitter {
    * final status so the UI never gets stuck in 'checking'.
    */
   async checkForUpdates(): Promise<UpdateInfo | null> {
+    this.manualDownloadUrl = null;
+    this.updateStatus({ status: 'checking', error: undefined });
+
     try {
       const result = await autoUpdater.checkForUpdates();
 
@@ -181,11 +334,15 @@ export class AppUpdater extends EventEmitter {
       // without emitting ANY events (not even checking-for-update).
       // Detect this and force an error so the UI never stays silent.
       if (result == null) {
-        this.updateStatus({
-          status: 'error',
-          error: 'Update check skipped (dev mode – app is not packaged)',
-        });
-        return null;
+        return await this.checkForUpdatesViaInstallerMetadata();
+      }
+
+      const updateInfo = result.updateInfo || null;
+      if (updateInfo && !this.hasMatchingArchInUpdateInfo(updateInfo)) {
+        logger.warn(
+          `[Updater] Update metadata has no matching file for runtime arch ${process.arch}; fallback to installer metadata mode`
+        );
+        return await this.checkForUpdatesViaInstallerMetadata();
       }
 
       // Safety net: if events somehow didn't fire, force a final state.
@@ -193,8 +350,13 @@ export class AppUpdater extends EventEmitter {
         this.updateStatus({ status: 'not-available' });
       }
 
-      return result.updateInfo || null;
+      return updateInfo;
     } catch (error) {
+      if (this.isMissingUpdaterMetadataError(error)) {
+        logger.warn('[Updater] Missing latest-*.yml metadata, fallback to installer metadata mode');
+        return await this.checkForUpdatesViaInstallerMetadata();
+      }
+
       logger.error('[Updater] Check for updates failed:', error);
       this.updateStatus({ status: 'error', error: (error as Error).message || String(error) });
       throw error;
@@ -205,6 +367,17 @@ export class AppUpdater extends EventEmitter {
    * Download available update
    */
   async downloadUpdate(): Promise<void> {
+    if (this.manualDownloadUrl) {
+      try {
+        await shell.openExternal(this.manualDownloadUrl);
+        this.updateStatus({ status: 'downloaded', info: this.status.info });
+        return;
+      } catch (error) {
+        logger.error('[Updater] Open installer URL failed:', error);
+        throw error;
+      }
+    }
+
     try {
       await autoUpdater.downloadUpdate();
     } catch (error) {
@@ -225,6 +398,13 @@ export class AppUpdater extends EventEmitter {
    * the window cleanly while ShipIt runs independently to replace the app.
    */
   quitAndInstall(): void {
+    if (this.manualDownloadUrl) {
+      shell.openExternal(this.manualDownloadUrl).catch((error) => {
+        logger.error('[Updater] Open installer URL for install failed:', error);
+      });
+      return;
+    }
+
     logger.info('[Updater] quitAndInstall called');
     setQuitting();
     autoUpdater.quitAndInstall();
@@ -266,7 +446,9 @@ export class AppUpdater extends EventEmitter {
    * Set update channel (stable, beta, dev)
    */
   setChannel(channel: 'stable' | 'beta' | 'dev'): void {
-    autoUpdater.channel = channel;
+    this.activeChannel = resolveChannelFromPreference(channel);
+    this.manualDownloadUrl = null;
+    this.applyFeedConfig();
   }
 
   /**

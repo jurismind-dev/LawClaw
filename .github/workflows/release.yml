@@ -326,8 +326,10 @@ jobs:
             fi
           }
 
-          require_pattern "*.dmg" "macOS installer"
-          require_pattern "*.exe" "Windows installer"
+          require_pattern "*-mac-arm64.dmg" "macOS Apple Silicon installer"
+          require_pattern "*-mac-x64.dmg" "macOS Intel installer"
+          require_pattern "*-win-arm64.exe" "Windows ARM64 installer"
+          require_pattern "*-win-x64.exe" "Windows x64 installer"
 
       - name: Upload release artifacts to OSS
         shell: bash
@@ -349,6 +351,7 @@ jobs:
           python3 - <<'PY'
           import hashlib
           import os
+          from datetime import datetime, timezone
           from pathlib import Path
 
           import oss2
@@ -361,10 +364,12 @@ jobs:
           bucket_name = os.environ["OSS_BUCKET"]
           endpoint = os.environ["OSS_ENDPOINT"]
           release_tag = os.environ["RELEASE_TAG"]
+          release_version = release_tag[1:] if release_tag.startswith("v") else release_tag
           release_channel = os.environ["RELEASE_CHANNEL"]
           access_key_id = os.environ["OSS_ACCESS_KEY_ID"]
           access_key_secret = os.environ["OSS_ACCESS_KEY_SECRET"]
           security_token = os.environ.get("OSS_SECURITY_TOKEN") or None
+          release_date_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
           if security_token:
             auth = oss2.StsAuth(access_key_id, access_key_secret, security_token)
@@ -396,13 +401,20 @@ jobs:
           no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
           immutable_headers = {"Cache-Control": "public, max-age=31536000, immutable"}
 
+          def latest_alias(name: str) -> str | None:
+            if name.endswith("-mac-arm64.dmg"):
+              return "LawClaw-mac-arm64.dmg"
+            if name.endswith("-mac-x64.dmg"):
+              return "LawClaw-mac-x64.dmg"
+            if name.endswith("-win-arm64.exe"):
+              return "LawClaw-win-arm64.exe"
+            if name.endswith("-win-x64.exe"):
+              return "LawClaw-win-x64.exe"
+            return None
+
           for name in sorted(dedup):
             artifact, _ = dedup[name]
-            headers = (
-              no_cache_headers
-              if artifact.suffix.lower() in {".yml", ".yaml", ".json"}
-              else immutable_headers
-            )
+            headers = immutable_headers
 
             targets = [
               f"releases/{release_tag}/{name}",
@@ -416,6 +428,22 @@ jobs:
                   f"Upload failed for oss://{bucket_name}/{object_key}, status={result.status}"
                 )
               print(f"Uploaded {artifact} -> oss://{bucket_name}/{object_key}")
+
+            alias_name = latest_alias(name)
+            if alias_name:
+              alias_headers = {
+                **no_cache_headers,
+                "x-oss-meta-version": release_version,
+                "x-oss-meta-release-tag": release_tag,
+                "x-oss-meta-release-date": release_date_iso,
+              }
+              alias_key = f"{release_channel}/{alias_name}"
+              alias_result = bucket.put_object_from_file(alias_key, str(artifact), headers=alias_headers)
+              if alias_result.status not in (200, 201):
+                raise SystemExit(
+                  f"Upload failed for oss://{bucket_name}/{alias_key}, status={alias_result.status}"
+                )
+              print(f"Uploaded alias {artifact} -> oss://{bucket_name}/{alias_key}")
           PY
 
       - name: Generate release body from commits and merges

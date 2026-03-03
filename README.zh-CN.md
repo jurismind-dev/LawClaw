@@ -136,7 +136,10 @@ AI辅助生成法律文书、法律意见书、案件简报等。支持多种法
 
 #### 预构建版本（推荐）
 
-从 [Releases](https://github.com/ValueCell-ai/ClawX/releases) 页面下载适用于你平台的最新版本。
+推荐从 OSS（国内镜像）下载适用于你平台的最新版本：  
+`https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/`
+
+GitHub Releases 仍可作为备用下载渠道：[Releases](https://github.com/ValueCell-ai/ClawX/releases)。
 
 #### 从源码构建
 

@@ -2,7 +2,7 @@
  * Auto-Updater Module
  * Handles automatic application updates using electron-updater
  *
- * Update providers are configured in electron-builder.yml (OSS primary, GitHub fallback).
+ * Update provider is Alibaba Cloud OSS (configured in electron-builder.yml).
  * For prerelease channels (alpha, beta), the feed URL is overridden at runtime
  * to point at the channel-specific OSS directory (e.g. /alpha/, /beta/).
  */
@@ -12,8 +12,14 @@ import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
 import { setQuitting } from './app-state';
 
-/** Base CDN URL (without trailing channel path) */
-const OSS_BASE_URL = 'https://oss.intelli-spectrum.com';
+/** Base OSS URL (without trailing channel path). */
+const DEFAULT_OSS_BASE_URL = 'https://lawclaw.oss-cn-shanghai.aliyuncs.com';
+
+function normalizeBaseUrl(url: string): string {
+  return url.replace(/\/+$/, '');
+}
+
+const OSS_BASE_URL = normalizeBaseUrl(process.env.LAWCLAW_OSS_BASE_URL || DEFAULT_OSS_BASE_URL);
 
 export interface UpdateStatus {
   status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -161,7 +167,7 @@ export class AppUpdater extends EventEmitter {
 
   /**
    * Check for updates.
-   * electron-updater automatically tries providers defined in electron-builder.yml in order.
+   * Checks against the runtime feed URL for the resolved OSS update channel.
    *
    * In dev mode (not packed), autoUpdater.checkForUpdates() silently returns
    * null without emitting any events, so we must detect this and force a

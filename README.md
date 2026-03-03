@@ -135,7 +135,10 @@ Light mode, dark mode, or system-synchronized themes. LawClaw adapts to your pre
 
 #### Pre-built Releases (Recommended)
 
-Download the latest release for your platform from the [Releases](https://github.com/ValueCell-ai/ClawX/releases) page.
+Download the latest build for your platform from OSS (China mirror):  
+`https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/`
+
+GitHub Releases remains available as a fallback: [Releases](https://github.com/ValueCell-ai/ClawX/releases).
 
 #### Build from Source
 

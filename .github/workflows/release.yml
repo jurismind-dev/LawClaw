@@ -31,6 +31,9 @@ concurrency:
 
 env:
   NODE_VERSION: "22"
+  OSS_BUCKET: lawclaw
+  OSS_ENDPOINT: oss-cn-shanghai.aliyuncs.com
+  OSS_PUBLIC_BASE_URL: https://lawclaw.oss-cn-shanghai.aliyuncs.com
 
 jobs:
   prepare:
@@ -287,11 +290,140 @@ jobs:
           echo "Release tag: ${RELEASE_TAG}"
           find release-artifacts -type f -print | sort
 
+      - name: Resolve update channel
+        id: channel
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          channel="$(echo "${version}" | sed -nE 's/.*-([A-Za-z]+).*/\1/p')"
+          if [[ -z "${channel}" ]]; then
+            channel="latest"
+          fi
+
+          # Keep stable aliases on latest feed.
+          if [[ "${channel}" == "stable" ]]; then
+            channel="latest"
+          fi
+
+          echo "Resolved release channel: ${channel}"
+          echo "release_channel=${channel}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate release payload
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          require_pattern() {
+            local pattern="$1"
+            local label="$2"
+            local count
+            count="$(find release-artifacts -type f -name "${pattern}" | wc -l | tr -d ' ')"
+            if [[ "${count}" -eq 0 ]]; then
+              echo "Missing required ${label} files (${pattern}) in release-artifacts/"
+              exit 1
+            fi
+          }
+
+          require_pattern "*.dmg" "macOS installer"
+          require_pattern "*.exe" "Windows installer"
+
+      - name: Upload release artifacts to OSS
+        shell: bash
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_SECURITY_TOKEN: ${{ secrets.OSS_SECURITY_TOKEN }}
+          RELEASE_CHANNEL: ${{ steps.channel.outputs.release_channel }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${OSS_ACCESS_KEY_ID:-}" || -z "${OSS_ACCESS_KEY_SECRET:-}" ]]; then
+            echo "Missing OSS credentials. Please configure OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET."
+            exit 1
+          fi
+
+          python3 -m pip install --disable-pip-version-check --quiet oss2
+
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          import oss2
+
+          root = Path("release-artifacts")
+          files = sorted([p for p in root.rglob("*") if p.is_file()])
+          if not files:
+            raise SystemExit("No files found in release-artifacts/")
+
+          bucket_name = os.environ["OSS_BUCKET"]
+          endpoint = os.environ["OSS_ENDPOINT"]
+          release_tag = os.environ["RELEASE_TAG"]
+          release_channel = os.environ["RELEASE_CHANNEL"]
+          access_key_id = os.environ["OSS_ACCESS_KEY_ID"]
+          access_key_secret = os.environ["OSS_ACCESS_KEY_SECRET"]
+          security_token = os.environ.get("OSS_SECURITY_TOKEN") or None
+
+          if security_token:
+            auth = oss2.StsAuth(access_key_id, access_key_secret, security_token)
+          else:
+            auth = oss2.Auth(access_key_id, access_key_secret)
+
+          bucket = oss2.Bucket(auth, f"https://{endpoint}", bucket_name)
+
+          def sha256(path: Path) -> str:
+            digest = hashlib.sha256()
+            with path.open("rb") as handle:
+              for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+            return digest.hexdigest()
+
+          dedup: dict[str, tuple[Path, str]] = {}
+          for artifact in files:
+            name = artifact.name
+            file_hash = sha256(artifact)
+            existing = dedup.get(name)
+            if existing:
+              if existing[1] != file_hash:
+                raise SystemExit(
+                  f"Conflicting artifact name detected: {name} appears multiple times with different content."
+                )
+              continue
+            dedup[name] = (artifact, file_hash)
+
+          no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+          immutable_headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+          for name in sorted(dedup):
+            artifact, _ = dedup[name]
+            headers = (
+              no_cache_headers
+              if artifact.suffix.lower() in {".yml", ".yaml", ".json"}
+              else immutable_headers
+            )
+
+            targets = [
+              f"releases/{release_tag}/{name}",
+              f"{release_channel}/{name}",
+            ]
+
+            for object_key in targets:
+              result = bucket.put_object_from_file(object_key, str(artifact), headers=headers)
+              if result.status not in (200, 201):
+                raise SystemExit(
+                  f"Upload failed for oss://{bucket_name}/{object_key}, status={result.status}"
+                )
+              print(f"Uploaded {artifact} -> oss://{bucket_name}/{object_key}")
+          PY
+
       - name: Generate release body from commits and merges
         id: release_body
         shell: bash
         env:
           TARGET_COMMITISH: ${{ needs.prepare.outputs.target_commitish }}
+          RELEASE_CHANNEL: ${{ steps.channel.outputs.release_channel }}
         run: |
           set -euo pipefail
 
@@ -308,7 +440,6 @@ jobs:
             compare_url="https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${TARGET_COMMITISH}"
           fi
 
-          merge_commits="$(git log "${range}" --merges --pretty=format:'- %s (%h)' -n 20 || true)"
           direct_commits="$(git log "${range}" --no-merges --pretty=format:'- %s (%h)' -n 20 || true)"
 
           body_file="${RUNNER_TEMP}/release-body.md"
@@ -323,15 +454,10 @@ jobs:
               echo "- 变更范围：首次发布"
             fi
             echo "- 对比链接：${compare_url}"
+            echo "- OSS 版本目录：${OSS_PUBLIC_BASE_URL}/releases/${RELEASE_TAG}/"
+            echo "- OSS 更新通道：${OSS_PUBLIC_BASE_URL}/${RELEASE_CHANNEL}/"
             echo
-            echo "## 合并记录（最近 20 条）"
-            if [[ -n "${merge_commits}" ]]; then
-              echo "${merge_commits}"
-            else
-              echo "- 无合并提交记录"
-            fi
-            echo
-            echo "## 提交记录（最近 20 条）"
+            echo "## 发布说明"
             if [[ -n "${direct_commits}" ]]; then
               echo "${direct_commits}"
             else
@@ -341,6 +467,11 @@ jobs:
             echo "## 安装包下载"
             echo
             echo "请按系统与芯片架构选择安装包："
+            echo
+            echo "### OSS 加速下载"
+            for file in $(find release-artifacts -type f \( -name "*.dmg" -o -name "*.exe" \) -printf "%f\n" | sort); do
+              echo "- [${file}](${OSS_PUBLIC_BASE_URL}/releases/${RELEASE_TAG}/${file})"
+            done
             echo
             echo "### macOS"
             echo "- Apple Silicon (M1/M2/M3/M4): \`LawClaw-*-mac-arm64.dmg\`"

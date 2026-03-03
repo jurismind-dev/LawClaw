@@ -44,15 +44,11 @@ asarUnpack:
 npmRebuild: false
 
 # Auto-update configuration
-# Primary: Alibaba Cloud OSS (fast for Chinese users, used for auto-update)
-# Fallback: GitHub Releases (backup, used when OSS is unavailable)
+# Alibaba Cloud OSS (fast for Chinese users, used for auto-update and downloads)
 publish:
   - provider: generic
-    url: https://oss.intelli-spectrum.com/latest
+    url: https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest
     useMultipleRangeRequest: false
-  - provider: github
-    owner: ValueCell-ai
-    repo: ClawX
 
 # macOS Configuration
 mac:

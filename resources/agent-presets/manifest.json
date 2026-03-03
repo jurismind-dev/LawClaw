@@ -15,6 +15,36 @@
     },
     {
       "agentId": "lawclaw-main",
+      "source": "workspaces/lawclaw-main/IDENTITY.md",
+      "target": "IDENTITY.md"
+    },
+    {
+      "agentId": "lawclaw-main",
+      "source": "workspaces/lawclaw-main/TOOLS.md",
+      "target": "TOOLS.md"
+    },
+    {
+      "agentId": "lawclaw-main",
+      "source": "workspaces/lawclaw-main/BOOTSTRAP.md",
+      "target": "BOOTSTRAP.md"
+    },
+    {
+      "agentId": "lawclaw-main",
+      "source": "workspaces/lawclaw-main/USER.md",
+      "target": "USER.md"
+    },
+    {
+      "agentId": "lawclaw-main",
+      "source": "workspaces/lawclaw-main/BOOT.md",
+      "target": "BOOT.md"
+    },
+    {
+      "agentId": "lawclaw-main",
+      "source": "workspaces/lawclaw-main/HEARTBEAT.md",
+      "target": "HEARTBEAT.md"
+    },
+    {
+      "agentId": "lawclaw-main",
       "source": "workspaces/lawclaw-main/skills/lawclaw-upgrade/SKILL.md",
       "target": "skills/lawclaw-upgrade/SKILL.md"
     }

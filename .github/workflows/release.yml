@@ -399,7 +399,6 @@ jobs:
             dedup[name] = (artifact, file_hash)
 
           no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
-          immutable_headers = {"Cache-Control": "public, max-age=31536000, immutable"}
 
           def latest_alias(name: str) -> str | None:
             if name.endswith("-mac-arm64.dmg"):
@@ -412,38 +411,54 @@ jobs:
               return "LawClaw-win-x64.exe"
             return None
 
+          alias_sources: dict[str, Path] = {}
           for name in sorted(dedup):
             artifact, _ = dedup[name]
-            headers = immutable_headers
-
-            targets = [
-              f"releases/{release_tag}/{name}",
-              f"{release_channel}/{name}",
-            ]
-
-            for object_key in targets:
-              result = bucket.put_object_from_file(object_key, str(artifact), headers=headers)
-              if result.status not in (200, 201):
-                raise SystemExit(
-                  f"Upload failed for oss://{bucket_name}/{object_key}, status={result.status}"
-                )
-              print(f"Uploaded {artifact} -> oss://{bucket_name}/{object_key}")
-
             alias_name = latest_alias(name)
             if alias_name:
-              alias_headers = {
-                **no_cache_headers,
-                "x-oss-meta-version": release_version,
-                "x-oss-meta-release-tag": release_tag,
-                "x-oss-meta-release-date": release_date_iso,
-              }
-              alias_key = f"{release_channel}/{alias_name}"
-              alias_result = bucket.put_object_from_file(alias_key, str(artifact), headers=alias_headers)
-              if alias_result.status not in (200, 201):
-                raise SystemExit(
-                  f"Upload failed for oss://{bucket_name}/{alias_key}, status={alias_result.status}"
-                )
-              print(f"Uploaded alias {artifact} -> oss://{bucket_name}/{alias_key}")
+              alias_sources[alias_name] = artifact
+
+          required_aliases = [
+            "LawClaw-mac-arm64.dmg",
+            "LawClaw-mac-x64.dmg",
+            "LawClaw-win-arm64.exe",
+            "LawClaw-win-x64.exe",
+          ]
+          missing_aliases = [name for name in required_aliases if name not in alias_sources]
+          if missing_aliases:
+            raise SystemExit(
+              "Missing required latest artifacts after mapping: " + ", ".join(missing_aliases)
+            )
+
+          # Keep OSS channel directory clean: only latest build artifacts remain.
+          channel_prefix = f"{release_channel}/"
+          stale_keys = [obj.key for obj in oss2.ObjectIterator(bucket, prefix=channel_prefix)]
+          for key in stale_keys:
+            bucket.delete_object(key)
+            print(f"Deleted stale object oss://{bucket_name}/{key}")
+
+          # Remove legacy release history directory in OSS.
+          legacy_prefix = "releases/"
+          legacy_keys = [obj.key for obj in oss2.ObjectIterator(bucket, prefix=legacy_prefix)]
+          for key in legacy_keys:
+            bucket.delete_object(key)
+            print(f"Deleted legacy object oss://{bucket_name}/{key}")
+
+          for alias_name in required_aliases:
+            artifact = alias_sources[alias_name]
+            alias_headers = {
+              **no_cache_headers,
+              "x-oss-meta-version": release_version,
+              "x-oss-meta-release-tag": release_tag,
+              "x-oss-meta-release-date": release_date_iso,
+            }
+            alias_key = f"{release_channel}/{alias_name}"
+            alias_result = bucket.put_object_from_file(alias_key, str(artifact), headers=alias_headers)
+            if alias_result.status not in (200, 201):
+              raise SystemExit(
+                f"Upload failed for oss://{bucket_name}/{alias_key}, status={alias_result.status}"
+              )
+            print(f"Uploaded latest artifact {artifact} -> oss://{bucket_name}/{alias_key}")
           PY
 
       - name: Generate release body from commits and merges
@@ -482,8 +497,6 @@ jobs:
               echo "- 变更范围：首次发布"
             fi
             echo "- 对比链接：${compare_url}"
-            echo "- OSS 版本目录：${OSS_PUBLIC_BASE_URL}/releases/${RELEASE_TAG}/"
-            echo "- OSS 更新通道：${OSS_PUBLIC_BASE_URL}/${RELEASE_CHANNEL}/"
             echo
             echo "## 发布说明"
             if [[ -n "${direct_commits}" ]]; then
@@ -495,11 +508,6 @@ jobs:
             echo "## 安装包下载"
             echo
             echo "请按系统与芯片架构选择安装包："
-            echo
-            echo "### OSS 加速下载"
-            for file in $(find release-artifacts -type f \( -name "*.dmg" -o -name "*.exe" \) -printf "%f\n" | sort); do
-              echo "- [${file}](${OSS_PUBLIC_BASE_URL}/releases/${RELEASE_TAG}/${file})"
-            done
             echo
             echo "### macOS"
             echo "- Apple Silicon (M1/M2/M3/M4): \`LawClaw-*-mac-arm64.dmg\`"
@@ -522,8 +530,6 @@ jobs:
             echo
             echo "如遇问题，请在 GitHub Issues 反馈："
             echo "https://github.com/${GITHUB_REPOSITORY}/issues"
-            echo
-            echo "## 自动生成发行说明（GitHub）"
             echo
           } > "${body_file}"
 

@@ -288,6 +288,12 @@ export class AppUpdater extends EventEmitter {
     });
 
     autoUpdater.on('error', (error: Error) => {
+      if (this.isMissingUpdaterMetadataError(error)) {
+        // Expected when OSS only publishes installers without latest-*.yml.
+        // checkForUpdates() will fallback to installer metadata mode.
+        logger.warn('[Updater] Ignore latest-*.yml 404 error event; using installer metadata fallback');
+        return;
+      }
       this.updateStatus({ status: 'error', error: error.message });
       this.emit('error', error);
     });

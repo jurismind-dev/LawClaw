@@ -107,6 +107,11 @@ const electronAPI = {
         // WhatsApp
         'channel:requestWhatsAppQr',
         'channel:cancelWhatsAppQr',
+        // Jurismind connector
+        'jurismind:startPairing',
+        'jurismind:getStatus',
+        'jurismind:stopConnector',
+        'jurismind:clearBinding',
         // ClawHub
         'clawhub:search',
         'clawhub:install',
@@ -169,6 +174,10 @@ const electronAPI = {
         'channel:whatsapp-qr',
         'channel:whatsapp-success',
         'channel:whatsapp-error',
+        'jurismind:pair-url',
+        'jurismind:connected',
+        'jurismind:status',
+        'jurismind:error',
         'gateway:exit',
         'gateway:error',
         'navigate',
@@ -229,6 +238,10 @@ const electronAPI = {
         'oauth:code',
         'oauth:success',
         'oauth:error',
+        'jurismind:pair-url',
+        'jurismind:connected',
+        'jurismind:status',
+        'jurismind:error',
       ];
 
       if (validChannels.includes(channel)) {

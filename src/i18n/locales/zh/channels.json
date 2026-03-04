@@ -51,14 +51,37 @@
         "updateAndReconnect": "更新并重新连接",
         "saveAndConnect": "保存并连接",
         "envVar": "环境变量: {{var}}",
-        "comingSoon": "该渠道即将支持，敬请期待。"
+        "comingSoon": "该渠道即将支持，敬请期待。",
+        "jurismindHint": {
+            "title": "扫码绑定 JuriSmind",
+            "description": "请使用手机扫码完成 JuriSmind（法义经纬）绑定，绑定后将自动连接你本机 LawClaw。",
+            "statusLabel": "连接状态",
+            "statusLoading": "正在生成绑定二维码...",
+            "statusWaiting": "等待扫码绑定",
+            "statusConnected": "已连接到 Jurismind 中继",
+            "scanTip": "请使用手机浏览器扫码，iPhone 推荐 Safari，安卓推荐 Chrome。",
+            "urlLabel": "访问地址",
+            "iosTip": "iPhone 用户建议使用 Safari 浏览器打开。",
+            "androidTip": "安卓用户建议使用 Google Chrome 浏览器打开。",
+            "open": "打开链接",
+            "copy": "复制链接",
+            "refresh": "刷新二维码",
+            "rebind": "重新绑定",
+            "clear": "解除绑定",
+            "copied": "链接已复制",
+            "copyFailed": "复制失败，请手动复制链接",
+            "clearSuccess": "绑定已解除",
+            "connectedToast": "Jurismind 连接器已绑定并上线"
+        }
     },
     "meta": {
         "jurismind": {
-            "description": "Jurismind（法义经纬）渠道正在开发中",
+            "description": "通过扫码绑定 Jurismind（法义经纬）公网渠道",
             "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/feishu",
             "instructions": [
-                "该渠道当前仅提供占位展示，暂不支持配置。"
+                "点击渠道后会显示绑定二维码。",
+                "使用手机浏览器扫码并完成 SSO 登录。",
+                "绑定成功后将按 open_id 自动路由到你的本机 LawClaw。"
             ]
         },
         "telegram": {

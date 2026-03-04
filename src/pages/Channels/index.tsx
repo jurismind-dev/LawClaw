@@ -51,8 +51,15 @@ export function Channels() {
   const { t } = useTranslation('channels');
   const { channels, loading, error, fetchChannels, deleteChannel } = useChannelsStore();
   const gatewayStatus = useGatewayStore((state) => state.status);
+  const lawclawAppUrl = 'https://lawclaw-app.jurismind.com';
 
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showJurismindHint, setShowJurismindHint] = useState(false);
+  const [jurismindLoading, setJurismindLoading] = useState(false);
+  const [jurismindConnected, setJurismindConnected] = useState(false);
+  const [jurismindPairUrl, setJurismindPairUrl] = useState<string>('');
+  const [jurismindQrCode, setJurismindQrCode] = useState<string | null>(null);
+  const [jurismindError, setJurismindError] = useState<string | null>(null);
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null);
   const [configuredTypes, setConfiguredTypes] = useState<string[]>([]);
   const [isQqPluginInstalled, setIsQqPluginInstalled] = useState(false);
@@ -94,7 +101,6 @@ export function Channels() {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchConfiguredTypes();
 
     void fetchPluginInstallStatus();
@@ -113,10 +119,195 @@ export function Channels() {
     };
   }, [fetchChannels, fetchConfiguredTypes, fetchPluginInstallStatus]);
 
+  const applyJurismindStatus = useCallback((status: unknown) => {
+    const data = status as {
+      connected?: boolean;
+      pairUrl?: string | null;
+      pairQrCode?: string | null;
+      lastError?: string | null;
+    } | null;
+
+    if (!data || typeof data !== 'object') return;
+    const connected = typeof data.connected === 'boolean' ? data.connected : jurismindConnected;
+    if (typeof data.connected === 'boolean') {
+      setJurismindConnected(data.connected);
+    }
+    if (connected) {
+      setJurismindPairUrl('');
+      setJurismindQrCode(null);
+      setJurismindError(null);
+      return;
+    }
+    if ('pairUrl' in data) {
+      setJurismindPairUrl(typeof data.pairUrl === 'string' ? data.pairUrl : '');
+    }
+    if ('pairQrCode' in data) {
+      setJurismindQrCode(typeof data.pairQrCode === 'string' ? data.pairQrCode : null);
+    }
+    if ('lastError' in data) {
+      setJurismindError(typeof data.lastError === 'string' && data.lastError ? data.lastError : null);
+    }
+  }, [jurismindConnected]);
+
+  const startJurismindPairing = useCallback(async (options: { forceRefresh?: boolean; resetAuth?: boolean } = {}) => {
+    const forceRefresh = options.forceRefresh === true;
+    const resetAuth = options.resetAuth === true;
+    setJurismindLoading(true);
+    if (forceRefresh || resetAuth) {
+      setJurismindError(null);
+      setJurismindConnected(false);
+      setJurismindPairUrl('');
+      setJurismindQrCode(null);
+    }
+
+    try {
+      const result = await window.electron.ipcRenderer.invoke('jurismind:startPairing', {
+        forceRefresh,
+        resetAuth,
+        timeoutMs: 30000,
+      }) as {
+        success?: boolean;
+        error?: string;
+        result?: { pairUrl?: string; pairQrCode?: string | null };
+        status?: unknown;
+      };
+
+      if (!result?.success) {
+        throw new Error(result?.error || 'start pairing failed');
+      }
+
+      const pairUrl = String(result?.result?.pairUrl || '').trim();
+      if (pairUrl) {
+        setJurismindPairUrl(pairUrl);
+      }
+      if (typeof result?.result?.pairQrCode === 'string') {
+        setJurismindQrCode(result.result.pairQrCode);
+      }
+      applyJurismindStatus(result?.status);
+      setJurismindError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setJurismindError(message);
+    } finally {
+      setJurismindLoading(false);
+    }
+  }, [applyJurismindStatus]);
+
+  const clearJurismindBinding = useCallback(async () => {
+    setJurismindLoading(true);
+    try {
+      const result = await window.electron.ipcRenderer.invoke('jurismind:clearBinding') as {
+        success?: boolean;
+        error?: string;
+        status?: unknown;
+      };
+      if (!result?.success) {
+        throw new Error(result?.error || 'clear binding failed');
+      }
+      applyJurismindStatus(result.status);
+      setJurismindConnected(false);
+      setJurismindPairUrl('');
+      setJurismindQrCode(null);
+      setJurismindError(null);
+      toast.success(t('dialog.jurismindHint.clearSuccess'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setJurismindError(message);
+      toast.error(message);
+    } finally {
+      setJurismindLoading(false);
+    }
+  }, [applyJurismindStatus, t]);
+
+  useEffect(() => {
+    const onPairUrl = (...args: unknown[]) => {
+      const payload = args[0] as { pairUrl?: string; pairQrCode?: string | null } | undefined;
+      const pairUrl = String(payload?.pairUrl || '').trim();
+      if (pairUrl) {
+        setJurismindPairUrl(pairUrl);
+      }
+      if (typeof payload?.pairQrCode === 'string') {
+        setJurismindQrCode(payload.pairQrCode);
+      }
+      setJurismindLoading(false);
+      setJurismindError(null);
+    };
+
+    const onConnected = (...args: unknown[]) => {
+      const payload = args[0] as { connected?: boolean } | undefined;
+      if (payload?.connected !== false) {
+        setJurismindConnected(true);
+      }
+      setJurismindPairUrl('');
+      setJurismindQrCode(null);
+      setJurismindLoading(false);
+      setJurismindError(null);
+      if (showJurismindHint) {
+        toast.success(t('dialog.jurismindHint.connectedToast'));
+      }
+    };
+
+    const onStatus = (...args: unknown[]) => {
+      applyJurismindStatus(args[0]);
+    };
+
+    const onError = (...args: unknown[]) => {
+      const payload = args[0] as { message?: string } | undefined;
+      const message = String(payload?.message || '').trim();
+      if (message) {
+        setJurismindError(message);
+      }
+      setJurismindLoading(false);
+    };
+
+    const removePairListener = window.electron.ipcRenderer.on('jurismind:pair-url', onPairUrl);
+    const removeConnectedListener = window.electron.ipcRenderer.on('jurismind:connected', onConnected);
+    const removeStatusListener = window.electron.ipcRenderer.on('jurismind:status', onStatus);
+    const removeErrorListener = window.electron.ipcRenderer.on('jurismind:error', onError);
+
+    return () => {
+      if (typeof removePairListener === 'function') removePairListener();
+      if (typeof removeConnectedListener === 'function') removeConnectedListener();
+      if (typeof removeStatusListener === 'function') removeStatusListener();
+      if (typeof removeErrorListener === 'function') removeErrorListener();
+    };
+  }, [applyJurismindStatus, showJurismindHint, t]);
+
+  useEffect(() => {
+    if (!showJurismindHint) return;
+
+    let cancelled = false;
+    setJurismindError(null);
+
+    (async () => {
+      try {
+        const statusResult = await window.electron.ipcRenderer.invoke('jurismind:getStatus') as {
+          success?: boolean;
+          status?: unknown;
+        };
+        if (cancelled) return;
+        if (statusResult?.success) {
+          applyJurismindStatus(statusResult.status);
+        }
+      } catch {
+        // ignore status bootstrap failures
+      }
+
+      if (!cancelled) {
+        void startJurismindPairing();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyJurismindStatus, showJurismindHint, startJurismindPairing]);
+
   // Get channel types to display
   const displayedChannelTypes = getPrimaryChannels().filter(
     (type) => type !== 'qqbot' || isQqPluginInstalled
   );
+  const addDialogChannelTypes = displayedChannelTypes.filter((type) => type !== 'jurismind');
 
   // Connected/disconnected channel counts
   const connectedCount = channels.filter((channel) => channel.status === 'connected').length;
@@ -264,12 +455,17 @@ export function Channels() {
             {displayedChannelTypes.map((type) => {
               const meta = CHANNEL_META[type];
               const isConfigured = configuredTypes.includes(type);
-              const isComingSoon = meta.comingSoon === true;
+              const isJurismind = type === 'jurismind';
+              const isComingSoon = meta.comingSoon === true && !isJurismind;
               return (
                 <button
                   key={type}
                   className={`p-4 rounded-lg border transition-colors text-left relative ${isConfigured ? 'border-green-500/50 bg-green-500/5' : ''} ${isComingSoon ? 'opacity-60 cursor-not-allowed' : 'hover:bg-accent'}`}
                   onClick={() => {
+                    if (isJurismind) {
+                      setShowJurismindHint(true);
+                      return;
+                    }
                     if (isComingSoon) {
                       toast.info(t('dialog.comingSoon'));
                       return;
@@ -307,7 +503,7 @@ export function Channels() {
       {/* Add Channel Dialog */}
       {showAddDialog && (
         <AddChannelDialog
-          availableTypes={displayedChannelTypes}
+          availableTypes={addDialogChannelTypes}
           selectedType={selectedChannelType}
           onSelectType={setSelectedChannelType}
           onClose={() => {
@@ -321,6 +517,118 @@ export function Channels() {
             setSelectedChannelType(null);
           }}
         />
+      )}
+
+      {showJurismindHint && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-lg">
+            <CardHeader className="flex flex-row items-start justify-between">
+              <div>
+                <CardTitle>{t('dialog.jurismindHint.title')}</CardTitle>
+                <CardDescription>{t('dialog.jurismindHint.description')}</CardDescription>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setShowJurismindHint(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">{t('dialog.jurismindHint.statusLabel')}</p>
+                <p className="text-sm font-medium">
+                  {jurismindConnected
+                    ? t('dialog.jurismindHint.statusConnected')
+                    : jurismindLoading
+                      ? t('dialog.jurismindHint.statusLoading')
+                      : t('dialog.jurismindHint.statusWaiting')}
+                </p>
+                {jurismindError && (
+                  <p className="text-xs text-destructive break-all">{jurismindError}</p>
+                )}
+              </div>
+
+              {!jurismindConnected && (
+                <div className="rounded-lg border bg-white p-3 flex flex-col items-center gap-2">
+                  {jurismindQrCode ? (
+                    <img src={jurismindQrCode} alt="Jurismind Pair QR" className="w-56 h-56 object-contain" />
+                  ) : (
+                    <div className="w-56 h-56 rounded-lg bg-muted/20 flex items-center justify-center">
+                      {jurismindLoading ? (
+                        <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                      ) : (
+                        <QrCode className="h-10 w-10 text-muted-foreground" />
+                      )}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">{t('dialog.jurismindHint.scanTip')}</p>
+                </div>
+              )}
+
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground mb-1">
+                  {t('dialog.jurismindHint.urlLabel')}
+                </p>
+                <p className="font-mono text-sm break-all">{jurismindPairUrl || lawclawAppUrl}</p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => {
+                    const targetUrl = jurismindPairUrl || lawclawAppUrl;
+                    if (window.electron?.openExternal) {
+                      window.electron.openExternal(targetUrl).catch(() => {
+                        window.open(targetUrl, '_blank');
+                      });
+                    } else {
+                      window.open(targetUrl, '_blank');
+                    }
+                  }}
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  {t('dialog.jurismindHint.open')}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(jurismindPairUrl || lawclawAppUrl);
+                      toast.success(t('dialog.jurismindHint.copied'));
+                    } catch {
+                      toast.error(t('dialog.jurismindHint.copyFailed'));
+                    }
+                  }}
+                >
+                  {t('dialog.jurismindHint.copy')}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    void startJurismindPairing({ forceRefresh: true });
+                  }}
+                >
+                  <RefreshCw className={cn('h-4 w-4 mr-2', jurismindLoading && 'animate-spin')} />
+                  {t('dialog.jurismindHint.refresh')}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    void startJurismindPairing({ forceRefresh: true, resetAuth: true });
+                  }}
+                >
+                  {t('dialog.jurismindHint.rebind')}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => {
+                    void clearJurismindBinding();
+                  }}
+                >
+                  {t('dialog.jurismindHint.clear')}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

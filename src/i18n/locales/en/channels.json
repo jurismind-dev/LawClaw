@@ -51,14 +51,37 @@
         "updateAndReconnect": "Update & Reconnect",
         "saveAndConnect": "Save & Connect",
         "envVar": "Environment Variable: {{var}}",
-        "comingSoon": "This channel will be available soon."
+        "comingSoon": "This channel will be available soon.",
+        "jurismindHint": {
+            "title": "Pair JuriSmind by QR",
+            "description": "Scan the QR code with your phone to bind JuriSmind. After binding, LawClaw will connect automatically.",
+            "statusLabel": "Connection Status",
+            "statusLoading": "Generating pairing QR code...",
+            "statusWaiting": "Waiting for mobile scan",
+            "statusConnected": "Connected to JuriSmind relay",
+            "scanTip": "Use your phone browser to scan. Safari is recommended on iPhone, Chrome on Android.",
+            "urlLabel": "URL",
+            "iosTip": "For iPhone users, Safari is recommended.",
+            "androidTip": "For Android users, Google Chrome is recommended.",
+            "open": "Open URL",
+            "copy": "Copy URL",
+            "refresh": "Refresh QR",
+            "rebind": "Rebind",
+            "clear": "Unbind",
+            "copied": "URL copied",
+            "copyFailed": "Copy failed, please copy the URL manually",
+            "clearSuccess": "Binding removed",
+            "connectedToast": "JuriSmind connector is now bound and online"
+        }
     },
     "meta": {
         "jurismind": {
-            "description": "Jurismind channel integration is coming soon",
+            "description": "Bind JuriSmind channel via QR pairing",
             "docsUrl": "https://docs.openclaw.ai/channels/feishu",
             "instructions": [
-                "This channel is currently in development and not yet available."
+                "Open this channel to generate a pairing QR code.",
+                "Scan it from your phone browser and complete SSO login.",
+                "After binding, routing is automatic by open_id."
             ]
         },
         "telegram": {

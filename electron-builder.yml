@@ -26,6 +26,16 @@ extraResources:
   # because electron-builder respects .gitignore which excludes node_modules/)
   - from: build/openclaw/
     to: openclaw/
+  # Jurismind local connector runtime (used by desktop QR pairing flow)
+  - from: clawapp/connector/
+    to: clawapp/connector/
+    filter:
+      - "index.js"
+      - "package.json"
+      - ".env.example"
+  # Runtime dependency for clawapp/connector/index.js
+  - from: node_modules/ws/
+    to: clawapp/connector/node_modules/ws/
   # NOTE: OpenClaw plugin mirrors (dingtalk, etc.) are bundled by the
   # afterPack hook (after-pack.cjs) directly from node_modules, so they
   # don't need an extraResources entry here.

@@ -86,6 +86,7 @@ import {
   normalizeSessionKeyParam,
 } from '../utils/lawclaw-session';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
+import { jurismindConnectorManager } from '../utils/jurismind-connector';
 
 const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
 
@@ -174,6 +175,9 @@ export function registerIpcHandlers(
 
   // WhatsApp handlers
   registerWhatsAppHandlers(mainWindow);
+
+  // Jurismind connector handlers (QR pairing)
+  registerJurismindHandlers(mainWindow);
 
   // Device OAuth handlers (Code Plan)
   registerDeviceOAuthHandlers(mainWindow);
@@ -1360,6 +1364,77 @@ function registerWhatsAppHandlers(mainWindow: BrowserWindow): void {
     if (!mainWindow.isDestroyed()) {
       logger.error('whatsapp:login-error', error);
       mainWindow.webContents.send('channel:whatsapp-error', error);
+    }
+  });
+}
+
+/**
+ * Jurismind Connector Handlers
+ */
+function registerJurismindHandlers(mainWindow: BrowserWindow): void {
+  ipcMain.handle(
+    'jurismind:startPairing',
+    async (_, options?: { forceRefresh?: boolean; timeoutMs?: number; resetAuth?: boolean }) => {
+      try {
+        const result = await jurismindConnectorManager.startPairing({
+          forceRefresh: options?.forceRefresh === true,
+          timeoutMs: options?.timeoutMs,
+          resetAuth: options?.resetAuth === true,
+        });
+        return { success: true, result, status: jurismindConnectorManager.getStatus() };
+      } catch (error) {
+        return { success: false, error: String(error), status: jurismindConnectorManager.getStatus() };
+      }
+    }
+  );
+
+  ipcMain.handle('jurismind:clearBinding', async () => {
+    try {
+      await jurismindConnectorManager.clearBinding();
+      return { success: true, status: jurismindConnectorManager.getStatus() };
+    } catch (error) {
+      return { success: false, error: String(error), status: jurismindConnectorManager.getStatus() };
+    }
+  });
+
+  ipcMain.handle('jurismind:getStatus', async () => {
+    try {
+      return { success: true, status: jurismindConnectorManager.getStatus() };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('jurismind:stopConnector', async () => {
+    try {
+      await jurismindConnectorManager.stop('renderer-stop');
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  jurismindConnectorManager.on('pair-url', (data) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('jurismind:pair-url', data);
+    }
+  });
+
+  jurismindConnectorManager.on('connected', (data) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('jurismind:connected', data);
+    }
+  });
+
+  jurismindConnectorManager.on('status', (status) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('jurismind:status', status);
+    }
+  });
+
+  jurismindConnectorManager.on('error', (error) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('jurismind:error', error);
     }
   });
 }

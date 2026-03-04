@@ -51,14 +51,37 @@
         "updateAndReconnect": "更新して再接続",
         "saveAndConnect": "保存して接続",
         "envVar": "環境変数: {{var}}",
-        "comingSoon": "このチャンネルは近日対応予定です。"
+        "comingSoon": "このチャンネルは近日対応予定です。",
+        "jurismindHint": {
+            "title": "QRで JuriSmind を連携",
+            "description": "スマホで QR を読み取り JuriSmind を連携してください。連携後は LawClaw が自動接続します。",
+            "statusLabel": "接続状態",
+            "statusLoading": "連携QRコードを生成中...",
+            "statusWaiting": "スマホでの読み取り待ち",
+            "statusConnected": "JuriSmind 中継に接続済み",
+            "scanTip": "スマホのブラウザで QR を読み取ってください。iPhone は Safari、Android は Chrome 推奨です。",
+            "urlLabel": "アクセス URL",
+            "iosTip": "iPhone の場合は Safari の利用をおすすめします。",
+            "androidTip": "Android の場合は Google Chrome の利用をおすすめします。",
+            "open": "リンクを開く",
+            "copy": "リンクをコピー",
+            "refresh": "QRを更新",
+            "rebind": "再連携",
+            "clear": "連携解除",
+            "copied": "リンクをコピーしました",
+            "copyFailed": "コピーに失敗しました。手動でコピーしてください",
+            "clearSuccess": "連携を解除しました",
+            "connectedToast": "JuriSmind コネクタの連携が完了しました"
+        }
     },
     "meta": {
         "jurismind": {
-            "description": "Jurismind（法義経緯）チャンネルは現在開発中です",
+            "description": "QR 連携で Jurismind（法義経緯）チャンネルを接続",
             "docsUrl": "https://docs.openclaw.ai/channels/feishu",
             "instructions": [
-                "このチャンネルは現在プレースホルダー表示のみで、まだ設定できません。"
+                "チャンネルを開くと連携用 QR が生成されます。",
+                "スマホで QR を読み取り、SSO ログインを完了してください。",
+                "連携後は open_id で自動的に本機 LawClaw へルーティングされます。"
             ]
         },
         "telegram": {

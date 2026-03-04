@@ -1,0 +1,18 @@
+extends: ./electron-builder.yml
+
+publish: []
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  entitlements: null
+  entitlementsInherit: null
+  notarize: false
+
+dmg:
+  writeUpdateInfo: false

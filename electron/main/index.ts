@@ -15,6 +15,7 @@ import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
 import { runProviderStartupMigration } from '../utils/provider-migration';
 import { runAgentPresetStartupMigration } from '../utils/agent-preset-migration';
+import { jurismindConnectorManager } from '../utils/jurismind-connector';
 
 import { ClawHubService } from '../gateway/clawhub';
 import {
@@ -244,6 +245,9 @@ app.on('before-quit', () => {
   // Awaiting inside before-quit can stall Electron's quit sequence.
   void gatewayManager.stop().catch((err) => {
     logger.warn('gatewayManager.stop() error during quit:', err);
+  });
+  void jurismindConnectorManager.stop('app-before-quit').catch((err) => {
+    logger.warn('jurismindConnectorManager.stop() error during quit:', err);
   });
 });
 

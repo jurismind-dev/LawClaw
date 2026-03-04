@@ -65,3 +65,7 @@ build/
 .pnpm-store/
 .claude/
 .worktrees/
+clawapp
+credits-service
+sso-web
+web-backend

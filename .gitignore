@@ -65,7 +65,13 @@ build/
 .pnpm-store/
 .claude/
 .worktrees/
-clawapp
+# Keep clawapp decoupled by default, but preserve desktop connector runtime
+clawapp/*
+!clawapp/connector/
+clawapp/connector/*
+!clawapp/connector/index.js
+!clawapp/connector/package.json
+!clawapp/connector/.env.example
 credits-service
 sso-web
 web-backend

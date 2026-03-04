@@ -22,6 +22,7 @@
         "dev:setup": "node scripts/dev-setup.mjs",
         "build": "pnpm run uv:ensure && vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-qq-plugin.mjs && electron-builder",
         "build:vite": "vite build",
+        "check:connector-runtime": "node scripts/check-connector-runtime.mjs",
         "bundle:openclaw-plugins": "zx scripts/bundle-openclaw-plugins.mjs",
         "lint": "eslint . --fix",
         "brand:scan": "node scripts/brand-scan.mjs",

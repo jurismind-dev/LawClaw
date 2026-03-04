@@ -172,6 +172,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
+      - name: Verify Jurismind connector runtime files
+        run: node scripts/check-connector-runtime.mjs
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

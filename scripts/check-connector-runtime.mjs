@@ -3,9 +3,9 @@ import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const REQUIRED_FILES = [
-  'clawapp/connector/index.js',
-  'clawapp/connector/package.json',
-  'clawapp/connector/.env.example',
+  'connector-runtime/index.js',
+  'connector-runtime/package.json',
+  'connector-runtime/.env.example',
 ];
 
 const missing = [];

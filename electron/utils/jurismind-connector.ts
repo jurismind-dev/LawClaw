@@ -177,7 +177,7 @@ class JurismindConnectorManager extends EventEmitter {
 
     const runtime = this.resolveConnectorRuntime();
     if (!runtime) {
-      throw new Error('未找到本地 connector 运行文件，请确认 clawapp/connector 已包含在当前环境');
+      throw new Error('未找到本地 connector 运行文件，请确认 connector-runtime 已包含在当前环境');
     }
 
     this.stdoutBuffer = '';
@@ -259,19 +259,29 @@ class JurismindConnectorManager extends EventEmitter {
   }
 
   private resolveConnectorRuntime(): { entryPath: string; cwd: string } | null {
-    const devEntryPath = join(app.getAppPath(), 'clawapp', 'connector', 'index.js');
-    if (existsSync(devEntryPath)) {
-      return { entryPath: devEntryPath, cwd: join(app.getAppPath(), 'clawapp', 'connector') };
+    const devRuntimePath = join(app.getAppPath(), 'connector-runtime', 'index.js');
+    if (existsSync(devRuntimePath)) {
+      return { entryPath: devRuntimePath, cwd: join(app.getAppPath(), 'connector-runtime') };
     }
 
-    const packagedPath1 = join(process.resourcesPath, 'clawapp', 'connector', 'index.js');
+    const devLegacyPath = join(app.getAppPath(), 'clawapp', 'connector', 'index.js');
+    if (existsSync(devLegacyPath)) {
+      return { entryPath: devLegacyPath, cwd: join(app.getAppPath(), 'clawapp', 'connector') };
+    }
+
+    const packagedPath1 = join(process.resourcesPath, 'connector-runtime', 'index.js');
     if (existsSync(packagedPath1)) {
-      return { entryPath: packagedPath1, cwd: join(process.resourcesPath, 'clawapp', 'connector') };
+      return { entryPath: packagedPath1, cwd: join(process.resourcesPath, 'connector-runtime') };
     }
 
-    const packagedPath2 = join(process.resourcesPath, 'clawapp-connector', 'index.js');
+    const packagedPath2 = join(process.resourcesPath, 'clawapp', 'connector', 'index.js');
     if (existsSync(packagedPath2)) {
-      return { entryPath: packagedPath2, cwd: join(process.resourcesPath, 'clawapp-connector') };
+      return { entryPath: packagedPath2, cwd: join(process.resourcesPath, 'clawapp', 'connector') };
+    }
+
+    const packagedPath3 = join(process.resourcesPath, 'clawapp-connector', 'index.js');
+    if (existsSync(packagedPath3)) {
+      return { entryPath: packagedPath3, cwd: join(process.resourcesPath, 'clawapp-connector') };
     }
 
     return null;

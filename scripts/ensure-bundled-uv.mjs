@@ -4,6 +4,8 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
+const ENSURE_DOWNLOAD_RETRIES = Math.max(parseInt(process.env.UV_ENSURE_RETRIES || '3', 10) || 3, 1);
+const ENSURE_RETRY_BACKOFF_MS = Math.max(parseInt(process.env.UV_ENSURE_RETRY_BACKOFF_MS || '2000', 10) || 2000, 200);
 
 const PLATFORM_TARGETS = {
   mac: ['darwin-x64', 'darwin-arm64'],
@@ -51,6 +53,10 @@ async function downloadUvForPlatform(platform) {
   await $`pnpm exec zx scripts/download-bundled-uv.mjs --platform=${platform}`;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function ensureBundledUv({
   platform,
   rootDir = ROOT_DIR,
@@ -75,7 +81,28 @@ export async function ensureBundledUv({
     logger.info?.(`[uv:ensure] missing: ${item.path}`);
   }
 
-  await downloadFn(platformGroup);
+  let downloadError = null;
+  for (let attempt = 1; attempt <= ENSURE_DOWNLOAD_RETRIES; attempt += 1) {
+    try {
+      await downloadFn(platformGroup);
+      downloadError = null;
+      break;
+    } catch (error) {
+      downloadError = error;
+      logger.warn?.(
+        `[uv:ensure] Download attempt ${attempt}/${ENSURE_DOWNLOAD_RETRIES} failed: ${error?.message || error}`
+      );
+      if (attempt < ENSURE_DOWNLOAD_RETRIES) {
+        const delay = ENSURE_RETRY_BACKOFF_MS * attempt;
+        logger.info?.(`[uv:ensure] Retry in ${delay}ms...`);
+        await sleep(delay);
+      }
+    }
+  }
+
+  if (downloadError) {
+    throw downloadError;
+  }
 
   const missingAfter = getMissingUvBinaries(binaries, existsFn);
   if (missingAfter.length > 0) {

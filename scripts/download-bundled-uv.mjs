@@ -6,6 +6,17 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const UV_VERSION = '0.10.0';
 const BASE_URL = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}`;
 const OUTPUT_BASE = path.join(ROOT_DIR, 'resources', 'bin');
+const DOWNLOAD_RETRIES = Math.max(parseInt(process.env.UV_DOWNLOAD_RETRIES || '4', 10) || 4, 1);
+const DOWNLOAD_TIMEOUT_MS = Math.max(parseInt(process.env.UV_DOWNLOAD_TIMEOUT_MS || '120000', 10) || 120000, 10000);
+const DOWNLOAD_BACKOFF_MS = Math.max(parseInt(process.env.UV_DOWNLOAD_BACKOFF_MS || '1500', 10) || 1500, 200);
+const BASE_URLS = (
+  process.env.UV_DOWNLOAD_BASE_URLS ||
+  process.env.UV_DOWNLOAD_BASE_URL ||
+  BASE_URL
+)
+  .split(',')
+  .map((item) => item.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
 
 // Mapping Node platforms/archs to uv release naming
 const TARGETS = {
@@ -42,6 +53,41 @@ const PLATFORM_GROUPS = {
   'linux': ['linux-x64', 'linux-arm64']
 };
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function downloadArchiveWithRetries(url, archivePath) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= DOWNLOAD_RETRIES; attempt += 1) {
+    try {
+      echo`⬇️ Downloading (${attempt}/${DOWNLOAD_RETRIES}): ${url}`;
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+
+      const buffer = await response.arrayBuffer();
+      await fs.writeFile(archivePath, Buffer.from(buffer));
+      return;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      echo(chalk.yellow`⚠️ Download attempt failed: ${message}`);
+      if (attempt < DOWNLOAD_RETRIES) {
+        const delay = DOWNLOAD_BACKOFF_MS * attempt;
+        echo(chalk.gray`⏳ Retrying in ${delay}ms...`);
+        await sleep(delay);
+      }
+    }
+  }
+
+  throw new Error(`Failed to download ${url} after ${DOWNLOAD_RETRIES} attempts: ${lastError?.message || lastError}`);
+}
+
 async function setupTarget(id) {
   const target = TARGETS[id];
   if (!target) {
@@ -52,8 +98,6 @@ async function setupTarget(id) {
   const targetDir = path.join(OUTPUT_BASE, id);
   const tempDir = path.join(ROOT_DIR, 'temp_uv_extract');
   const archivePath = path.join(ROOT_DIR, target.filename);
-  const downloadUrl = `${BASE_URL}/${target.filename}`;
-
   echo(chalk.blue`\n📦 Setting up uv for ${id}...`);
 
   // Cleanup temp workspace only. Keep existing target binaries until new ones are ready.
@@ -61,12 +105,28 @@ async function setupTarget(id) {
   await fs.ensureDir(tempDir);
 
   try {
-    // Download
-    echo`⬇️ Downloading: ${downloadUrl}`;
-    const response = await fetch(downloadUrl);
-    if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
-    const buffer = await response.arrayBuffer();
-    await fs.writeFile(archivePath, Buffer.from(buffer));
+    // Download with retries (and optional mirror fallback)
+    let downloaded = false;
+    let lastError = null;
+    for (const baseUrl of BASE_URLS) {
+      const downloadUrl = `${baseUrl}/${target.filename}`;
+      try {
+        await downloadArchiveWithRetries(downloadUrl, archivePath);
+        downloaded = true;
+        break;
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        echo(chalk.yellow`⚠️ Source failed: ${downloadUrl}`);
+        echo(chalk.yellow`   ${message}`);
+      }
+    }
+
+    if (!downloaded) {
+      throw new Error(
+        `All download sources failed for ${target.filename}. Last error: ${lastError?.message || lastError}`
+      );
+    }
 
     // Extract
     echo`📂 Extracting...`;

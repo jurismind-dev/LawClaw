@@ -172,6 +172,28 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
+      - name: Cache Electron binaries (macOS)
+        if: matrix.platform == 'mac'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-cache-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-cache-
+
+      - name: Cache Electron binaries (Windows)
+        if: matrix.platform == 'win'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-electron-cache-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-cache-
+
       - name: Verify Jurismind connector runtime files
         run: node scripts/check-connector-runtime.mjs
 
@@ -193,11 +215,37 @@ jobs:
 
       - name: Ensure bundled uv for macOS
         if: matrix.platform == 'mac'
-        run: pnpm run uv:ensure:mac
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if pnpm run uv:ensure:mac; then
+              exit 0
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "uv:ensure:mac failed after ${attempt} attempts"
+              exit 1
+            fi
+            delay=$((attempt * 5))
+            echo "uv:ensure:mac failed (attempt ${attempt}), retry in ${delay}s..."
+            sleep "${delay}"
+          done
 
       - name: Ensure bundled uv for Windows
         if: matrix.platform == 'win'
-        run: pnpm run uv:ensure:win
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            pnpm run uv:ensure:win
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            if ($attempt -eq 3) {
+              throw "uv:ensure:win failed after $attempt attempts"
+            }
+            $delay = 5 * $attempt
+            Write-Host "uv:ensure:win failed (attempt $attempt), retry in ${delay}s..."
+            Start-Sleep -Seconds $delay
+          }
 
       - name: Build macOS packages (x64 + arm64)
         if: matrix.platform == 'mac'
@@ -209,6 +257,24 @@ jobs:
           MAC_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           MAC_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          set -euo pipefail
+
+          retry_cmd() {
+            local max_attempts="$1"
+            shift
+            local attempt=1
+            until "$@"; do
+              if [[ "${attempt}" -ge "${max_attempts}" ]]; then
+                echo "Command failed after ${attempt} attempts: $*"
+                return 1
+              fi
+              local delay=$((attempt * 10))
+              echo "Command failed (attempt ${attempt}/${max_attempts}), retry in ${delay}s: $*"
+              sleep "${delay}"
+              attempt=$((attempt + 1))
+            done
+          }
+
           pnpm run build:vite
           pnpm exec zx scripts/bundle-openclaw.mjs
           pnpm exec zx scripts/bundle-qq-plugin.mjs
@@ -220,11 +286,13 @@ jobs:
             export APPLE_ID="${MAC_APPLE_ID}"
             export APPLE_APP_SPECIFIC_PASSWORD="${MAC_APPLE_APP_SPECIFIC_PASSWORD}"
             export APPLE_TEAM_ID="${MAC_APPLE_TEAM_ID}"
-            pnpm exec electron-builder --mac --x64 --arm64 --publish never
+            retry_cmd 3 pnpm exec electron-builder --mac --x64 --publish never
+            retry_cmd 3 pnpm exec electron-builder --mac --arm64 --publish never
           else
             echo "Mac signing secrets are missing. Building unsigned artifacts."
             unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID CSC_NAME
-            CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --x64 --arm64 --publish never -c.mac.hardenedRuntime=false -c.mac.notarize=false
+            retry_cmd 3 env CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --x64 --publish never -c.mac.hardenedRuntime=false -c.mac.notarize=false
+            retry_cmd 3 env CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --arm64 --publish never -c.mac.hardenedRuntime=false -c.mac.notarize=false
           fi
 
       - name: Build Windows packages (x64 + arm64)
@@ -234,14 +302,33 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+
+          function Invoke-WithRetry {
+            param(
+              [scriptblock]$Action,
+              [int]$MaxAttempts = 3,
+              [int]$BaseDelaySeconds = 10
+            )
+            for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+              & $Action
+              if ($LASTEXITCODE -eq 0) { return }
+              if ($attempt -eq $MaxAttempts) {
+                throw "Command failed after $attempt attempts"
+              }
+              $delay = $BaseDelaySeconds * $attempt
+              Write-Host "Command failed (attempt $attempt/$MaxAttempts), retry in ${delay}s..."
+              Start-Sleep -Seconds $delay
+            }
+          }
+
           pnpm run build:vite
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm exec zx scripts/bundle-openclaw.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm exec zx scripts/bundle-qq-plugin.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          pnpm exec electron-builder --win --x64 --arm64 --publish never
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Invoke-WithRetry { pnpm exec electron-builder --win --x64 --publish never }
+          Invoke-WithRetry { pnpm exec electron-builder --win --arm64 --publish never }
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

@@ -10,6 +10,7 @@ import { renderQrPngBase64 } from './qr-code';
 export interface JurismindConnectorStatus {
   running: boolean;
   connected: boolean;
+  hasBinding: boolean;
   pid: number | null;
   relayUrl: string;
   pairUrl: string | null;
@@ -37,6 +38,21 @@ type PendingPairWaiter = {
   timer: ReturnType<typeof setTimeout>;
 };
 
+function buildDefaultH5Url(relayUrl: string): string {
+  const trimmed = String(relayUrl || '').trim();
+  if (!trimmed) return '';
+  try {
+    const url = new URL(trimmed);
+    const basePath = url.pathname.replace(/\/+$/, '');
+    url.pathname = `${basePath}/api/connector/open`;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return `${trimmed.replace(/\/+$/, '')}/api/connector/open`;
+  }
+}
+
 class JurismindConnectorManager extends EventEmitter {
   private connectorProcess: ChildProcess | null = null;
   private stdoutBuffer = '';
@@ -49,21 +65,29 @@ class JurismindConnectorManager extends EventEmitter {
   private lastError: string | null = null;
   private lastLog: string | null = null;
   private pendingPairWaiters: PendingPairWaiter[] = [];
+  private forceLoginOnNextPair = false;
 
   private readonly relayUrl = (process.env.LAWCLAW_APP_RELAY_URL || 'https://lawclaw-app.jurismind.com').trim();
+  private readonly h5Url = (process.env.LAWCLAW_APP_H5_URL || buildDefaultH5Url(this.relayUrl)).trim();
   private readonly authFilePath = (
     process.env.CONNECTOR_AUTH_FILE || join(homedir(), '.lawclaw', 'connector-auth.json')
   ).trim();
   private readonly appDeviceIdentityPath = join(app.getPath('userData'), 'clawx-device-identity.json');
 
   getStatus(): JurismindConnectorStatus {
+    const hasBinding = existsSync(this.authFilePath);
+    const fallbackQr = renderQrPngBase64(this.h5Url);
+    const qrCode = this.connected
+      ? (fallbackQr ? `data:image/png;base64,${fallbackQr}` : null)
+      : (this.pairQrCode || (fallbackQr ? `data:image/png;base64,${fallbackQr}` : null));
     return {
       running: this.running,
       connected: this.connected,
+      hasBinding,
       pid: this.connectorProcess?.pid || null,
       relayUrl: this.relayUrl,
-      pairUrl: this.pairUrl,
-      pairQrCode: this.pairQrCode,
+      pairUrl: this.connected ? this.h5Url : (this.pairUrl || this.h5Url),
+      pairQrCode: qrCode,
       pairIssuedAt: this.pairIssuedAt || null,
       lastError: this.lastError,
       lastLog: this.lastLog,
@@ -77,6 +101,7 @@ class JurismindConnectorManager extends EventEmitter {
       await this.stop(options.resetAuth ? 'rebind-reset-auth' : 'force-refresh');
       if (options.resetAuth) {
         this.clearSavedBinding();
+        this.forceLoginOnNextPair = true;
       }
       this.resetPairState();
     }
@@ -84,9 +109,10 @@ class JurismindConnectorManager extends EventEmitter {
     await this.ensureRunning();
 
     if (this.connected) {
+      const fallbackQr = renderQrPngBase64(this.h5Url);
       return {
-        pairUrl: this.pairUrl || '',
-        pairQrCode: this.pairQrCode,
+        pairUrl: this.h5Url,
+        pairQrCode: fallbackQr ? `data:image/png;base64,${fallbackQr}` : this.pairQrCode,
         pairIssuedAt: this.pairIssuedAt || Date.now(),
       };
     }
@@ -264,24 +290,9 @@ class JurismindConnectorManager extends EventEmitter {
       return { entryPath: devRuntimePath, cwd: join(app.getAppPath(), 'connector-runtime') };
     }
 
-    const devLegacyPath = join(app.getAppPath(), 'clawapp', 'connector', 'index.js');
-    if (existsSync(devLegacyPath)) {
-      return { entryPath: devLegacyPath, cwd: join(app.getAppPath(), 'clawapp', 'connector') };
-    }
-
     const packagedPath1 = join(process.resourcesPath, 'connector-runtime', 'index.js');
     if (existsSync(packagedPath1)) {
       return { entryPath: packagedPath1, cwd: join(process.resourcesPath, 'connector-runtime') };
-    }
-
-    const packagedPath2 = join(process.resourcesPath, 'clawapp', 'connector', 'index.js');
-    if (existsSync(packagedPath2)) {
-      return { entryPath: packagedPath2, cwd: join(process.resourcesPath, 'clawapp', 'connector') };
-    }
-
-    const packagedPath3 = join(process.resourcesPath, 'clawapp-connector', 'index.js');
-    if (existsSync(packagedPath3)) {
-      return { entryPath: packagedPath3, cwd: join(process.resourcesPath, 'clawapp-connector') };
     }
 
     return null;
@@ -321,7 +332,7 @@ class JurismindConnectorManager extends EventEmitter {
 
     const pairMatch = line.match(/\[PAIR_URL\]\s+(\S+)/);
     if (pairMatch?.[1]) {
-      const pairUrl = pairMatch[1];
+      const pairUrl = this.decoratePairUrl(pairMatch[1]);
       const qrBase64 = renderQrPngBase64(pairUrl);
       this.pairUrl = pairUrl;
       this.pairQrCode = qrBase64 ? `data:image/png;base64,${qrBase64}` : null;
@@ -341,7 +352,13 @@ class JurismindConnectorManager extends EventEmitter {
 
     if (line.includes('已连接中继')) {
       this.connected = true;
-      this.resetPairState();
+      if (!this.pairQrCode) {
+        const fallbackQr = renderQrPngBase64(this.h5Url);
+        this.pairQrCode = fallbackQr ? `data:image/png;base64,${fallbackQr}` : null;
+      }
+      if (!this.pairIssuedAt) {
+        this.pairIssuedAt = Date.now();
+      }
       this.lastError = null;
       this.emit('connected', { connected: true, line });
       this.emitStatus();
@@ -363,6 +380,28 @@ class JurismindConnectorManager extends EventEmitter {
 
   private emitStatus(): void {
     this.emit('status', this.getStatus());
+  }
+
+  private decoratePairUrl(rawPairUrl: string): string {
+    const pairUrl = String(rawPairUrl || '')
+      .replace(/\u001b\[[0-9;]*m/g, '')
+      .replace(/[\u0000-\u001f]+/g, '')
+      .trim();
+    if (!pairUrl) return pairUrl;
+
+    if (!this.forceLoginOnNextPair) {
+      return pairUrl;
+    }
+    this.forceLoginOnNextPair = false;
+
+    try {
+      const url = new URL(pairUrl, this.h5Url);
+      url.searchParams.set('forceLogin', '1');
+      return url.toString();
+    } catch {
+      const joiner = pairUrl.includes('?') ? '&' : '?';
+      return `${pairUrl}${joiner}forceLogin=1`;
+    }
   }
 
   private waitForPairUrl(timeoutMs: number): Promise<JurismindPairResult> {

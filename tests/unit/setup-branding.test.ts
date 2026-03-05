@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import enSetup from '@/i18n/locales/en/setup.json';
 import zhSetup from '@/i18n/locales/zh/setup.json';
-import jaSetup from '@/i18n/locales/ja/setup.json';
 
 function collectClawXPaths(value: unknown, basePath = ''): string[] {
   if (typeof value === 'string') {
@@ -26,7 +25,6 @@ describe('setup branding copy', () => {
     const locales: Array<{ lang: string; data: unknown }> = [
       { lang: 'en', data: enSetup },
       { lang: 'zh', data: zhSetup },
-      { lang: 'ja', data: jaSetup },
     ];
 
     const findings = locales.flatMap(({ lang, data }) =>

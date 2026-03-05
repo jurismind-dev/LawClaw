@@ -17,6 +17,7 @@
  */
 
 import 'zx/globals';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
@@ -38,6 +39,77 @@ function realpathSafe(p) {
   }
 }
 
+function isRetryableRemoveError(err) {
+  return ['ENOTEMPTY', 'EBUSY', 'EPERM'].includes(err?.code);
+}
+
+function rmRecursiveWithRetries(target, maxAttempts = 12) {
+  const normalized = normWin(target);
+  let lastError = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      fs.rmSync(normalized, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      });
+      return;
+    } catch (err) {
+      if (err?.code === 'ENOENT') return;
+      lastError = err;
+      if (!isRetryableRemoveError(err)) break;
+    }
+  }
+
+  if (process.platform !== 'win32') {
+    const shellResult = spawnSync('rm', ['-rf', target], { stdio: 'ignore' });
+    if (shellResult.status === 0) return;
+  }
+
+  if (lastError) throw lastError;
+}
+
+function rmRobust(target) {
+  if (!fs.existsSync(normWin(target))) return;
+
+  try {
+    rmRecursiveWithRetries(target);
+    return;
+  } catch (err) {
+    if (err?.code === 'ENOENT') return;
+  }
+
+  // Fallback: rename then delete to avoid transient ENOTEMPTY/EBUSY on macOS.
+  const tombstone = `${target}.__cleanup_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  try {
+    fs.renameSync(normWin(target), normWin(tombstone));
+    rmRecursiveWithRetries(tombstone, 16);
+    return;
+  } catch (err) {
+    if (err?.code === 'ENOENT') return;
+    throw err;
+  }
+}
+
+function cleanupStaleTombstones(target) {
+  const parent = path.dirname(target);
+  const base = path.basename(target);
+  const prefix = `${base}.__cleanup_`;
+  if (!fs.existsSync(normWin(parent))) return;
+
+  for (const entry of fs.readdirSync(normWin(parent))) {
+    if (!entry.startsWith(prefix)) continue;
+    const fullPath = path.join(parent, entry);
+    try {
+      rmRecursiveWithRetries(fullPath, 16);
+    } catch (err) {
+      echo`   ⚠️  Failed to cleanup stale bundle tombstone: ${fullPath} (${err.message || err})`;
+    }
+  }
+}
+
 echo`📦 Bundling openclaw for electron-builder...`;
 
 // 1. Resolve the real path of node_modules/openclaw (follows pnpm symlink)
@@ -51,8 +123,9 @@ const openclawReal = realpathSafe(openclawLink);
 echo`   openclaw resolved: ${openclawReal}`;
 
 // 2. Clean and create output directory
+cleanupStaleTombstones(OUTPUT);
 if (fs.existsSync(OUTPUT)) {
-  fs.rmSync(OUTPUT, { recursive: true });
+  rmRobust(OUTPUT);
 }
 fs.mkdirSync(OUTPUT, { recursive: true });
 
@@ -242,9 +315,7 @@ function formatSize(bytes) {
 
 function rmSafe(target) {
   try {
-    const stat = fs.lstatSync(target);
-    if (stat.isDirectory()) fs.rmSync(target, { recursive: true, force: true });
-    else fs.rmSync(target, { force: true });
+    rmRobust(target);
     return true;
   } catch { return false; }
 }

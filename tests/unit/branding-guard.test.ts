@@ -4,9 +4,6 @@ import { describe, expect, it } from 'vitest';
 import enChat from '@/i18n/locales/en/chat.json';
 import enSkills from '@/i18n/locales/en/skills.json';
 import enSettings from '@/i18n/locales/en/settings.json';
-import jaChat from '@/i18n/locales/ja/chat.json';
-import jaSkills from '@/i18n/locales/ja/skills.json';
-import jaSettings from '@/i18n/locales/ja/settings.json';
 import zhChat from '@/i18n/locales/zh/chat.json';
 import zhSkills from '@/i18n/locales/zh/skills.json';
 import zhSettings from '@/i18n/locales/zh/settings.json';
@@ -41,10 +38,8 @@ describe('branding guard', () => {
     const locales: Array<{ name: string; data: unknown }> = [
       { name: 'en.settings', data: enSettings },
       { name: 'zh.settings', data: zhSettings },
-      { name: 'ja.settings', data: jaSettings },
       { name: 'en.chat', data: enChat },
       { name: 'zh.chat', data: zhChat },
-      { name: 'ja.chat', data: jaChat },
     ];
 
     const findings = locales.flatMap(({ name, data }) =>
@@ -58,7 +53,6 @@ describe('branding guard', () => {
     const locales: Array<{ name: string; data: SkillsLocale }> = [
       { name: 'en.skills', data: enSkills },
       { name: 'zh.skills', data: zhSkills },
-      { name: 'ja.skills', data: jaSkills },
     ];
 
     for (const locale of locales) {
@@ -75,7 +69,6 @@ describe('branding guard', () => {
     const locales: Array<{ name: string; data: unknown }> = [
       { name: 'en.skills', data: enSkills },
       { name: 'zh.skills', data: zhSkills },
-      { name: 'ja.skills', data: jaSkills },
     ];
 
     for (const locale of locales) {

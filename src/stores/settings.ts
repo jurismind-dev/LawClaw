@@ -49,14 +49,15 @@ interface SettingsState {
   resetSettings: () => void;
 }
 
+function normalizeLanguage(input: unknown): string {
+  const language = String(input || '').toLowerCase();
+  if (language.startsWith('zh')) return 'zh';
+  return 'en';
+}
+
 const defaultSettings = {
   theme: 'system' as Theme,
-  language: (() => {
-    const lang = navigator.language.toLowerCase();
-    if (lang.startsWith('zh')) return 'zh';
-    if (lang.startsWith('ja')) return 'ja';
-    return 'en';
-  })(),
+  language: normalizeLanguage(navigator.language),
   startMinimized: false,
   launchAtStartup: false,
   gatewayAutoStart: true,
@@ -75,7 +76,11 @@ export const useSettingsStore = create<SettingsState>()(
       ...defaultSettings,
 
       setTheme: (theme) => set({ theme }),
-      setLanguage: (language) => { i18n.changeLanguage(language); set({ language }); },
+      setLanguage: (language) => {
+        const normalized = normalizeLanguage(language);
+        i18n.changeLanguage(normalized);
+        set({ language: normalized });
+      },
       setStartMinimized: (startMinimized) => set({ startMinimized }),
       setLaunchAtStartup: (launchAtStartup) => set({ launchAtStartup }),
       setGatewayAutoStart: (gatewayAutoStart) => set({ gatewayAutoStart }),
@@ -91,6 +96,14 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'clawx-settings',
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState || {}) as Partial<SettingsState>;
+        return {
+          ...currentState,
+          ...persisted,
+          language: normalizeLanguage(persisted.language ?? currentState.language),
+        };
+      },
     }
   )
 );

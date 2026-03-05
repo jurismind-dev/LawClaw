@@ -57,6 +57,7 @@ export function Channels() {
   const [showJurismindHint, setShowJurismindHint] = useState(false);
   const [jurismindLoading, setJurismindLoading] = useState(false);
   const [jurismindConnected, setJurismindConnected] = useState(false);
+  const [jurismindConfigured, setJurismindConfigured] = useState(false);
   const [jurismindPairUrl, setJurismindPairUrl] = useState<string>('');
   const [jurismindQrCode, setJurismindQrCode] = useState<string | null>(null);
   const [jurismindError, setJurismindError] = useState<string | null>(null);
@@ -122,21 +123,20 @@ export function Channels() {
   const applyJurismindStatus = useCallback((status: unknown) => {
     const data = status as {
       connected?: boolean;
+      hasBinding?: boolean;
       pairUrl?: string | null;
       pairQrCode?: string | null;
       lastError?: string | null;
     } | null;
 
     if (!data || typeof data !== 'object') return;
-    const connected = typeof data.connected === 'boolean' ? data.connected : jurismindConnected;
     if (typeof data.connected === 'boolean') {
       setJurismindConnected(data.connected);
     }
-    if (connected) {
-      setJurismindPairUrl('');
-      setJurismindQrCode(null);
-      setJurismindError(null);
-      return;
+    if (typeof data.hasBinding === 'boolean') {
+      setJurismindConfigured(data.hasBinding || data.connected === true);
+    } else if (typeof data.connected === 'boolean' && data.connected) {
+      setJurismindConfigured(true);
     }
     if ('pairUrl' in data) {
       setJurismindPairUrl(typeof data.pairUrl === 'string' ? data.pairUrl : '');
@@ -147,7 +147,7 @@ export function Channels() {
     if ('lastError' in data) {
       setJurismindError(typeof data.lastError === 'string' && data.lastError ? data.lastError : null);
     }
-  }, [jurismindConnected]);
+  }, []);
 
   const startJurismindPairing = useCallback(async (options: { forceRefresh?: boolean; resetAuth?: boolean } = {}) => {
     const forceRefresh = options.forceRefresh === true;
@@ -206,6 +206,7 @@ export function Channels() {
       }
       applyJurismindStatus(result.status);
       setJurismindConnected(false);
+      setJurismindConfigured(false);
       setJurismindPairUrl('');
       setJurismindQrCode(null);
       setJurismindError(null);
@@ -237,9 +238,8 @@ export function Channels() {
       const payload = args[0] as { connected?: boolean } | undefined;
       if (payload?.connected !== false) {
         setJurismindConnected(true);
+        setJurismindConfigured(true);
       }
-      setJurismindPairUrl('');
-      setJurismindQrCode(null);
       setJurismindLoading(false);
       setJurismindError(null);
       if (showJurismindHint) {
@@ -272,6 +272,28 @@ export function Channels() {
       if (typeof removeErrorListener === 'function') removeErrorListener();
     };
   }, [applyJurismindStatus, showJurismindHint, t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const statusResult = await window.electron.ipcRenderer.invoke('jurismind:getStatus') as {
+          success?: boolean;
+          status?: unknown;
+        };
+        if (cancelled) return;
+        if (statusResult?.success) {
+          applyJurismindStatus(statusResult.status);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyJurismindStatus]);
 
   useEffect(() => {
     if (!showJurismindHint) return;
@@ -454,7 +476,9 @@ export function Channels() {
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {displayedChannelTypes.map((type) => {
               const meta = CHANNEL_META[type];
-              const isConfigured = configuredTypes.includes(type);
+              const isConfigured = type === 'jurismind'
+                ? jurismindConfigured
+                : configuredTypes.includes(type);
               const isJurismind = type === 'jurismind';
               const isComingSoon = meta.comingSoon === true && !isJurismind;
               return (
@@ -534,7 +558,13 @@ export function Channels() {
             <CardContent className="space-y-4">
               <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
                 <p className="text-xs text-muted-foreground">{t('dialog.jurismindHint.statusLabel')}</p>
-                <p className="text-sm font-medium">
+                <p className="text-sm font-medium flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'inline-block h-2.5 w-2.5 rounded-full',
+                      jurismindConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.7)]' : 'bg-slate-400'
+                    )}
+                  />
                   {jurismindConnected
                     ? t('dialog.jurismindHint.statusConnected')
                     : jurismindLoading
@@ -546,22 +576,20 @@ export function Channels() {
                 )}
               </div>
 
-              {!jurismindConnected && (
-                <div className="rounded-lg border bg-white p-3 flex flex-col items-center gap-2">
-                  {jurismindQrCode ? (
-                    <img src={jurismindQrCode} alt="Jurismind Pair QR" className="w-56 h-56 object-contain" />
-                  ) : (
-                    <div className="w-56 h-56 rounded-lg bg-muted/20 flex items-center justify-center">
-                      {jurismindLoading ? (
-                        <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
-                      ) : (
-                        <QrCode className="h-10 w-10 text-muted-foreground" />
-                      )}
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground">{t('dialog.jurismindHint.scanTip')}</p>
-                </div>
-              )}
+              <div className="rounded-lg border bg-white p-3 flex flex-col items-center gap-2">
+                {jurismindQrCode ? (
+                  <img src={jurismindQrCode} alt="Jurismind Pair QR" className="w-56 h-56 object-contain" />
+                ) : (
+                  <div className="w-56 h-56 rounded-lg bg-muted/20 flex items-center justify-center">
+                    {jurismindLoading ? (
+                      <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                    ) : (
+                      <QrCode className="h-10 w-10 text-muted-foreground" />
+                    )}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">{t('dialog.jurismindHint.scanTip')}</p>
+              </div>
 
               <div className="rounded-lg border bg-muted/30 p-3">
                 <p className="text-xs text-muted-foreground mb-1">
@@ -571,21 +599,6 @@ export function Channels() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={() => {
-                    const targetUrl = jurismindPairUrl || lawclawAppUrl;
-                    if (window.electron?.openExternal) {
-                      window.electron.openExternal(targetUrl).catch(() => {
-                        window.open(targetUrl, '_blank');
-                      });
-                    } else {
-                      window.open(targetUrl, '_blank');
-                    }
-                  }}
-                >
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  {t('dialog.jurismindHint.open')}
-                </Button>
                 <Button
                   variant="outline"
                   onClick={async () => {

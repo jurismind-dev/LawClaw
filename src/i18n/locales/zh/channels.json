@@ -58,8 +58,8 @@
             "statusLabel": "连接状态",
             "statusLoading": "正在生成绑定二维码...",
             "statusWaiting": "等待扫码绑定",
-            "statusConnected": "已连接到 Jurismind 中继",
-            "scanTip": "请使用手机浏览器扫码，iPhone 推荐 Safari，安卓推荐 Chrome。",
+            "statusConnected": "已连接",
+            "scanTip": "请勿使用微信扫码。推荐使用系统相机或浏览器扫码；若已在微信打开，请点击右上角“...”后选择“在浏览器打开”，或复制链接到浏览器访问。",
             "urlLabel": "访问地址",
             "iosTip": "iPhone 用户建议使用 Safari 浏览器打开。",
             "androidTip": "安卓用户建议使用 Google Chrome 浏览器打开。",
@@ -193,7 +193,7 @@
         },
         "feishu": {
             "description": "通过 WebSocket 连接飞书/Lark 机器人",
-            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/feishu#%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E5%88%9B%E5%BB%BA%E9%A3%9E%E4%B9%A6%E5%BA%94%E7%94%A8",
+            "docsUrl": "https://pcnz0er969s1.feishu.cn/wiki/FgDow7bMDiEPsikR00PcKh25nDh?from=from_copylink",
             "fields": {
                 "appId": {
                     "label": "应用 ID (App ID)",

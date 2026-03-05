@@ -58,8 +58,8 @@
             "statusLabel": "Connection Status",
             "statusLoading": "Generating pairing QR code...",
             "statusWaiting": "Waiting for mobile scan",
-            "statusConnected": "Connected to JuriSmind relay",
-            "scanTip": "Use your phone browser to scan. Safari is recommended on iPhone, Chrome on Android.",
+            "statusConnected": "Connected",
+            "scanTip": "Use your phone scanner app or browser scanner to scan this QR code.",
             "urlLabel": "URL",
             "iosTip": "For iPhone users, Safari is recommended.",
             "androidTip": "For Android users, Google Chrome is recommended.",
@@ -193,7 +193,7 @@
         },
         "feishu": {
             "description": "Connect Feishu/Lark bot via WebSocket",
-            "docsUrl": "https://docs.openclaw.ai/channels/feishu#step-1-create-a-feishu-app",
+            "docsUrl": "https://pcnz0er969s1.feishu.cn/wiki/FgDow7bMDiEPsikR00PcKh25nDh?from=from_copylink",
             "fields": {
                 "appId": {
                     "label": "App ID",

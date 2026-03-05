@@ -1,6 +1,9 @@
 ; LawClaw Custom NSIS Uninstaller Script
-; Provides a "Complete Removal" option during uninstallation
-; to delete .openclaw config and AppData resources.
+; Provides a "Complete Removal" option during uninstallation.
+; The cleanup scope is limited to LawClaw data only:
+; - ~/.openclaw/workspace-lawclaw-main
+; - AppData\Local\clawx
+; - AppData\Roaming\clawx
 ; Handles both per-user and per-machine (all users) installations.
 
 !macro customUnInstall
@@ -15,14 +18,14 @@
 
   _cu_pathDone:
 
-  ; Ask user if they want to completely remove all user data
+  ; Ask user if they want to remove LawClaw user data
   MessageBox MB_YESNO|MB_ICONQUESTION \
-    "Do you want to completely remove all LawClaw user data?$\r$\n$\r$\nThis will delete:$\r$\n  • .openclaw folder (configuration & skills)$\r$\n  • AppData\Local\clawx (local app data)$\r$\n  • AppData\Roaming\clawx (roaming app data)$\r$\n$\r$\nSelect 'No' to keep your data for future reinstallation." \
+    "Do you want to remove LawClaw user data?$\r$\n$\r$\nThis will delete:$\r$\n  - .openclaw\\workspace-lawclaw-main (LawClaw workspace only)$\r$\n  - AppData\\Local\\clawx (local app data)$\r$\n  - AppData\\Roaming\\clawx (roaming app data)$\r$\n$\r$\nOther OpenClaw data in .openclaw will be kept.$\r$\n$\r$\nSelect 'No' to keep all data for future reinstallation." \
     /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
 
   _cu_removeData:
     ; --- Always remove current user's data first ---
-    RMDir /r "$PROFILE\.openclaw"
+    RMDir /r "$PROFILE\.openclaw\workspace-lawclaw-main"
     RMDir /r "$LOCALAPPDATA\clawx"
     RMDir /r "$APPDATA\clawx"
 
@@ -39,7 +42,7 @@
     ExpandEnvStrings $R2 $R2
     StrCmp $R2 $PROFILE _cu_enumNext
 
-    RMDir /r "$R2\.openclaw"
+    RMDir /r "$R2\.openclaw\workspace-lawclaw-main"
     RMDir /r "$R2\AppData\Local\clawx"
     RMDir /r "$R2\AppData\Roaming\clawx"
 

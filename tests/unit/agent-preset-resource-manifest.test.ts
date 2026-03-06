@@ -6,7 +6,6 @@ interface WorkspaceFile {
   agentId: string;
   source: string;
   target: string;
-  conflictStrategy?: 'preserve' | 'append_capabilities';
 }
 
 interface PresetManifest {
@@ -22,7 +21,7 @@ function readManifest(): PresetManifest {
 }
 
 describe('agent preset resource manifest', () => {
-  it('lawclaw-main 对齐完整模板下发清单并保留 SOUL 能力块追加策略', () => {
+  it('declares lawclaw-main managed files without upgrade skill or capability conflict strategy', () => {
     const manifest = readManifest();
     const lawclawFiles = manifest.workspaceFiles.filter((item) => item.agentId === 'lawclaw-main');
 
@@ -35,14 +34,17 @@ describe('agent preset resource manifest', () => {
       'SOUL.md',
       'TOOLS.md',
       'USER.md',
-      'skills/lawclaw-upgrade/SKILL.md',
     ]);
 
-    const soul = lawclawFiles.find((item) => item.target === 'SOUL.md');
-    expect(soul?.conflictStrategy).toBe('append_capabilities');
+    const rawManifest = readFileSync(
+      join(process.cwd(), 'resources', 'agent-presets', 'manifest.json'),
+      'utf-8'
+    );
+    expect(rawManifest).not.toContain('append_capabilities');
+    expect(rawManifest).not.toContain('skills/lawclaw-upgrade/SKILL.md');
   });
 
-  it('manifest 声明的模板源文件均存在', () => {
+  it('declared template source files all exist and SOUL template no longer contains capability markers', () => {
     const manifest = readManifest();
     const templateRoot = join(process.cwd(), 'resources', 'agent-presets', manifest.templateRoot);
 
@@ -53,5 +55,12 @@ describe('agent preset resource manifest', () => {
     if (manifest.configPatch) {
       expect(existsSync(join(templateRoot, manifest.configPatch))).toBe(true);
     }
+
+    const soulTemplate = readFileSync(
+      join(templateRoot, 'workspaces', 'lawclaw-main', 'SOUL.md'),
+      'utf-8'
+    );
+    expect(soulTemplate).not.toContain('LAWCLAW_CAPABILITY_START');
+    expect(soulTemplate).not.toContain('LAWCLAW_CAPABILITY_END');
   });
 });

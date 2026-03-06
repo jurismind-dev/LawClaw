@@ -935,6 +935,98 @@ function ProviderContent({
   const isOAuth = selectedProviderData?.isOAuth ?? false;
   const supportsApiKey = selectedProviderData?.supportsApiKey ?? false;
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
+  const isJurismind = selectedProvider === 'jurismind';
+
+  const saveProviderConfig = useCallback(
+    async (providerApiKey?: string) => {
+      if (!selectedProvider) {
+        throw new Error('Provider not selected');
+      }
+
+      const effectiveBaseUrl = showBaseUrlField ? (baseUrl.trim() || undefined) : undefined;
+      const effectiveModelId = showModelIdField ? (modelId.trim() || undefined) : undefined;
+      const providerIdForSave =
+        selectedProvider === 'custom'
+          ? (selectedProviderConfigId?.startsWith('custom-')
+            ? selectedProviderConfigId
+            : `custom-${crypto.randomUUID()}`)
+          : selectedProvider;
+
+      const saveResult = await window.electron.ipcRenderer.invoke(
+        'provider:save',
+        {
+          id: providerIdForSave,
+          name: selectedProvider === 'custom'
+            ? t('settings:aiProviders.custom')
+            : (selectedProviderData?.name || selectedProvider),
+          type: selectedProvider,
+          baseUrl: effectiveBaseUrl,
+          model: effectiveModelId,
+          enabled: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        providerApiKey || undefined
+      ) as { success: boolean; error?: string };
+
+      if (!saveResult.success) {
+        throw new Error(saveResult.error || 'Failed to save provider config');
+      }
+
+      const defaultResult = await window.electron.ipcRenderer.invoke(
+        'provider:setDefault',
+        providerIdForSave
+      ) as { success: boolean; error?: string };
+
+      if (!defaultResult.success) {
+        throw new Error(defaultResult.error || 'Failed to set default provider');
+      }
+
+      setSelectedProviderConfigId(providerIdForSave);
+      setKeyValid(true);
+      onConfiguredChange(true);
+      return providerIdForSave;
+    },
+    [
+      baseUrl,
+      modelId,
+      onConfiguredChange,
+      selectedProvider,
+      selectedProviderConfigId,
+      selectedProviderData?.name,
+      showBaseUrlField,
+      showModelIdField,
+      t,
+    ]
+  );
+
+  const handleBindJurismindToken = useCallback(async () => {
+    setValidating(true);
+    setKeyValid(null);
+
+    try {
+      const result = await window.electron.ipcRenderer.invoke('provider:bindJurismindToken') as {
+        success?: boolean;
+        error?: string;
+        tokenKey?: string;
+      };
+
+      if (!result?.success || !result?.tokenKey) {
+        throw new Error(result?.error || 'Jurismind token binding failed');
+      }
+
+      onApiKeyChange(String(result.tokenKey));
+      await saveProviderConfig(String(result.tokenKey));
+      toast.success(t('provider.valid'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setKeyValid(false);
+      onConfiguredChange(false);
+      toast.error(message);
+    } finally {
+      setValidating(false);
+    }
+  }, [onApiKeyChange, onConfiguredChange, saveProviderConfig, t]);
 
   const handleValidateAndSave = async () => {
     if (!selectedProvider) return;
@@ -958,16 +1050,13 @@ function ProviderContent({
     setKeyValid(null);
 
     try {
-      const effectiveBaseUrl = showBaseUrlField ? (baseUrl.trim() || undefined) : undefined;
-      const effectiveModelId = showModelIdField ? (modelId.trim() || undefined) : undefined;
-
       // Validate key if the provider requires one and a key was entered
       if (requiresKey && apiKey) {
         const result = await window.electron.ipcRenderer.invoke(
           'provider:validateKey',
           selectedProviderConfigId || selectedProvider,
           apiKey,
-          { baseUrl: effectiveBaseUrl }
+          { baseUrl: showBaseUrlField ? (baseUrl.trim() || undefined) : undefined }
         ) as { valid: boolean; error?: string };
 
         setKeyValid(result.valid);
@@ -981,44 +1070,7 @@ function ProviderContent({
         setKeyValid(true);
       }
 
-      const providerIdForSave =
-        selectedProvider === 'custom'
-          ? (selectedProviderConfigId?.startsWith('custom-')
-            ? selectedProviderConfigId
-            : `custom-${crypto.randomUUID()}`)
-          : selectedProvider;
-
-      // Save provider config + API key, then set as default
-      const saveResult = await window.electron.ipcRenderer.invoke(
-        'provider:save',
-        {
-          id: providerIdForSave,
-          name: selectedProvider === 'custom' ? t('settings:aiProviders.custom') : (selectedProviderData?.name || selectedProvider),
-          type: selectedProvider,
-          baseUrl: effectiveBaseUrl,
-          model: effectiveModelId,
-          enabled: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        apiKey || undefined
-      ) as { success: boolean; error?: string };
-
-      if (!saveResult.success) {
-        throw new Error(saveResult.error || 'Failed to save provider config');
-      }
-
-      const defaultResult = await window.electron.ipcRenderer.invoke(
-        'provider:setDefault',
-        providerIdForSave
-      ) as { success: boolean; error?: string };
-
-      if (!defaultResult.success) {
-        throw new Error(defaultResult.error || 'Failed to set default provider');
-      }
-
-      setSelectedProviderConfigId(providerIdForSave);
-      onConfiguredChange(true);
+      await saveProviderConfig(apiKey || undefined);
       toast.success(t('provider.valid'));
     } catch (error) {
       setKeyValid(false);
@@ -1034,7 +1086,8 @@ function ProviderContent({
     selectedProvider
     && (requiresKey ? apiKey.length > 0 : true)
     && (showModelIdField ? modelId.trim().length > 0 : true)
-    && !useOAuthFlow;
+    && !useOAuthFlow
+    && !isJurismind;
 
   const handleSelectProvider = (providerId: string) => {
     onSelectProvider(providerId);
@@ -1045,6 +1098,18 @@ function ProviderContent({
     setProviderMenuOpen(false);
     setAuthMode('oauth');
   };
+
+  useEffect(() => {
+    if (!isJurismind || !selectedProviderData) {
+      return;
+    }
+
+    if (selectedProviderConfigId && apiKey) {
+      return;
+    }
+
+    void handleBindJurismindToken();
+  }, [apiKey, handleBindJurismindToken, isJurismind, selectedProviderConfigId, selectedProviderData]);
 
   return (
     <div className="space-y-6">
@@ -1202,8 +1267,8 @@ function ProviderContent({
             </div>
           )}
 
-          {/* API Key field (hidden for ollama) */}
-          {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && requiresKey && (
+          {/* API Key field (hidden for ollama / Jurismind SSO auto-bind) */}
+          {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && requiresKey && !isJurismind && (
             <div className="space-y-2">
               <Label htmlFor="apiKey">{t('provider.apiKey')}</Label>
               <div className="relative">
@@ -1228,6 +1293,12 @@ function ProviderContent({
                   {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+            </div>
+          )}
+
+          {isJurismind && (
+            <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+              {t('provider.jurismindBrowserAuth')}
             </div>
           )}
 
@@ -1328,7 +1399,7 @@ function ProviderContent({
           <Button
             onClick={handleValidateAndSave}
             disabled={!canSubmit || validating}
-            className={cn("w-full", useOAuthFlow && "hidden")}
+            className={cn('w-full', (useOAuthFlow || isJurismind) && 'hidden')}
           >
             {validating ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />

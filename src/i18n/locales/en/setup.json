@@ -72,6 +72,7 @@
         "validateSave": "Validate & Save",
         "valid": "Provider configured successfully",
         "invalid": "Invalid API key",
+        "jurismindBrowserAuth": "Sign in and authorize Jurismind in your browser.",
         "storedLocally": "Your API key is stored locally on your machine."
     },
     "channel": {

@@ -16,6 +16,7 @@ import { warmupNetworkOptimization } from '../utils/uv-env';
 import { runProviderStartupMigration } from '../utils/provider-migration';
 import { runAgentPresetStartupMigration } from '../utils/agent-preset-migration';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
+import { ensureMacUninstallWatcher } from '../utils/mac-uninstall-watcher';
 
 import { ClawHubService } from '../gateway/clawhub';
 import {
@@ -147,6 +148,7 @@ async function initialize(): Promise<void> {
 
   // Warm up network optimization (non-blocking)
   void warmupNetworkOptimization();
+  ensureMacUninstallWatcher();
 
   // Set application menu
   createMenu();

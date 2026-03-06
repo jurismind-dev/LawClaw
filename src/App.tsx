@@ -16,9 +16,12 @@ import { Skills } from './pages/Skills';
 import { Cron } from './pages/Cron';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
+import { UpgradeInstalling } from './pages/UpgradeInstalling';
 import { useSettingsStore } from './stores/settings';
 import { useGatewayStore } from './stores/gateway';
 import { useAgentPresetMigrationStore } from './stores/agent-preset-migration';
+import type { PresetInstallStatusResult } from '@/types/preset-install';
+import { resolvePresetInstallRedirectPath } from './lib/preset-install-guard';
 
 
 /**
@@ -133,6 +136,67 @@ function App() {
     }
   }, [setupComplete, location.pathname, navigate]);
 
+  // Redirect to upgrade installer when preset install is pending after setup is complete.
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkPresetInstallStatus = async () => {
+      if (!setupComplete || location.pathname.startsWith('/setup')) {
+        return;
+      }
+
+      try {
+        const status = await window.electron.ipcRenderer.invoke(
+          'presetInstall:getStatus'
+        ) as PresetInstallStatusResult;
+        if (cancelled) {
+          return;
+        }
+
+        const redirectPath = resolvePresetInstallRedirectPath({
+          setupComplete,
+          pathname: location.pathname,
+          pending: status.pending,
+        });
+        if (redirectPath) {
+          navigate(redirectPath);
+        }
+      } catch (error) {
+        console.error('Failed to check preset install status:', error);
+      }
+    };
+
+    void checkPresetInstallStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setupComplete, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!setupComplete) {
+      return;
+    }
+
+    const unsubscribe = window.electron.ipcRenderer.on('presetInstall:statusChanged', (rawStatus) => {
+      const status = rawStatus as PresetInstallStatusResult;
+      const redirectPath = resolvePresetInstallRedirectPath({
+        setupComplete,
+        pathname: location.pathname,
+        pending: status.pending,
+      });
+      if (redirectPath) {
+        navigate(redirectPath);
+      }
+    });
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [setupComplete, location.pathname, navigate]);
+
   // Listen for navigation events from main process
   useEffect(() => {
     const handleNavigate = (...args: unknown[]) => {
@@ -172,6 +236,7 @@ function App() {
         <Routes>
           {/* Setup wizard (shown on first launch) */}
           <Route path="/setup/*" element={<Setup />} />
+          <Route path="/upgrade-installing" element={<UpgradeInstalling />} />
 
           {/* Main application routes */}
           <Route element={<MainLayout />}>

@@ -1,0 +1,23 @@
+{
+  "title": "Installing Preset Components",
+  "subtitle": "Please wait while LawClaw updates the built-in skills and plugins.",
+  "progress": "Progress",
+  "status": {
+    "pending": "Pending",
+    "installing": "Installing...",
+    "completed": "Completed",
+    "failed": "Failed"
+  },
+  "kind": {
+    "skill": "Skill",
+    "plugin": "Plugin"
+  },
+  "itemDesc": "{{kind}} · target {{version}}",
+  "installFailed": "Preset installation failed",
+  "installSuccess": "Preset components are up to date",
+  "retry": "Retry",
+  "skipCurrent": "Skip this version",
+  "skipSuccess": "Skipped this preset version",
+  "skipFailed": "Failed to skip this version",
+  "noItems": "No preset items"
+}

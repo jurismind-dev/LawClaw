@@ -101,6 +101,14 @@
         "wait": "\u8fd9\u53ef\u80fd\u9700\u8981\u4e00\u70b9\u65f6\u95f4...",
         "skip": "\u8df3\u8fc7\u6b64\u6b65\u9aa4",
         "retry": "\u91cd\u8bd5\u5b89\u88c5",
+        "presetItemDesc": "{{kind}} \u00b7 \u76ee\u6807\u7248\u672c {{version}}",
+        "presetInstallFailed": "\u9884\u8bbe\u7ec4\u4ef6\u5b89\u88c5\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002",
+        "noPresetItems": "\u672a\u914d\u7f6e\u9700\u5b89\u88c5\u7684\u9884\u8bbe\u7ec4\u4ef6",
+        "versionUnknown": "\u672a\u77e5",
+        "kind": {
+            "skill": "Skill",
+            "plugin": "\u63d2\u4ef6"
+        },
         "qqInstallFailed": "QQ \u63d2\u4ef6\u5b89\u88c5\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u540e\u7ee7\u7eed\u5b89\u88c5\u3002",
         "qqPluginName": "QQ \u63d2\u4ef6",
         "qqPluginDesc": "QQ \u6e20\u9053\u63d2\u4ef6\u5b89\u88c5"

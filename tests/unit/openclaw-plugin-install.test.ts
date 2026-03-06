@@ -69,6 +69,23 @@ describe('openclaw plugin install detection', () => {
 
     expect(detection).toEqual({ installed: true, source: 'plugins.load.paths' });
   });
+
+  it('supports non-qq plugin id for generic local install detection', () => {
+    const detection = detectPluginInstallationState('weather-bot', {
+      hasExtensionDir: false,
+      config: {
+        plugins: {
+          installs: {
+            'weather-bot': {
+              source: './extensions/weather-bot',
+            },
+          },
+        },
+      },
+    });
+
+    expect(detection).toEqual({ installed: true, source: 'plugins.installs' });
+  });
 });
 
 describe('openclaw plugin already-installed error matcher', () => {

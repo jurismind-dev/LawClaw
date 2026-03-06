@@ -71,6 +71,7 @@ import {
   sanitizePluginPackageManifestForLocalInstall,
   stripPluginChannelConfigForInstall,
 } from '../utils/openclaw-plugin-install';
+import { PresetInstaller, type PresetInstallPhase } from '../utils/preset-installer';
 import { forceSetup } from './index';
 import {
   getAgentPresetMigrationArtifactsDir,
@@ -126,6 +127,24 @@ async function getLawClawManagedChannels(): Promise<string[]> {
   return Array.from(channels);
 }
 
+interface OpenClawPluginInstallResult {
+  success: boolean;
+  installed?: boolean;
+  skipped?: boolean;
+  reason?: string;
+  source?: 'extensions' | 'plugins.installs' | 'plugins.load.paths';
+  error?: string;
+  details?: string;
+}
+
+interface OpenClawPluginInstallerBridge {
+  installPluginFromLocalPath: (
+    pluginId: string,
+    installPath: string
+  ) => Promise<OpenClawPluginInstallResult>;
+  uninstallPlugin: (pluginId: string) => Promise<{ success: boolean; error?: string }>;
+}
+
 /**
  * Register all IPC handlers
  */
@@ -143,7 +162,10 @@ export function registerIpcHandlers(
   registerMarketplaceHandlers('jurismindhub', jurismindHubService);
 
   // OpenClaw handlers
-  registerOpenClawHandlers(gatewayManager);
+  const openClawPluginInstallerBridge = registerOpenClawHandlers();
+
+  // Preset install handlers
+  registerPresetInstallHandlers(openClawPluginInstallerBridge, gatewayManager, mainWindow);
 
   // Provider handlers
   registerProviderHandlers(gatewayManager);
@@ -740,7 +762,7 @@ export function registerAgentPresetMigrationHandlers(mainWindow: BrowserWindow):
  * OpenClaw-related IPC handlers
  * For checking package status and channel configuration
  */
-function registerOpenClawHandlers(): void {
+function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
   const QQ_PLUGIN_ID = 'qqbot';
   const QQ_PLUGIN_VERSION = '1.5.0';
   const QQ_PLUGIN_NPM_SPEC = `@sliverp/${QQ_PLUGIN_ID}@${QQ_PLUGIN_VERSION}`;
@@ -987,6 +1009,153 @@ function registerOpenClawHandlers(): void {
     });
   };
 
+  const installPluginFromLocalPath = async (
+    pluginId: string,
+    installPath: string,
+    options?: { enforceQqOnly?: boolean }
+  ): Promise<OpenClawPluginInstallResult> => {
+    if (!pluginId || typeof pluginId !== 'string') {
+      return { success: false, error: 'Invalid plugin ID' };
+    }
+    if (!installPath || typeof installPath !== 'string') {
+      return { success: false, error: 'Invalid plugin install path' };
+    }
+    if (options?.enforceQqOnly && pluginId !== QQ_PLUGIN_ID) {
+      return { success: false, error: `Unsupported bundled plugin: ${pluginId}` };
+    }
+
+    const openclawConfigDir = getOpenClawConfigDir();
+    const configPath = join(openclawConfigDir, 'openclaw.json');
+    let strippedChannelConfig: Record<string, unknown> | undefined;
+    let shouldRestoreChannelConfig =
+      readPluginChannelConfigBackup(openclawConfigDir, pluginId) !== undefined;
+
+    const restoreChannelConfigAfterInstall = (): void => {
+      if (pluginId !== QQ_PLUGIN_ID || !shouldRestoreChannelConfig) {
+        return;
+      }
+      try {
+        if (!existsSync(configPath)) {
+          return;
+        }
+
+        const backupConfig = readPluginChannelConfigBackup(openclawConfigDir, pluginId);
+        const channelConfigToRestore = strippedChannelConfig ?? backupConfig;
+        if (!channelConfigToRestore) {
+          clearPluginChannelConfigBackup(openclawConfigDir, pluginId);
+          return;
+        }
+
+        const raw = readFileSync(configPath, 'utf-8');
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        const restored = restorePluginChannelConfigAfterInstall(
+          parsed,
+          pluginId,
+          channelConfigToRestore
+        );
+        writeFileSync(configPath, JSON.stringify(restored, null, 2), 'utf-8');
+        clearPluginChannelConfigBackup(openclawConfigDir, pluginId);
+      } catch (error) {
+        logger.warn('Failed to restore plugin channel config after install', error);
+      }
+    };
+
+    try {
+      const detectionBeforeInstall = detectPluginInstalled(pluginId);
+      if (detectionBeforeInstall.installed) {
+        return {
+          success: true,
+          installed: true,
+          skipped: true,
+          reason: 'already-installed',
+          source: detectionBeforeInstall.source,
+        };
+      }
+
+      if (pluginId === QQ_PLUGIN_ID && existsSync(configPath)) {
+        try {
+          const raw = readFileSync(configPath, 'utf-8');
+          const parsed = JSON.parse(raw) as Record<string, unknown>;
+          const stripped = stripPluginChannelConfigForInstall(parsed, pluginId);
+          strippedChannelConfig = stripped.removedChannelConfig;
+
+          if (strippedChannelConfig) {
+            writeFileSync(configPath, JSON.stringify(stripped.config, null, 2), 'utf-8');
+            savePluginChannelConfigBackup(openclawConfigDir, pluginId, strippedChannelConfig);
+            shouldRestoreChannelConfig = true;
+          }
+        } catch (error) {
+          logger.warn('Failed to strip plugin channel config before install', error);
+        }
+      }
+
+      const installResult = await runOpenClawCli(['plugins', 'install', installPath]);
+      if (!installResult.success) {
+        const installErrorText = [
+          installResult.error,
+          installResult.stderr,
+          installResult.stdout,
+        ]
+          .filter((item): item is string => typeof item === 'string' && item.length > 0)
+          .join('\n');
+
+        if (isAlreadyInstalledErrorMessage(installErrorText)) {
+          const detectionAfterFailedInstall = detectPluginInstalled(pluginId);
+          if (detectionAfterFailedInstall.installed) {
+            return {
+              success: true,
+              installed: true,
+              skipped: true,
+              reason: 'already-installed',
+              source: detectionAfterFailedInstall.source,
+            };
+          }
+        }
+
+        return {
+          success: false,
+          error: installResult.error || `Failed to install plugin: ${pluginId}`,
+          details: installResult.stderr || installResult.stdout,
+        };
+      }
+
+      const detectionAfterInstall = detectPluginInstalled(pluginId);
+      if (!detectionAfterInstall.installed) {
+        return {
+          success: false,
+          error: 'Plugin install command finished but install state could not be detected',
+          details: installResult.stdout,
+        };
+      }
+
+      return {
+        success: true,
+        installed: true,
+        source: detectionAfterInstall.source,
+      };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    } finally {
+      restoreChannelConfigAfterInstall();
+    }
+  };
+
+  const uninstallPlugin = async (pluginId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!pluginId || typeof pluginId !== 'string') {
+      return { success: false, error: 'Invalid plugin ID' };
+    }
+
+    const result = await runOpenClawCli(['plugins', 'uninstall', pluginId]);
+    if (!result.success) {
+      const text = `${result.error || ''}\n${result.stderr || ''}\n${result.stdout || ''}`.toLowerCase();
+      if (text.includes('not installed') || text.includes('not found')) {
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Failed to uninstall plugin' };
+    }
+    return { success: true };
+  };
+
   // Get OpenClaw package status
   ipcMain.handle('openclaw:status', () => {
     const status = getOpenClawStatus();
@@ -1049,62 +1218,10 @@ function registerOpenClawHandlers(): void {
 
   // Install a bundled plugin tarball from resources/plugins/<pluginId>/
   ipcMain.handle('openclaw:installBundledPlugin', async (_, pluginId: string) => {
-    const openclawConfigDir = getOpenClawConfigDir();
-    const configPath = join(openclawConfigDir, 'openclaw.json');
-    let strippedChannelConfig: Record<string, unknown> | undefined;
     let tempInstallDir: string | undefined;
-    let shouldRestoreChannelConfig = false;
-
-    const restoreChannelConfigAfterInstall = (): void => {
-      try {
-        if (!existsSync(configPath)) {
-          return;
-        }
-
-        const backupConfig = readPluginChannelConfigBackup(openclawConfigDir, pluginId);
-        const channelConfigToRestore = strippedChannelConfig ?? backupConfig;
-        if (!channelConfigToRestore) {
-          clearPluginChannelConfigBackup(openclawConfigDir, pluginId);
-          return;
-        }
-
-        const raw = readFileSync(configPath, 'utf-8');
-        const parsed = JSON.parse(raw) as Record<string, unknown>;
-        const restored = restorePluginChannelConfigAfterInstall(
-          parsed,
-          pluginId,
-          channelConfigToRestore
-        );
-        writeFileSync(configPath, JSON.stringify(restored, null, 2), 'utf-8');
-        clearPluginChannelConfigBackup(openclawConfigDir, pluginId);
-      } catch (error) {
-        logger.warn('Failed to restore plugin channel config after install', error);
-      }
-    };
 
     try {
-      if (pluginId !== QQ_PLUGIN_ID) {
-        return { success: false, error: `Unsupported bundled plugin: ${pluginId}` };
-      }
-      shouldRestoreChannelConfig =
-        readPluginChannelConfigBackup(openclawConfigDir, pluginId) !== undefined;
-
       logger.info('openclaw:installBundledPlugin requested', { pluginId });
-
-      const detectionBeforeInstall = detectPluginInstalled(pluginId);
-      if (detectionBeforeInstall.installed) {
-        logger.info('openclaw:installBundledPlugin skipped because plugin is already installed', {
-          pluginId,
-          source: detectionBeforeInstall.source,
-        });
-        return {
-          success: true,
-          installed: true,
-          skipped: true,
-          reason: 'already-installed',
-          source: detectionBeforeInstall.source,
-        };
-      }
 
       const prepared = await prepareQqbotLocalInstallDir();
       if (!prepared.success || !prepared.installPath || !prepared.tempDir) {
@@ -1116,80 +1233,12 @@ function registerOpenClawHandlers(): void {
       }
       tempInstallDir = prepared.tempDir;
 
-      if (existsSync(configPath)) {
-        try {
-          const raw = readFileSync(configPath, 'utf-8');
-          const parsed = JSON.parse(raw) as Record<string, unknown>;
-          const stripped = stripPluginChannelConfigForInstall(parsed, pluginId);
-          strippedChannelConfig = stripped.removedChannelConfig;
-
-          if (strippedChannelConfig) {
-            writeFileSync(configPath, JSON.stringify(stripped.config, null, 2), 'utf-8');
-            savePluginChannelConfigBackup(openclawConfigDir, pluginId, strippedChannelConfig);
-            shouldRestoreChannelConfig = true;
-          }
-        } catch (error) {
-          logger.warn('Failed to strip plugin channel config before install', error);
-        }
-      }
-
-      const installResult = await runOpenClawCli(['plugins', 'install', prepared.installPath]);
-      if (!installResult.success) {
-        const installErrorText = [
-          installResult.error,
-          installResult.stderr,
-          installResult.stdout,
-        ]
-          .filter((item): item is string => typeof item === 'string' && item.length > 0)
-          .join('\n');
-
-        if (isAlreadyInstalledErrorMessage(installErrorText)) {
-          const detectionAfterFailedInstall = detectPluginInstalled(pluginId);
-          if (detectionAfterFailedInstall.installed) {
-            logger.warn(
-              'openclaw:installBundledPlugin detected already-installed response and converted to skip success',
-              {
-                pluginId,
-                source: detectionAfterFailedInstall.source,
-              }
-            );
-            return {
-              success: true,
-              installed: true,
-              skipped: true,
-              reason: 'already-installed',
-              source: detectionAfterFailedInstall.source,
-            };
-          }
-        }
-
-        return {
-          success: false,
-          error: installResult.error || 'Failed to install bundled plugin',
-          details: installResult.stderr || installResult.stdout,
-        };
-      }
-
-      const detectionAfterInstall = detectPluginInstalled(pluginId);
-      if (!detectionAfterInstall.installed) {
-        return {
-          success: false,
-          error: 'Plugin install command finished but install state could not be detected',
-          details: installResult.stdout,
-        };
-      }
-
-      logger.info('openclaw:installBundledPlugin completed successfully', {
-        pluginId,
-        source: detectionAfterInstall.source,
+      return await installPluginFromLocalPath(pluginId, prepared.installPath, {
+        enforceQqOnly: true,
       });
-      return { success: true, installed: true, source: detectionAfterInstall.source };
     } catch (error) {
       return { success: false, error: String(error) };
     } finally {
-      if (shouldRestoreChannelConfig) {
-        restoreChannelConfigAfterInstall();
-      }
       if (tempInstallDir) {
         rmSync(tempInstallDir, { recursive: true, force: true });
       }
@@ -1309,6 +1358,71 @@ function registerOpenClawHandlers(): void {
       console.error('Failed to validate channel credentials:', error);
       return { success: false, valid: false, errors: [String(error)], warnings: [] };
     }
+  });
+
+  return {
+    installPluginFromLocalPath: async (pluginId: string, installPath: string) => {
+      return await installPluginFromLocalPath(pluginId, installPath, {
+        enforceQqOnly: false,
+      });
+    },
+    uninstallPlugin,
+  };
+}
+
+function registerPresetInstallHandlers(
+  pluginInstallerBridge: OpenClawPluginInstallerBridge,
+  gatewayManager: GatewayManager,
+  mainWindow: BrowserWindow
+): void {
+  const presetInstaller = new PresetInstaller({
+    installPluginFromLocalPath: pluginInstallerBridge.installPluginFromLocalPath,
+    uninstallPlugin: pluginInstallerBridge.uninstallPlugin,
+    onProgress: (event) => {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('presetInstall:progress', event);
+      }
+    },
+    onStatusChange: (status) => {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('presetInstall:statusChanged', status);
+      }
+    },
+  });
+
+  ipcMain.handle('presetInstall:getStatus', () => {
+    return presetInstaller.getStatus();
+  });
+
+  ipcMain.handle('presetInstall:run', async (_, params?: { phase?: PresetInstallPhase }) => {
+    const phase: PresetInstallPhase = params?.phase === 'upgrade' ? 'upgrade' : 'setup';
+    const result = await presetInstaller.run(phase);
+
+    if (result.success && result.installed.some((item) => item.startsWith('plugin:'))) {
+      await gatewayManager.restart().catch((error) => {
+        logger.warn('Failed to restart gateway after preset plugin install', error);
+      });
+    }
+
+    return result;
+  });
+
+  ipcMain.handle('presetInstall:retry', async (_, params?: { phase?: PresetInstallPhase }) => {
+    const phase: PresetInstallPhase = params?.phase === 'upgrade' ? 'upgrade' : 'setup';
+    const result = await presetInstaller.retry(phase);
+
+    if (result.success && result.installed.some((item) => item.startsWith('plugin:'))) {
+      await gatewayManager.restart().catch((error) => {
+        logger.warn('Failed to restart gateway after preset plugin retry', error);
+      });
+    }
+
+    return result;
+  });
+
+  ipcMain.handle('presetInstall:skipCurrent', () => {
+    const status = presetInstaller.skipCurrentVersion();
+    return { success: true, status };
   });
 }
 

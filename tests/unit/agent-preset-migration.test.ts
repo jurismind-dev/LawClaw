@@ -38,6 +38,21 @@ function readText(filePath: string): string {
   return readFileSync(filePath, 'utf-8');
 }
 
+function getBackupRootDir(fixture: FixtureContext): string {
+  return join(fixture.lawclawDir, 'agent-presets', 'backups');
+}
+
+function getBackupRunDirs(fixture: FixtureContext): string[] {
+  const backupRootDir = getBackupRootDir(fixture);
+  if (!existsSync(backupRootDir)) {
+    return [];
+  }
+  return readdirSync(backupRootDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(backupRootDir, entry.name))
+    .sort();
+}
+
 function createFixture(): FixtureContext {
   const rootDir = mkdtempSync(join(tmpdir(), 'lawclaw-agent-preset-'));
   tempDirs.push(rootDir);
@@ -693,6 +708,103 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
     expect(firstParams.sessionKey).toMatch(/^agent:lawclaw-main:__internal_migration__:/);
   });
 
+  it('upgrade creates folder backup with metadata and managed workspace files', async () => {
+    const fixture = createFixture();
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner: vi.fn(),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    writeText(
+      join(fixture.resourcesDir, 'agent-presets', 'template', 'workspaces', 'lawclaw-main', 'SOUL.md'),
+      `${fixture.templateLawclawSoul}\n\n<!-- LAWCLAW_CAPABILITY_START:folder-backup-test -->\nnew\n<!-- LAWCLAW_CAPABILITY_END:folder-backup-test -->`
+    );
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner: async () => ({
+        schemaVersion: 1,
+        decision: 'apply',
+        files: [],
+      }),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    const backupRunDirs = getBackupRunDirs(fixture);
+    expect(backupRunDirs.length).toBe(1);
+
+    const backupDir = backupRunDirs[0];
+    const backupMeta = JSON.parse(readText(join(backupDir, 'backup-meta.json'))) as {
+      agentId: string;
+      workspacePath: string;
+      files: Array<{ target: string; existed: boolean }>;
+    };
+    expect(backupMeta.agentId).toBe('lawclaw-main');
+    expect(backupMeta.workspacePath).toContain('workspace-lawclaw-main');
+    expect(backupMeta.files.some((file) => file.target === 'SOUL.md' && file.existed)).toBe(true);
+
+    const backupSoul = readText(join(backupDir, 'SOUL.md'));
+    expect(backupSoul).not.toContain('folder-backup-test');
+    expect(readText(join(fixture.openclawDir, 'workspace-lawclaw-main', 'SOUL.md'))).toContain('folder-backup-test');
+  });
+
+  it('backup failure retries then aborts upgrade and keeps queue pending', async () => {
+    const fixture = createFixture();
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner: vi.fn(),
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    writeText(
+      join(fixture.resourcesDir, 'agent-presets', 'template', 'workspaces', 'lawclaw-main', 'SOUL.md'),
+      `${fixture.templateLawclawSoul}\n\n<!-- LAWCLAW_CAPABILITY_START:backup-fail-test -->\nnew\n<!-- LAWCLAW_CAPABILITY_END:backup-fail-test -->`
+    );
+
+    const backupRoot = getBackupRootDir(fixture);
+    rmSync(backupRoot, { recursive: true, force: true });
+    writeText(backupRoot, 'block-backup-dir');
+
+    const planner = vi.fn().mockResolvedValue({
+      schemaVersion: 1,
+      decision: 'apply',
+      files: [],
+    });
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+      planner,
+      isGatewayRunning: () => true,
+      heartbeatIntervalMs: 60_000,
+      now: () => Date.parse('2026-03-06T00:00:00.000Z'),
+    });
+
+    expect(planner).not.toHaveBeenCalled();
+
+    const queue = readAgentPresetQueue(join(fixture.lawclawDir, 'agent-presets', 'queue.json'));
+    expect(queue.tasks.length).toBe(1);
+    expect(queue.tasks[0].status).toBe('pending');
+    expect(queue.tasks[0].reason).toBe('APPLY_FAILED');
+    expect(queue.tasks[0].lastError).toContain('backup failed');
+    expect(queue.tasks[0].lastError).toContain('backup failed after 4 attempts');
+    expect(readText(join(fixture.openclawDir, 'workspace-lawclaw-main', 'SOUL.md'))).not.toContain(
+      'backup-fail-test'
+    );
+  });
+
   it('forceLawclawAgentPreset + 模型不可用时，会立即覆盖 lawclaw-main 并保留队列任务', async () => {
     const fixture = createFixture();
     await runAgentPresetStartupMigration({
@@ -723,9 +835,9 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
       'v2 lawclaw-main'
     );
 
-    const backupDir = join(fixture.lawclawDir, 'agent-presets', 'backups');
-    expect(existsSync(backupDir)).toBe(true);
-    expect(readdirSync(backupDir).length).toBeGreaterThan(0);
+    const backupRunDirs = getBackupRunDirs(fixture);
+    expect(backupRunDirs.length).toBeGreaterThan(0);
+    expect(existsSync(join(backupRunDirs[0], 'backup-meta.json'))).toBe(true);
 
     const queue = readAgentPresetQueue(join(fixture.lawclawDir, 'agent-presets', 'queue.json'));
     expect(queue.tasks.length).toBe(1);
@@ -778,10 +890,6 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
 
     expect(planner).not.toHaveBeenCalled();
     expect(readText(soulPath)).toContain('v2 lawclaw-main');
-
-    const backupDir = join(fixture.lawclawDir, 'agent-presets', 'backups');
-    expect(existsSync(backupDir)).toBe(true);
-    expect(readdirSync(backupDir).length).toBeGreaterThan(0);
   });
 
   it('treat missing v_current as bootstrap even when state.currentHash exists', async () => {

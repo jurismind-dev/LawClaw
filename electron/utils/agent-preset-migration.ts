@@ -1,7 +1,7 @@
 ﻿import { createHash, randomUUID } from 'crypto';
 import { EventEmitter } from 'events';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { basename, dirname, isAbsolute, join } from 'path';
+import { dirname, isAbsolute, join } from 'path';
 import { homedir } from 'os';
 import { logger } from './logger';
 import { getClawXConfigDir, getOpenClawConfigDir, getResourcesDir } from './paths';
@@ -141,6 +141,27 @@ interface AgentPresetMigrationSummary {
   forcedLawclawOverwritten: boolean;
 }
 
+interface UpgradeWorkspaceBackupFileMeta {
+  target: string;
+  sourcePath: string;
+  relativeBackupPath: string;
+  existed: boolean;
+  sha256?: string;
+  bytes?: number;
+}
+
+interface UpgradeWorkspaceBackupMeta {
+  schemaVersion: number;
+  createdAt: string;
+  taskId: string;
+  sourceHash?: string;
+  targetHash: string;
+  backupDirName: string;
+  agentId: string;
+  workspacePath: string;
+  files: UpgradeWorkspaceBackupFileMeta[];
+}
+
 export type AgentPresetPlanner = (input: PlannerInput) => Promise<PlannerOutput>;
 type MigrationMode = 'bootstrap' | 'upgrade' | 'noop';
 
@@ -154,6 +175,7 @@ const V_CURRENT_DIR = 'v_current';
 const V_UPDATE_DIR = 'v_update';
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const MANUAL_SKIP_DELAY_MS = 24 * 60 * 60 * 1000;
+const UPGRADE_BACKUP_RETRY_DELAYS_MS = [200, 500, 1000];
 const DEDICATED_AGENT_ID = 'lawclaw-main';
 const DEDICATED_AGENT_DEFAULT_MODEL = 'jurismind/kimi-k2.5';
 const DEDICATED_AGENT_WORKSPACE = '~/.openclaw/workspace-lawclaw-main';
@@ -372,14 +394,111 @@ function hashContent(content: string): string {
   return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
-function createBackupFile(clawXConfigDir: string, agentId: string, targetPath: string, content: string): string {
-  const backupDir = getBackupsPath(clawXConfigDir);
+function sanitizeBackupSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function normalizeBackupRelativeTarget(targetPath: string): string {
+  const normalized = targetPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length === 0 || segments.some((segment) => segment === '.' || segment === '..')) {
+    throw new Error(`Invalid backup target path: ${targetPath}`);
+  }
+  return segments.join('/');
+}
+
+function buildUpgradeBackupDirName(taskId: string, targetHash: string, nowMs: number): string {
+  const timestamp = new Date(nowMs).toISOString().replace(/[:.]/g, '-');
+  const safeTaskId = sanitizeBackupSegment(taskId);
+  const hashShort = sanitizeBackupSegment(targetHash).slice(0, 8) || 'unknown';
+  return `${timestamp}-${safeTaskId}-${hashShort}`;
+}
+
+function createUpgradeWorkspaceFolderBackup(
+  context: RuntimeTaskContext,
+  input: PlannerInput,
+  taskId: string,
+  nowMs: number
+): string {
+  const backupDir = getBackupsPath(context.clawXConfigDir);
   ensureDir(backupDir);
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const safeName = basename(targetPath).replace(/[^a-zA-Z0-9._-]/g, '_');
-  const backupPath = join(backupDir, `${timestamp}-${agentId}-${safeName}`);
-  writeTextFile(backupPath, content);
-  return backupPath;
+
+  const backupDirName = buildUpgradeBackupDirName(taskId, context.targetHash, nowMs);
+  const backupRunDir = join(backupDir, backupDirName);
+  if (existsSync(backupRunDir)) {
+    throw new Error(`backup directory already exists: ${backupRunDir}`);
+  }
+  ensureDir(backupRunDir);
+
+  try {
+    const workspacePath = resolveAgentWorkspace(context.config, context.openClawConfigDir, DEDICATED_AGENT_ID);
+    const backupFiles: UpgradeWorkspaceBackupFileMeta[] = [];
+
+    for (const file of input.files) {
+      if (file.agentId !== DEDICATED_AGENT_ID) {
+        continue;
+      }
+
+      const relativeBackupPath = normalizeBackupRelativeTarget(file.target);
+      const existingContent = readTextFileIfExists(file.destinationPath);
+      const metaEntry: UpgradeWorkspaceBackupFileMeta = {
+        target: file.target,
+        sourcePath: file.destinationPath,
+        relativeBackupPath,
+        existed: existingContent !== undefined,
+      };
+
+      if (existingContent !== undefined) {
+        writeTextFile(join(backupRunDir, relativeBackupPath), existingContent);
+        metaEntry.sha256 = hashContent(existingContent);
+        metaEntry.bytes = Buffer.byteLength(existingContent, 'utf-8');
+      }
+
+      backupFiles.push(metaEntry);
+    }
+
+    const backupMeta: UpgradeWorkspaceBackupMeta = {
+      schemaVersion: 1,
+      createdAt: new Date(nowMs).toISOString(),
+      taskId,
+      sourceHash: context.sourceHash,
+      targetHash: context.targetHash,
+      backupDirName,
+      agentId: DEDICATED_AGENT_ID,
+      workspacePath,
+      files: backupFiles,
+    };
+    writeJsonFile(join(backupRunDir, 'backup-meta.json'), backupMeta);
+
+    return backupRunDir;
+  } catch (error) {
+    rmSync(backupRunDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function createUpgradeWorkspaceFolderBackupWithRetry(
+  context: RuntimeTaskContext,
+  input: PlannerInput,
+  taskId: string,
+  nowMs: number
+): Promise<string> {
+  let lastError: unknown;
+  const totalAttempts = UPGRADE_BACKUP_RETRY_DELAYS_MS.length + 1;
+
+  for (let attempt = 0; attempt < totalAttempts; attempt++) {
+    try {
+      return createUpgradeWorkspaceFolderBackup(context, input, taskId, nowMs);
+    } catch (error) {
+      lastError = error;
+      if (attempt === UPGRADE_BACKUP_RETRY_DELAYS_MS.length) {
+        break;
+      }
+      await sleep(UPGRADE_BACKUP_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw new Error(`backup failed after ${totalAttempts} attempts: ${String(lastError)}`);
 }
 
 function mergeArrayAdditive(current: unknown[], patch: unknown[]): { next: unknown[]; changed: boolean } {
@@ -864,7 +983,7 @@ function prepareRuntimeContext(options: AgentPresetMigrationOptions): RuntimeTas
   };
 }
 
-function applyForceLawclawPreset(context: RuntimeTaskContext, input: PlannerInput): number {
+function applyForceLawclawPreset(input: PlannerInput): number {
   let changedFiles = 0;
 
   for (const file of input.files) {
@@ -875,10 +994,6 @@ function applyForceLawclawPreset(context: RuntimeTaskContext, input: PlannerInpu
     const existingContent = readTextFileIfExists(file.destinationPath);
     if (existingContent === file.targetContent) {
       continue;
-    }
-
-    if (existingContent !== undefined) {
-      createBackupFile(context.clawXConfigDir, file.agentId, file.target, existingContent);
     }
 
     writeTextFile(file.destinationPath, file.targetContent);
@@ -959,7 +1074,6 @@ function runBootstrapInstall(context: RuntimeTaskContext): AgentPresetMigrationS
       continue;
     }
 
-    createBackupFile(context.clawXConfigDir, presetFile.agentId, presetFile.target, existingContent);
     writeTextFile(destinationPath, targetContent);
     summary.updatedFiles += 1;
     managedFiles[getWorkspaceFileKey(presetFile)] = hashContent(targetContent);
@@ -1081,7 +1195,6 @@ function applyPlannerOutput(context: RuntimeTaskContext, input: PlannerInput, ou
       continue;
     }
 
-    createBackupFile(context.clawXConfigDir, presetFile.agentId, presetFile.target, existingContent);
     writeTextFile(plannerFile.destinationPath, nextContent);
     summary.updatedFiles += 1;
     if (usedForceLawclaw) {
@@ -1240,12 +1353,40 @@ class AgentPresetMigrationCoordinator extends EventEmitter {
         await this.options.restartGateway();
       }
 
-      preseedDedicatedWorkspaceFiles(context);
       const input = createPlannerInput(context, task.taskId, conflictPolicy);
-      task.snapshotRef = writeSnapshot(context.clawXConfigDir, input);
       task.updatedAt = new Date(this.nowMs()).toISOString();
       task.sourceHash = context.sourceHash;
       task.targetHash = context.targetHash;
+
+      try {
+        await createUpgradeWorkspaceFolderBackupWithRetry(context, input, task.taskId, this.nowMs());
+      } catch (error) {
+        const attempt = task.attempt + 1;
+        const delayMs = computeAgentPresetRetryDelayMs(attempt, this.random());
+        const backupError = `backup failed: ${String(error)}`;
+        this.ensureTask({
+          ...task,
+          status: 'pending',
+          reason: 'APPLY_FAILED',
+          sourceHash: context.sourceHash,
+          targetHash: context.targetHash,
+          attempt,
+          nextRetryAt: new Date(this.nowMs() + delayMs).toISOString(),
+          updatedAt: new Date(this.nowMs()).toISOString(),
+          lastError: backupError,
+        });
+        this.setStatus({
+          state: 'queued',
+          chatLocked: false,
+          reason: 'APPLY_FAILED',
+          message: backupError,
+          targetHash: context.targetHash,
+        });
+        return;
+      }
+
+      preseedDedicatedWorkspaceFiles(context);
+      task.snapshotRef = writeSnapshot(context.clawXConfigDir, input);
 
       let output: PlannerOutput;
       try {
@@ -1255,7 +1396,7 @@ class AgentPresetMigrationCoordinator extends EventEmitter {
         if (reason === 'LLM_UNAVAILABLE') {
           let forceMessage = '';
           if (context.forceLawclawAgentPreset) {
-            const changed = applyForceLawclawPreset(context, input);
+            const changed = applyForceLawclawPreset(input);
             if (changed > 0 && this.options.restartGateway) {
               await this.options.restartGateway();
             }

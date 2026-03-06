@@ -47,6 +47,7 @@ export function ProvidersSettings() {
     updateProviderWithKey,
     setDefaultProvider,
     validateApiKey,
+    bindJurismindToken,
   } = useProviderStore();
 
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -169,6 +170,7 @@ export function ProvidersSettings() {
           onClose={() => setShowAddDialog(false)}
           onAdd={handleAddProvider}
           onValidateKey={(type, key, options) => validateApiKey(type, key, options)}
+          onBindJurismindToken={bindJurismindToken}
         />
       )}
     </div>
@@ -453,9 +455,16 @@ interface AddProviderDialogProps {
     apiKey: string,
     options?: { baseUrl?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
+  onBindJurismindToken: () => Promise<{ tokenKey: string; openId: string; tokenId?: number | null }>;
 }
 
-function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: AddProviderDialogProps) {
+function AddProviderDialog({
+  existingTypes,
+  onClose,
+  onAdd,
+  onValidateKey,
+  onBindJurismindToken,
+}: AddProviderDialogProps) {
   const { t } = useTranslation('settings');
   const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
@@ -465,6 +474,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [jurismindBinding, setJurismindBinding] = useState(false);
 
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
@@ -482,6 +492,14 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const supportsApiKey = typeInfo?.supportsApiKey ?? false;
   // Effective OAuth mode: pure OAuth providers, or dual-mode with oauth selected
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
+  const isJurismind = selectedType === 'jurismind';
+  const mountedRef = React.useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Keep a ref to the latest values so the effect closure can access them
   const latestRef = React.useRef({ selectedType, typeInfo, onAdd, onClose, t });
@@ -559,6 +577,31 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
     }
   };
 
+  const handleBindJurismindToken = async () => {
+    setJurismindBinding(true);
+    setSaving(true);
+    setValidationError(null);
+    try {
+      const result = await onBindJurismindToken();
+      if (!mountedRef.current) return;
+      setApiKey(result.tokenKey);
+      await onAdd(
+        'jurismind',
+        name || typeInfo?.name || 'Jurismind（法义经纬）',
+        result.tokenKey,
+      );
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = error instanceof Error ? error.message : String(error);
+      setValidationError(message);
+      toast.error(message);
+    } finally {
+      if (!mountedRef.current) return;
+      setJurismindBinding(false);
+      setSaving(false);
+    }
+  };
+
   const handleCancelOAuth = async () => {
     setOauthFlowing(false);
     setOauthData(null);
@@ -590,7 +633,11 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       // Validate key first if the provider requires one and a key was entered
       const requiresKey = typeInfo?.requiresApiKey ?? false;
       if (requiresKey && !apiKey.trim()) {
-        setValidationError(t('aiProviders.toast.invalidKey')); // reusing invalid key msg or should add 'required' msg? null checks
+        setValidationError(
+          selectedType === 'jurismind'
+            ? t('aiProviders.toast.jurismindBindRequired')
+            : t('aiProviders.toast.invalidKey')
+        );
         setSaving(false);
         return;
       }
@@ -629,15 +676,15 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-      <Card className="w-full max-w-md">
-        <CardHeader>
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <Card className="w-full max-w-md max-h-[calc(100vh-2rem)] flex flex-col">
+        <CardHeader className="shrink-0">
           <CardTitle>{t('aiProviders.dialog.title')}</CardTitle>
           <CardDescription>
             {t('aiProviders.dialog.desc')}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 overflow-y-auto pr-1">
           {!selectedType ? (
             <div className="grid grid-cols-2 gap-3">
               {availableTypes.map((type) => (
@@ -648,6 +695,12 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                     setName(type.id === 'custom' ? t('aiProviders.custom') : type.name);
                     setBaseUrl(type.defaultBaseUrl || '');
                     setModelId(type.defaultModelId || '');
+                    setApiKey('');
+                    setValidationError(null);
+                    setJurismindBinding(false);
+                    if (type.id === 'jurismind') {
+                      void handleBindJurismindToken();
+                    }
                   }}
                   className="p-4 rounded-lg border hover:bg-accent transition-colors text-center"
                 >
@@ -671,12 +724,14 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 <div>
                   <p className="font-medium">{typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}</p>
                   <button
-                    onClick={() => {
-                      setSelectedType(null);
-                      setValidationError(null);
-                      setBaseUrl('');
-                      setModelId('');
-                    }}
+                      onClick={() => {
+                        setSelectedType(null);
+                        setValidationError(null);
+                        setBaseUrl('');
+                        setModelId('');
+                        setApiKey('');
+                        setJurismindBinding(false);
+                      }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
                     {t('aiProviders.dialog.change')}
@@ -742,15 +797,18 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                       placeholder={typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : typeInfo?.placeholder}
                       value={apiKey}
                       onChange={(e) => {
+                        if (isJurismind) return;
                         setApiKey(e.target.value);
                         setValidationError(null);
                       }}
-                      className="pr-10"
+                      readOnly={isJurismind}
+                      className={cn('pr-10', isJurismind && 'bg-muted/70')}
                     />
                     <button
                       type="button"
                       onClick={() => setShowKey(!showKey)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      disabled={jurismindBinding}
                     >
                       {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
@@ -894,7 +952,13 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
             <Button
               onClick={handleAdd}
               className={cn(useOAuthFlow && "hidden")}
-              disabled={!selectedType || saving || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)}
+              disabled={
+                !selectedType
+                || saving
+                || jurismindBinding
+                || isJurismind
+                || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)
+              }
             >
               {saving ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />

@@ -1,0 +1,23 @@
+{
+  "profile": "production",
+  "common": {
+    "ssoClientId": "lawclaw-app",
+    "ssoCheckTicketPath": "/api/auth/sso/checkTicket",
+    "ssoCheckTicketMethod": "POST",
+    "ssoTimeoutMs": 180000,
+    "creditsBaseUrl": "https://api.jurismind.com",
+    "creditsBindPath": "/api/v2/newapi/bind",
+    "creditsTokenQueryPathTemplate": "/api/v2/newapi/{open_id}/token",
+    "creditsApiKey": ""
+  },
+  "profiles": {
+    "test": {
+      "ssoLoginUrl": "https://sso.fyjw.cn",
+      "ssoApiBaseUrl": "https://testapi.fyjw.cn"
+    },
+    "production": {
+      "ssoLoginUrl": "https://sso.jurismind.com",
+      "ssoApiBaseUrl": "https://api.jurismind.com"
+    }
+  }
+}

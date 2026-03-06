@@ -87,6 +87,7 @@ import {
 } from '../utils/lawclaw-session';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
+import { bindJurismindProviderToken } from '../utils/jurismind-provider-token-binding';
 
 const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
 
@@ -1853,6 +1854,22 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       }
     }
   );
+
+  // Jurismind provider: browser SSO -> open_id -> credits token_key auto bind
+  ipcMain.handle('provider:bindJurismindToken', async () => {
+    try {
+      const bound = await bindJurismindProviderToken();
+      return {
+        success: true,
+        openId: bound.openId,
+        tokenKey: bound.tokenKey,
+        tokenId: bound.tokenId,
+      };
+    } catch (error) {
+      logger.error('provider:bindJurismindToken failed', error);
+      return { success: false, error: String(error) };
+    }
+  });
 }
 
 /**

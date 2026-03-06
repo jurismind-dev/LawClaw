@@ -35,6 +35,12 @@
             "save": "Save",
             "validate": "Validate"
         },
+        "jurismind": {
+            "autoFillHint": "LawClaw will open browser SSO login, then bind by open_id and auto-fill token_key.",
+            "loginAndBind": "Login & Auto Bind",
+            "binding": "Binding...",
+            "boundOpenId": "Bound open_id: {{openId}}"
+        },
         "card": {
             "default": "Default",
             "configured": "Configured",
@@ -53,7 +59,9 @@
             "updated": "Provider updated",
             "failedUpdate": "Failed to update provider",
             "invalidKey": "Invalid API key",
-            "modelRequired": "Model ID is required"
+            "modelRequired": "Model ID is required",
+            "jurismindBindRequired": "Please complete Jurismind SSO binding first",
+            "jurismindBindSuccess": "Jurismind token_key auto-filled"
         }
     },
     "gateway": {

@@ -85,6 +85,7 @@ const electronAPI = {
         'provider:setDefault',
         'provider:getDefault',
         'provider:validateKey',
+        'provider:bindJurismindToken',
         'provider:requestOAuth',
         'provider:cancelOAuth',
         // Cron

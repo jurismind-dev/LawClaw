@@ -32,6 +32,7 @@ interface ProviderState {
     apiKey: string,
     options?: { baseUrl?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
+  bindJurismindToken: () => Promise<{ tokenKey: string; openId: string; tokenId?: number | null }>;
   getApiKey: (providerId: string) => Promise<string | null>;
 }
 
@@ -204,6 +205,26 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     } catch (error) {
       return { valid: false, error: String(error) };
     }
+  },
+
+  bindJurismindToken: async () => {
+    const result = await window.electron.ipcRenderer.invoke('provider:bindJurismindToken') as {
+      success?: boolean;
+      error?: string;
+      tokenKey?: string;
+      openId?: string;
+      tokenId?: number | null;
+    };
+
+    if (!result?.success || !result?.tokenKey) {
+      throw new Error(result?.error || 'Jurismind token binding failed');
+    }
+
+    return {
+      tokenKey: String(result.tokenKey),
+      openId: String(result.openId || ''),
+      tokenId: result.tokenId ?? null,
+    };
   },
   
   getApiKey: async (providerId) => {

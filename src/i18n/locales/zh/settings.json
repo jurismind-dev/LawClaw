@@ -35,6 +35,12 @@
             "save": "保存",
             "validate": "验证"
         },
+        "jurismind": {
+            "autoFillHint": "将自动拉起浏览器进行 SSO 登录，登录成功后会按 open_id 绑定并回填 token_key。",
+            "loginAndBind": "登录并自动绑定",
+            "binding": "登录绑定中...",
+            "boundOpenId": "已绑定 open_id: {{openId}}"
+        },
         "card": {
             "default": "默认",
             "configured": "已配置",
@@ -53,7 +59,9 @@
             "updated": "提供商已更新",
             "failedUpdate": "更新提供商失败",
             "invalidKey": "无效的 API 密钥",
-            "modelRequired": "需要模型 ID"
+            "modelRequired": "需要模型 ID",
+            "jurismindBindRequired": "请先完成法义经纬登录绑定",
+            "jurismindBindSuccess": "法义经纬 token_key 已自动填充"
         }
     },
     "gateway": {

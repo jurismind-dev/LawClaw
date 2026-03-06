@@ -40,8 +40,12 @@ export interface ProviderConfig {
     | 'openai'
     | 'google'
     | 'openrouter'
+    | 'ark'
     | 'moonshot'
     | 'siliconflow'
+    | 'minimax-portal'
+    | 'minimax-portal-cn'
+    | 'qwen-portal'
     | 'ollama'
     | 'custom';
   baseUrl?: string;
@@ -179,6 +183,14 @@ export async function deleteProvider(providerId: string): Promise<boolean> {
 export async function setDefaultProvider(providerId: string): Promise<void> {
   const s = await getProviderStore();
   s.set('defaultProvider', providerId);
+}
+
+/**
+ * Clear the default provider selection.
+ */
+export async function clearDefaultProvider(): Promise<void> {
+  const s = await getProviderStore();
+  s.delete('defaultProvider');
 }
 
 /**

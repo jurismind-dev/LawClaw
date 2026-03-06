@@ -700,6 +700,43 @@ export function setOpenClawAgentModelWithOverride(
   );
 }
 
+/**
+ * Remove model.primary from a specific agent without touching agents.defaults.model.
+ */
+export function clearOpenClawAgentModelPrimary(agentId: string): void {
+  const config = readOpenClawConfig();
+  const agents = isRecord(config.agents) ? { ...config.agents } : {};
+  const list = Array.isArray(agents.list) ? [...agents.list] : [];
+  const index = list.findIndex((item) => isRecord(item) && item.id === agentId);
+
+  if (index < 0 || !isRecord(list[index])) {
+    return;
+  }
+
+  const agent = { ...(list[index] as Record<string, unknown>) };
+  if (!isRecord(agent.model)) {
+    return;
+  }
+
+  const model = { ...(agent.model as Record<string, unknown>) };
+  if (!Object.prototype.hasOwnProperty.call(model, 'primary')) {
+    return;
+  }
+
+  delete model.primary;
+  if (Object.keys(model).length > 0) {
+    agent.model = model;
+  } else {
+    delete agent.model;
+  }
+
+  list[index] = agent;
+  agents.list = list;
+  config.agents = agents;
+  writeOpenClawConfig(config);
+  console.log(`Cleared OpenClaw model.primary for agent "${agentId}"`);
+}
+
 function discoverAgentIds(): string[] {
   const agentsDir = join(homedir(), '.openclaw', 'agents');
   try {

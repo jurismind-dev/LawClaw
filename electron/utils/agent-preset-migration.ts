@@ -155,7 +155,6 @@ const V_UPDATE_DIR = 'v_update';
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const MANUAL_SKIP_DELAY_MS = 24 * 60 * 60 * 1000;
 const DEDICATED_AGENT_ID = 'lawclaw-main';
-const DEDICATED_AGENT_DEFAULT_MODEL = 'jurismind/kimi-k2.5';
 const DEDICATED_AGENT_WORKSPACE = '~/.openclaw/workspace-lawclaw-main';
 const INTERNAL_MIGRATION_SESSION_PREFIX = `agent:${DEDICATED_AGENT_ID}:__internal_migration__`;
 const CAPABILITY_BLOCK_RE =
@@ -547,9 +546,6 @@ function ensureDedicatedAgentInConfig(config: Record<string, unknown>): {
       id: DEDICATED_AGENT_ID,
       name: 'LawClaw 主智能体',
       workspace: DEDICATED_AGENT_WORKSPACE,
-      model: {
-        primary: DEDICATED_AGENT_DEFAULT_MODEL,
-      },
     });
     changed = true;
   } else {
@@ -563,15 +559,6 @@ function ensureDedicatedAgentInConfig(config: Record<string, unknown>): {
       changed = true;
     }
 
-    if (!isRecord(dedicatedAgent.model)) {
-      dedicatedAgent.model = {
-        primary: DEDICATED_AGENT_DEFAULT_MODEL,
-      };
-      changed = true;
-    } else if (typeof dedicatedAgent.model.primary !== 'string' || !dedicatedAgent.model.primary.trim()) {
-      dedicatedAgent.model.primary = DEDICATED_AGENT_DEFAULT_MODEL;
-      changed = true;
-    }
   }
 
   agents.list = currentList;

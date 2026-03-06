@@ -18,7 +18,6 @@ import {
   saveProvider,
   getProvider,
   deleteProvider,
-  setDefaultProvider,
   getDefaultProvider,
   getAllProvidersWithKeyInfo,
   type ProviderConfig,
@@ -37,8 +36,6 @@ import {
   saveProviderKeyToOpenClaw,
   removeProviderKeyFromOpenClaw,
   removeProviderFromOpenClaw,
-  setOpenClawAgentModel,
-  setOpenClawAgentModelWithOverride,
   syncProviderConfigToOpenClaw,
   updateAgentModelProvider,
 } from '../utils/openclaw-auth';
@@ -58,7 +55,7 @@ import {
 import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
 import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
-import { getProviderConfig, getProviderEnvVar } from '../utils/provider-registry';
+import { getProviderConfig } from '../utils/provider-registry';
 import { validateApiKeyWithProvider } from '../utils/provider-validation';
 import { applyOpenClawConfigEnvFallbacks } from '../utils/openclaw-config-env';
 import {
@@ -88,6 +85,12 @@ import {
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
 import { bindJurismindProviderToken } from '../utils/jurismind-provider-token-binding';
+import {
+  applyLawClawProviderSelection,
+  clearLawClawProviderSelection,
+  isProviderAvailableForLawClaw,
+  pickFallbackLawClawProvider,
+} from '../utils/lawclaw-provider-selection';
 
 const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
 
@@ -1564,6 +1567,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
   // Delete a provider
   ipcMain.handle('provider:delete', async (_, providerId: string) => {
     try {
+      const defaultProviderId = await getDefaultProvider();
       const existing = await getProvider(providerId);
       await deleteProvider(providerId);
 
@@ -1578,6 +1582,19 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           gatewayManager.debouncedRestart();
         } catch (err) {
           console.warn('Failed to completely remove provider from OpenClaw:', err);
+        }
+      }
+
+      if (defaultProviderId === providerId) {
+        const fallback = await pickFallbackLawClawProvider([providerId]);
+        if (fallback) {
+          await applyLawClawProviderSelection(fallback.id, {
+            restartGateway: () => gatewayManager.debouncedRestart(),
+          });
+        } else {
+          await clearLawClawProviderSelection({
+            restartGateway: () => gatewayManager.debouncedRestart(),
+          });
         }
       }
 
@@ -1676,28 +1693,24 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             }
           }
 
-          // If this provider is the current default, update the primary model
           const defaultProviderId = await getDefaultProvider();
           if (defaultProviderId === providerId) {
-            const modelOverride =
-              nextConfig.type === 'moonshot_code_plan'
-                ? undefined
-                : (nextConfig.model
-                  ? (nextConfig.model.startsWith(`${ock}/`) ? nextConfig.model : `${ock}/${nextConfig.model}`)
-                  : undefined);
-
-            const registryProviderConfig = getProviderConfig(nextConfig.type);
-            const shouldUseRuntimeOverride = nextConfig.type === 'custom' || nextConfig.type === 'ollama';
-
-            if (shouldUseRuntimeOverride) {
-              setOpenClawAgentModelWithOverride(LAWCLAW_MAIN_AGENT_ID, ock, modelOverride, {
-                baseUrl: nextConfig.baseUrl,
-                api: registryProviderConfig?.api || 'openai-completions',
-                apiKeyEnv: getProviderEnvVar(nextConfig.type),
-                headers: registryProviderConfig?.headers,
+            const stillAvailable = await isProviderAvailableForLawClaw(nextConfig);
+            if (stillAvailable) {
+              await applyLawClawProviderSelection(providerId, {
+                restartGateway: () => gatewayManager.debouncedRestart(),
               });
             } else {
-              setOpenClawAgentModel(LAWCLAW_MAIN_AGENT_ID, ock, modelOverride);
+              const fallback = await pickFallbackLawClawProvider([providerId]);
+              if (fallback) {
+                await applyLawClawProviderSelection(fallback.id, {
+                  restartGateway: () => gatewayManager.debouncedRestart(),
+                });
+              } else {
+                await clearLawClawProviderSelection({
+                  restartGateway: () => gatewayManager.debouncedRestart(),
+                });
+              }
             }
           }
 
@@ -1732,6 +1745,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
   // Delete API key for a provider
   ipcMain.handle('provider:deleteApiKey', async (_, providerId: string) => {
     try {
+      const defaultProviderId = await getDefaultProvider();
       await deleteApiKey(providerId);
 
       // Keep OpenClaw auth-profiles.json in sync with local key storage
@@ -1742,6 +1756,22 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         removeProviderKeyFromOpenClawAgents(ock);
       } catch (err) {
         console.warn('Failed to completely remove provider from OpenClaw:', err);
+      }
+
+      if (defaultProviderId === providerId && provider) {
+        const stillAvailable = await isProviderAvailableForLawClaw(provider);
+        if (!stillAvailable) {
+          const fallback = await pickFallbackLawClawProvider([providerId]);
+          if (fallback) {
+            await applyLawClawProviderSelection(fallback.id, {
+              restartGateway: () => gatewayManager.debouncedRestart(),
+            });
+          } else {
+            await clearLawClawProviderSelection({
+              restartGateway: () => gatewayManager.debouncedRestart(),
+            });
+          }
+        }
       }
 
       return { success: true };
@@ -1763,53 +1793,11 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
   // Set default provider and update LawClaw dedicated agent model
   ipcMain.handle('provider:setDefault', async (_, providerId: string) => {
     try {
-      await setDefaultProvider(providerId);
-
-      // Update OpenClaw config to use this provider's model for lawclaw-main only.
-      const provider = await getProvider(providerId);
-      if (provider) {
-        try {
-          const ock = getOpenClawProviderKey(provider.type, providerId);
-          // moonshot_code_plan is pinned to official kimi-coding/k2p5.
-          const modelOverride =
-            provider.type === 'moonshot_code_plan'
-              ? undefined
-              : (provider.model
-                ? (provider.model.startsWith(`${ock}/`) ? provider.model : `${ock}/${provider.model}`)
-                : undefined);
-
-          const registryProviderConfig = getProviderConfig(provider.type);
-          const shouldUseRuntimeOverride = provider.type === 'custom' || provider.type === 'ollama';
-
-          if (shouldUseRuntimeOverride) {
-            // For runtime-configured providers, use user-entered base URL/api.
-            setOpenClawAgentModelWithOverride(LAWCLAW_MAIN_AGENT_ID, ock, modelOverride, {
-              baseUrl: provider.baseUrl,
-              api: registryProviderConfig?.api || 'openai-completions',
-              apiKeyEnv: getProviderEnvVar(provider.type),
-            });
-          } else {
-            setOpenClawAgentModel(LAWCLAW_MAIN_AGENT_ID, ock, modelOverride);
-          }
-
-          // Keep auth-profiles in sync with the default provider instance.
-          // This is especially important when multiple custom providers exist.
-          const providerKey = await getApiKey(providerId);
-          if (providerKey) {
-            saveProviderKeyToOpenClawAgents(ock, providerKey);
-          }
-
-          // Restart Gateway so it picks up the new config and env vars.
-          // OpenClaw reads openclaw.json per-request, but env vars (API keys)
-          // are only available if they were injected at process startup.
-          if (gatewayManager.isConnected()) {
-            logger.info(`Scheduling Gateway restart after provider switch to "${ock}"`);
-            gatewayManager.debouncedRestart();
-          }
-        } catch (err) {
-          console.warn('Failed to set OpenClaw agent model:', err);
-        }
-      }
+      await applyLawClawProviderSelection(providerId, {
+        restartGateway: gatewayManager.isConnected()
+          ? () => gatewayManager.debouncedRestart()
+          : undefined,
+      });
 
       return { success: true };
     } catch (error) {

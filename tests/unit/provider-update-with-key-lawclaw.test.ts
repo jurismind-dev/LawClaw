@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const registeredHandlers = new Map<string, (...args: unknown[]) => unknown>();
 
@@ -13,6 +13,8 @@ const secureStorageMock = vi.hoisted(() => ({
   setDefaultProvider: vi.fn(),
   getDefaultProvider: vi.fn(),
   getAllProvidersWithKeyInfo: vi.fn(),
+  getAllProviders: vi.fn(),
+  clearDefaultProvider: vi.fn(),
 }));
 
 const openclawAuthMock = vi.hoisted(() => ({
@@ -25,6 +27,8 @@ const openclawAuthMock = vi.hoisted(() => ({
   setOpenClawAgentModelWithOverride: vi.fn(),
   syncProviderConfigToOpenClaw: vi.fn(),
   updateAgentModelProvider: vi.fn(),
+  clearOpenClawAgentModelPrimary: vi.fn(),
+  getOAuthTokenFromOpenClaw: vi.fn(),
 }));
 
 const providerValidationMock = vi.hoisted(() => ({
@@ -194,9 +198,8 @@ describe('provider:updateWithKey keeps default update scoped to lawclaw-main', (
   });
 
   it('updates only lawclaw-main model when editing the current default provider', async () => {
-    secureStorageMock.getProvider.mockImplementation(async (providerId: string) => {
-      if (providerId !== 'provider-openai') return null;
-      return {
+    const providersById = new Map<string, Record<string, unknown>>([
+      ['provider-openai', {
         id: 'provider-openai',
         name: 'OpenAI',
         type: 'openai',
@@ -204,18 +207,20 @@ describe('provider:updateWithKey keeps default update scoped to lawclaw-main', (
         enabled: true,
         createdAt: '2026-02-28T00:00:00.000Z',
         updatedAt: '2026-02-28T00:00:00.000Z',
-      };
-    });
+      }],
+    ]);
+    secureStorageMock.getProvider.mockImplementation(async (providerId: string) =>
+      providersById.get(providerId) ?? null
+    );
     secureStorageMock.getDefaultProvider.mockResolvedValue('provider-openai');
     secureStorageMock.getApiKey.mockResolvedValue('sk-live');
-    secureStorageMock.saveProvider.mockResolvedValue(undefined);
+    secureStorageMock.saveProvider.mockImplementation(async (config: Record<string, unknown>) => {
+      providersById.set(String(config.id), config);
+    });
     secureStorageMock.storeApiKey.mockResolvedValue(undefined);
     secureStorageMock.deleteApiKey.mockResolvedValue(undefined);
-    openclawAuthMock.syncProviderConfigToOpenClaw.mockResolvedValue(undefined);
-    openclawAuthMock.updateAgentModelProvider.mockResolvedValue(undefined);
 
     const { registerIpcHandlers } = await import('@electron/main/ipc-handlers');
-
     const gatewayManager = {
       on: vi.fn(),
       start: vi.fn(async () => undefined),
@@ -325,5 +330,154 @@ describe('provider:validateKey resolves baseUrl for built-in providers', () => {
       'sk-live',
       { baseUrl: 'http://101.132.245.215:3001/v1' }
     );
+  });
+});
+
+
+
+describe('provider fallback selection', () => {
+  beforeEach(() => {
+    registeredHandlers.clear();
+    vi.clearAllMocks();
+  });
+
+  it('reselects the most recent available provider after deleting the current default provider', async () => {
+    const providersById = new Map<string, Record<string, unknown>>([
+      ['provider-openai', {
+        id: 'provider-openai',
+        name: 'OpenAI',
+        type: 'openai',
+        model: 'gpt-4.1',
+        enabled: true,
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-01T00:00:00.000Z',
+      }],
+      ['provider-moonshot', {
+        id: 'provider-moonshot',
+        name: 'Moonshot',
+        type: 'moonshot',
+        model: 'kimi-k2.5',
+        enabled: true,
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-05T00:00:00.000Z',
+      }],
+    ]);
+    secureStorageMock.getDefaultProvider.mockResolvedValue('provider-openai');
+    secureStorageMock.getProvider.mockImplementation(async (providerId: string) =>
+      providersById.get(providerId) ?? null
+    );
+    secureStorageMock.getAllProviders.mockResolvedValue(Array.from(providersById.values()));
+    secureStorageMock.getApiKey.mockImplementation(async (providerId: string) =>
+      providerId === 'provider-moonshot' ? 'sk-moon' : null
+    );
+    secureStorageMock.deleteProvider.mockResolvedValue(true);
+    openclawAuthMock.removeProviderFromOpenClaw.mockResolvedValue(undefined);
+
+    const { registerIpcHandlers } = await import('@electron/main/ipc-handlers');
+
+    const gatewayManager = {
+      on: vi.fn(),
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      restart: vi.fn(async () => undefined),
+      debouncedRestart: vi.fn(),
+      getStatus: vi.fn(() => ({ state: 'running', port: 3456 })),
+      rpc: vi.fn(async () => ({})),
+      isConnected: vi.fn(() => true),
+      getControlUiInfo: vi.fn(() => ({ success: false })),
+      setAutoStart: vi.fn(async () => undefined),
+    };
+    const mainWindow = { webContents: { send: vi.fn() } };
+    const marketService = {
+      search: vi.fn(async () => []),
+      install: vi.fn(async () => undefined),
+      uninstall: vi.fn(async () => undefined),
+      listInstalled: vi.fn(async () => []),
+      openSkillReadme: vi.fn(async () => undefined),
+      openSkillPage: vi.fn(async () => undefined),
+    };
+
+    registerIpcHandlers(
+      gatewayManager as never,
+      marketService as never,
+      marketService as never,
+      mainWindow as never
+    );
+
+    const handler = registeredHandlers.get('provider:delete');
+    const result = await handler?.({}, 'provider-openai') as { success: boolean; error?: string };
+
+    expect(result.success).toBe(true);
+    expect(secureStorageMock.setDefaultProvider).toHaveBeenCalledWith('provider-moonshot');
+    expect(openclawAuthMock.setOpenClawAgentModel).toHaveBeenCalledWith(
+      'lawclaw-main',
+      'moonshot',
+      'moonshot/kimi-k2.5'
+    );
+  });
+
+  it('clears dedicated selection after deleting the last credential of the current default provider when no fallback exists', async () => {
+    secureStorageMock.getDefaultProvider.mockResolvedValue('provider-openai');
+    secureStorageMock.getProvider.mockResolvedValue({
+      id: 'provider-openai',
+      name: 'OpenAI',
+      type: 'openai',
+      model: 'gpt-4.1',
+      enabled: true,
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+    secureStorageMock.getAllProviders.mockResolvedValue([
+      {
+        id: 'provider-openai',
+        name: 'OpenAI',
+        type: 'openai',
+        model: 'gpt-4.1',
+        enabled: true,
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-01T00:00:00.000Z',
+      },
+    ]);
+    secureStorageMock.getApiKey.mockResolvedValue(null);
+    secureStorageMock.deleteApiKey.mockResolvedValue(true);
+    openclawAuthMock.getOAuthTokenFromOpenClaw.mockResolvedValue(null);
+
+    const { registerIpcHandlers } = await import('@electron/main/ipc-handlers');
+
+    const gatewayManager = {
+      on: vi.fn(),
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      restart: vi.fn(async () => undefined),
+      debouncedRestart: vi.fn(),
+      getStatus: vi.fn(() => ({ state: 'running', port: 3456 })),
+      rpc: vi.fn(async () => ({})),
+      isConnected: vi.fn(() => true),
+      getControlUiInfo: vi.fn(() => ({ success: false })),
+      setAutoStart: vi.fn(async () => undefined),
+    };
+    const mainWindow = { webContents: { send: vi.fn() } };
+    const marketService = {
+      search: vi.fn(async () => []),
+      install: vi.fn(async () => undefined),
+      uninstall: vi.fn(async () => undefined),
+      listInstalled: vi.fn(async () => []),
+      openSkillReadme: vi.fn(async () => undefined),
+      openSkillPage: vi.fn(async () => undefined),
+    };
+
+    registerIpcHandlers(
+      gatewayManager as never,
+      marketService as never,
+      marketService as never,
+      mainWindow as never
+    );
+
+    const handler = registeredHandlers.get('provider:deleteApiKey');
+    const result = await handler?.({}, 'provider-openai') as { success: boolean; error?: string };
+
+    expect(result.success).toBe(true);
+    expect(secureStorageMock.clearDefaultProvider).toHaveBeenCalledTimes(1);
+    expect(openclawAuthMock.clearOpenClawAgentModelPrimary).toHaveBeenCalledWith('lawclaw-main');
   });
 });

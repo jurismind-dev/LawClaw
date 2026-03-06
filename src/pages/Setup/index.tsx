@@ -44,6 +44,7 @@ import {
   shouldInstallQqPluginForSetupSession,
   shouldRestartGatewayAfterQqPluginInstall,
 } from './qq-plugin-install';
+import { shouldAutoSelectLawClawProvider } from '@/lib/lawclaw-provider-ui-context';
 
 interface SetupStep {
   id: string;
@@ -759,7 +760,7 @@ function ProviderContent({
       setOauthData(null);
       setKeyValid(true);
 
-      if (selectedProvider) {
+      if (selectedProvider && shouldAutoSelectLawClawProvider('setup')) {
         try {
           await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider);
         } catch (error) {
@@ -1008,13 +1009,15 @@ function ProviderContent({
         throw new Error(saveResult.error || 'Failed to save provider config');
       }
 
-      const defaultResult = await window.electron.ipcRenderer.invoke(
-        'provider:setDefault',
-        providerIdForSave
-      ) as { success: boolean; error?: string };
+      if (shouldAutoSelectLawClawProvider('setup')) {
+        const defaultResult = await window.electron.ipcRenderer.invoke(
+          'provider:setDefault',
+          providerIdForSave
+        ) as { success: boolean; error?: string };
 
-      if (!defaultResult.success) {
-        throw new Error(defaultResult.error || 'Failed to set default provider');
+        if (!defaultResult.success) {
+          throw new Error(defaultResult.error || 'Failed to set default provider');
+        }
       }
 
       setSelectedProviderConfigId(providerIdForSave);

@@ -31,6 +31,7 @@ import {
   getProviderIconUrl,
   shouldInvertInDark,
 } from '@/lib/providers';
+import { shouldAutoSelectLawClawProvider } from '@/lib/lawclaw-provider-ui-context';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -80,8 +81,7 @@ export function ProvidersSettings() {
         apiKey.trim() || undefined
       );
 
-      // Auto-set as default if no default is currently configured
-      if (!defaultProviderId) {
+      if (shouldAutoSelectLawClawProvider('settings')) {
         await setDefaultProvider(id);
       }
 
@@ -596,9 +596,10 @@ function AddProviderDialog({
       setValidationError(message);
       toast.error(message);
     } finally {
-      if (!mountedRef.current) return;
-      setJurismindBinding(false);
-      setSaving(false);
+      if (mountedRef.current) {
+        setJurismindBinding(false);
+        setSaving(false);
+      }
     }
   };
 

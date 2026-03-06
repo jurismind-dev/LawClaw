@@ -31,7 +31,7 @@ import {
     loginQwenPortalOAuth,
     type QwenOAuthToken,
 } from '../../node_modules/openclaw/extensions/qwen-portal-auth/oauth';
-import { saveOAuthTokenToOpenClaw, setOpenClawDefaultModelWithOverride } from './openclaw-auth';
+import { saveOAuthTokenToOpenClaw } from './openclaw-auth';
 
 export type OAuthProviderType = 'minimax-portal' | 'minimax-portal-cn' | 'qwen-portal';
 export type { MiniMaxRegion };
@@ -213,10 +213,9 @@ class DeviceOAuthManager extends EventEmitter {
             logger.warn(`[DeviceOAuth] Failed to save OAuth token to OpenClaw:`, err);
         }
 
-        // 2. Write openclaw.json: set default model + provider config (baseUrl/api/models)
-        //    This mirrors what the OpenClaw plugin's configPatch does after CLI login.
-        //    The baseUrl comes from token.resourceUrl (per-account URL from the OAuth server)
-        //    or falls back to the provider's default public endpoint.
+        // 2. Resolve the provider baseUrl to persist with the provider record.
+        //    OAuth success only makes the provider available; UI decides whether
+        //    LawClaw should switch to it, and OpenClaw global defaults stay untouched.
         const defaultBaseUrl = providerType === 'minimax-portal'
             ? 'https://api.minimax.io/anthropic'
             : (providerType === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
@@ -238,20 +237,6 @@ class DeviceOAuthManager extends EventEmitter {
             }
         }
 
-        try {
-            const tokenProviderId = providerType.startsWith('minimax-portal') ? 'minimax-portal' : providerType;
-            await setOpenClawDefaultModelWithOverride(tokenProviderId, undefined, {
-                baseUrl,
-                api: token.api,
-                // Tells OpenClaw's anthropic adapter to use `Authorization: Bearer` instead of `x-api-key`
-                authHeader: providerType.startsWith('minimax-portal') ? true : undefined,
-                // OAuth placeholder — tells Gateway to resolve credentials
-                // from auth-profiles.json (type: 'oauth') instead of a static API key.
-                apiKeyEnv: tokenProviderId === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
-            });
-        } catch (err) {
-            logger.warn(`[DeviceOAuth] Failed to configure openclaw models:`, err);
-        }
 
         // 3. Save provider record in ClawX's own store so UI shows it as configured
         const existing = await getProvider(providerType);

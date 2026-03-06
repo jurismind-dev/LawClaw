@@ -1,22 +1,19 @@
-{
-  "agents": {
-    "defaults": {
-      "subagents": {
-        "maxSpawnDepth": 2,
-        "maxChildrenPerAgent": 5,
-        "runTimeoutSeconds": 1200,
-        "archiveAfterMinutes": 120
-      }
-    },
-    "list": [
-      {
-        "id": "lawclaw-main",
-        "name": "LawClaw 主智能体",
-        "workspace": "~/.openclaw/workspace-lawclaw-main",
-        "model": {
-          "primary": "jurismind/kimi-k2.5"
-        }
-      }
-    ]
-  }
+﻿{
+    "agents":  {
+                   "defaults":  {
+                                    "subagents":  {
+                                                      "maxSpawnDepth":  2,
+                                                      "maxChildrenPerAgent":  5,
+                                                      "runTimeoutSeconds":  1200,
+                                                      "archiveAfterMinutes":  120
+                                                  }
+                                },
+                   "list":  [
+                                {
+                                    "id":  "lawclaw-main",
+                                    "name":  "LawClaw 涓绘櫤鑳戒綋",
+                                    "workspace":  "~/.openclaw/workspace-lawclaw-main"
+                                }
+                            ]
+               }
 }

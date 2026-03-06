@@ -168,7 +168,7 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
     expect(state.currentHash).toBe(vCurrentHash);
   });
 
-  it('旧版 main 工作区自定义不会被覆盖', async () => {
+  it('legacy main workspace customization is preserved', async () => {
     const fixture = createFixture();
     const mainSoulPath = join(fixture.openclawDir, 'workspace', 'SOUL.md');
     writeText(mainSoulPath, '# user custom main');
@@ -235,7 +235,7 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
     expect(readText(skillPath)).toContain('# skill');
   });
 
-  it('模板 hash 不变时不会重复入队', async () => {
+  it('does not re-queue migration when template hash is unchanged', async () => {
     const fixture = createFixture();
     const planner = vi.fn().mockResolvedValue({
       schemaVersion: 1,
@@ -359,7 +359,7 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
     );
   });
 
-  it('保留存量专业 agents（配置与工作区），迁移不做清理', async () => {
+  it('preserves existing specialist agents and workspaces during migration', async () => {
     const fixture = createFixture();
     writeText(
       join(fixture.openclawDir, 'openclaw.json'),
@@ -442,7 +442,7 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
     }
   });
 
-  it('lawclaw-main 缺少 model 时会补齐且不改全局 defaults.model', async () => {
+  it('lawclaw-main 缺少 model 时不再补默认模型且不改全局 defaults.model', async () => {
     const fixture = createFixture();
     writeText(
       join(fixture.openclawDir, 'openclaw.json'),
@@ -498,11 +498,11 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
     const lawclawMain = (config.agents.list as Array<{ id: string; model?: { primary?: string } }>).find(
       (item) => item.id === 'lawclaw-main'
     );
-    expect(lawclawMain?.model?.primary).toBe('jurismind/kimi-k2.5');
+    expect(lawclawMain?.model).toBeUndefined();
     expect(config.agents.defaults.model.primary).toBe('openai/gpt-5.2');
   });
 
-  it('lawclaw-main 已有 model.primary 时保持原值', async () => {
+  it('keeps existing lawclaw-main model.primary unchanged', async () => {
     const fixture = createFixture();
     writeText(
       join(fixture.openclawDir, 'openclaw.json'),
@@ -693,7 +693,7 @@ describe('agent preset smart migration coordinator (lawclaw-main)', () => {
     expect(firstParams.sessionKey).toMatch(/^agent:lawclaw-main:__internal_migration__:/);
   });
 
-  it('forceLawclawAgentPreset + 模型不可用时，会立即覆盖 lawclaw-main 并保留队列任务', async () => {
+  it('forceLawclawAgentPreset overwrites lawclaw-main when model is unavailable and keeps queued tasks', async () => {
     const fixture = createFixture();
     await runAgentPresetStartupMigration({
       resourcesDir: fixture.resourcesDir,

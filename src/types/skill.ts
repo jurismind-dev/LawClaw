@@ -50,6 +50,10 @@ export interface MarketplaceSkill {
   author?: string;
   downloads?: number;
   stars?: number;
+  createdAt?: number;
+  updatedAt?: number;
+  isFeatured?: boolean;
+  isOfficial?: boolean;
 }
 
 /**

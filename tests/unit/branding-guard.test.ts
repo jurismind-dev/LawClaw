@@ -79,15 +79,22 @@ describe('branding guard', () => {
     }
   });
 
-  it('renders JurisHub tab before ClawHub and uses jurismind icon asset', () => {
+  it('uses explicit JurisHub sort labels in zh locale', () => {
+    expect(zhSkills.jurismindhub.sort.createdAt).toBe('按照上架时间排序');
+    expect(zhSkills.jurismindhub.sort.stars).toBe('按照星标排序');
+    expect(zhSkills.jurismindhub.sort.downloads).toBe('按照下载量排序');
+  });
+
+  it('renders JurisHub tab and hides ClawHub UI entries', () => {
     const skillsPageSource = readFileSync(resolve(process.cwd(), 'src/pages/Skills/index.tsx'), 'utf8');
     const jurishubTab = skillsPageSource.indexOf('<TabsTrigger value="jurismindhub"');
     const clawhubTab = skillsPageSource.indexOf('<TabsTrigger value="clawhub"');
+    const clawhubFilter = skillsPageSource.indexOf("t('filter.clawhub'");
 
     expect(skillsPageSource).toContain("from '@/assets/jurismind.svg'");
     expect(jurishubTab).toBeGreaterThan(-1);
-    expect(clawhubTab).toBeGreaterThan(-1);
-    expect(jurishubTab).toBeLessThan(clawhubTab);
+    expect(clawhubTab).toBe(-1);
+    expect(clawhubFilter).toBe(-1);
   });
 
   it('uses LawClaw naming in tray labels and tooltip', () => {

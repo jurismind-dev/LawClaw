@@ -15,6 +15,7 @@ import {
 } from '../utils/paths';
 import {
   detectInstallSourceFromRegistry,
+  JURISMINDHUB_CONVEX_API_URL,
   type SkillInstallSource,
   type SkillMarket,
   resolveSkillPageUrl,
@@ -44,6 +45,10 @@ export interface ClawHubSkillResult {
     author?: string;
     downloads?: number;
     stars?: number;
+    createdAt?: number;
+    updatedAt?: number;
+    isFeatured?: boolean;
+    isOfficial?: boolean;
 }
 
 export interface ClawHubServiceOptions {
@@ -51,6 +56,45 @@ export interface ClawHubServiceOptions {
     siteUrl: string;
     registryUrl: string;
 }
+
+type JurismindOwner = {
+    displayName?: string;
+    name?: string;
+};
+
+type JurismindPublicSkill = {
+    slug: string;
+    displayName?: string;
+    summary?: string | null;
+    stats?: {
+        downloads?: number;
+        stars?: number;
+    };
+    createdAt?: number;
+    updatedAt?: number;
+    badges?: Record<string, unknown>;
+};
+
+type JurismindPublicListEntry = {
+    skill?: JurismindPublicSkill;
+    latestVersion?: { version?: string } | null;
+    owner?: JurismindOwner | null;
+    ownerHandle?: string | null;
+};
+
+type JurismindSearchEntry = {
+    skill?: JurismindPublicSkill;
+    version?: { version?: string } | null;
+    owner?: JurismindOwner | null;
+    ownerHandle?: string | null;
+};
+
+type JurismindConvexResponse<T> = {
+    status: string;
+    value?: T;
+    errorMessage?: string;
+    message?: string;
+};
 
 export class ClawHubService {
     private workDir: string;
@@ -207,10 +251,115 @@ export class ClawHubService {
         throw lastError;
     }
 
+    private async runJurismindConvexRequest<T>(
+        endpointType: 'query' | 'action',
+        pathName: string,
+        args: Record<string, unknown>
+    ): Promise<T> {
+        const endpoint = `${JURISMINDHUB_CONVEX_API_URL}/api/${endpointType}`;
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                path: pathName,
+                args,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`JurisHub Convex request failed (${response.status}): ${response.statusText}`);
+        }
+
+        const payload = (await response.json()) as JurismindConvexResponse<T>;
+        if (payload.status !== 'success' || payload.value === undefined) {
+            throw new Error(payload.errorMessage || payload.message || 'JurisHub Convex request failed');
+        }
+
+        return payload.value;
+    }
+
+    private mapJurismindSkill(
+        skill: JurismindPublicSkill | undefined,
+        version: string | undefined,
+        owner: JurismindOwner | null | undefined,
+        ownerHandle: string | null | undefined
+    ): ClawHubSkillResult | null {
+        if (!skill || !skill.slug) {
+            return null;
+        }
+
+        const badges = skill.badges ?? {};
+        const isFeatured = Boolean(badges.highlighted);
+
+        return {
+            slug: skill.slug,
+            name: skill.displayName || skill.slug,
+            description: skill.summary || '',
+            version: version || 'latest',
+            author: owner?.displayName || owner?.name || ownerHandle || undefined,
+            downloads: typeof skill.stats?.downloads === 'number' ? skill.stats.downloads : undefined,
+            stars: typeof skill.stats?.stars === 'number' ? skill.stats.stars : undefined,
+            createdAt: typeof skill.createdAt === 'number' ? skill.createdAt : undefined,
+            updatedAt: typeof skill.updatedAt === 'number' ? skill.updatedAt : undefined,
+            isFeatured,
+            isOfficial: Boolean(badges.official),
+        };
+    }
+
+    private async searchJurismindHub(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]> {
+        const query = params.query.trim();
+        const limit = Math.min(Math.max(params.limit ?? (query ? 200 : 1000), 1), 2000);
+
+        if (!query) {
+            const entries = await this.runJurismindConvexRequest<JurismindPublicListEntry[]>(
+                'query',
+                'skills:listHighlightedPublic',
+                { limit }
+            );
+            return entries
+                .map((entry) =>
+                    this.mapJurismindSkill(
+                        entry.skill,
+                        entry.latestVersion?.version,
+                        entry.owner,
+                        entry.ownerHandle
+                    )
+                )
+                .filter((item): item is ClawHubSkillResult => item !== null && Boolean(item.isFeatured));
+        }
+
+        const entries = await this.runJurismindConvexRequest<JurismindSearchEntry[]>(
+            'action',
+            'search:searchSkills',
+            {
+                query,
+                limit,
+                highlightedOnly: true,
+            }
+        );
+
+        return entries
+            .map((entry) =>
+                this.mapJurismindSkill(entry.skill, entry.version?.version, entry.owner, entry.ownerHandle)
+            )
+            .filter((item): item is ClawHubSkillResult => item !== null && Boolean(item.isFeatured));
+    }
+
     /**
      * Search for skills
      */
     async search(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]> {
+        if (this.market === 'jurismindhub') {
+            try {
+                return await this.searchJurismindHub(params);
+            } catch (error) {
+                console.error('JurisHub search error:', error);
+                throw error;
+            }
+        }
+
         try {
             // If query is empty, use 'explore' to show trending skills
             if (!params.query || params.query.trim() === '') {
@@ -233,10 +382,10 @@ export class ClawHubService {
 
                 // Format could be: slug vversion description (score)
                 // Or sometimes: slug  vversion  description
-                const match = cleanLine.match(/^(\S+)\s+v?(\d+\.\S+)\s+(.+)$/);
+                const match = cleanLine.match(/^(\S+)(?:\s+v?([0-9][^\s]*))?\s+(.+)$/);
                 if (match) {
                     const slug = match[1];
-                    const version = match[2];
+                    const version = match[2] || 'latest';
                     let description = match[3];
 
                     // Clean up score if present at the end

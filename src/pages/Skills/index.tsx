@@ -2,7 +2,7 @@
  * Skills Page
  * Browse and manage AI skills
  */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -31,6 +31,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -38,6 +39,12 @@ import { useSkillsStore, type SkillsMarket } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import jurisHubLogo from '@/assets/jurismind.svg';
+import {
+  JURISHUB_PAGE_SIZE,
+  paginateJurisHubSkills,
+  sortJurisHubSkills,
+  type JurisHubSortMode,
+} from '@/pages/Skills/jurishub-market';
 import { shouldAutoRefreshMarketplaceOnClear } from '@/pages/Skills/marketplace-query';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -58,8 +65,6 @@ function getOpenSkillPageChannel(market: SkillsMarket): 'clawhub:openSkillPage' 
   }
   return 'clawhub:openSkillPage';
 }
-
-
 
 // Skill detail dialog component
 interface SkillDetailDialogProps {
@@ -389,6 +394,7 @@ function MarketplaceSkillCard({
   onInstall,
   onUninstall
 }: MarketplaceSkillCardProps) {
+  const { t } = useTranslation('skills');
   const handleCardClick = () => {
     window.electron.ipcRenderer.invoke(getOpenSkillPageChannel(market), skill.slug);
   };
@@ -405,9 +411,16 @@ function MarketplaceSkillCard({
               📦
             </div>
             <div>
-              <CardTitle className="text-base group-hover:text-primary transition-colors">{skill.name}</CardTitle>
+              <CardTitle className="text-base group-hover:text-primary transition-colors flex items-center gap-2">
+                <span>{skill.name}</span>
+                {skill.isOfficial && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
+                    {t('jurismindhub.officialBadge')}
+                  </Badge>
+                )}
+              </CardTitle>
               <CardDescription className="text-xs flex items-center gap-2">
-                <span>v{skill.version}</span>
+                {skill.version && <span>v{skill.version}</span>}
                 {skill.author && (
                   <>
                     <span>|</span>
@@ -550,6 +563,8 @@ export function Skills() {
     clawhub: '',
     jurismindhub: '',
   });
+  const [jurisHubSortMode, setJurisHubSortMode] = useState<JurisHubSortMode>('createdAt');
+  const [jurisHubPage, setJurisHubPage] = useState(1);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | SkillsMarket>('all');
   const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | SkillsMarket>('all');
@@ -674,11 +689,32 @@ export function Skills() {
       .catch(console.error);
   }, []);
 
+  const jurismindhubSortedResults = useMemo(
+    () => sortJurisHubSkills(searchResultsByMarket.jurismindhub || [], jurisHubSortMode),
+    [searchResultsByMarket.jurismindhub, jurisHubSortMode]
+  );
+  const jurismindhubPagination = useMemo(
+    () => paginateJurisHubSkills(jurismindhubSortedResults, jurisHubPage, JURISHUB_PAGE_SIZE),
+    [jurismindhubSortedResults, jurisHubPage]
+  );
+  const jurismindhubTotalPages = jurismindhubPagination.totalPages;
+  const jurismindhubCurrentPage = jurismindhubPagination.page;
+  const jurismindhubPagedResults = jurismindhubPagination.items;
+
+  useEffect(() => {
+    if (jurisHubPage > jurismindhubTotalPages) {
+      setJurisHubPage(jurismindhubTotalPages);
+    }
+  }, [jurisHubPage, jurismindhubTotalPages]);
+
   const setMarketplaceQuery = useCallback((market: SkillsMarket, value: string) => {
     setMarketplaceQueries((state) => ({
       ...state,
       [market]: value,
     }));
+    if (market === 'jurismindhub') {
+      setJurisHubPage(1);
+    }
   }, []);
 
   // Handle install
@@ -734,6 +770,9 @@ export function Skills() {
     (market: SkillsMarket, event: React.FormEvent) => {
       event.preventDefault();
       marketplaceDiscoveryAttemptedRef.current[market] = true;
+      if (market === 'jurismindhub') {
+        setJurisHubPage(1);
+      }
       searchSkills(market, marketplaceQueries[market]);
     },
     [marketplaceQueries, searchSkills]
@@ -763,7 +802,10 @@ export function Skills() {
     const query = marketplaceQueries[market];
     const searching = searchingByMarket[market];
     const searchError = searchErrorByMarket[market];
-    const marketResults = searchResultsByMarket[market] || [];
+    const rawMarketResults = searchResultsByMarket[market] || [];
+    const isJurisHubMarket = market === 'jurismindhub';
+    const marketResults = isJurisHubMarket ? jurismindhubPagedResults : rawMarketResults;
+    const marketResultCount = isJurisHubMarket ? jurismindhubSortedResults.length : rawMarketResults.length;
 
     return (
       <div className="flex flex-col gap-4">
@@ -775,7 +817,7 @@ export function Skills() {
             </div>
           </CardContent>
         </Card>
-        <div className="flex gap-4">
+        <div className="flex gap-4 flex-wrap">
           <form onSubmit={(event) => handleMarketplaceSearch(market, event)} className="flex-1 flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -836,6 +878,22 @@ export function Skills() {
               </motion.button>
             </Button>
           </form>
+          {isJurisHubMarket && (
+            <div className="w-[180px]">
+              <Select
+                value={jurisHubSortMode}
+                onChange={(event) => {
+                  setJurisHubSortMode(event.target.value as JurisHubSortMode);
+                  setJurisHubPage(1);
+                }}
+                disabled={searching}
+              >
+                <option value="createdAt">{t('jurismindhub.sort.createdAt')}</option>
+                <option value="stars">{t('jurismindhub.sort.stars')}</option>
+                <option value="downloads">{t('jurismindhub.sort.downloads')}</option>
+              </Select>
+            </div>
+          )}
         </div>
 
         {searchError && (
@@ -847,25 +905,60 @@ export function Skills() {
           </Card>
         )}
 
-        {marketResults.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {marketResults.map((skill) => {
-              const isInstalled = skills.some(
-                (installedSkill) => installedSkill.id === skill.slug || installedSkill.name === skill.name
-              );
-              return (
-                <MarketplaceSkillCard
-                  key={skill.slug}
-                  market={market}
-                  skill={skill}
-                  isInstalling={!!installing[skill.slug]}
-                  isInstalled={isInstalled}
-                  onInstall={() => handleInstall(market, skill.slug)}
-                  onUninstall={() => handleUninstall(market, skill.slug)}
-                />
-              );
-            })}
-          </div>
+        {marketResultCount > 0 ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {marketResults.map((skill) => {
+                const isInstalled = skills.some(
+                  (installedSkill) => installedSkill.id === skill.slug || installedSkill.name === skill.name
+                );
+                return (
+                  <MarketplaceSkillCard
+                    key={skill.slug}
+                    market={market}
+                    skill={skill}
+                    isInstalling={!!installing[skill.slug]}
+                    isInstalled={isInstalled}
+                    onInstall={() => handleInstall(market, skill.slug)}
+                    onUninstall={() => handleUninstall(market, skill.slug)}
+                  />
+                );
+              })}
+            </div>
+            {isJurisHubMarket && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {t('jurismindhub.pagination.total', { count: marketResultCount })}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setJurisHubPage((page) => Math.max(1, page - 1))}
+                    disabled={searching || jurismindhubCurrentPage <= 1}
+                  >
+                    {t('jurismindhub.pagination.prev')}
+                  </Button>
+                  <span className="text-sm text-muted-foreground min-w-[108px] text-center">
+                    {t('jurismindhub.pagination.pageInfo', {
+                      page: jurismindhubCurrentPage,
+                      total: jurismindhubTotalPages,
+                    })}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setJurisHubPage((page) => Math.min(jurismindhubTotalPages, page + 1))
+                    }
+                    disabled={searching || jurismindhubCurrentPage >= jurismindhubTotalPages}
+                  >
+                    {t('jurismindhub.pagination.next')}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
@@ -940,10 +1033,6 @@ export function Skills() {
             <img src={jurisHubLogo} alt="" aria-hidden className="h-4 w-4 rounded-[2px]" />
             {t('tabs.jurismindhub')}
           </TabsTrigger>
-          <TabsTrigger value="clawhub" className="gap-2">
-            <Globe className="h-4 w-4" />
-            {t('tabs.clawhub')}
-          </TabsTrigger>
           {/* <TabsTrigger value="bundles" className="gap-2">
             <Package className="h-4 w-4" />
             Bundles
@@ -979,15 +1068,6 @@ export function Skills() {
               >
                 <Puzzle className="h-3 w-3" />
                 {t('filter.builtIn', { count: sourceStats.builtIn })}
-              </Button>
-              <Button
-                variant={selectedSource === 'clawhub' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedSource('clawhub')}
-                className="gap-2"
-              >
-                <Globe className="h-3 w-3" />
-                {t('filter.clawhub', { count: sourceStats.clawhub })}
               </Button>
               <Button
                 variant={selectedSource === 'jurismindhub' ? 'default' : 'outline'}
@@ -1106,10 +1186,6 @@ export function Skills() {
               ))}
             </div>
           )}
-        </TabsContent>
-
-        <TabsContent value="clawhub" className="space-y-6 mt-6">
-          {renderMarketplaceContent('clawhub')}
         </TabsContent>
 
         <TabsContent value="jurismindhub" className="space-y-6 mt-6">

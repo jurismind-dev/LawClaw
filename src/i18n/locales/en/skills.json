@@ -85,6 +85,18 @@
     "searching": "Searching JurisHub...",
     "noResults": "No skills found matching your search.",
     "emptyPrompt": "Search for new skills to expand your capabilities.",
-    "searchError": "JurisHub search failed. Check your connection or installation."
+    "searchError": "JurisHub search failed. Check your connection or installation.",
+    "officialBadge": "Official",
+    "sort": {
+      "createdAt": "Listed time",
+      "stars": "Stars",
+      "downloads": "Downloads"
+    },
+    "pagination": {
+      "total": "Total {{count}} skills",
+      "prev": "Previous",
+      "next": "Next",
+      "pageInfo": "Page {{page}} / {{total}}"
+    }
   }
 }

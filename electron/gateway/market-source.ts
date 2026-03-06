@@ -9,6 +9,7 @@ export const CLAWHUB_REGISTRY_URL = 'https://clawhub.ai';
 
 export const JURISMINDHUB_SITE_URL = 'https://lawhub.jurismind.com';
 export const JURISMINDHUB_REGISTRY_URL = 'https://lawhub.jurismind.com';
+export const JURISMINDHUB_CONVEX_API_URL = 'https://convex-api-lawhub.jurismind.com';
 const LEGACY_JURISMIND_REGISTRY_HOSTNAMES = ['calculating-salmon-931.convex.site'];
 
 function normalizeUrl(url?: string): string | null {

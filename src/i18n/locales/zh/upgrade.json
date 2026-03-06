@@ -1,0 +1,23 @@
+{
+  "title": "正在安装预设组件",
+  "subtitle": "请稍候，LawClaw 正在更新内置的 skills 和 plugins。",
+  "progress": "进度",
+  "status": {
+    "pending": "等待中",
+    "installing": "安装中...",
+    "completed": "已完成",
+    "failed": "失败"
+  },
+  "kind": {
+    "skill": "Skill",
+    "plugin": "插件"
+  },
+  "itemDesc": "{{kind}} · 目标版本 {{version}}",
+  "installFailed": "预设安装失败",
+  "installSuccess": "预设组件已更新",
+  "retry": "重试",
+  "skipCurrent": "跳过当前版本",
+  "skipSuccess": "已跳过当前预设版本",
+  "skipFailed": "跳过当前版本失败",
+  "noItems": "没有需要安装的预设项"
+}

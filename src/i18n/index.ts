@@ -10,6 +10,7 @@ import enChannels from './locales/en/channels.json';
 import enSkills from './locales/en/skills.json';
 import enCron from './locales/en/cron.json';
 import enSetup from './locales/en/setup.json';
+import enUpgrade from './locales/en/upgrade.json';
 
 // ZH
 import zhCommon from './locales/zh/common.json';
@@ -20,10 +21,23 @@ import zhChannels from './locales/zh/channels.json';
 import zhSkills from './locales/zh/skills.json';
 import zhCron from './locales/zh/cron.json';
 import zhSetup from './locales/zh/setup.json';
+import zhUpgrade from './locales/zh/upgrade.json';
+
+// JA
+import jaCommon from './locales/ja/common.json';
+import jaSettings from './locales/ja/settings.json';
+import jaDashboard from './locales/ja/dashboard.json';
+import jaChat from './locales/ja/chat.json';
+import jaChannels from './locales/ja/channels.json';
+import jaSkills from './locales/ja/skills.json';
+import jaCron from './locales/ja/cron.json';
+import jaSetup from './locales/ja/setup.json';
+import jaUpgrade from './locales/ja/upgrade.json';
 
 export const SUPPORTED_LANGUAGES = [
     { code: 'en', label: 'English' },
     { code: 'zh', label: '中文' },
+    { code: 'ja', label: '日本語' },
 ] as const;
 
 export type LanguageCode = (typeof SUPPORTED_LANGUAGES)[number]['code'];
@@ -38,6 +52,7 @@ const resources = {
         skills: enSkills,
         cron: enCron,
         setup: enSetup,
+        upgrade: enUpgrade,
     },
     zh: {
         common: zhCommon,
@@ -48,6 +63,18 @@ const resources = {
         skills: zhSkills,
         cron: zhCron,
         setup: zhSetup,
+        upgrade: zhUpgrade,
+    },
+    ja: {
+        common: jaCommon,
+        settings: jaSettings,
+        dashboard: jaDashboard,
+        chat: jaChat,
+        channels: jaChannels,
+        skills: jaSkills,
+        cron: jaCron,
+        setup: jaSetup,
+        upgrade: jaUpgrade,
     },
 };
 
@@ -58,7 +85,7 @@ i18n
         lng: 'en', // will be overridden by settings store
         fallbackLng: 'en',
         defaultNS: 'common',
-        ns: ['common', 'settings', 'dashboard', 'chat', 'channels', 'skills', 'cron', 'setup'],
+        ns: ['common', 'settings', 'dashboard', 'chat', 'channels', 'skills', 'cron', 'setup', 'upgrade'],
         interpolation: {
             escapeValue: false, // React already escapes
         },

@@ -1,0 +1,23 @@
+{
+  "title": "プリセットコンポーネントをインストール中",
+  "subtitle": "LawClaw の内蔵 skills / plugins を更新しています。しばらくお待ちください。",
+  "progress": "進捗",
+  "status": {
+    "pending": "待機中",
+    "installing": "インストール中...",
+    "completed": "完了",
+    "failed": "失敗"
+  },
+  "kind": {
+    "skill": "Skill",
+    "plugin": "プラグイン"
+  },
+  "itemDesc": "{{kind}} · 対象バージョン {{version}}",
+  "installFailed": "プリセットのインストールに失敗しました",
+  "installSuccess": "プリセットコンポーネントの更新が完了しました",
+  "retry": "再試行",
+  "skipCurrent": "このバージョンをスキップ",
+  "skipSuccess": "このプリセットバージョンをスキップしました",
+  "skipFailed": "スキップに失敗しました",
+  "noItems": "インストール対象のプリセット項目はありません"
+}

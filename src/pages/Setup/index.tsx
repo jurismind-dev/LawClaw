@@ -45,6 +45,11 @@ import {
   shouldRestartGatewayAfterQqPluginInstall,
 } from './qq-plugin-install';
 import { shouldAutoSelectLawClawProvider } from '@/lib/lawclaw-provider-ui-context';
+import type {
+  PresetInstallProgressEvent,
+  PresetInstallRunResult,
+  PresetInstallStatusResult,
+} from '@/types/preset-install';
 
 interface SetupStep {
   id: string;
@@ -92,21 +97,6 @@ const steps: SetupStep[] = [
     title: 'All Set!',
     description: 'LawClaw is ready to use',
   },
-];
-
-// Default skills to auto-install (no additional API keys required)
-interface DefaultSkill {
-  id: string;
-  name: string;
-  description: string;
-}
-
-const defaultSkills: DefaultSkill[] = [
-  { id: 'opencode', name: 'OpenCode', description: 'AI coding assistant backend' },
-  { id: 'python-env', name: 'Python Environment', description: 'Python runtime for skills' },
-  { id: 'code-assist', name: 'Code Assist', description: 'Code analysis and suggestions' },
-  { id: 'file-tools', name: 'File Tools', description: 'File operations and management' },
-  { id: 'terminal', name: 'Terminal', description: 'Shell command execution' },
 ];
 
 import { SETUP_PROVIDERS, type ProviderTypeInfo, getProviderIconUrl, shouldInvertInDark } from '@/lib/providers';
@@ -274,7 +264,6 @@ export function Setup() {
               )}
               {safeStepIndex === STEP.INSTALLING && (
                 <InstallingContent
-                  skills={defaultSkills}
                   installQqPlugin={shouldInstallQqPluginForSetupSession(configuredChannelsInSession)}
                   onComplete={handleInstallationComplete}
                   onSkip={() => setCurrentStep((i) => i + 1)}
@@ -1683,17 +1672,14 @@ interface SkillInstallState {
 }
 
 interface InstallingContentProps {
-  skills: DefaultSkill[];
   installQqPlugin: boolean;
   onComplete: (installedSkills: string[]) => void;
   onSkip: () => void;
 }
 
-function InstallingContent({ skills, installQqPlugin, onComplete, onSkip }: InstallingContentProps) {
+function InstallingContent({ installQqPlugin, onComplete, onSkip }: InstallingContentProps) {
   const { t } = useTranslation('setup');
-  const [skillStates, setSkillStates] = useState<SkillInstallState[]>(
-    skills.map((s) => ({ ...s, status: 'pending' as InstallStatus }))
-  );
+  const [skillStates, setSkillStates] = useState<SkillInstallState[]>([]);
   const [qqPluginStatus, setQqPluginStatus] = useState<InstallStatus>(
     installQqPlugin ? 'pending' : 'completed'
   );
@@ -1704,41 +1690,142 @@ function InstallingContent({ skills, installQqPlugin, onComplete, onSkip }: Inst
   // Real installation process
   useEffect(() => {
     let cancelled = false;
+    let unsubscribeProgress: (() => void) | void;
+    const itemNameMap = new Map<string, string>();
+    let qqStatusFinal: InstallStatus = installQqPlugin ? 'pending' : 'completed';
+
+    const toInstallStatus = (status: PresetInstallProgressEvent['status']): InstallStatus => {
+      if (status === 'failed') return 'failed';
+      if (status === 'completed' || status === 'skipped') return 'completed';
+      if (status === 'installing' || status === 'verifying') return 'installing';
+      return 'pending';
+    };
 
     const runRealInstall = async () => {
       try {
         setErrorMessage(null);
-        setSkillStates(skills.map((s) => ({ ...s, status: 'pending' as InstallStatus })));
+        setSkillStates([]);
+        setOverallProgress(0);
         if (installQqPlugin) {
           setQqPluginStatus('pending');
+          qqStatusFinal = 'pending';
         }
 
-        // Step 1: Initialize all skills to 'installing' state for UI
-        setSkillStates(prev => prev.map(s => ({ ...s, status: 'installing' })));
-        setOverallProgress(10);
+        const presetStatus = await window.electron.ipcRenderer.invoke(
+          'presetInstall:getStatus'
+        ) as PresetInstallStatusResult;
 
-        // Step 2: Call the backend to install uv and setup Python
-        const result = await window.electron.ipcRenderer.invoke('uv:install-all') as {
+        const plannedStates: SkillInstallState[] = presetStatus.plannedItems.map((item) => {
+          const key = `${item.kind}:${item.id}`;
+          const kindLabel =
+            item.kind === 'plugin' ? t('installing.kind.plugin') : t('installing.kind.skill');
+          const description = t('installing.presetItemDesc', {
+            kind: kindLabel,
+            version: item.targetVersion,
+          });
+          itemNameMap.set(key, item.displayName);
+          return {
+            id: key,
+            name: item.displayName,
+            description,
+            status: 'pending',
+          };
+        });
+        setSkillStates(plannedStates);
+        setOverallProgress(5);
+
+        // Step 1: Call the backend to install uv and setup Python
+        const uvResult = await window.electron.ipcRenderer.invoke('uv:install-all') as {
           success: boolean;
           error?: string
         };
 
-        if (!result.success) {
+        if (!uvResult.success) {
           setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
           if (installQqPlugin) {
             setQqPluginStatus('failed');
+            qqStatusFinal = 'failed';
           }
-          setErrorMessage(result.error || 'Unknown error during installation');
+          setErrorMessage(uvResult.error || 'Unknown error during installation');
           toast.error('Environment setup failed');
           return;
         }
+        setOverallProgress(30);
 
-        setSkillStates(prev => prev.map(s => ({ ...s, status: 'completed' })));
-        setOverallProgress(70);
+        unsubscribeProgress = window.electron.ipcRenderer.on('presetInstall:progress', (raw) => {
+          const event = raw as PresetInstallProgressEvent;
+          if (event.phase !== 'setup') return;
+
+          const key = `${event.kind}:${event.itemId}`;
+          const displayName = event.displayName || itemNameMap.get(key) || event.itemId;
+          const nextStatus = toInstallStatus(event.status);
+          itemNameMap.set(key, displayName);
+
+          setSkillStates((prev) => {
+            const existing = prev.find((item) => item.id === key);
+            const kindLabel =
+              event.kind === 'plugin' ? t('installing.kind.plugin') : t('installing.kind.skill');
+            const description = t('installing.presetItemDesc', {
+              kind: kindLabel,
+              version: t('installing.versionUnknown'),
+            });
+            if (!existing) {
+              return [
+                ...prev,
+                {
+                  id: key,
+                  name: displayName,
+                  description,
+                  status: nextStatus,
+                },
+              ];
+            }
+            return prev.map((item) =>
+              item.id === key
+                ? {
+                    ...item,
+                    name: displayName,
+                    status: nextStatus,
+                  }
+                : item
+            );
+          });
+
+          setOverallProgress((prev) => Math.max(prev, Math.min(90, 30 + Math.round(event.progress * 0.6))));
+        });
+
+        // Step 2: Run preset install manifest items
+        const presetRunResult = await window.electron.ipcRenderer.invoke(
+          'presetInstall:run',
+          { phase: 'setup' }
+        ) as PresetInstallRunResult;
+
+        if (!presetRunResult.success) {
+          setSkillStates((prev) => prev.map((item) => ({
+            ...item,
+            status: item.status === 'completed' ? item.status : 'failed',
+          })));
+          if (installQqPlugin) {
+            setQqPluginStatus('failed');
+            qqStatusFinal = 'failed';
+          }
+          setErrorMessage(presetRunResult.error || 'Preset install failed');
+          toast.error(t('installing.presetInstallFailed'));
+          return;
+        }
+
+        setSkillStates((prev) =>
+          prev.map((item) => ({
+            ...item,
+            status: item.status === 'failed' ? item.status : 'completed',
+          }))
+        );
+        setOverallProgress(90);
 
         if (installQqPlugin) {
           setQqPluginStatus('installing');
-          setOverallProgress(85);
+          qqStatusFinal = 'installing';
+          setOverallProgress(95);
           let shouldRestartGateway = false;
           const installedCheck = await window.electron.ipcRenderer.invoke(
             'openclaw:isPluginInstalled',
@@ -1750,6 +1837,7 @@ function InstallingContent({ skills, installQqPlugin, onComplete, onSkip }: Inst
 
           if (installedCheck?.success && installedCheck.installed) {
             setQqPluginStatus('completed');
+            qqStatusFinal = 'completed';
           } else {
             const pluginResult = await window.electron.ipcRenderer.invoke(
               'openclaw:installBundledPlugin',
@@ -1763,12 +1851,14 @@ function InstallingContent({ skills, installQqPlugin, onComplete, onSkip }: Inst
 
             if (!pluginResult?.success) {
               setQqPluginStatus('failed');
+              qqStatusFinal = 'failed';
               setErrorMessage(pluginResult?.error || 'QQ plugin installation failed');
               toast.error(t('installing.qqInstallFailed'));
               return;
             }
 
             setQqPluginStatus('completed');
+            qqStatusFinal = 'completed';
             shouldRestartGateway = shouldRestartGatewayAfterQqPluginInstall(false, pluginResult);
           }
 
@@ -1783,7 +1873,11 @@ function InstallingContent({ skills, installQqPlugin, onComplete, onSkip }: Inst
 
         await new Promise((resolve) => setTimeout(resolve, 800));
         if (!cancelled) {
-          onComplete(skills.map(s => s.id));
+          const installedNames = Array.from(itemNameMap.values());
+          if (installQqPlugin && qqStatusFinal !== 'failed') {
+            installedNames.push(t('installing.qqPluginName'));
+          }
+          onComplete(installedNames);
         }
       } catch (err) {
         if (cancelled) return;
@@ -1800,8 +1894,11 @@ function InstallingContent({ skills, installQqPlugin, onComplete, onSkip }: Inst
 
     return () => {
       cancelled = true;
+      if (typeof unsubscribeProgress === 'function') {
+        unsubscribeProgress();
+      }
     };
-  }, [skills, onComplete, installQqPlugin, retrySeed, t]);
+  }, [onComplete, installQqPlugin, retrySeed, t]);
 
   const getStatusIcon = (status: InstallStatus) => {
     switch (status) {
@@ -1869,6 +1966,11 @@ function InstallingContent({ skills, installQqPlugin, onComplete, onSkip }: Inst
 
       {/* Skill list */}
       <div className="space-y-2 max-h-48 overflow-y-auto">
+        {installItems.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            {t('installing.noPresetItems')}
+          </p>
+        )}
         {installItems.map((skill) => (
           <motion.div
             key={skill.id}
@@ -1946,10 +2048,7 @@ function CompleteContent({ selectedProvider, installedSkills }: CompleteContentP
   const gatewayStatus = useGatewayStore((state) => state.status);
 
   const providerData = providers.find((p) => p.id === selectedProvider);
-  const installedSkillNames = defaultSkills
-    .filter((s) => installedSkills.includes(s.id))
-    .map((s) => s.name)
-    .join(', ');
+  const installedSkillNames = installedSkills.join(', ');
 
   return (
     <div className="text-center space-y-6">

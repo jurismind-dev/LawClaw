@@ -38,4 +38,8 @@ describe('shouldRestartGatewayAfterQqPluginInstall', () => {
       })
     ).toBe(true);
   });
+
+  it('returns false when install result is unavailable', () => {
+    expect(shouldRestartGatewayAfterQqPluginInstall(false, null)).toBe(false);
+  });
 });

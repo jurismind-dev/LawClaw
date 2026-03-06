@@ -16,6 +16,7 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { logger } from './logger';
+import { sanitizePluginPackageManifestForLocalInstall } from './openclaw-plugin-install';
 import { getOpenClawConfigDir } from './paths';
 import {
   computePresetInstallManifestHash,
@@ -745,6 +746,19 @@ export class PresetInstaller {
         const extracted = await extractTarGzArchive(artifactPath);
         tempExtractDir = extracted.tempDir;
         installPath = extracted.packageDir;
+      }
+
+      if (item.id === 'qqbot') {
+        try {
+          sanitizePluginPackageManifestForLocalInstall(installPath);
+        } catch (error) {
+          return {
+            skipped: false,
+            shouldRestartGateway: false,
+            failed: true,
+            message: `Failed to sanitize plugin ${item.id} at ${installPath}: ${String(error)}`,
+          };
+        }
       }
 
       const result = await this.options.installPluginFromLocalPath(item.id, installPath);

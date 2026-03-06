@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   cpSync,
@@ -10,10 +11,16 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PresetInstaller } from '../../electron/utils/preset-installer';
 import { readPresetInstallState } from '../../electron/utils/preset-install-state';
+
+interface PluginInstallSnapshot {
+  pluginId: string;
+  installPath: string;
+  dependencies?: Record<string, unknown>;
+}
 
 interface TestContext {
   rootDir: string;
@@ -23,6 +30,7 @@ interface TestContext {
   openClawConfigDir: string;
   openClawSkillsDir: string;
   pluginInstallCalls: string[];
+  pluginInstallSnapshots: PluginInstallSnapshot[];
   pluginUninstallCalls: string[];
   installer: PresetInstaller;
 }
@@ -47,6 +55,7 @@ function createContext(): TestContext {
   mkdirSync(openClawSkillsDir, { recursive: true });
 
   const pluginInstallCalls: string[] = [];
+  const pluginInstallSnapshots: PluginInstallSnapshot[] = [];
   const pluginUninstallCalls: string[] = [];
 
   const installer = new PresetInstaller({
@@ -56,6 +65,15 @@ function createContext(): TestContext {
     openClawSkillsDir,
     installPluginFromLocalPath: async (pluginId, installPath) => {
       pluginInstallCalls.push(pluginId);
+      const pkgPath = join(installPath, 'package.json');
+      let dependencies: Record<string, unknown> | undefined;
+      if (existsSync(pkgPath)) {
+        const parsed = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { dependencies?: unknown };
+        if (parsed.dependencies && typeof parsed.dependencies === 'object' && !Array.isArray(parsed.dependencies)) {
+          dependencies = parsed.dependencies as Record<string, unknown>;
+        }
+      }
+      pluginInstallSnapshots.push({ pluginId, installPath, dependencies });
       const targetDir = join(openClawConfigDir, 'extensions', pluginId);
       rmSync(targetDir, { recursive: true, force: true });
       mkdirSync(targetDir, { recursive: true });
@@ -78,6 +96,7 @@ function createContext(): TestContext {
     openClawConfigDir,
     openClawSkillsDir,
     pluginInstallCalls,
+    pluginInstallSnapshots,
     pluginUninstallCalls,
     installer,
   };
@@ -110,6 +129,12 @@ function computeDirectoryHash(dirPath: string): string {
   return hash.digest('hex');
 }
 
+function computeFileHash(filePath: string): string {
+  const hash = createHash('sha256');
+  hash.update(readFileSync(filePath));
+  return hash.digest('hex');
+}
+
 function createDirArtifact(context: TestContext, relativePath: string, pkgName: string, version: string): ArtifactInfo {
   const artifactPath = join(context.presetRootDir, relativePath);
   mkdirSync(artifactPath, { recursive: true });
@@ -122,6 +147,33 @@ function createDirArtifact(context: TestContext, relativePath: string, pkgName: 
   return {
     path: relativePath.replaceAll('\\', '/'),
     sha256: computeDirectoryHash(artifactPath),
+  };
+}
+
+function createPluginTgzArtifact(
+  context: TestContext,
+  relativeArchivePath: string,
+  packageJson: Record<string, unknown>
+): ArtifactInfo {
+  const archivePath = join(context.presetRootDir, relativeArchivePath);
+  const stageDir = join(context.rootDir, `tgz-stage-${relativeArchivePath.replace(/[\\/]/g, '-')}`);
+  const packageDir = join(stageDir, 'package');
+  rmSync(stageDir, { recursive: true, force: true });
+  mkdirSync(packageDir, { recursive: true });
+  mkdirSync(dirname(archivePath), { recursive: true });
+  writeFileSync(join(packageDir, 'package.json'), JSON.stringify(packageJson, null, 2), 'utf-8');
+  writeFileSync(join(packageDir, 'index.js'), 'export default {};\n', 'utf-8');
+
+  const tarResult = spawnSync('tar', ['-czf', archivePath, '-C', stageDir, 'package'], {
+    encoding: 'utf-8',
+  });
+  if (tarResult.status !== 0) {
+    throw new Error(`failed to create plugin tgz artifact: ${tarResult.stderr || tarResult.stdout}`);
+  }
+
+  return {
+    path: relativeArchivePath.replaceAll('\\', '/'),
+    sha256: computeFileHash(archivePath),
   };
 }
 
@@ -377,6 +429,43 @@ describe('PresetInstaller', () => {
       version: string;
     };
     expect(installedPkg.version).toBe('2.0.0');
+  });
+
+  it('qqbot tgz 预置安装前会清理 package.json dependencies', async () => {
+    const context = createContext();
+    const artifact = createPluginTgzArtifact(context, 'plugins/qqbot-1.5.0.tgz', {
+      name: '@sliverp/qqbot',
+      version: '1.5.0',
+      openclaw: { extensions: ['./index.js'] },
+      dependencies: {
+        ws: '^8.18.0',
+        'silk-wasm': '^3.7.1',
+      },
+      devDependencies: {
+        typescript: '^5.9.3',
+      },
+    });
+
+    writeManifest(context, {
+      presetVersion: '2026.03.10.2',
+      items: [
+        {
+          kind: 'plugin',
+          id: 'qqbot',
+          targetVersion: '1.5.0',
+          artifactPath: artifact.path,
+          sha256: artifact.sha256,
+          installMode: 'tgz',
+        },
+      ],
+    });
+
+    const result = await context.installer.run('setup');
+    expect(result.success).toBe(true);
+
+    const installSnapshot = context.pluginInstallSnapshots.find((entry) => entry.pluginId === 'qqbot');
+    expect(installSnapshot).toBeTruthy();
+    expect(installSnapshot?.dependencies).toEqual({});
   });
 
   it('FORCE_PRESET_SYNC 会严格对齐并清理已托管旧插件', async () => {

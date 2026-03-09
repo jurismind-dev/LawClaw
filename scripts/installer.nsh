@@ -1,9 +1,11 @@
 ; LawClaw Custom NSIS Uninstaller Script
 ; Provides a "Complete Removal" option during uninstallation.
-; The cleanup scope is limited to LawClaw data only:
-; - ~/.openclaw/workspace-lawclaw-main
-; - AppData\Local\clawx
-; - AppData\Roaming\clawx
+; The cleanup scope removes LawClaw local data plus the bundled OpenClaw
+; runtime data used by LawClaw:
+; - ~/.LawClaw
+; - ~/.openclaw
+; - AppData\Local\LawClaw / clawx (+ updater caches)
+; - AppData\Roaming\LawClaw / clawx
 ; Handles both per-user and per-machine (all users) installations.
 
 !macro customUnInstall
@@ -20,13 +22,18 @@
 
   ; Ask user if they want to remove LawClaw user data
   MessageBox MB_YESNO|MB_ICONQUESTION \
-    "Do you want to remove LawClaw user data?$\r$\n$\r$\nThis will delete:$\r$\n  - .openclaw\\workspace-lawclaw-main (LawClaw workspace only)$\r$\n  - AppData\\Local\\clawx (local app data)$\r$\n  - AppData\\Roaming\\clawx (roaming app data)$\r$\n$\r$\nOther OpenClaw data in .openclaw will be kept.$\r$\n$\r$\nSelect 'No' to keep all data for future reinstallation." \
+    "Do you want to completely remove LawClaw local data?$\r$\n$\r$\nThis will delete:$\r$\n  - .LawClaw$\r$\n  - .openclaw$\r$\n  - AppData\\Local\\LawClaw / clawx$\r$\n  - AppData\\Local\\LawClaw-updater / clawx-updater$\r$\n  - AppData\\Roaming\\LawClaw / clawx$\r$\n$\r$\nSelect 'No' to keep these files for future reinstallation." \
     /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
 
   _cu_removeData:
     ; --- Always remove current user's data first ---
-    RMDir /r "$PROFILE\.openclaw\workspace-lawclaw-main"
+    RMDir /r "$PROFILE\.LawClaw"
+    RMDir /r "$PROFILE\.openclaw"
+    RMDir /r "$LOCALAPPDATA\LawClaw"
     RMDir /r "$LOCALAPPDATA\clawx"
+    RMDir /r "$LOCALAPPDATA\LawClaw-updater"
+    RMDir /r "$LOCALAPPDATA\clawx-updater"
+    RMDir /r "$APPDATA\LawClaw"
     RMDir /r "$APPDATA\clawx"
 
     ; --- For per-machine (all users) installs, enumerate all user profiles ---
@@ -42,8 +49,13 @@
     ExpandEnvStrings $R2 $R2
     StrCmp $R2 $PROFILE _cu_enumNext
 
-    RMDir /r "$R2\.openclaw\workspace-lawclaw-main"
+    RMDir /r "$R2\.LawClaw"
+    RMDir /r "$R2\.openclaw"
+    RMDir /r "$R2\AppData\Local\LawClaw"
     RMDir /r "$R2\AppData\Local\clawx"
+    RMDir /r "$R2\AppData\Local\LawClaw-updater"
+    RMDir /r "$R2\AppData\Local\clawx-updater"
+    RMDir /r "$R2\AppData\Roaming\LawClaw"
     RMDir /r "$R2\AppData\Roaming\clawx"
 
   _cu_enumNext:

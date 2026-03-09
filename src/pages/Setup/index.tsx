@@ -17,6 +17,8 @@ import {
   RefreshCw,
   CheckCircle2,
   XCircle,
+  X,
+  QrCode,
   ExternalLink,
   BookOpen,
   Copy,
@@ -818,40 +820,36 @@ function ProviderContent({
     await window.electron.ipcRenderer.invoke('provider:cancelOAuth');
   };
 
-  // On mount, try to restore previously configured provider
+  // Keep setup provider selection empty until the user explicitly chooses one.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
-        const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
-        const setupProviderTypes = new Set<string>(providers.map((p) => p.id));
-        const setupCandidates = list.filter((p) => setupProviderTypes.has(p.type));
-        const preferred =
-          (defaultId && setupCandidates.find((p) => p.id === defaultId))
-          || setupCandidates.find((p) => p.hasKey)
-          || setupCandidates[0];
-        if (preferred && !cancelled) {
-          onSelectProvider(preferred.type);
-          setSelectedProviderConfigId(preferred.id);
-          const typeInfo = providers.find((p) => p.id === preferred.type);
-          const requiresKey = typeInfo?.requiresApiKey ?? false;
-          onConfiguredChange(!requiresKey || preferred.hasKey);
-          const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', preferred.id) as string | null;
-          if (storedKey) {
-            onApiKeyChange(storedKey);
-          }
-        } else if (!cancelled) {
+        await window.electron.ipcRenderer.invoke('provider:list');
+        if (!cancelled) {
+          onSelectProvider(null);
+          setSelectedProviderConfigId(null);
+          onApiKeyChange('');
+          setBaseUrl('');
+          setModelId('');
+          setKeyValid(null);
           onConfiguredChange(false);
         }
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load provider list:', error);
+          onSelectProvider(null);
+          setSelectedProviderConfigId(null);
+          onApiKeyChange('');
+          setBaseUrl('');
+          setModelId('');
+          setKeyValid(null);
+          onConfiguredChange(false);
         }
       }
     })();
     return () => { cancelled = true; };
-  }, [onApiKeyChange, onConfiguredChange, onSelectProvider, providers]);
+  }, [onApiKeyChange, onConfiguredChange, onSelectProvider]);
 
   // When provider changes, load stored key + reset base URL
   useEffect(() => {
@@ -925,6 +923,100 @@ function ProviderContent({
   const isOAuth = selectedProviderData?.isOAuth ?? false;
   const supportsApiKey = selectedProviderData?.supportsApiKey ?? false;
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
+  const isJurismind = selectedProvider === 'jurismind';
+
+  const saveProviderConfig = useCallback(
+    async (providerApiKey?: string) => {
+      if (!selectedProvider) {
+        throw new Error('Provider not selected');
+      }
+
+      const effectiveBaseUrl = showBaseUrlField ? (baseUrl.trim() || undefined) : undefined;
+      const effectiveModelId = showModelIdField ? (modelId.trim() || undefined) : undefined;
+      const providerIdForSave =
+        selectedProvider === 'custom'
+          ? (selectedProviderConfigId?.startsWith('custom-')
+            ? selectedProviderConfigId
+            : `custom-${crypto.randomUUID()}`)
+          : selectedProvider;
+
+      const saveResult = await window.electron.ipcRenderer.invoke(
+        'provider:save',
+        {
+          id: providerIdForSave,
+          name: selectedProvider === 'custom'
+            ? t('settings:aiProviders.custom')
+            : (selectedProviderData?.name || selectedProvider),
+          type: selectedProvider,
+          baseUrl: effectiveBaseUrl,
+          model: effectiveModelId,
+          enabled: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        providerApiKey || undefined
+      ) as { success: boolean; error?: string };
+
+      if (!saveResult.success) {
+        throw new Error(saveResult.error || 'Failed to save provider config');
+      }
+
+      if (shouldAutoSelectLawClawProvider('setup')) {
+        const defaultResult = await window.electron.ipcRenderer.invoke(
+          'provider:setDefault',
+          providerIdForSave
+        ) as { success: boolean; error?: string };
+
+        if (!defaultResult.success) {
+          throw new Error(defaultResult.error || 'Failed to set default provider');
+        }
+      }
+
+      setSelectedProviderConfigId(providerIdForSave);
+      setKeyValid(true);
+      onConfiguredChange(true);
+      return providerIdForSave;
+    },
+    [
+      baseUrl,
+      modelId,
+      onConfiguredChange,
+      selectedProvider,
+      selectedProviderConfigId,
+      selectedProviderData?.name,
+      showBaseUrlField,
+      showModelIdField,
+      t,
+    ]
+  );
+
+  const handleBindJurismindToken = useCallback(async () => {
+    setValidating(true);
+    setKeyValid(null);
+
+    try {
+      const result = await window.electron.ipcRenderer.invoke('provider:bindJurismindToken') as {
+        success?: boolean;
+        error?: string;
+        tokenKey?: string;
+      };
+
+      if (!result?.success || !result?.tokenKey) {
+        throw new Error(result?.error || 'Jurismind token binding failed');
+      }
+
+      onApiKeyChange(String(result.tokenKey));
+      await saveProviderConfig(String(result.tokenKey));
+      toast.success(t('provider.valid'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setKeyValid(false);
+      onConfiguredChange(false);
+      toast.error(message);
+    } finally {
+      setValidating(false);
+    }
+  }, [onApiKeyChange, onConfiguredChange, saveProviderConfig, t]);
 
   const handleValidateAndSave = async () => {
     if (!selectedProvider) return;
@@ -948,16 +1040,13 @@ function ProviderContent({
     setKeyValid(null);
 
     try {
-      const effectiveBaseUrl = showBaseUrlField ? (baseUrl.trim() || undefined) : undefined;
-      const effectiveModelId = showModelIdField ? (modelId.trim() || undefined) : undefined;
-
       // Validate key if the provider requires one and a key was entered
       if (requiresKey && apiKey) {
         const result = await window.electron.ipcRenderer.invoke(
           'provider:validateKey',
           selectedProviderConfigId || selectedProvider,
           apiKey,
-          { baseUrl: effectiveBaseUrl }
+          { baseUrl: showBaseUrlField ? (baseUrl.trim() || undefined) : undefined }
         ) as { valid: boolean; error?: string };
 
         setKeyValid(result.valid);
@@ -971,46 +1060,7 @@ function ProviderContent({
         setKeyValid(true);
       }
 
-      const providerIdForSave =
-        selectedProvider === 'custom'
-          ? (selectedProviderConfigId?.startsWith('custom-')
-            ? selectedProviderConfigId
-            : `custom-${crypto.randomUUID()}`)
-          : selectedProvider;
-
-      // Save provider config + API key, then set as default
-      const saveResult = await window.electron.ipcRenderer.invoke(
-        'provider:save',
-        {
-          id: providerIdForSave,
-          name: selectedProvider === 'custom' ? t('settings:aiProviders.custom') : (selectedProviderData?.name || selectedProvider),
-          type: selectedProvider,
-          baseUrl: effectiveBaseUrl,
-          model: effectiveModelId,
-          enabled: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        apiKey || undefined
-      ) as { success: boolean; error?: string };
-
-      if (!saveResult.success) {
-        throw new Error(saveResult.error || 'Failed to save provider config');
-      }
-
-      if (shouldAutoSelectLawClawProvider('setup')) {
-        const defaultResult = await window.electron.ipcRenderer.invoke(
-          'provider:setDefault',
-          providerIdForSave
-        ) as { success: boolean; error?: string };
-
-        if (!defaultResult.success) {
-          throw new Error(defaultResult.error || 'Failed to set default provider');
-        }
-      }
-
-      setSelectedProviderConfigId(providerIdForSave);
-      onConfiguredChange(true);
+      await saveProviderConfig(apiKey || undefined);
       toast.success(t('provider.valid'));
     } catch (error) {
       setKeyValid(false);
@@ -1026,7 +1076,8 @@ function ProviderContent({
     selectedProvider
     && (requiresKey ? apiKey.length > 0 : true)
     && (showModelIdField ? modelId.trim().length > 0 : true)
-    && !useOAuthFlow;
+    && !useOAuthFlow
+    && !isJurismind;
 
   const handleSelectProvider = (providerId: string) => {
     onSelectProvider(providerId);
@@ -1037,6 +1088,18 @@ function ProviderContent({
     setProviderMenuOpen(false);
     setAuthMode('oauth');
   };
+
+  useEffect(() => {
+    if (!isJurismind || !selectedProviderData) {
+      return;
+    }
+
+    if (selectedProviderConfigId && apiKey) {
+      return;
+    }
+
+    void handleBindJurismindToken();
+  }, [apiKey, handleBindJurismindToken, isJurismind, selectedProviderConfigId, selectedProviderData]);
 
   return (
     <div className="space-y-6">
@@ -1194,8 +1257,8 @@ function ProviderContent({
             </div>
           )}
 
-          {/* API Key field (hidden for ollama) */}
-          {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && requiresKey && (
+          {/* API Key field (hidden for ollama / Jurismind SSO auto-bind) */}
+          {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && requiresKey && !isJurismind && (
             <div className="space-y-2">
               <Label htmlFor="apiKey">{t('provider.apiKey')}</Label>
               <div className="relative">
@@ -1220,6 +1283,12 @@ function ProviderContent({
                   {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+            </div>
+          )}
+
+          {isJurismind && (
+            <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+              {t('provider.jurismindBrowserAuth')}
             </div>
           )}
 
@@ -1320,7 +1389,7 @@ function ProviderContent({
           <Button
             onClick={handleValidateAndSave}
             disabled={!canSubmit || validating}
-            className={cn("w-full", useOAuthFlow && "hidden")}
+            className={cn('w-full', (useOAuthFlow || isJurismind) && 'hidden')}
           >
             {validating ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -1365,15 +1434,136 @@ function renderSetupChannelIcon(type: ChannelType, icon: string) {
 
 function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) {
   const { t } = useTranslation(['setup', 'channels']);
+  const lawclawAppUrl = 'https://lawclaw-app.jurismind.com';
   const [selectedChannel, setSelectedChannel] = useState<ChannelType | null>(null);
+  const [showJurismindHint, setShowJurismindHint] = useState(false);
+  const [jurismindLoading, setJurismindLoading] = useState(false);
+  const [jurismindConnected, setJurismindConnected] = useState(false);
+  const [jurismindConfigured, setJurismindConfigured] = useState(false);
+  const [jurismindPairUrl, setJurismindPairUrl] = useState<string>('');
+  const [jurismindQrCode, setJurismindQrCode] = useState<string | null>(null);
+  const [jurismindError, setJurismindError] = useState<string | null>(null);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const jurismindMarkedRef = useRef(false);
 
   const meta: ChannelMeta | null = selectedChannel ? CHANNEL_META[selectedChannel] : null;
   const primaryChannels = getPrimaryChannels();
+
+  const markJurismindConfigured = useCallback(() => {
+    if (jurismindMarkedRef.current) return;
+    jurismindMarkedRef.current = true;
+    onChannelConfigured('jurismind');
+  }, [onChannelConfigured]);
+
+  const applyJurismindStatus = useCallback((status: unknown) => {
+    const data = status as {
+      connected?: boolean;
+      hasBinding?: boolean;
+      pairUrl?: string | null;
+      pairQrCode?: string | null;
+      lastError?: string | null;
+    } | null;
+
+    if (!data || typeof data !== 'object') return;
+    if (typeof data.connected === 'boolean') {
+      setJurismindConnected(data.connected);
+    }
+    if (typeof data.hasBinding === 'boolean') {
+      const configured = data.hasBinding || data.connected === true;
+      setJurismindConfigured(configured);
+      if (configured) {
+        markJurismindConfigured();
+      }
+    } else if (typeof data.connected === 'boolean' && data.connected) {
+      setJurismindConfigured(true);
+      markJurismindConfigured();
+    }
+    if ('pairUrl' in data) {
+      setJurismindPairUrl(typeof data.pairUrl === 'string' ? data.pairUrl : '');
+    }
+    if ('pairQrCode' in data) {
+      setJurismindQrCode(typeof data.pairQrCode === 'string' ? data.pairQrCode : null);
+    }
+    if ('lastError' in data) {
+      setJurismindError(typeof data.lastError === 'string' && data.lastError ? data.lastError : null);
+    }
+  }, [markJurismindConfigured]);
+
+  const startJurismindPairing = useCallback(async (options: { forceRefresh?: boolean; resetAuth?: boolean } = {}) => {
+    const forceRefresh = options.forceRefresh === true;
+    const resetAuth = options.resetAuth === true;
+    setJurismindLoading(true);
+    if (forceRefresh || resetAuth) {
+      setJurismindError(null);
+      setJurismindConnected(false);
+      setJurismindPairUrl('');
+      setJurismindQrCode(null);
+    }
+
+    try {
+      const result = await window.electron.ipcRenderer.invoke('jurismind:startPairing', {
+        forceRefresh,
+        resetAuth,
+        timeoutMs: 30000,
+      }) as {
+        success?: boolean;
+        error?: string;
+        result?: { pairUrl?: string; pairQrCode?: string | null };
+        status?: unknown;
+      };
+
+      if (!result?.success) {
+        throw new Error(result?.error || 'start pairing failed');
+      }
+
+      const pairUrl = String(result?.result?.pairUrl || '').trim();
+      if (pairUrl) {
+        setJurismindPairUrl(pairUrl);
+      }
+      if (typeof result?.result?.pairQrCode === 'string') {
+        setJurismindQrCode(result.result.pairQrCode);
+      }
+      applyJurismindStatus(result?.status);
+      setJurismindError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setJurismindError(message);
+    } finally {
+      setJurismindLoading(false);
+    }
+  }, [applyJurismindStatus]);
+
+  const clearJurismindBinding = useCallback(async () => {
+    setJurismindLoading(true);
+    try {
+      const result = await window.electron.ipcRenderer.invoke('jurismind:clearBinding') as {
+        success?: boolean;
+        error?: string;
+        status?: unknown;
+      };
+      if (!result?.success) {
+        throw new Error(result?.error || 'clear binding failed');
+      }
+      jurismindMarkedRef.current = false;
+      applyJurismindStatus(result.status);
+      setJurismindConnected(false);
+      setJurismindConfigured(false);
+      setJurismindPairUrl('');
+      setJurismindQrCode(null);
+      setJurismindError(null);
+      toast.success(t('channels:dialog.jurismindHint.clearSuccess'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setJurismindError(message);
+      toast.error(message);
+    } finally {
+      setJurismindLoading(false);
+    }
+  }, [applyJurismindStatus, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1398,6 +1588,113 @@ function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) 
     })();
     return () => { cancelled = true; };
   }, [selectedChannel]);
+
+  useEffect(() => {
+    const onPairUrl = (...args: unknown[]) => {
+      const payload = args[0] as { pairUrl?: string; pairQrCode?: string | null } | undefined;
+      const pairUrl = String(payload?.pairUrl || '').trim();
+      if (pairUrl) {
+        setJurismindPairUrl(pairUrl);
+      }
+      if (typeof payload?.pairQrCode === 'string') {
+        setJurismindQrCode(payload.pairQrCode);
+      }
+      setJurismindLoading(false);
+      setJurismindError(null);
+    };
+
+    const onConnected = (...args: unknown[]) => {
+      const payload = args[0] as { connected?: boolean } | undefined;
+      if (payload?.connected !== false) {
+        setJurismindConnected(true);
+        setJurismindConfigured(true);
+        markJurismindConfigured();
+      }
+      setJurismindLoading(false);
+      setJurismindError(null);
+      if (showJurismindHint) {
+        toast.success(t('channels:dialog.jurismindHint.connectedToast'));
+      }
+    };
+
+    const onStatus = (...args: unknown[]) => {
+      applyJurismindStatus(args[0]);
+    };
+
+    const onError = (...args: unknown[]) => {
+      const payload = args[0] as { message?: string } | undefined;
+      const message = String(payload?.message || '').trim();
+      if (message) {
+        setJurismindError(message);
+      }
+      setJurismindLoading(false);
+    };
+
+    const removePairListener = window.electron.ipcRenderer.on('jurismind:pair-url', onPairUrl);
+    const removeConnectedListener = window.electron.ipcRenderer.on('jurismind:connected', onConnected);
+    const removeStatusListener = window.electron.ipcRenderer.on('jurismind:status', onStatus);
+    const removeErrorListener = window.electron.ipcRenderer.on('jurismind:error', onError);
+
+    return () => {
+      if (typeof removePairListener === 'function') removePairListener();
+      if (typeof removeConnectedListener === 'function') removeConnectedListener();
+      if (typeof removeStatusListener === 'function') removeStatusListener();
+      if (typeof removeErrorListener === 'function') removeErrorListener();
+    };
+  }, [applyJurismindStatus, markJurismindConfigured, showJurismindHint, t]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const statusResult = await window.electron.ipcRenderer.invoke('jurismind:getStatus') as {
+          success?: boolean;
+          status?: unknown;
+        };
+        if (cancelled) return;
+        if (statusResult?.success) {
+          applyJurismindStatus(statusResult.status);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyJurismindStatus]);
+
+  useEffect(() => {
+    if (!showJurismindHint) return;
+
+    let cancelled = false;
+    setJurismindError(null);
+
+    (async () => {
+      try {
+        const statusResult = await window.electron.ipcRenderer.invoke('jurismind:getStatus') as {
+          success?: boolean;
+          status?: unknown;
+        };
+        if (cancelled) return;
+        if (statusResult?.success) {
+          applyJurismindStatus(statusResult.status);
+        }
+      } catch {
+        // ignore
+      }
+
+      if (!cancelled) {
+        void startJurismindPairing();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyJurismindStatus, showJurismindHint, startJurismindPairing]);
 
   const isFormValid = () => {
     if (!meta) return false;
@@ -1475,52 +1772,171 @@ function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) 
   // Channel type not selected — show picker
   if (!selectedChannel) {
     return (
-      <div className="space-y-4">
-        <div className="text-center mb-2">
-          <div className="text-4xl mb-3">📡</div>
-          <h2 className="text-xl font-semibold">{t('channel.title')}</h2>
-          <p className="text-muted-foreground text-sm mt-1">
-            {t('channel.subtitle')}
-          </p>
+      <>
+        <div className="space-y-4">
+          <div className="text-center mb-2">
+            <div className="text-4xl mb-3">📡</div>
+            <h2 className="text-xl font-semibold">{t('channel.title')}</h2>
+            <p className="text-muted-foreground text-sm mt-1">
+              {t('channel.subtitle')}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {primaryChannels.map((type) => {
+              const channelMeta = CHANNEL_META[type];
+              const isJurismind = type === 'jurismind';
+              if (!isJurismind && channelMeta.connectionType !== 'token') return null;
+              const isComingSoon = channelMeta.comingSoon === true && !isJurismind;
+              const isConfigured = isJurismind ? jurismindConfigured : false;
+              return (
+                <button
+                  key={type}
+                  onClick={() => {
+                    if (isJurismind) {
+                      setShowJurismindHint(true);
+                      return;
+                    }
+                    if (isComingSoon) {
+                      toast.info(t('channel.comingSoon'));
+                      return;
+                    }
+                    setSelectedChannel(type);
+                  }}
+                  disabled={isComingSoon}
+                  className={cn(
+                    'p-4 rounded-lg bg-muted/50 transition-all text-left',
+                    isConfigured && 'ring-1 ring-green-500/40 bg-green-500/5',
+                    isComingSoon ? 'opacity-60 cursor-not-allowed' : 'hover:bg-muted'
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    {renderSetupChannelIcon(type, channelMeta.icon)}
+                    {isComingSoon ? (
+                      <span className="text-xs rounded bg-secondary text-secondary-foreground px-2 py-0.5">
+                        {t('channels:comingSoonBadge')}
+                      </span>
+                    ) : isConfigured ? (
+                      <span className="text-xs rounded bg-green-600 text-white px-2 py-0.5">
+                        {t('channels:configuredBadge')}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="font-medium mt-2">{channelMeta.name}</p>
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                    {t(channelMeta.description)}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          {primaryChannels.map((type) => {
-            const channelMeta = CHANNEL_META[type];
-            if (channelMeta.connectionType !== 'token') return null;
-            const isComingSoon = channelMeta.comingSoon === true;
-            return (
-              <button
-                key={type}
-                onClick={() => {
-                  if (isComingSoon) {
-                    toast.info(t('channel.comingSoon'));
-                    return;
-                  }
-                  setSelectedChannel(type);
-                }}
-                disabled={isComingSoon}
-                className={cn(
-                  'p-4 rounded-lg bg-muted/50 transition-all text-left',
-                  isComingSoon ? 'opacity-60 cursor-not-allowed' : 'hover:bg-muted'
-                )}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  {renderSetupChannelIcon(type, channelMeta.icon)}
-                  {isComingSoon && (
-                    <span className="text-xs rounded bg-secondary text-secondary-foreground px-2 py-0.5">
-                      {t('channel.comingSoon')}
-                    </span>
+
+        {showJurismindHint && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-xl bg-card text-card-foreground border shadow-sm">
+              <div className="flex items-start justify-between p-6 pb-4">
+                <div>
+                  <h3 className="text-lg font-semibold">{t('channels:dialog.jurismindHint.title')}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {t('channels:dialog.jurismindHint.description')}
+                  </p>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setShowJurismindHint(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="px-6 pb-6 space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                  <p className="text-xs text-muted-foreground">{t('channels:dialog.jurismindHint.statusLabel')}</p>
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'inline-block h-2.5 w-2.5 rounded-full',
+                        jurismindConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.7)]' : 'bg-slate-400'
+                      )}
+                    />
+                    {jurismindConnected
+                      ? t('channels:dialog.jurismindHint.statusConnected')
+                      : jurismindLoading
+                        ? t('channels:dialog.jurismindHint.statusLoading')
+                        : t('channels:dialog.jurismindHint.statusWaiting')}
+                  </p>
+                  {jurismindError && (
+                    <p className="text-xs text-destructive break-all">{jurismindError}</p>
                   )}
                 </div>
-                <p className="font-medium mt-2">{channelMeta.name}</p>
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                  {t(channelMeta.description)}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+
+                <div className="rounded-lg border bg-white p-3 flex flex-col items-center gap-2">
+                  {jurismindQrCode ? (
+                    <img src={jurismindQrCode} alt="Jurismind Pair QR" className="w-56 h-56 object-contain" />
+                  ) : (
+                    <div className="w-56 h-56 rounded-lg bg-muted/20 flex items-center justify-center">
+                      {jurismindLoading ? (
+                        <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                      ) : (
+                        <QrCode className="h-10 w-10 text-muted-foreground" />
+                      )}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground text-center">
+                    {t('channels:dialog.jurismindHint.scanTip')}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="text-xs text-muted-foreground mb-1">
+                    {t('channels:dialog.jurismindHint.urlLabel')}
+                  </p>
+                  <p className="font-mono text-sm break-all">{jurismindPairUrl || lawclawAppUrl}</p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(jurismindPairUrl || lawclawAppUrl);
+                        toast.success(t('channels:dialog.jurismindHint.copied'));
+                      } catch {
+                        toast.error(t('channels:dialog.jurismindHint.copyFailed'));
+                      }
+                    }}
+                  >
+                    {t('channels:dialog.jurismindHint.copy')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      void startJurismindPairing({ forceRefresh: true });
+                    }}
+                  >
+                    <RefreshCw className={cn('h-4 w-4 mr-2', jurismindLoading && 'animate-spin')} />
+                    {t('channels:dialog.jurismindHint.refresh')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      void startJurismindPairing({ forceRefresh: true, resetAuth: true });
+                    }}
+                  >
+                    {t('channels:dialog.jurismindHint.rebind')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => {
+                      void clearJurismindBinding();
+                    }}
+                  >
+                    {t('channels:dialog.jurismindHint.clear')}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 

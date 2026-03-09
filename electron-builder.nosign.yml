@@ -6,6 +6,7 @@ mac:
   target:
     - target: dmg
       arch:
+        - x64
         - arm64
   identity: null
   hardenedRuntime: false

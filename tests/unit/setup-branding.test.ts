@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import enSetup from '@/i18n/locales/en/setup.json';
+import jaSetup from '@/i18n/locales/ja/setup.json';
 import zhSetup from '@/i18n/locales/zh/setup.json';
 
 function collectTermPaths(value: unknown, term: string, basePath = ''): string[] {

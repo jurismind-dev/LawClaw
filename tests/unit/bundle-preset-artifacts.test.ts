@@ -154,6 +154,39 @@ describe('bundle-preset-artifacts highlighted validation', () => {
     expect(errors[0]).toContain('network offline');
   });
 
+  it('skips remote highlighted validation when offline validation mode is enabled', async () => {
+    const context = createFixture();
+    const artifact = createSkillArtifact(context, 'skills/offline-skill', 'offline-skill', '1.0.0');
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('network offline');
+    });
+
+    const errors = await validatePresetManifest(
+      {
+        schemaVersion: 1,
+        presetVersion: '2026.03.06.1',
+        items: [
+          {
+            kind: 'skill',
+            id: 'offline-skill',
+            targetVersion: '1.0.0',
+            artifactPath: artifact.artifactPath,
+            sha256: artifact.sha256,
+            installMode: 'dir',
+          },
+        ],
+      },
+      {
+        presetRoot: context.presetRoot,
+        fetchImpl,
+        skipRemoteSkillValidation: true,
+      }
+    );
+
+    expect(errors).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('does not call JurisHub highlighted check for plugin items', async () => {
     const context = createFixture();
     const artifact = createSkillArtifact(context, 'plugins/qqbot', 'qqbot', '1.0.0');

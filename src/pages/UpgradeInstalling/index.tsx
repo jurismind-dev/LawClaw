@@ -5,11 +5,11 @@ import { AlertCircle, CheckCircle2, Loader2, RefreshCw, SkipForward, XCircle } f
 import { toast } from 'sonner';
 import { TitleBar } from '@/components/layout/TitleBar';
 import { Button } from '@/components/ui/button';
+import { invokePresetInstallRun } from '@/lib/preset-install-client';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import type {
   PresetInstallProgressEvent,
-  PresetInstallRunResult,
   PresetInstallStatusResult,
 } from '@/types/preset-install';
 
@@ -58,11 +58,7 @@ export function UpgradeInstalling() {
   const runInstall = useCallback(async (mode: 'run' | 'retry') => {
     setRunning(true);
     setErrorMessage(null);
-
-    const channel = mode === 'retry' ? 'presetInstall:retry' : 'presetInstall:run';
-    const result = await window.electron.ipcRenderer.invoke(channel, {
-      phase: 'upgrade',
-    }) as PresetInstallRunResult;
+    const result = await invokePresetInstallRun(window.electron.ipcRenderer.invoke, mode, 'upgrade');
 
     if (!result.success) {
       setRunning(false);
@@ -80,6 +76,7 @@ export function UpgradeInstalling() {
       ...item,
       status: item.status === 'failed' ? 'failed' : 'completed',
     })));
+    setRunning(false);
     toast.success(t('installSuccess'));
     navigate('/');
   }, [navigate, t]);

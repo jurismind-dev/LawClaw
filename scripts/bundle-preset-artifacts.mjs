@@ -13,6 +13,7 @@ export const MANIFEST_PATH = join(PRESET_ROOT, 'manifest.json');
 export const JURISHUB_HIGHLIGHTED_SEARCH_BASE_URL = 'https://lawhub.jurismind.com/api/v1/search';
 export const JURISHUB_HIGHLIGHTED_SEARCH_LIMIT = 20;
 export const JURISHUB_HIGHLIGHTED_TIMEOUT_MS = 20_000;
+export const SKIP_REMOTE_SKILL_VALIDATION_ARG = '--skip-remote-skill-validation';
 
 function fail(message) {
   console.error(`[bundle-preset-artifacts] ${message}`);
@@ -183,6 +184,7 @@ export async function validatePresetManifest(
     presetRoot = PRESET_ROOT,
     fetchImpl = globalThis.fetch,
     timeoutMs = JURISHUB_HIGHLIGHTED_TIMEOUT_MS,
+    skipRemoteSkillValidation = false,
   } = {}
 ) {
   const seen = new Set();
@@ -255,6 +257,10 @@ export async function validatePresetManifest(
       continue;
     }
 
+    if (skipRemoteSkillValidation) {
+      continue;
+    }
+
     let highlightedResult = highlightedCache.get(id);
     if (!highlightedResult) {
       highlightedResult = await verifyJurishubHighlightedSkill(id, { fetchImpl, timeoutMs });
@@ -276,10 +282,16 @@ export async function runBundlePresetArtifacts(
     presetRoot = PRESET_ROOT,
     fetchImpl = globalThis.fetch,
     timeoutMs = JURISHUB_HIGHLIGHTED_TIMEOUT_MS,
+    skipRemoteSkillValidation = false,
   } = {}
 ) {
   const manifest = loadManifest(manifestPath);
-  const errors = await validatePresetManifest(manifest, { presetRoot, fetchImpl, timeoutMs });
+  const errors = await validatePresetManifest(manifest, {
+    presetRoot,
+    fetchImpl,
+    timeoutMs,
+    skipRemoteSkillValidation,
+  });
   return {
     manifest,
     errors,
@@ -295,7 +307,10 @@ function isExecutedAsCli() {
 
 async function main() {
   try {
-    const { manifest, errors } = await runBundlePresetArtifacts();
+    const skipRemoteSkillValidation = process.argv.includes(SKIP_REMOTE_SKILL_VALIDATION_ARG);
+    const { manifest, errors } = await runBundlePresetArtifacts({
+      skipRemoteSkillValidation,
+    });
     if (errors.length > 0) {
       console.error('[bundle-preset-artifacts] validation failed:');
       for (const error of errors) {
@@ -304,7 +319,7 @@ async function main() {
       process.exit(1);
     }
     console.log(
-      `[bundle-preset-artifacts] validated ${String(manifest.items.length)} preset artifacts successfully`
+      `[bundle-preset-artifacts] validated ${String(manifest.items.length)} preset artifacts successfully${skipRemoteSkillValidation ? ' (remote skill validation skipped)' : ''}`
     );
   } catch (error) {
     fail(getErrorMessage(error));

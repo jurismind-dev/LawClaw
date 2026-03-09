@@ -401,11 +401,13 @@ async function checkSsoTicket(
     return { response, body, method };
   };
 
-  let { response, body, method } = await requestByMethod(config.ssoCheckTicketMethod);
+  const initialMethod = config.ssoCheckTicketMethod;
+  const method = initialMethod;
+  let { response, body } = await requestByMethod(initialMethod);
   if (response.status === 405) {
-    const fallback = method === 'POST' ? 'GET' : 'POST';
+    const fallback = initialMethod === 'POST' ? 'GET' : 'POST';
     logger.warn(`[JurismindProvider] checkTicket ${method} 返回 405，回退 ${fallback}`);
-    ({ response, body, method } = await requestByMethod(fallback));
+    ({ response, body } = await requestByMethod(fallback));
   }
 
   if (!response.ok) {

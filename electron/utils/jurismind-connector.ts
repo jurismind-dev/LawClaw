@@ -383,10 +383,39 @@ class JurismindConnectorManager extends EventEmitter {
   }
 
   private decoratePairUrl(rawPairUrl: string): string {
-    const pairUrl = String(rawPairUrl || '')
-      .replace(/\u001b\[[0-9;]*m/g, '')
-      .replace(/[\u0000-\u001f]+/g, '')
-      .trim();
+    const input = String(rawPairUrl || '');
+    let sanitized = '';
+
+    for (let index = 0; index < input.length; index += 1) {
+      const char = input[index];
+      const code = input.charCodeAt(index);
+
+      if (code === 0x1b) {
+        if (input[index + 1] === '[') {
+          index += 1;
+          while (index + 1 < input.length) {
+            const next = input[index + 1];
+            if ((next >= '0' && next <= '9') || next === ';') {
+              index += 1;
+              continue;
+            }
+            if (next === 'm') {
+              index += 1;
+            }
+            break;
+          }
+        }
+        continue;
+      }
+
+      if (code < 0x20 || code === 0x7f) {
+        continue;
+      }
+
+      sanitized += char;
+    }
+
+    const pairUrl = sanitized.trim();
     if (!pairUrl) return pairUrl;
 
     if (!this.forceLoginOnNextPair) {

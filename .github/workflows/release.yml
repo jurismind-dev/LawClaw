@@ -291,8 +291,8 @@ jobs:
           else
             echo "Mac signing secrets are missing. Building unsigned artifacts."
             unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID CSC_NAME
-            retry_cmd 3 env CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --x64 --publish never -c.mac.hardenedRuntime=false -c.mac.notarize=false
-            retry_cmd 3 env CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --arm64 --publish never -c.mac.hardenedRuntime=false -c.mac.notarize=false
+            retry_cmd 3 pnpm exec electron-builder --config electron-builder.nosign.yml --mac --x64 --publish never
+            retry_cmd 3 pnpm exec electron-builder --config electron-builder.nosign.yml --mac --arm64 --publish never
           fi
 
       - name: Build Windows packages (x64 + arm64)

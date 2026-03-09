@@ -74,10 +74,6 @@ mac:
       arch:
         - x64
         - arm64
-    - target: zip
-      arch:
-        - x64
-        - arm64
   darkModeSupport: true
   hardenedRuntime: true
   gatekeeperAssess: false

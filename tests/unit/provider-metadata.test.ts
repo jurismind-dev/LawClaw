@@ -38,8 +38,9 @@ describe('provider metadata', () => {
     expect(jurismind).toMatchObject({
       requiresApiKey: true,
       defaultBaseUrl: 'http://101.132.245.215:3001/v1',
-      defaultModelId: 'kimi-k2.5',
+      defaultModelId: 'jurismind/jurismind',
     });
+    expect(jurismind?.model).toBeUndefined();
     expect(jurismind?.showBaseUrl).not.toBe(true);
     expect(jurismind?.showModelId).not.toBe(true);
   });

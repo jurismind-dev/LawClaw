@@ -30,7 +30,7 @@ describe('provider backend registry', () => {
     });
 
     expect(getProviderEnvVar('jurismind')).toBe('JURISMIND_API_KEY');
-    expect(getProviderDefaultModel('jurismind')).toBe('jurismind/kimi-k2.5');
+    expect(getProviderDefaultModel('jurismind')).toBe('jurismind/jurismind');
     expect(getProviderConfig('jurismind')).toMatchObject({
       baseUrl: 'http://101.132.245.215:3001/v1',
       api: 'openai-completions',

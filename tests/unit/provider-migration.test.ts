@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { migrateMoonshotCodePlanProvider } from '@electron/utils/provider-migration';
+import {
+  migrateJurismindProviderModel,
+  migrateMoonshotCodePlanProvider,
+} from '@electron/utils/provider-migration';
 
 describe('provider migration', () => {
   it('migrates legacy moonshot_code_plan data and syncs canonical auth/default model', async () => {
@@ -107,6 +110,85 @@ describe('provider migration', () => {
     });
     expect(saveProvider).not.toHaveBeenCalled();
     expect(saveProviderKeyToOpenClaw).not.toHaveBeenCalled();
+    expect(setOpenClawAgentModel).not.toHaveBeenCalled();
+  });
+
+  it('migrates jurismind model ids and rewrites lawclaw-main only when it still uses the managed legacy model', async () => {
+    const savedProviders: Array<Record<string, unknown>> = [];
+    const saveProvider = vi.fn(async (config: Record<string, unknown>) => {
+      savedProviders.push(config);
+    });
+    const setOpenClawAgentModel = vi.fn();
+
+    const result = await migrateJurismindProviderModel({
+      getAllProviders: vi.fn(async () => [
+        {
+          id: 'jurismind',
+          type: 'jurismind' as const,
+          name: 'Jurismind',
+          model: 'kimi-k2.5',
+          enabled: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ]),
+      getApiKey: vi.fn(async () => null),
+      saveProvider,
+      getDefaultProvider: vi.fn(async () => 'jurismind'),
+      saveProviderKeyToOpenClaw: vi.fn(),
+      cleanupLegacyProviderProfiles: vi.fn(() => false),
+      setOpenClawAgentModel,
+      cleanupOpenClawProviderEntries: vi.fn(() => false),
+      getOpenClawAgentModelPrimary: vi.fn(() => 'jurismind/kimi-k2.5'),
+    });
+
+    expect(result).toMatchObject({
+      touchedProviders: 1,
+      normalizedProviders: 1,
+      rewroteDefaultModel: true,
+    });
+    expect(savedProviders[0]).toMatchObject({
+      id: 'jurismind',
+      model: 'jurismind/jurismind',
+    });
+    expect(setOpenClawAgentModel).toHaveBeenCalledWith(
+      'lawclaw-main',
+      'jurismind',
+      'jurismind/jurismind'
+    );
+  });
+
+  it('preserves user-customized lawclaw-main model when migrating jurismind provider metadata', async () => {
+    const saveProvider = vi.fn();
+    const setOpenClawAgentModel = vi.fn();
+
+    const result = await migrateJurismindProviderModel({
+      getAllProviders: vi.fn(async () => [
+        {
+          id: 'jurismind',
+          type: 'jurismind' as const,
+          name: 'Jurismind',
+          enabled: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ]),
+      getApiKey: vi.fn(async () => null),
+      saveProvider,
+      getDefaultProvider: vi.fn(async () => 'jurismind'),
+      saveProviderKeyToOpenClaw: vi.fn(),
+      cleanupLegacyProviderProfiles: vi.fn(() => false),
+      setOpenClawAgentModel,
+      cleanupOpenClawProviderEntries: vi.fn(() => false),
+      getOpenClawAgentModelPrimary: vi.fn(() => 'openai/gpt-5.2'),
+    });
+
+    expect(result).toMatchObject({
+      touchedProviders: 1,
+      normalizedProviders: 0,
+      rewroteDefaultModel: false,
+    });
+    expect(saveProvider).not.toHaveBeenCalled();
     expect(setOpenClawAgentModel).not.toHaveBeenCalled();
   });
 });

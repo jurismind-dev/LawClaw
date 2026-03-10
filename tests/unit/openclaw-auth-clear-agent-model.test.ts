@@ -47,7 +47,7 @@ describe('openclaw auth - clear agent model', () => {
             },
             list: [
               { id: 'main', model: { primary: 'openai/gpt-5.2' } },
-              { id: 'lawclaw-main', model: { primary: 'jurismind/kimi-k2.5' } },
+              { id: 'lawclaw-main', model: { primary: 'jurismind/jurismind' } },
               { id: 'other-agent', model: { primary: 'moonshot/kimi-k2.5' } },
             ],
           },

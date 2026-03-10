@@ -1703,10 +1703,14 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         const fallback = await pickFallbackLawClawProvider([providerId]);
         if (fallback) {
           await applyLawClawProviderSelection(fallback.id, {
+            managedProvider: existing,
+            syncPolicy: 'if-managed',
             restartGateway: () => gatewayManager.debouncedRestart(),
           });
         } else {
           await clearLawClawProviderSelection({
+            managedProvider: existing,
+            clearPolicy: 'if-managed',
             restartGateway: () => gatewayManager.debouncedRestart(),
           });
         }
@@ -1812,16 +1816,22 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             const stillAvailable = await isProviderAvailableForLawClaw(nextConfig);
             if (stillAvailable) {
               await applyLawClawProviderSelection(providerId, {
+                managedProvider: existing,
+                syncPolicy: 'if-managed',
                 restartGateway: () => gatewayManager.debouncedRestart(),
               });
             } else {
               const fallback = await pickFallbackLawClawProvider([providerId]);
               if (fallback) {
                 await applyLawClawProviderSelection(fallback.id, {
+                  managedProvider: existing,
+                  syncPolicy: 'if-managed',
                   restartGateway: () => gatewayManager.debouncedRestart(),
                 });
               } else {
                 await clearLawClawProviderSelection({
+                  managedProvider: existing,
+                  clearPolicy: 'if-managed',
                   restartGateway: () => gatewayManager.debouncedRestart(),
                 });
               }
@@ -1878,10 +1888,14 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const fallback = await pickFallbackLawClawProvider([providerId]);
           if (fallback) {
             await applyLawClawProviderSelection(fallback.id, {
+              managedProvider: provider,
+              syncPolicy: 'if-managed',
               restartGateway: () => gatewayManager.debouncedRestart(),
             });
           } else {
             await clearLawClawProviderSelection({
+              managedProvider: provider,
+              clearPolicy: 'if-managed',
               restartGateway: () => gatewayManager.debouncedRestart(),
             });
           }
@@ -1905,19 +1919,27 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
   });
 
   // Set default provider and update LawClaw dedicated agent model
-  ipcMain.handle('provider:setDefault', async (_, providerId: string) => {
-    try {
-      await applyLawClawProviderSelection(providerId, {
-        restartGateway: gatewayManager.isConnected()
-          ? () => gatewayManager.debouncedRestart()
-          : undefined,
-      });
+  ipcMain.handle(
+    'provider:setDefault',
+    async (
+      _,
+      providerId: string,
+      options?: { syncPolicy?: 'always' | 'if-empty' | 'if-managed' }
+    ) => {
+      try {
+        await applyLawClawProviderSelection(providerId, {
+          syncPolicy: options?.syncPolicy,
+          restartGateway: gatewayManager.isConnected()
+            ? () => gatewayManager.debouncedRestart()
+            : undefined,
+        });
 
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: String(error) };
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
     }
-  });
+  );
 
 
 

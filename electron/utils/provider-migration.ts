@@ -8,6 +8,7 @@ import {
 import {
   cleanupLegacyProviderProfiles,
   cleanupOpenClawProviderEntries,
+  getOpenClawAgentModelPrimary,
   saveProviderKeyToOpenClaw,
   setOpenClawAgentModel,
 } from './openclaw-auth';
@@ -16,6 +17,13 @@ import { logger } from './logger';
 const LEGACY_PROVIDER_TYPE = 'moonshot_code_plan';
 const OFFICIAL_KIMI_MODEL = 'kimi-coding/k2p5';
 const OFFICIAL_PROVIDER_LABEL = 'Kimi Coding（官方）';
+const JURISMIND_PROVIDER_TYPE = 'jurismind';
+const JURISMIND_MANAGED_MODEL = 'jurismind/jurismind';
+const JURISMIND_LEGACY_MODELS = new Set([
+  'jurismind',
+  'jurismind/kimi-k2.5',
+  'kimi-k2.5',
+]);
 const LAWCLAW_AGENT_ID = 'lawclaw-main';
 
 export interface ProviderMigrationSummary {
@@ -36,6 +44,7 @@ interface ProviderMigrationDependencies {
   cleanupLegacyProviderProfiles: typeof cleanupLegacyProviderProfiles;
   setOpenClawAgentModel: typeof setOpenClawAgentModel;
   cleanupOpenClawProviderEntries: typeof cleanupOpenClawProviderEntries;
+  getOpenClawAgentModelPrimary: typeof getOpenClawAgentModelPrimary;
 }
 
 const defaultDeps: ProviderMigrationDependencies = {
@@ -47,6 +56,7 @@ const defaultDeps: ProviderMigrationDependencies = {
   cleanupLegacyProviderProfiles,
   setOpenClawAgentModel,
   cleanupOpenClawProviderEntries,
+  getOpenClawAgentModelPrimary,
 };
 
 function shouldRenameToOfficialLabel(name: string): boolean {
@@ -89,6 +99,28 @@ function normalizeMoonshotProvider(
   return { changed, next };
 }
 
+function normalizeJurismindProvider(
+  provider: ProviderConfig,
+  nowIso: string
+): { changed: boolean; next: ProviderConfig } {
+  if (provider.type !== JURISMIND_PROVIDER_TYPE) {
+    return { changed: false, next: provider };
+  }
+
+  if (!provider.model || !JURISMIND_LEGACY_MODELS.has(provider.model)) {
+    return { changed: false, next: provider };
+  }
+
+  return {
+    changed: true,
+    next: {
+      ...provider,
+      model: JURISMIND_MANAGED_MODEL,
+      updatedAt: nowIso,
+    },
+  };
+}
+
 export async function migrateMoonshotCodePlanProvider(
   deps: ProviderMigrationDependencies = defaultDeps
 ): Promise<ProviderMigrationSummary> {
@@ -117,8 +149,7 @@ export async function migrateMoonshotCodePlanProvider(
   const cleanedLegacyProfiles =
     deps.cleanupLegacyProviderProfiles(LEGACY_PROVIDER_TYPE)
     || deps.cleanupLegacyProviderProfiles(LEGACY_PROVIDER_TYPE, LAWCLAW_AGENT_ID);
-  const removedStaleProviderEntries =
-    deps.cleanupOpenClawProviderEntries(LEGACY_PROVIDER_TYPE);
+  const removedStaleProviderEntries = deps.cleanupOpenClawProviderEntries(LEGACY_PROVIDER_TYPE);
 
   let rewroteDefaultModel = false;
   const defaultProviderId = await deps.getDefaultProvider();
@@ -140,15 +171,71 @@ export async function migrateMoonshotCodePlanProvider(
   };
 }
 
+export async function migrateJurismindProviderModel(
+  deps: ProviderMigrationDependencies = defaultDeps
+): Promise<ProviderMigrationSummary> {
+  const providers = await deps.getAllProviders();
+  const targetProviders = providers.filter((provider) => provider.type === JURISMIND_PROVIDER_TYPE);
+  const nowIso = new Date().toISOString();
+  let normalizedProviders = 0;
+
+  for (const provider of targetProviders) {
+    const { changed, next } = normalizeJurismindProvider(provider, nowIso);
+    if (changed) {
+      await deps.saveProvider(next);
+      normalizedProviders += 1;
+    }
+  }
+
+  let rewroteDefaultModel = false;
+  const defaultProviderId = await deps.getDefaultProvider();
+  if (defaultProviderId) {
+    const defaultProvider = providers.find((provider) => provider.id === defaultProviderId);
+    const currentPrimary = deps.getOpenClawAgentModelPrimary(LAWCLAW_AGENT_ID);
+    if (
+      defaultProvider?.type === JURISMIND_PROVIDER_TYPE
+      && currentPrimary
+      && JURISMIND_LEGACY_MODELS.has(currentPrimary)
+    ) {
+      deps.setOpenClawAgentModel(
+        LAWCLAW_AGENT_ID,
+        JURISMIND_PROVIDER_TYPE,
+        JURISMIND_MANAGED_MODEL
+      );
+      rewroteDefaultModel = true;
+    }
+  }
+
+  return {
+    touchedProviders: targetProviders.length,
+    normalizedProviders,
+    syncedKeys: 0,
+    cleanedLegacyProfiles: false,
+    rewroteDefaultModel,
+    removedStaleProviderEntries: false,
+  };
+}
+
 export async function runProviderStartupMigration(): Promise<void> {
   try {
-    const result = await migrateMoonshotCodePlanProvider();
-    if (result.touchedProviders > 0 || result.cleanedLegacyProfiles || result.rewroteDefaultModel) {
-      logger.info('Kimi Coding provider migration completed:', result);
+    const moonshotResult = await migrateMoonshotCodePlanProvider();
+    if (
+      moonshotResult.touchedProviders > 0
+      || moonshotResult.cleanedLegacyProfiles
+      || moonshotResult.rewroteDefaultModel
+    ) {
+      logger.info('Kimi Coding provider migration completed:', moonshotResult);
     } else {
       logger.debug('Kimi Coding provider migration skipped (no legacy data found).');
     }
+
+    const jurismindResult = await migrateJurismindProviderModel();
+    if (jurismindResult.normalizedProviders > 0 || jurismindResult.rewroteDefaultModel) {
+      logger.info('Jurismind provider model migration completed:', jurismindResult);
+    } else {
+      logger.debug('Jurismind provider model migration skipped (no legacy data found).');
+    }
   } catch (error) {
-    logger.warn('Kimi Coding provider migration failed (non-blocking):', error);
+    logger.warn('Provider startup migration failed (non-blocking):', error);
   }
 }

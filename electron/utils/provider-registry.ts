@@ -46,7 +46,7 @@ interface ProviderBackendMeta {
 const REGISTRY: Record<string, ProviderBackendMeta> = {
   jurismind: {
     envVar: 'JURISMIND_API_KEY',
-    defaultModel: 'jurismind/kimi-k2.5',
+    defaultModel: 'jurismind/jurismind',
     providerConfig: {
       baseUrl: 'http://101.132.245.215:3001/v1',
       api: 'openai-completions',

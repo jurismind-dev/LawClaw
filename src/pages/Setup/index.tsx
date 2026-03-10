@@ -753,7 +753,9 @@ function ProviderContent({
 
       if (selectedProvider && shouldAutoSelectLawClawProvider('setup')) {
         try {
-          await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider);
+          await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider, {
+            syncPolicy: 'if-empty',
+          });
         } catch (error) {
           console.error('Failed to set default provider:', error);
         }
@@ -964,7 +966,8 @@ function ProviderContent({
       if (shouldAutoSelectLawClawProvider('setup')) {
         const defaultResult = await window.electron.ipcRenderer.invoke(
           'provider:setDefault',
-          providerIdForSave
+          providerIdForSave,
+          { syncPolicy: 'if-empty' }
         ) as { success: boolean; error?: string };
 
         if (!defaultResult.success) {

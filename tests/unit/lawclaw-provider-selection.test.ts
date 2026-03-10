@@ -4,6 +4,7 @@ const secureStorageMock = vi.hoisted(() => ({
   getProvider: vi.fn(),
   getAllProviders: vi.fn(),
   getApiKey: vi.fn(),
+  getDefaultProvider: vi.fn(),
   setDefaultProvider: vi.fn(),
   clearDefaultProvider: vi.fn(),
 }));
@@ -14,10 +15,17 @@ const openclawAuthMock = vi.hoisted(() => ({
   clearOpenClawAgentModelPrimary: vi.fn(),
   saveProviderKeyToOpenClaw: vi.fn(),
   getOAuthTokenFromOpenClaw: vi.fn(),
+  getOpenClawAgentModelPrimary: vi.fn(),
 }));
 
 const providerRegistryMock = vi.hoisted(() => ({
   getProviderConfig: vi.fn(),
+  getProviderDefaultModel: vi.fn((providerId: string) => {
+    if (providerId === 'jurismind') return 'jurismind/jurismind';
+    if (providerId === 'openai') return 'openai/gpt-5.2';
+    if (providerId === 'moonshot') return 'moonshot/kimi-k2.5';
+    return undefined;
+  }),
   getProviderEnvVar: vi.fn(),
 }));
 
@@ -37,6 +45,8 @@ describe('lawclaw provider selection helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    openclawAuthMock.getOpenClawAgentModelPrimary.mockReturnValue(undefined);
+    secureStorageMock.getDefaultProvider.mockResolvedValue(undefined);
   });
 
   it('applies dedicated agent model for standard providers without touching global defaults', async () => {
@@ -105,6 +115,67 @@ describe('lawclaw provider selection helpers', () => {
         headers: undefined,
       }
     );
+  });
+
+  it('does not overwrite an existing user-selected model during setup auto-selection', async () => {
+    secureStorageMock.getProvider.mockResolvedValue({
+      id: 'jurismind',
+      type: 'jurismind',
+      name: 'Jurismind',
+      enabled: true,
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+    openclawAuthMock.getOpenClawAgentModelPrimary.mockReturnValue('google/gemini-3.1-pro-preview');
+
+    const mod = await import('@electron/utils/lawclaw-provider-selection');
+
+    await mod.applyLawClawProviderSelection('jurismind', { syncPolicy: 'if-empty' });
+
+    expect(secureStorageMock.setDefaultProvider).toHaveBeenCalledWith('jurismind');
+    expect(openclawAuthMock.setOpenClawAgentModel).not.toHaveBeenCalled();
+  });
+
+  it('replaces the legacy jurismind managed model when sync policy is if-managed', async () => {
+    secureStorageMock.getProvider.mockResolvedValue({
+      id: 'jurismind',
+      type: 'jurismind',
+      name: 'Jurismind',
+      enabled: true,
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+    openclawAuthMock.getOpenClawAgentModelPrimary.mockReturnValue('jurismind/kimi-k2.5');
+
+    const mod = await import('@electron/utils/lawclaw-provider-selection');
+
+    await mod.applyLawClawProviderSelection('jurismind', { syncPolicy: 'if-managed' });
+
+    expect(openclawAuthMock.setOpenClawAgentModel).toHaveBeenCalledWith(
+      'lawclaw-main',
+      'jurismind',
+      undefined
+    );
+  });
+
+  it('keeps a user-customized model when default provider refresh uses if-managed', async () => {
+    secureStorageMock.getProvider.mockResolvedValue({
+      id: 'provider-openai',
+      type: 'openai',
+      name: 'OpenAI',
+      model: 'gpt-4.1',
+      enabled: true,
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+    openclawAuthMock.getOpenClawAgentModelPrimary.mockReturnValue('google/gemini-3.1-pro-preview');
+
+    const mod = await import('@electron/utils/lawclaw-provider-selection');
+
+    await mod.applyLawClawProviderSelection('provider-openai', { syncPolicy: 'if-managed' });
+
+    expect(secureStorageMock.setDefaultProvider).toHaveBeenCalledWith('provider-openai');
+    expect(openclawAuthMock.setOpenClawAgentModel).not.toHaveBeenCalled();
   });
 
   it('clears the selected provider and dedicated agent model when no fallback remains', async () => {

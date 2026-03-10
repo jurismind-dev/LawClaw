@@ -72,7 +72,7 @@ describe('openclaw auth - agent model targeting', () => {
     const main = next.agents.list.find((item) => item.id === 'main');
     const other = next.agents.list.find((item) => item.id === 'other-agent');
 
-    expect(lawclawMain?.model?.primary).toBe('jurismind/kimi-k2.5');
+    expect(lawclawMain?.model?.primary).toBe('jurismind/jurismind');
     expect(main?.model?.primary).toBe('openai/gpt-5.2');
     expect(other?.model?.primary).toBe('moonshot/kimi-k2.5');
     expect(next.agents.defaults.model.primary).toBe('openai/gpt-5.2');

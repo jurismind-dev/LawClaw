@@ -1,7 +1,8 @@
-﻿import {
+import {
   clearDefaultProvider,
   getAllProviders,
   getApiKey,
+  getDefaultProvider,
   getProvider,
   setDefaultProvider,
   type ProviderConfig,
@@ -9,20 +10,42 @@
 import {
   clearOpenClawAgentModelPrimary,
   getOAuthTokenFromOpenClaw,
+  getOpenClawAgentModelPrimary,
   saveProviderKeyToOpenClaw,
   setOpenClawAgentModel,
   setOpenClawAgentModelWithOverride,
 } from './openclaw-auth';
-import { getProviderConfig, getProviderEnvVar } from './provider-registry';
+import { getProviderConfig, getProviderDefaultModel, getProviderEnvVar } from './provider-registry';
 import { logger } from './logger';
 
 const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
 const KEYLESS_PROVIDER_TYPES = new Set(['ollama']);
 const OAUTH_ONLY_PROVIDER_TYPES = new Set(['qwen-portal']);
 const OAUTH_OR_API_KEY_PROVIDER_TYPES = new Set(['minimax-portal', 'minimax-portal-cn']);
+const JURISMIND_MANAGED_MODELS = new Set([
+  'jurismind',
+  'jurismind/kimi-k2.5',
+  'jurismind/jurismind',
+]);
+
+type SelectionSyncPolicy = 'always' | 'if-empty' | 'if-managed';
+
+interface ManagedProviderSnapshot {
+  id: string;
+  type: string;
+  model?: string;
+}
 
 interface SelectionOptions {
   restartGateway?: () => void;
+  syncPolicy?: SelectionSyncPolicy;
+  managedProvider?: ManagedProviderSnapshot;
+}
+
+interface ClearSelectionOptions {
+  restartGateway?: () => void;
+  clearPolicy?: 'always' | 'if-managed';
+  managedProvider?: ManagedProviderSnapshot;
 }
 
 function getOpenClawProviderKey(type: string, providerId: string): string {
@@ -40,7 +63,7 @@ function shouldUseRuntimeOverride(type: string): boolean {
   return type === 'custom' || type === 'ollama';
 }
 
-function toModelOverride(provider: ProviderConfig, providerKey: string): string | undefined {
+function toModelOverride(provider: ManagedProviderSnapshot, providerKey: string): string | undefined {
   if (provider.type === 'moonshot_code_plan') {
     return undefined;
   }
@@ -61,6 +84,84 @@ function toTimestamp(value: string | undefined): number {
 
   const timestamp = Date.parse(value);
   return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function hasModelValue(model: string | undefined): model is string {
+  return typeof model === 'string' && model.trim().length > 0;
+}
+
+function getManagedModelCandidates(provider: ManagedProviderSnapshot): Set<string> {
+  const providerKey = getOpenClawProviderKey(provider.type, provider.id);
+  const candidates = new Set<string>();
+  const modelOverride = toModelOverride(provider, providerKey);
+  const defaultModel = getProviderDefaultModel(provider.type) || getProviderDefaultModel(providerKey);
+
+  if (hasModelValue(modelOverride)) {
+    candidates.add(modelOverride);
+  }
+  if (hasModelValue(defaultModel)) {
+    candidates.add(defaultModel);
+  }
+
+  if (provider.type === 'jurismind') {
+    for (const model of JURISMIND_MANAGED_MODELS) {
+      candidates.add(model);
+    }
+  }
+
+  return candidates;
+}
+
+async function resolveManagedProvider(
+  targetProvider: ProviderConfig,
+  managedProvider?: ManagedProviderSnapshot
+): Promise<ManagedProviderSnapshot> {
+  if (managedProvider) {
+    return managedProvider;
+  }
+
+  const defaultProviderId = await getDefaultProvider();
+  if (!defaultProviderId) {
+    return targetProvider;
+  }
+
+  return (await getProvider(defaultProviderId)) || targetProvider;
+}
+
+async function shouldSyncAgentModel(
+  targetProvider: ProviderConfig,
+  options: SelectionOptions
+): Promise<boolean> {
+  const syncPolicy = options.syncPolicy ?? 'always';
+  if (syncPolicy === 'always') {
+    return true;
+  }
+
+  const currentModel = getOpenClawAgentModelPrimary(LAWCLAW_MAIN_AGENT_ID);
+  if (syncPolicy === 'if-empty') {
+    return !hasModelValue(currentModel);
+  }
+
+  if (!hasModelValue(currentModel)) {
+    return false;
+  }
+
+  const managedProvider = await resolveManagedProvider(targetProvider, options.managedProvider);
+  return getManagedModelCandidates(managedProvider).has(currentModel);
+}
+
+async function shouldClearAgentModel(options: ClearSelectionOptions): Promise<boolean> {
+  const clearPolicy = options.clearPolicy ?? 'always';
+  if (clearPolicy === 'always') {
+    return true;
+  }
+
+  const currentModel = getOpenClawAgentModelPrimary(LAWCLAW_MAIN_AGENT_ID);
+  if (!hasModelValue(currentModel) || !options.managedProvider) {
+    return false;
+  }
+
+  return getManagedModelCandidates(options.managedProvider).has(currentModel);
 }
 
 async function hasOAuthToken(providerKey: string): Promise<boolean> {
@@ -85,18 +186,21 @@ export async function applyLawClawProviderSelection(
   const providerKey = getOpenClawProviderKey(provider.type, providerId);
   const modelOverride = toModelOverride(provider, providerKey);
   const registryProviderConfig = getProviderConfig(provider.type);
+  const shouldSync = await shouldSyncAgentModel(provider, options);
 
   await setDefaultProvider(providerId);
 
-  if (shouldUseRuntimeOverride(provider.type)) {
-    setOpenClawAgentModelWithOverride(LAWCLAW_MAIN_AGENT_ID, providerKey, modelOverride, {
-      baseUrl: provider.baseUrl || registryProviderConfig?.baseUrl,
-      api: registryProviderConfig?.api || 'openai-completions',
-      apiKeyEnv: getProviderEnvVar(provider.type),
-      headers: registryProviderConfig?.headers,
-    });
-  } else {
-    setOpenClawAgentModel(LAWCLAW_MAIN_AGENT_ID, providerKey, modelOverride);
+  if (shouldSync) {
+    if (shouldUseRuntimeOverride(provider.type)) {
+      setOpenClawAgentModelWithOverride(LAWCLAW_MAIN_AGENT_ID, providerKey, modelOverride, {
+        baseUrl: provider.baseUrl || registryProviderConfig?.baseUrl,
+        api: registryProviderConfig?.api || 'openai-completions',
+        apiKeyEnv: getProviderEnvVar(provider.type),
+        headers: registryProviderConfig?.headers,
+      });
+    } else {
+      setOpenClawAgentModel(LAWCLAW_MAIN_AGENT_ID, providerKey, modelOverride);
+    }
   }
 
   const providerApiKey = await getApiKey(providerId);
@@ -111,9 +215,15 @@ export async function applyLawClawProviderSelection(
   }
 }
 
-export async function clearLawClawProviderSelection(options: SelectionOptions = {}): Promise<void> {
+export async function clearLawClawProviderSelection(
+  options: ClearSelectionOptions = {}
+): Promise<void> {
+  const shouldClear = await shouldClearAgentModel(options);
+
   await clearDefaultProvider();
-  clearOpenClawAgentModelPrimary(LAWCLAW_MAIN_AGENT_ID);
+  if (shouldClear) {
+    clearOpenClawAgentModelPrimary(LAWCLAW_MAIN_AGENT_ID);
+  }
 
   if (options.restartGateway) {
     logger.info('Scheduling Gateway restart after clearing LawClaw provider selection');

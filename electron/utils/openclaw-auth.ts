@@ -273,6 +273,18 @@ function setAgentModelPrimary(config: Record<string, unknown>, agentId: string, 
   config.agents = agents;
 }
 
+export function getOpenClawAgentModelPrimary(agentId: string): string | undefined {
+  const config = readOpenClawConfig();
+  const agents = isRecord(config.agents) ? config.agents : {};
+  const list = Array.isArray(agents.list) ? agents.list : [];
+  const target = list.find((item) => isRecord(item) && item.id === agentId);
+  if (!isRecord(target) || !isRecord(target.model)) {
+    return undefined;
+  }
+
+  return typeof target.model.primary === 'string' ? target.model.primary : undefined;
+}
+
 /**
  * Save a provider API key to OpenClaw auth-profiles.
  * For aliased providers (moonshot_code_plan), key is always stored under the canonical ID.

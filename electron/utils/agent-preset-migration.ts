@@ -711,8 +711,33 @@ function persistCurrentSnapshotState(
 
 async function runBootstrapInstall(context: RuntimeTaskContext, nowMs: number): Promise<AgentPresetMigrationSummary> {
   const { nextConfig, changed: configUpdated } = computeNextConfig(context);
-  if (configUpdated) {
-    writeJsonFile(context.configPath, nextConfig);
+
+  const bootstrapItems: DeterministicWorkspaceUpgradePlanItem[] = context.manifest.workspaceFiles.map(
+    (presetFile) => {
+      const workspace = resolveAgentWorkspace(nextConfig, context.openClawConfigDir, presetFile.agentId);
+      const destinationPath = join(workspace, presetFile.target);
+      const baseNew = loadSnapshotFile(context.vUpdateDir, presetFile.source);
+      const userCurrent = readTextFileIfExists(destinationPath);
+
+      return {
+        key: getWorkspaceFileKey(presetFile),
+        agentId: presetFile.agentId,
+        target: presetFile.target,
+        destinationPath,
+        baseNew,
+        userCurrent,
+        action:
+          userCurrent === undefined ? 'create' : userCurrent === baseNew ? 'noop' : 'overwrite',
+      };
+    }
+  );
+
+  const backupItems = bootstrapItems.filter(
+    (item): item is DeterministicWorkspaceUpgradePlanItem =>
+      item.action === 'overwrite' && item.userCurrent !== undefined
+  );
+  if (backupItems.length > 0) {
+    await createUpgradeWorkspaceFolderBackupWithRetry(context, backupItems, nowMs);
   }
 
   const summary: AgentPresetMigrationSummary = {
@@ -723,25 +748,24 @@ async function runBootstrapInstall(context: RuntimeTaskContext, nowMs: number): 
     configUpdated,
   };
 
-  for (const presetFile of context.manifest.workspaceFiles) {
-    const workspace = resolveAgentWorkspace(nextConfig, context.openClawConfigDir, presetFile.agentId);
-    const destinationPath = join(workspace, presetFile.target);
-    const targetContent = loadSnapshotFile(context.vUpdateDir, presetFile.source);
-    const existingContent = readTextFileIfExists(destinationPath);
-
-    if (existingContent === undefined) {
-      writeTextFile(destinationPath, targetContent);
+  for (const item of bootstrapItems) {
+    if (item.action === 'create') {
+      writeTextFile(item.destinationPath, item.baseNew);
       summary.createdFiles += 1;
       continue;
     }
 
-    if (existingContent === targetContent) {
+    if (item.action === 'noop') {
       summary.skippedFiles += 1;
       continue;
     }
 
-    writeTextFile(destinationPath, targetContent);
+    writeTextFile(item.destinationPath, item.baseNew);
     summary.updatedFiles += 1;
+  }
+
+  if (configUpdated) {
+    writeJsonFile(context.configPath, nextConfig);
   }
 
   await promoteVUpdateToVCurrent(context.vUpdateDir, context.vCurrentDir);

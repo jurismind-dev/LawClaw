@@ -215,6 +215,47 @@ describe('agent preset deterministic migration', () => {
     expect(getAgentPresetMigrationStatus().state).toBe('idle');
   });
 
+  it('creates a folder backup before bootstrap overwrites existing managed files', async () => {
+    const fixture = createFixture();
+    writePresetVersion(fixture, 1);
+    writeText(getWorkspacePath(fixture, 'SOUL.md'), '# SOUL custom bootstrap\n');
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+    });
+
+    expect(readText(getWorkspacePath(fixture, 'SOUL.md'))).toContain('# SOUL v1');
+
+    const backupRunDirs = getBackupRunDirs(fixture);
+    expect(backupRunDirs).toHaveLength(1);
+    expect(readText(join(backupRunDirs[0], 'workspace', 'lawclaw-main', 'SOUL.md'))).toContain(
+      '# SOUL custom bootstrap'
+    );
+  });
+
+  it('does not persist configPatch when bootstrap backup fails before overwrite', async () => {
+    const fixture = createFixture();
+    writePresetVersion(fixture, 1);
+    writeText(getWorkspacePath(fixture, 'SOUL.md'), '# SOUL custom bootstrap\n');
+    writeText(join(fixture.lawclawDir, 'agent-presets', 'backups'), 'occupied by file\n');
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+    });
+
+    const config = JSON.parse(readText(join(fixture.openclawDir, 'openclaw.json'))) as {
+      features?: Record<string, boolean>;
+    };
+
+    expect(getAgentPresetMigrationStatus().state).toBe('failed');
+    expect(readText(getWorkspacePath(fixture, 'SOUL.md'))).toContain('# SOUL custom bootstrap');
+    expect(config.features?.version_1).toBeUndefined();
+  });
+
   it('overwrites files only when local content still equals v_current and creates backup for overwritten files', async () => {
     const fixture = createFixture();
     writePresetVersion(fixture, 1);

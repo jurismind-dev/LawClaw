@@ -5,7 +5,7 @@
  * are in the toolbar; messages render with markdown + streaming.
  */
 import { useEffect, useRef } from 'react';
-import { AlertCircle, Bot, Loader2, MessageSquare, Sparkles } from 'lucide-react';
+import { AlertCircle, Bot, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -36,21 +36,10 @@ export function Chat() {
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
   const migrationStatus = useAgentPresetMigrationStore((s) => s.status);
+  const isCurrentWarningVisible = useAgentPresetMigrationStore((s) => s.isCurrentWarningVisible);
+  const dismissCurrentWarning = useAgentPresetMigrationStore((s) => s.dismissCurrentWarning);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const openMigrationArtifactsDir = async () => {
-    try {
-      const artifactsDir = await window.electron.ipcRenderer.invoke(
-        'agentPresetMigration:getArtifactsDir'
-      ) as string;
-      if (artifactsDir) {
-        await window.electron.ipcRenderer.invoke('shell:showItemInFolder', artifactsDir);
-      }
-    } catch {
-      // ignore
-    }
-  };
 
   useEffect(() => {
     if (!isGatewayRunning) return;
@@ -109,27 +98,19 @@ export function Chat() {
         <ChatToolbar />
       </div>
 
-      {migrationStatus?.state === 'warning' && (
+      {migrationStatus?.state === 'warning' && isCurrentWarningVisible && (
         <div className="px-4 pb-2">
-          <div className="mx-auto max-w-4xl rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-300">
-            <p className="font-medium">LawClaw 预设升级跳过了部分本地已修改的文件。</p>
-            {migrationStatus.message && <p className="mt-1">{migrationStatus.message}</p>}
-            {migrationStatus.skippedFiles ? (
-              <p className="mt-1">
-                已跳过 {migrationStatus.skippedFiles} 个文件：
-                {migrationStatus.skippedTargets?.join(', ') || '未知文件'}
-              </p>
-            ) : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                className="rounded border border-border bg-background px-3 py-1 text-xs"
-                onClick={() => {
-                  void openMigrationArtifactsDir();
-                }}
-              >
-                打开迁移目录
-              </button>
-            </div>
+          <div className="relative mx-auto max-w-4xl rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 pr-11 text-sm text-yellow-700 dark:text-yellow-300">
+            <button
+              type="button"
+              aria-label="关闭预设升级冲突提醒"
+              className="absolute right-3 top-3 rounded p-1 text-yellow-700/70 transition hover:bg-yellow-500/10 hover:text-yellow-800 dark:text-yellow-300/70 dark:hover:bg-yellow-500/20 dark:hover:text-yellow-200"
+              onClick={dismissCurrentWarning}
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <p className="font-medium">LawClaw 预设升级发现部分本地配置冲突。</p>
+            <p className="mt-1">系统已跳过自动更新，你可以继续正常使用。</p>
           </div>
         </div>
       )}

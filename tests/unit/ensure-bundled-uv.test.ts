@@ -75,4 +75,46 @@ describe('ensure bundled uv', () => {
       ],
     });
   });
+
+  it('uses the in-process download module instead of shelling out through zx', async () => {
+    vi.resetModules();
+
+    const existing = new Set<string>();
+    const downloadBundledUv = vi.fn(async ({ platform }: { platform: string }) => {
+      expect(platform).toBe('win');
+      existing.add('C:\\repo\\resources\\bin\\win32-x64\\uv.exe');
+      existing.add('C:\\repo\\resources\\bin\\win32-arm64\\uv.exe');
+    });
+
+    vi.doMock('../../scripts/download-bundled-uv.mjs', () => ({
+      downloadBundledUv,
+    }));
+
+    const shellExec = vi.fn(async () => {
+      throw new Error('shell should not be used');
+    });
+    const previousShell = (globalThis as typeof globalThis & { $?: unknown }).$;
+    (globalThis as typeof globalThis & { $?: unknown }).$ = shellExec;
+
+    try {
+      const mod = await import('../../scripts/ensure-bundled-uv.mjs');
+      const result = await mod.ensureBundledUv({
+        platform: 'win',
+        rootDir: 'C:\\repo',
+        existsFn: (filePath) => existing.has(filePath),
+        logger: { info: vi.fn(), warn: vi.fn() },
+      });
+
+      expect(downloadBundledUv).toHaveBeenCalledTimes(1);
+      expect(shellExec).not.toHaveBeenCalled();
+      expect(result.downloaded).toBe(true);
+    } finally {
+      if (previousShell === undefined) {
+        delete (globalThis as typeof globalThis & { $?: unknown }).$;
+      } else {
+        (globalThis as typeof globalThis & { $?: unknown }).$ = previousShell;
+      }
+      vi.doUnmock('../../scripts/download-bundled-uv.mjs');
+    }
+  });
 });

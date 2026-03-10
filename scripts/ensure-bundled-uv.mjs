@@ -2,6 +2,7 @@ import 'zx/globals';
 import os from 'node:os';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { downloadBundledUv } from './download-bundled-uv.mjs';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const ENSURE_DOWNLOAD_RETRIES = Math.max(parseInt(process.env.UV_ENSURE_RETRIES || '3', 10) || 3, 1);
@@ -50,7 +51,7 @@ export function getMissingUvBinaries(binaries, existsFn = existsSync) {
 }
 
 async function downloadUvForPlatform(platform) {
-  await $`pnpm exec zx scripts/download-bundled-uv.mjs --platform=${platform}`;
+  await downloadBundledUv({ platform });
 }
 
 function sleep(ms) {

@@ -21,7 +21,7 @@ vi.mock('electron', () => ({
 }));
 
 describe('agent preset migration IPC preload channels', () => {
-  it('暴露迁移 invoke + 事件订阅通道', async () => {
+  it('only exposes simplified migration invoke channels and status event subscription', async () => {
     await import('@electron/preload/index');
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
@@ -30,15 +30,19 @@ describe('agent preset migration IPC preload channels', () => {
     await api.ipcRenderer.invoke('agentPresetMigration:getStatus');
     expect(invoke).toHaveBeenCalledWith('agentPresetMigration:getStatus');
 
-    await api.ipcRenderer.invoke('agentPresetMigration:retryNow');
-    expect(invoke).toHaveBeenCalledWith('agentPresetMigration:retryNow');
-
     await api.ipcRenderer.invoke('agentPresetMigration:getArtifactsDir');
     expect(invoke).toHaveBeenCalledWith('agentPresetMigration:getArtifactsDir');
+
+    expect(() => api.ipcRenderer.invoke('agentPresetMigration:retryNow')).toThrow(
+      'Invalid IPC channel: agentPresetMigration:retryNow'
+    );
 
     const unsubscribe = api.ipcRenderer.on('agentPresetMigration:statusChanged', () => {});
     expect(on).toHaveBeenCalled();
     expect(typeof unsubscribe).toBe('function');
+
+    expect(() => api.ipcRenderer.on('agentPresetMigration:chatLockChanged', () => {})).toThrow(
+      'Invalid IPC channel: agentPresetMigration:chatLockChanged'
+    );
   });
 });
-

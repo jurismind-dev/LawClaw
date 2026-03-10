@@ -5,8 +5,7 @@
     {
       "agentId": "lawclaw-main",
       "source": "workspaces/lawclaw-main/SOUL.md",
-      "target": "SOUL.md",
-      "conflictStrategy": "append_capabilities"
+      "target": "SOUL.md"
     },
     {
       "agentId": "lawclaw-main",
@@ -42,11 +41,6 @@
       "agentId": "lawclaw-main",
       "source": "workspaces/lawclaw-main/HEARTBEAT.md",
       "target": "HEARTBEAT.md"
-    },
-    {
-      "agentId": "lawclaw-main",
-      "source": "workspaces/lawclaw-main/skills/lawclaw-upgrade/SKILL.md",
-      "target": "skills/lawclaw-upgrade/SKILL.md"
     }
   ],
   "configPatch": "openclaw.patch.json"

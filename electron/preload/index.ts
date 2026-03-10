@@ -26,8 +26,6 @@ const electronAPI = {
         // Agent preset migration
         'agentPresetMigration:getStatus',
         'agentPresetMigration:getArtifactsDir',
-        'agentPresetMigration:resolveConflict',
-        'agentPresetMigration:retryNow',
         // OpenClaw
         'openclaw:status',
         'openclaw:isReady',
@@ -175,7 +173,6 @@ const electronAPI = {
         'gateway:channel-status',
         'gateway:chat-message',
         'agentPresetMigration:statusChanged',
-        'agentPresetMigration:chatLockChanged',
         'presetInstall:progress',
         'presetInstall:statusChanged',
         'channel:whatsapp-qr',
@@ -230,7 +227,6 @@ const electronAPI = {
         'gateway:channel-status',
         'gateway:chat-message',
         'agentPresetMigration:statusChanged',
-        'agentPresetMigration:chatLockChanged',
         'presetInstall:progress',
         'presetInstall:statusChanged',
         'gateway:exit',

@@ -177,10 +177,7 @@ vi.mock('@electron/main/index', () => ({
 vi.mock('@electron/utils/agent-preset-migration', () => ({
   getAgentPresetMigrationArtifactsDir: vi.fn(async () => '/tmp'),
   getAgentPresetMigrationStatus: vi.fn(async () => ({})),
-  onAgentPresetMigrationChatLock: vi.fn(),
   onAgentPresetMigrationStatus: vi.fn(),
-  resolveAgentPresetMigrationConflict: vi.fn(async () => ({ success: true })),
-  retryAgentPresetMigrationNow: vi.fn(async () => ({ success: true })),
 }));
 
 vi.mock('@electron/utils/lawclaw-session', () => ({

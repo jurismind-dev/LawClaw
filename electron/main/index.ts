@@ -195,6 +195,12 @@ async function initialize(): Promise<void> {
   // Startup migration for legacy moonshot_code_plan -> official kimi-coding semantics.
   await runProviderStartupMigration();
 
+  // Agent preset migration now runs before Gateway startup because upgrades are
+  // deterministic local file comparisons and no longer depend on planner/LLM flows.
+  await runAgentPresetStartupMigration({
+    forceLawclawAgentPreset,
+  });
+
   // Start Gateway automatically
   try {
     logger.debug('Auto-starting Gateway...');
@@ -204,18 +210,6 @@ async function initialize(): Promise<void> {
     logger.error('Gateway auto-start failed:', error);
     mainWindow?.webContents.send('gateway:error', String(error));
   }
-
-  // Agent preset migration now runs after Gateway startup so it can use
-  // skill-driven LLM merge and interactive confirmation flows.
-  await runAgentPresetStartupMigration({
-    forceLawclawAgentPreset,
-    gatewayRpc: (method, params, timeoutMs) => gatewayManager.rpc(method, params, timeoutMs),
-    restartGateway: async () => {
-      await gatewayManager.restart();
-    },
-    isGatewayRunning: () => gatewayManager.getStatus().state === 'running',
-    interactiveWindow: !!mainWindow && !mainWindow.isDestroyed(),
-  });
 }
 
 // Application lifecycle

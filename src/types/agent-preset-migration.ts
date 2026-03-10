@@ -1,21 +1,13 @@
-﻿export type AgentPresetMigrationState =
-  | 'idle'
-  | 'running'
-  | 'queued'
-  | 'awaiting_confirmation'
-  | 'failed';
-
-export type AgentPresetConflictDecision = 'preserve_user' | 'prefer_preset' | 'skip_this_time';
+export type AgentPresetMigrationState = 'idle' | 'running' | 'warning' | 'failed';
 
 export interface AgentPresetMigrationStatus {
   state: AgentPresetMigrationState;
-  chatLocked: boolean;
-  queueLength: number;
-  currentTaskId?: string;
-  reason?: 'LLM_UNAVAILABLE' | 'CONFLICT_NEED_CONFIRM' | 'INVALID_OUTPUT' | 'APPLY_FAILED';
+  reason?: 'PARTIAL_UPDATE' | 'APPLY_FAILED';
   message?: string;
   targetHash?: string;
+  updatedFiles?: number;
+  createdFiles?: number;
+  skippedFiles?: number;
+  skippedTargets?: string[];
   updatedAt: string;
 }
-
-

@@ -1,24 +1,59 @@
 import { create } from 'zustand';
-import type {
-  AgentPresetConflictDecision,
-  AgentPresetMigrationStatus,
-} from '@/types/agent-preset-migration';
+import type { AgentPresetMigrationStatus } from '@/types/agent-preset-migration';
+
+const DISMISSED_WARNING_KEY = 'lawclaw.agentPresetMigration.dismissedWarningTargetHash';
 
 interface AgentPresetMigrationStore {
   status: AgentPresetMigrationStatus | null;
-  chatLocked: boolean;
   isInitialized: boolean;
+  dismissedWarningTargetHash: string | null;
+  isCurrentWarningVisible: boolean;
   init: () => Promise<void>;
-  resolveConflict: (decision: AgentPresetConflictDecision) => Promise<{ success: boolean; message?: string }>;
-  retryNow: () => Promise<void>;
+  dismissCurrentWarning: () => void;
 }
 
 let initPromise: Promise<void> | null = null;
 
+function readDismissedWarningTargetHash(): string | null {
+  try {
+    return localStorage.getItem(DISMISSED_WARNING_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeDismissedWarningTargetHash(targetHash: string | null): void {
+  try {
+    if (targetHash) {
+      localStorage.setItem(DISMISSED_WARNING_KEY, targetHash);
+      return;
+    }
+    localStorage.removeItem(DISMISSED_WARNING_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function computeWarningVisibility(
+  status: AgentPresetMigrationStatus | null,
+  dismissedWarningTargetHash: string | null
+): boolean {
+  if (!status || status.state !== 'warning') {
+    return false;
+  }
+
+  if (!status.targetHash) {
+    return true;
+  }
+
+  return status.targetHash !== dismissedWarningTargetHash;
+}
+
 export const useAgentPresetMigrationStore = create<AgentPresetMigrationStore>((set, get) => ({
   status: null,
-  chatLocked: false,
   isInitialized: false,
+  dismissedWarningTargetHash: readDismissedWarningTargetHash(),
+  isCurrentWarningVisible: false,
 
   init: async () => {
     if (get().isInitialized) return;
@@ -28,24 +63,25 @@ export const useAgentPresetMigrationStore = create<AgentPresetMigrationStore>((s
     }
 
     initPromise = (async () => {
-      const status = await window.electron.ipcRenderer.invoke('agentPresetMigration:getStatus') as AgentPresetMigrationStatus;
+      const status = await window.electron.ipcRenderer.invoke(
+        'agentPresetMigration:getStatus'
+      ) as AgentPresetMigrationStatus;
+      const dismissedWarningTargetHash = readDismissedWarningTargetHash();
       set({
         status,
-        chatLocked: status.chatLocked,
         isInitialized: true,
+        dismissedWarningTargetHash,
+        isCurrentWarningVisible: computeWarningVisibility(status, dismissedWarningTargetHash),
       });
 
       window.electron.ipcRenderer.on('agentPresetMigration:statusChanged', (nextStatus) => {
-        const typed = nextStatus as AgentPresetMigrationStatus;
-        set({
-          status: typed,
-          chatLocked: typed.chatLocked,
-        });
-      });
-
-      window.electron.ipcRenderer.on('agentPresetMigration:chatLockChanged', (payload) => {
-        const locked = Boolean((payload as { locked?: boolean })?.locked);
-        set({ chatLocked: locked });
+        set((state) => ({
+          status: nextStatus as AgentPresetMigrationStatus,
+          isCurrentWarningVisible: computeWarningVisibility(
+            nextStatus as AgentPresetMigrationStatus,
+            state.dismissedWarningTargetHash
+          ),
+        }));
       });
     })();
 
@@ -53,16 +89,16 @@ export const useAgentPresetMigrationStore = create<AgentPresetMigrationStore>((s
     initPromise = null;
   },
 
-  resolveConflict: async (decision) => {
-    const result = await window.electron.ipcRenderer.invoke(
-      'agentPresetMigration:resolveConflict',
-      decision
-    ) as { success: boolean; message?: string };
-    return result;
-  },
+  dismissCurrentWarning: () => {
+    const { status } = get();
+    if (status?.state !== 'warning' || !status.targetHash) {
+      return;
+    }
 
-  retryNow: async () => {
-    await window.electron.ipcRenderer.invoke('agentPresetMigration:retryNow');
+    writeDismissedWarningTargetHash(status.targetHash);
+    set({
+      dismissedWarningTargetHash: status.targetHash,
+      isCurrentWarningVisible: false,
+    });
   },
 }));
-

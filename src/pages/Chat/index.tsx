@@ -5,7 +5,8 @@
  * are in the toolbar; messages render with markdown + streaming.
  */
 import { useEffect, useRef } from 'react';
-import { AlertCircle, Bot, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
+import { AlertCircle, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
+import { BotAvatar } from '@/components/common/BotAvatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -190,9 +191,7 @@ function WelcomeScreen() {
   const { t } = useTranslation('chat');
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600">
-        <Bot className="h-8 w-8 text-white" />
-      </div>
+      <BotAvatar size="lg" className="mb-6" />
       <h2 className="mb-2 text-2xl font-bold">{t('welcome.title')}</h2>
       <p className="mb-8 max-w-md text-muted-foreground">{t('welcome.subtitle')}</p>
 
@@ -217,9 +216,7 @@ function WelcomeScreen() {
 function TypingIndicator() {
   return (
     <div className="flex gap-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
-        <Sparkles className="h-4 w-4" />
-      </div>
+      <BotAvatar className="shrink-0" />
       <div className="rounded-2xl bg-muted px-4 py-3">
         <div className="flex gap-1">
           <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: '0ms' }} />
@@ -235,9 +232,7 @@ function ActivityIndicator({ phase }: { phase: 'tool_processing' }) {
   void phase;
   return (
     <div className="flex gap-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
-        <Sparkles className="h-4 w-4" />
-      </div>
+      <BotAvatar className="shrink-0" />
       <div className="rounded-2xl bg-muted px-4 py-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />

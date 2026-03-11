@@ -31,4 +31,15 @@ describe('channel metadata', () => {
     const qqFieldKeys = CHANNEL_META.qqbot.configFields.map((field) => field.key);
     expect(qqFieldKeys).toEqual(['appId', 'clientSecret']);
   });
+
+  it('defines Feishu as QR onboarding with no manual credential fields', () => {
+    expect(CHANNEL_META.feishu).toMatchObject({
+      id: 'feishu',
+      name: 'Feishu / Lark',
+      connectionType: 'qr',
+      docsUrl: 'channels:meta.feishu.docsUrl',
+      isPlugin: true,
+      configFields: [],
+    });
+  });
 });

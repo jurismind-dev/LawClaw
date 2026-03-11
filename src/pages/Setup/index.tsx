@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
+import { FeishuOfficialOnboardingPanel } from '@/components/channels/FeishuOfficialOnboardingPanel';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
@@ -42,10 +43,6 @@ import {
   type ChannelMeta,
   type ChannelConfigField,
 } from '@/types/channel';
-import {
-  SETUP_BUNDLED_FEISHU_PLUGIN_ID,
-  shouldRestartGatewayAfterBundledPluginInstall,
-} from './feishu-plugin-install';
 import { shouldAutoSelectLawClawProvider } from '@/lib/lawclaw-provider-ui-context';
 import type {
   PresetInstallProgressEvent,
@@ -1728,7 +1725,7 @@ function SetupChannelContent() {
             {primaryChannels.map((type) => {
               const channelMeta = CHANNEL_META[type];
               const isJurismind = type === 'jurismind';
-              if (!isJurismind && channelMeta.connectionType !== 'token') return null;
+              if (!isJurismind && type !== 'feishu' && channelMeta.connectionType !== 'token') return null;
               const isComingSoon = channelMeta.comingSoon === true && !isJurismind;
               const isConfigured = isJurismind ? jurismindConfigured : false;
               return (
@@ -1902,118 +1899,130 @@ function SetupChannelContent() {
         </div>
       </div>
 
-      {/* Instructions */}
-      <div className="p-3 rounded-lg bg-muted/50 text-sm">
-        <div className="flex items-center justify-between mb-2">
-          <p className="font-medium text-foreground">{t('channel.howTo')}</p>
-          {meta?.docsUrl && (
-            <button
-              onClick={() => {
-                try {
-                  const url = t(meta.docsUrl!);
-                  if (window.electron?.openExternal) {
-                    window.electron.openExternal(url);
-                  } else {
-                    window.open(url, '_blank');
+      {selectedChannel !== 'feishu' && (
+        <div className="p-3 rounded-lg bg-muted/50 text-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-medium text-foreground">{t('channel.howTo')}</p>
+            {meta?.docsUrl && (
+              <button
+                onClick={() => {
+                  try {
+                    const url = t(meta.docsUrl!);
+                    if (window.electron?.openExternal) {
+                      window.electron.openExternal(url);
+                    } else {
+                      window.open(url, '_blank');
+                    }
+                  } catch {
+                    // ignore
                   }
-                } catch {
-                  // ignore
-                }
-              }}
-              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
-            >
-              <BookOpen className="h-3 w-3" />
-              {t('channel.viewDocs')}
-              <ExternalLink className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-        <ol className="list-decimal list-inside text-muted-foreground space-y-1">
-          {meta?.instructions.map((inst, i) => (
-            <li key={i}>{t(inst)}</li>
-          ))}
-        </ol>
-      </div>
-
-      {/* Config fields */}
-      {meta?.configFields.map((field: ChannelConfigField) => {
-        const isPassword = field.type === 'password';
-        const isSelect = field.type === 'select';
-        return (
-          <div key={field.key} className="space-y-1.5">
-            <Label htmlFor={`setup-${field.key}`} className="text-foreground">
-              {t(field.label)}
-              {field.required && <span className="text-red-400 ml-1">*</span>}
-            </Label>
-            {isSelect ? (
-              <Select
-                id={`setup-${field.key}`}
-                value={configValues[field.key] || ''}
-                onChange={(e) => setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                }}
+                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
               >
-                {field.options?.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {t(option.label)}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <div className="flex gap-2">
-                <Input
-                  id={`setup-${field.key}`}
-                  type={isPassword && !showSecrets[field.key] ? 'password' : 'text'}
-                  placeholder={field.placeholder ? t(field.placeholder) : undefined}
-                  value={configValues[field.key] || ''}
-                  onChange={(e) => setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                  autoComplete="off"
-                  className="font-mono text-sm bg-background border-input"
-                />
-                {isPassword && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="shrink-0"
-                    onClick={() => setShowSecrets((prev) => ({ ...prev, [field.key]: !prev[field.key] }))}
-                  >
-                    {showSecrets[field.key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                )}
-              </div>
-            )}
-            {field.description && (
-              <p className="text-xs text-slate-500 mt-1">{t(field.description)}</p>
+                <BookOpen className="h-3 w-3" />
+                {t('channel.viewDocs')}
+                <ExternalLink className="h-3 w-3" />
+              </button>
             )}
           </div>
-        );
-      })}
-
-      {/* Validation error */}
-      {validationError && (
-        <div className="p-3 rounded-lg bg-red-900/30 border border-red-500/30 text-sm text-red-300 flex items-start gap-2">
-          <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
-          <span>{validationError}</span>
+          <ol className="list-decimal list-inside text-muted-foreground space-y-1">
+            {meta?.instructions.map((inst, i) => (
+              <li key={i}>{t(inst)}</li>
+            ))}
+          </ol>
         </div>
       )}
 
-      {/* Save button */}
-      <Button
-        className="w-full"
-        onClick={handleSave}
-        disabled={!isFormValid() || saving}
-      >
-        {saving ? (
-          <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            {t('provider.validateSave')}
-          </>
-        ) : (
-          <>
-            <Check className="h-4 w-4 mr-2" />
-            {t('provider.validateSave')}
-          </>
-        )}
-      </Button>
+      {selectedChannel === 'feishu' ? (
+        <FeishuOfficialOnboardingPanel
+          onConnected={() => {
+            setValidationError(null);
+            setSaved(true);
+          }}
+        />
+      ) : (
+        <>
+          {/* Config fields */}
+          {meta?.configFields.map((field: ChannelConfigField) => {
+            const isPassword = field.type === 'password';
+            const isSelect = field.type === 'select';
+            return (
+              <div key={field.key} className="space-y-1.5">
+                <Label htmlFor={`setup-${field.key}`} className="text-foreground">
+                  {t(field.label)}
+                  {field.required && <span className="text-red-400 ml-1">*</span>}
+                </Label>
+                {isSelect ? (
+                  <Select
+                    id={`setup-${field.key}`}
+                    value={configValues[field.key] || ''}
+                    onChange={(e) => setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                  >
+                    {field.options?.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {t(option.label)}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      id={`setup-${field.key}`}
+                      type={isPassword && !showSecrets[field.key] ? 'password' : 'text'}
+                      placeholder={field.placeholder ? t(field.placeholder) : undefined}
+                      value={configValues[field.key] || ''}
+                      onChange={(e) => setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                      autoComplete="off"
+                      className="font-mono text-sm bg-background border-input"
+                    />
+                    {isPassword && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0"
+                        onClick={() => setShowSecrets((prev) => ({ ...prev, [field.key]: !prev[field.key] }))}
+                      >
+                        {showSecrets[field.key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {field.description && (
+                  <p className="text-xs text-slate-500 mt-1">{t(field.description)}</p>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Validation error */}
+          {validationError && (
+            <div className="p-3 rounded-lg bg-red-900/30 border border-red-500/30 text-sm text-red-300 flex items-start gap-2">
+              <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{validationError}</span>
+            </div>
+          )}
+
+          {/* Save button */}
+          <Button
+            className="w-full"
+            onClick={handleSave}
+            disabled={!isFormValid() || saving}
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {t('provider.validateSave')}
+              </>
+            ) : (
+              <>
+                <Check className="h-4 w-4 mr-2" />
+                {t('provider.validateSave')}
+              </>
+            )}
+          </Button>
+        </>
+      )}
     </div>
   );
 }
@@ -2037,7 +2046,6 @@ interface InstallingContentProps {
 function InstallingContent({ onComplete }: InstallingContentProps) {
   const { t } = useTranslation('setup');
   const [skillStates, setSkillStates] = useState<SkillInstallState[]>([]);
-  const [feishuPluginStatus, setFeishuPluginStatus] = useState<InstallStatus>('pending');
   const [overallProgress, setOverallProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retrySeed, setRetrySeed] = useState(0);
@@ -2060,7 +2068,6 @@ function InstallingContent({ onComplete }: InstallingContentProps) {
         setErrorMessage(null);
         setSkillStates([]);
         setOverallProgress(0);
-        setFeishuPluginStatus('pending');
 
         const presetStatus = await window.electron.ipcRenderer.invoke(
           'presetInstall:getStatus'
@@ -2095,7 +2102,6 @@ function InstallingContent({ onComplete }: InstallingContentProps) {
 
         if (!uvResult.success) {
           setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
-          setFeishuPluginStatus('failed');
           setErrorMessage(uvResult.error || 'Unknown error during installation');
           toast.error('Environment setup failed');
           return;
@@ -2158,7 +2164,6 @@ function InstallingContent({ onComplete }: InstallingContentProps) {
             ...item,
             status: item.status === 'completed' ? item.status : 'failed',
           })));
-          setFeishuPluginStatus('failed');
           setErrorMessage(presetRunResult.error || 'Preset install failed');
           toast.error(t('installing.presetInstallFailed'));
           return;
@@ -2172,46 +2177,17 @@ function InstallingContent({ onComplete }: InstallingContentProps) {
         );
         setOverallProgress(90);
 
-        setFeishuPluginStatus('installing');
-        setOverallProgress(95);
-
-        const pluginResult = await window.electron.ipcRenderer.invoke(
-          'openclaw:installBundledPlugin',
-          SETUP_BUNDLED_FEISHU_PLUGIN_ID
-        ) as {
-          success?: boolean;
-          skipped?: boolean;
-          reason?: string;
-          error?: string;
-        };
-
-        if (!pluginResult?.success) {
-          setFeishuPluginStatus('failed');
-          setErrorMessage(pluginResult?.error || 'Feishu official plugin installation failed');
-          toast.error(t('installing.feishuInstallFailed'));
-          return;
-        }
-
-        setFeishuPluginStatus('completed');
-
-        if (shouldRestartGatewayAfterBundledPluginInstall(pluginResult)) {
-          // Best effort: restart gateway after actual installation to reload plugin list.
-          await window.electron.ipcRenderer.invoke('gateway:restart').catch(() => {});
-        }
-
         if (cancelled) return;
         setOverallProgress(100);
 
         await new Promise((resolve) => setTimeout(resolve, 800));
         if (!cancelled) {
           const installedNames = Array.from(itemNameMap.values());
-          installedNames.push(t('installing.feishuPluginName'));
           onComplete(installedNames);
         }
       } catch (err) {
         if (cancelled) return;
         setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
-        setFeishuPluginStatus('failed');
         setErrorMessage(String(err));
         toast.error('Installation error');
       }
@@ -2253,15 +2229,7 @@ function InstallingContent({ onComplete }: InstallingContentProps) {
     }
   };
 
-  const installItems: SkillInstallState[] = [
-    ...skillStates,
-    {
-      id: 'feishu-plugin',
-      name: t('installing.feishuPluginName'),
-      description: t('installing.feishuPluginDesc'),
-      status: feishuPluginStatus,
-    },
-  ];
+  const installItems: SkillInstallState[] = skillStates;
 
   return (
     <div className="space-y-6">

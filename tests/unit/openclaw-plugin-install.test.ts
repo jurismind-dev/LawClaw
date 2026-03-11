@@ -281,7 +281,7 @@ describe('bundled feishu plugin config finalizer', () => {
         allow: ['other-plugin', 'feishu-openclaw-plugin'],
         entries: {
           feishu: { enabled: false },
-          'feishu-openclaw-plugin': { enabled: true, source: 'bundled' },
+          'feishu-openclaw-plugin': { enabled: true },
         },
       },
     });

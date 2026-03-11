@@ -33,6 +33,7 @@ import { useChannelsStore } from '@/stores/channels';
 import { useGatewayStore } from '@/stores/gateway';
 import { StatusBadge, type Status } from '@/components/common/StatusBadge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { FeishuOfficialOnboardingPanel } from '@/components/channels/FeishuOfficialOnboardingPanel';
 import { cn } from '@/lib/utils';
 import {
   CHANNEL_ICONS,
@@ -106,6 +107,16 @@ export function Channels() {
 
     void fetchPluginInstallStatus();
   }, [fetchConfiguredTypes, fetchPluginInstallStatus]);
+
+  useEffect(() => {
+    if (gatewayStatus.state !== 'running') {
+      return;
+    }
+
+    void fetchChannels();
+    void fetchConfiguredTypes();
+    void fetchPluginInstallStatus();
+  }, [gatewayStatus.state, fetchChannels, fetchConfiguredTypes, fetchPluginInstallStatus]);
 
   useEffect(() => {
     const unsubscribe = window.electron.ipcRenderer.on('gateway:channel-status', () => {
@@ -1085,6 +1096,26 @@ function AddChannelDialog({
                   </button>
                 );
               })}
+            </div>
+          ) : selectedType === 'feishu' ? (
+            <div className="space-y-4">
+              <FeishuOfficialOnboardingPanel
+                onConnected={() => {
+                  toast.success(t('toast.channelSaved', { name: meta?.name || CHANNEL_NAMES.feishu }));
+                  onChannelAdded();
+                }}
+              />
+
+              <Separator />
+
+              <div className="flex justify-between">
+                <Button variant="outline" onClick={() => onSelectType(null)}>
+                  {t('dialog.back')}
+                </Button>
+                <Button variant="outline" onClick={onClose}>
+                  {t('dialog.close')}
+                </Button>
+              </div>
             </div>
           ) : qrCode ? (
             // QR Code display

@@ -1,0 +1,9 @@
+/**
+ * Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
+ * SPDX-License-Identifier: MIT
+ *
+ * Converter for "folder" message type.
+ */
+import type { ContentConverterFn } from './types';
+export declare const convertFolder: ContentConverterFn;
+//# sourceMappingURL=folder.d.ts.map

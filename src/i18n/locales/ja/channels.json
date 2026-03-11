@@ -43,6 +43,7 @@
         "validationFailed": "検証に失敗しました",
         "warnings": "警告",
         "back": "戻る",
+        "close": "閉じる",
         "validating": "検証中...",
         "validateConfig": "設定を検証",
         "generatingQR": "QRコードを生成中...",
@@ -72,6 +73,33 @@
             "copyFailed": "コピーに失敗しました。手動でコピーしてください",
             "clearSuccess": "連携を解除しました",
             "connectedToast": "JuriSmind コネクタの連携が完了しました"
+        },
+        "feishuOfficial": {
+            "modeLabel": "接続方法",
+            "qrModeDescription": "Feishu 公式の QR フローでボットを作成し、App ID / App Secret を自動反映します。",
+            "existingModeDescription": "既存の Feishu アプリやボットがある場合は、App ID / App Secret を直接入力して連携します。",
+            "modeQr": "QRで作成",
+            "modeExisting": "既存アプリ",
+            "statusLabel": "状態",
+            "statusIdle": "公式 QR オンボーディングを開始できます",
+            "statusLoading": "公式オンボーディングを準備中...",
+            "statusInstalling": "Feishu 公式プラグインをインストールまたは確認中...",
+            "statusWaiting": "QR コードの準備完了。Feishu での読み取り待ち",
+            "statusPolling": "読み取り済み。Feishu からボット情報を受け取るのを待機中",
+            "statusConfigured": "ボットの作成とこの LawClaw への連携が完了しました",
+            "pluginReady": "Feishu 公式プラグインの準備ができています",
+            "scanTip": "Feishu クライアントで読み取ってください。ボット作成後に App ID / App Secret は自動で反映されます。",
+            "start": "ボットを作成",
+            "starting": "QR コードを生成中...",
+            "refresh": "QR を更新",
+            "configuredHint": "この Feishu ボットは連携済みです。必要に応じてどちらの方法でも再作成・置き換えできます。",
+            "existingHint": "すでに Feishu 開発者コンソールでアプリやボットを作成済みなら、ここで資格情報を入力して連携できます。",
+            "existingAppIdLabel": "App ID",
+            "existingAppIdPlaceholder": "cli_xxxxxx",
+            "existingAppSecretLabel": "App Secret",
+            "existingAppSecretPlaceholder": "アプリシークレットを入力",
+            "saveExisting": "既存アプリを連携",
+            "savingExisting": "検証して連携中..."
         }
     },
     "meta": {
@@ -188,23 +216,12 @@
             ]
         },
         "feishu": {
-            "description": "Feishu 公式プラグイン経由で Feishu/Lark ボットに接続します",
-            "fields": {
-                "appId": {
-                    "label": "App ID",
-                    "placeholder": "cli_xxxxxx"
-                },
-                "appSecret": {
-                    "label": "App Secret",
-                    "placeholder": "アプリのシークレット"
-                }
-            },
+            "description": "Feishu 公式プラグイン経由で Feishu/Lark ボットに接続します。QR 作成と既存アプリ連携の両方に対応します",
             "instructions": [
-                "LawClaw はセットアップ中に Feishu 公式プラグインを事前インストールします。",
-                "公式ドキュメントを確認し、Feishu Open Platform を開きます",
-                "新しいアプリケーションを作成します",
-                "App ID と App Secret を取得します",
-                "イベント購読と必須のアプリ権限（contact:contact.base:readonly を含む）を設定します"
+                "LawClaw はオンラインで Feishu 公式プラグインを導入し、公式のボット作成フローを開始します。",
+                "「ボットを作成」を押して、QR コードが表示されるまで待ちます。",
+                "Feishu クライアントで QR コードを読み取り、ボット作成と App ID / App Secret 連携を自動で完了します。",
+                "作成後、LawClaw は既定の Feishu チャンネル設定を書き込み、ゲートウェイを自動で再起動します。"
             ],
             "docsUrl": "https://pcnz0er969s1.feishu.cn/wiki/FgDow7bMDiEPsikR00PcKh25nDh?from=from_copylink"
         },

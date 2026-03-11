@@ -115,6 +115,10 @@ const electronAPI = {
         'jurismind:getStatus',
         'jurismind:stopConnector',
         'jurismind:clearBinding',
+        // Feishu official onboarding
+        'feishu:startPairing',
+        'feishu:configureExistingApp',
+        'feishu:getStatus',
         // ClawHub
         'clawhub:search',
         'clawhub:install',
@@ -182,6 +186,10 @@ const electronAPI = {
         'jurismind:connected',
         'jurismind:status',
         'jurismind:error',
+        'feishu:pair-url',
+        'feishu:connected',
+        'feishu:status',
+        'feishu:error',
         'gateway:exit',
         'gateway:error',
         'navigate',
@@ -247,6 +255,10 @@ const electronAPI = {
         'jurismind:connected',
         'jurismind:status',
         'jurismind:error',
+        'feishu:pair-url',
+        'feishu:connected',
+        'feishu:status',
+        'feishu:error',
       ];
 
       if (validChannels.includes(channel)) {

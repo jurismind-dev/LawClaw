@@ -387,6 +387,10 @@ export async function getChannelFormValues(channelType: string): Promise<Record<
     const saved = await getChannelConfig(channelType);
     if (!saved) return undefined;
 
+    if (channelType === 'feishu') {
+        return undefined;
+    }
+
     const values: Record<string, string> = {};
 
     if (channelType === 'discord') {

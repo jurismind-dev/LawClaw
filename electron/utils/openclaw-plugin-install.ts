@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { applyFeishuChannelDefaults } from './feishu-channel-defaults';
+import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
 
 type JsonObject = Record<string, unknown>;
 type PluginChannelBackups = Record<string, JsonObject>;
@@ -8,7 +8,6 @@ type PluginChannelBackups = Record<string, JsonObject>;
 const BACKUP_FILE_NAME = 'clawx-plugin-channel-backups.json';
 const ALREADY_INSTALLED_REGEX = /already\s+installed/i;
 const FEISHU_OFFICIAL_PLUGIN_ID = 'feishu-openclaw-plugin';
-const FEISHU_BUILTIN_PLUGIN_ID = 'feishu';
 
 export type PluginInstallSource = 'extensions' | 'plugins.installs' | 'plugins.load.paths';
 
@@ -238,62 +237,9 @@ export function finalizeBundledPluginConfigAfterInstall(
   if (pluginId !== FEISHU_OFFICIAL_PLUGIN_ID) {
     return { config, changed: false };
   }
-
-  const plugins = asObject(config.plugins) || {};
-  const entries = asObject(plugins.entries) || {};
-  const channels = asObject(config.channels) || {};
-  const currentAllow = Array.isArray(plugins.allow)
-    ? plugins.allow.filter((item): item is string => typeof item === 'string')
-    : [];
-
-  const officialEntry = asObject(entries[FEISHU_OFFICIAL_PLUGIN_ID]) || {};
-  const builtinEntry = asObject(entries[FEISHU_BUILTIN_PLUGIN_ID]) || {};
-  const feishuChannelDefaults = applyFeishuChannelDefaults(asObject(channels.feishu) || undefined, {
+  return finalizeFeishuOfficialPluginConfig(config, {
     seedDisabledWhenEmpty: true,
   });
-
-  const nextAllow = currentAllow.filter((item) => item !== FEISHU_BUILTIN_PLUGIN_ID);
-  if (!nextAllow.includes(FEISHU_OFFICIAL_PLUGIN_ID)) {
-    nextAllow.push(FEISHU_OFFICIAL_PLUGIN_ID);
-  }
-
-  const nextEntries: JsonObject = {
-    ...entries,
-    [FEISHU_OFFICIAL_PLUGIN_ID]: {
-      ...officialEntry,
-      enabled: true,
-    },
-    [FEISHU_BUILTIN_PLUGIN_ID]: {
-      ...builtinEntry,
-      enabled: false,
-    },
-  };
-
-  const changed =
-    JSON.stringify(currentAllow) !== JSON.stringify(nextAllow)
-    || officialEntry.enabled !== true
-    || builtinEntry.enabled !== false
-    || feishuChannelDefaults.changed;
-
-  if (!changed) {
-    return { config, changed: false };
-  }
-
-  return {
-    config: {
-      ...config,
-      channels: {
-        ...channels,
-        feishu: feishuChannelDefaults.config,
-      },
-      plugins: {
-        ...plugins,
-        allow: nextAllow,
-        entries: nextEntries,
-      },
-    },
-    changed: true,
-  };
 }
 
 /**

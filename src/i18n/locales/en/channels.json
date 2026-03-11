@@ -43,6 +43,7 @@
         "validationFailed": "Validation Failed",
         "warnings": "Warnings",
         "back": "Back",
+        "close": "Close",
         "validating": "Validating...",
         "validateConfig": "Validate Configuration",
         "generatingQR": "Generating QR...",
@@ -72,6 +73,33 @@
             "copyFailed": "Copy failed, please copy the URL manually",
             "clearSuccess": "Binding removed",
             "connectedToast": "JuriSmind connector is now bound and online"
+        },
+        "feishuOfficial": {
+            "modeLabel": "Connection Method",
+            "qrModeDescription": "Use the official Feishu QR flow to create a bot and fill App ID / App Secret automatically.",
+            "existingModeDescription": "If you already have a Feishu app or bot, bind it directly with App ID / App Secret.",
+            "modeQr": "Create by QR",
+            "modeExisting": "Existing App",
+            "statusLabel": "Status",
+            "statusIdle": "Ready to start the official QR onboarding flow",
+            "statusLoading": "Preparing the official onboarding flow...",
+            "statusInstalling": "Installing or verifying the Feishu official plugin...",
+            "statusWaiting": "QR code is ready. Waiting for Feishu scan",
+            "statusPolling": "Scanned. Waiting for Feishu to return bot credentials",
+            "statusConfigured": "Bot created and bound to this LawClaw instance",
+            "pluginReady": "Feishu official plugin is ready",
+            "scanTip": "Scan with the Feishu client. App ID and App Secret are filled automatically after the bot is created.",
+            "start": "Start Bot Creation",
+            "starting": "Creating QR code...",
+            "refresh": "Refresh QR",
+            "configuredHint": "This Feishu bot is already bound. You can re-run either mode at any time to replace it.",
+            "existingHint": "If you already created the Feishu app or bot in the developer console, enter its credentials here to bind it.",
+            "existingAppIdLabel": "App ID",
+            "existingAppIdPlaceholder": "cli_xxxxxx",
+            "existingAppSecretLabel": "App Secret",
+            "existingAppSecretPlaceholder": "Enter your app secret",
+            "saveExisting": "Bind Existing App",
+            "savingExisting": "Validating and binding..."
         }
     },
     "meta": {
@@ -192,24 +220,13 @@
             ]
         },
         "feishu": {
-            "description": "Connect Feishu/Lark via the Feishu official plugin",
+            "description": "Connect a Feishu/Lark bot via the Feishu official plugin, either by QR creation or an existing app",
             "docsUrl": "https://pcnz0er969s1.feishu.cn/wiki/FgDow7bMDiEPsikR00PcKh25nDh?from=from_copylink",
-            "fields": {
-                "appId": {
-                    "label": "App ID",
-                    "placeholder": "cli_xxxxxx"
-                },
-                "appSecret": {
-                    "label": "App Secret",
-                    "placeholder": "Your app secret"
-                }
-            },
             "instructions": [
-                "LawClaw preinstalls the Feishu official plugin during setup.",
-                "Read the official documentation, then go to Feishu Open Platform",
-                "Create a new application",
-                "Get App ID and App Secret",
-                "Configure event subscription and required application permissions, including 'contact:contact.base:readonly'"
+                "LawClaw installs the Feishu official plugin online and starts the official bot-creation flow.",
+                "Click \"Start Bot Creation\" and wait for the QR code to appear.",
+                "Scan the QR code with Feishu to create a bot and bind App ID / App Secret automatically.",
+                "After creation, LawClaw writes the default Feishu channel config and restarts the gateway automatically."
             ]
         },
         "imessage": {

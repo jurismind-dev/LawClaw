@@ -84,6 +84,7 @@ import {
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
 import { bindJurismindProviderToken } from '../utils/jurismind-provider-token-binding';
+import { feishuOnboardingManager } from '../utils/feishu-onboarding';
 import {
   applyLawClawProviderSelection,
   clearLawClawProviderSelection,
@@ -207,6 +208,9 @@ export function registerIpcHandlers(
 
   // Jurismind connector handlers (QR pairing)
   registerJurismindHandlers(mainWindow);
+
+  // Feishu official onboarding handlers (QR bot creation)
+  registerFeishuOnboardingHandlers(mainWindow, gatewayManager);
 
   // Device OAuth handlers (Code Plan)
   registerDeviceOAuthHandlers(mainWindow);
@@ -981,8 +985,18 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     error?: string;
     details?: string;
   }> => {
-    const bundledDir = join(getResourcesDir(), 'plugins', FEISHU_OFFICIAL_PLUGIN_ID);
-    if (existsSync(join(bundledDir, 'package.json'))) {
+    const bundledDirCandidates = Array.from(new Set([
+      join(getResourcesDir(), 'plugins', FEISHU_OFFICIAL_PLUGIN_ID),
+      ...(app.isPackaged
+        ? [join(process.resourcesPath, 'openclaw-plugins', FEISHU_OFFICIAL_PLUGIN_ID)]
+        : []),
+    ]));
+
+    const bundledDir = bundledDirCandidates.find((candidate) =>
+      existsSync(join(candidate, 'package.json'))
+    );
+
+    if (bundledDir) {
       return {
         success: true,
         installPath: bundledDir,
@@ -992,7 +1006,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     if (app.isPackaged) {
       return {
         success: false,
-        error: `Bundled plugin directory not found: ${bundledDir}`,
+        error: `Bundled plugin directory not found. Searched: ${bundledDirCandidates.join(', ')}`,
       };
     }
 
@@ -1369,7 +1383,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     }
   });
 
-  // Install a bundled plugin payload from resources/plugins/<pluginId>/
+  // Install a bundled plugin payload from packaged resources.
   ipcMain.handle('openclaw:installBundledPlugin', async (_, pluginId: string) => {
     let tempInstallDir: string | undefined;
 
@@ -1732,6 +1746,87 @@ function registerJurismindHandlers(mainWindow: BrowserWindow): void {
   jurismindConnectorManager.on('error', (error) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('jurismind:error', error);
+    }
+  });
+}
+
+function registerFeishuOnboardingHandlers(
+  mainWindow: BrowserWindow,
+  gatewayManager: GatewayManager
+): void {
+  ipcMain.handle(
+    'feishu:startPairing',
+    async (_, options?: { forceRefresh?: boolean; resetAuth?: boolean; reinstallPlugin?: boolean }) => {
+      try {
+        const result = await feishuOnboardingManager.startPairing({
+          forceRefresh: options?.forceRefresh === true,
+          resetAuth: options?.resetAuth === true,
+          reinstallPlugin: options?.reinstallPlugin === true,
+        });
+        return { success: true, result, status: feishuOnboardingManager.getStatus() };
+      } catch (error) {
+        return { success: false, error: String(error), status: feishuOnboardingManager.getStatus() };
+      }
+    }
+  );
+
+  ipcMain.handle('feishu:configureExistingApp', async (_, payload?: { appId?: string; appSecret?: string }) => {
+    try {
+      await feishuOnboardingManager.configureExistingApp(
+        String(payload?.appId || ''),
+        String(payload?.appSecret || '')
+      );
+      return { success: true, status: feishuOnboardingManager.getStatus() };
+    } catch (error) {
+      return { success: false, error: String(error), status: feishuOnboardingManager.getStatus() };
+    }
+  });
+
+  ipcMain.handle('feishu:getStatus', async () => {
+    try {
+      await feishuOnboardingManager.refreshStatus();
+      return { success: true, status: feishuOnboardingManager.getStatus() };
+    } catch (error) {
+      return { success: false, error: String(error), status: feishuOnboardingManager.getStatus() };
+    }
+  });
+
+  feishuOnboardingManager.on('pair-url', (data) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('feishu:pair-url', data);
+    }
+  });
+
+  feishuOnboardingManager.on('connected', async (data) => {
+    const normalizedChannelType = 'feishu';
+    try {
+      const managedChannels = await getLawClawManagedChannels();
+      if (!managedChannels.includes(normalizedChannelType)) {
+        managedChannels.push(normalizedChannelType);
+        await setSetting('lawclawManagedChannels', managedChannels);
+      }
+    } catch (error) {
+      logger.warn('Failed to update LawClaw managed channel settings after Feishu onboarding', error);
+    }
+
+    await gatewayManager.restart().catch((error) => {
+      logger.warn('Failed to restart gateway after Feishu onboarding', error);
+    });
+
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('feishu:connected', data);
+    }
+  });
+
+  feishuOnboardingManager.on('status', (status) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('feishu:status', status);
+    }
+  });
+
+  feishuOnboardingManager.on('error', (error) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('feishu:error', error);
     }
   });
 }

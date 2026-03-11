@@ -1,0 +1,1 @@
+{"version":3,"file":"onboarding-migrate.d.ts","sourceRoot":"","sources":["../../../src/channel/onboarding-migrate.ts"],"names":[],"mappings":"AAAA;;;;;;;;;GASG;AAEH,OAAO,KAAK,EAAE,cAAc,EAAE,cAAc,EAAE,MAAM,qBAAqB,CAAC;AAI1E;;;;;;;;;GASG;AACH,wBAAsB,2BAA2B,CAAC,MAAM,EAAE;IACxD,GAAG,EAAE,cAAc,CAAC;IACpB,QAAQ,EAAE,cAAc,CAAC;CAC1B,GAAG,OAAO,CAAC,cAAc,CAAC,CA0D1B"}

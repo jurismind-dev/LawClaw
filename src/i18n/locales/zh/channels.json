@@ -43,6 +43,7 @@
         "validationFailed": "验证失败",
         "warnings": "警告",
         "back": "返回",
+        "close": "关闭",
         "validating": "正在验证...",
         "validateConfig": "验证配置",
         "generatingQR": "正在生成二维码...",
@@ -72,6 +73,33 @@
             "copyFailed": "复制失败，请手动复制链接",
             "clearSuccess": "绑定已解除",
             "connectedToast": "Jurismind 连接器已绑定并上线"
+        },
+        "feishuOfficial": {
+            "modeLabel": "连接方式",
+            "qrModeDescription": "使用飞书官方流程扫码创建机器人，创建成功后自动回填 App ID / App Secret。",
+            "existingModeDescription": "如果你已经有飞书应用或机器人，可以直接填写 App ID / App Secret 进行绑定。",
+            "modeQr": "扫码创建",
+            "modeExisting": "已有应用",
+            "statusLabel": "当前状态",
+            "statusIdle": "等待开始官方扫码流程",
+            "statusLoading": "正在准备官方扫码流程...",
+            "statusInstalling": "正在安装或校验飞书官方插件...",
+            "statusWaiting": "二维码已就绪，等待飞书扫码",
+            "statusPolling": "已扫码，等待飞书返回机器人信息",
+            "statusConfigured": "机器人已创建并绑定到当前 LawClaw",
+            "pluginReady": "飞书官方插件已就绪",
+            "scanTip": "请使用飞书客户端扫码。创建成功后会自动回填 App ID / App Secret，无需手动配置。",
+            "start": "开始创建机器人",
+            "starting": "正在创建二维码...",
+            "refresh": "刷新二维码",
+            "configuredHint": "当前飞书机器人已绑定，可随时切换模式重新创建或替换。",
+            "existingHint": "如果你已经在飞书开放平台创建好应用或机器人，可以直接填写凭证进行绑定。",
+            "existingAppIdLabel": "应用 ID (App ID)",
+            "existingAppIdPlaceholder": "cli_xxxxxx",
+            "existingAppSecretLabel": "应用密钥 (App Secret)",
+            "existingAppSecretPlaceholder": "请输入应用密钥",
+            "saveExisting": "绑定已有应用",
+            "savingExisting": "正在校验并绑定..."
         }
     },
     "meta": {
@@ -192,24 +220,13 @@
             ]
         },
         "feishu": {
-            "description": "通过飞书官方插件连接飞书/Lark 机器人",
+            "description": "通过飞书官方插件连接飞书/Lark 机器人，可扫码创建或绑定已有应用",
             "docsUrl": "https://pcnz0er969s1.feishu.cn/wiki/FgDow7bMDiEPsikR00PcKh25nDh?from=from_copylink",
-            "fields": {
-                "appId": {
-                    "label": "应用 ID (App ID)",
-                    "placeholder": "cli_xxxxxx"
-                },
-                "appSecret": {
-                    "label": "应用密钥 (App Secret)",
-                    "placeholder": "您的应用密钥"
-                }
-            },
             "instructions": [
-                "LawClaw 会在引导安装时预装飞书官方插件。",
-                "阅读官方文档，前往飞书开放平台",
-                "创建一个新应用",
-                "获取 App ID 和 App Secret",
-                "配置事件订阅和必要应用权限，至少包含 contact:contact.base:readonly"
+                "LawClaw 会在线安装飞书官方插件并拉起官方扫码建机器人流程。",
+                "点击“开始创建机器人”，等待界面生成飞书二维码。",
+                "使用飞书客户端扫码，一键创建机器人并自动完成 App ID / App Secret 绑定。",
+                "创建完成后，LawClaw 会自动写入默认飞书频道配置并重启网关。"
             ]
         },
         "imessage": {

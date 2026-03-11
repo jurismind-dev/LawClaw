@@ -1,0 +1,1 @@
+{"version":3,"file":"legacy.d.ts","sourceRoot":"","sources":["../../../../../src/messaging/converters/interactive/legacy.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,OAAO,KAAK,EAAE,GAAG,EAAE,MAAM,SAAS,CAAC;AAEnC,wBAAgB,iBAAiB,CAAC,MAAM,EAAE,GAAG,GAAG;IAAE,OAAO,EAAE,MAAM,CAAC;IAAC,SAAS,EAAE,KAAK,EAAE,CAAA;CAAE,CAiBtF"}

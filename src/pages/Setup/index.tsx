@@ -695,6 +695,7 @@ function ProviderContent({
   const providerMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [authMode, setAuthMode] = useState<'oauth' | 'apikey'>('oauth');
+  const setupDefaultSyncPolicy = selectedProvider === 'jurismind' ? 'always' : 'if-empty';
 
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
@@ -720,7 +721,7 @@ function ProviderContent({
       if (selectedProvider && shouldAutoSelectLawClawProvider('setup')) {
         try {
           await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider, {
-            syncPolicy: 'if-empty',
+            syncPolicy: setupDefaultSyncPolicy,
           });
         } catch (error) {
           console.error('Failed to set default provider:', error);
@@ -749,7 +750,7 @@ function ProviderContent({
         window.electron.ipcRenderer.off('oauth:error', handleError);
       }
     };
-  }, [onConfiguredChange, t, selectedProvider]);
+  }, [onConfiguredChange, setupDefaultSyncPolicy, t, selectedProvider]);
 
   const handleStartOAuth = async () => {
     if (!selectedProvider) return;
@@ -933,7 +934,7 @@ function ProviderContent({
         const defaultResult = await window.electron.ipcRenderer.invoke(
           'provider:setDefault',
           providerIdForSave,
-          { syncPolicy: 'if-empty' }
+          { syncPolicy: setupDefaultSyncPolicy }
         ) as { success: boolean; error?: string };
 
         if (!defaultResult.success) {
@@ -953,6 +954,7 @@ function ProviderContent({
       selectedProvider,
       selectedProviderConfigId,
       selectedProviderData?.name,
+      setupDefaultSyncPolicy,
       showBaseUrlField,
       showModelIdField,
       t,

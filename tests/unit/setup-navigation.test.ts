@@ -40,4 +40,11 @@ describe('setup navigation and install flow', () => {
     expect(source).not.toContain("SETUP_BUNDLED_FEISHU_PLUGIN_ID");
     expect(source).not.toContain("'openclaw:installBundledPlugin'");
   });
+
+  it('forces Jurismind to become the active model only when Setup binds Jurismind', () => {
+    const source = readSetupSource();
+
+    expect(source).toContain("const setupDefaultSyncPolicy = selectedProvider === 'jurismind' ? 'always' : 'if-empty';");
+    expect(source).toContain('syncPolicy: setupDefaultSyncPolicy');
+  });
 });

@@ -29,4 +29,15 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(installerScript).toContain('!macro customInstall');
     expect(installerScript).toContain('$INSTDIR\\\\resources\\\\cli');
   });
+
+  it('keeps Windows plugin installation off npm.cmd fallbacks', () => {
+    const afterPackScript = readRepoFile('scripts/after-pack.cjs');
+    const openClawCliSource = readRepoFile('electron/utils/openclaw-cli.ts');
+
+    expect(afterPackScript).toContain("join(appOutDir, 'node_modules', 'npm')");
+    expect(afterPackScript).toContain('Bundled npm runtime for Windows');
+
+    expect(openClawCliSource).toContain('process.env.npm_node_execpath');
+    expect(openClawCliSource).toContain('export function getNodeExecForCli');
+  });
 });

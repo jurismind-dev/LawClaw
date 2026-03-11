@@ -14,6 +14,7 @@ import {
 import { detectPluginInstallationState } from './openclaw-plugin-install';
 import { renderQrPngBase64 } from './qr-code';
 import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
+import { getNodeExecForCli } from './openclaw-cli';
 
 const FEISHU_REGISTRATION_URL = 'https://accounts.feishu.cn/oauth/v1/app/registration';
 const FEISHU_OFFICIAL_PLUGIN_ID = 'feishu-openclaw-plugin';
@@ -631,7 +632,7 @@ class FeishuOnboardingManager extends EventEmitter {
     }
 
     return await new Promise((resolve) => {
-      const child = spawn(process.execPath, [status.entryPath, ...args], {
+      const child = spawn(getNodeExecForCli(), [status.entryPath, ...args], {
         cwd: openclawConfigDir,
         env: cliEnv,
       });

@@ -4,6 +4,7 @@
 import { app } from 'electron';
 import {
   appendFileSync,
+  accessSync,
   chmodSync,
   existsSync,
   mkdirSync,
@@ -13,7 +14,7 @@ import {
 } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
 
@@ -236,7 +237,34 @@ export async function autoInstallCliIfNeeded(
 
 // ── Completion helpers ───────────────────────────────────────────────────────
 
-function getNodeExecForCli(): string {
+function isNodeExecutable(execPath: string | undefined | null): execPath is string {
+  if (!execPath) return false;
+  try {
+    accessSync(execPath);
+  } catch {
+    return false;
+  }
+
+  const executableName = basename(execPath).toLowerCase();
+  return executableName === 'node' || executableName === 'node.exe';
+}
+
+function getHostNodeExecFromEnv(): string | null {
+  const candidates = [
+    process.env.npm_node_execpath,
+    process.env.NODE,
+  ];
+
+  for (const candidate of candidates) {
+    if (isNodeExecutable(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+export function getNodeExecForCli(): string {
   if (process.platform === 'darwin' && app.isPackaged) {
     const appName = app.getName();
     const helperName = `${appName} Helper`;
@@ -249,6 +277,14 @@ function getNodeExecForCli(): string {
     );
     if (existsSync(helperPath)) return helperPath;
   }
+
+  const hostNodeExec = getHostNodeExecFromEnv();
+  if (hostNodeExec) return hostNodeExec;
+
+  if (isNodeExecutable(process.execPath)) {
+    return process.execPath;
+  }
+
   return process.execPath;
 }
 

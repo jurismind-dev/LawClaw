@@ -30,7 +30,7 @@ import {
   getResourcesDir,
   ensureDir,
 } from '../utils/paths';
-import { getOpenClawCliCommand } from '../utils/openclaw-cli';
+import { getNodeExecForCli, getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { getSetting, setSetting } from '../utils/store';
 import {
   saveProviderKeyToOpenClaw,
@@ -794,7 +794,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
       }
 
       return await new Promise((resolve) => {
-        const child = spawn(process.execPath, [status.entryPath, ...args], {
+        const child = spawn(getNodeExecForCli(), [status.entryPath, ...args], {
           cwd: openclawConfigDir,
           env: cliEnv,
         });

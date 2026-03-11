@@ -55,6 +55,50 @@ function resolveArch(arch) {
   return archMap[arch] || String(arch);
 }
 
+function hasNpmCliDir(pkgDir) {
+  return existsSync(join(pkgDir, 'bin', 'npm-cli.js')) && existsSync(join(pkgDir, 'bin', 'npx-cli.js'));
+}
+
+function resolveHostNpmPackageDir() {
+  const nodeExecDir = dirname(process.execPath);
+  const candidates = [
+    join(nodeExecDir, 'node_modules', 'npm'),
+    join(nodeExecDir, '..', 'lib', 'node_modules', 'npm'),
+    join(dirname(nodeExecDir), 'lib', 'node_modules', 'npm'),
+    join('/usr/local', 'lib', 'node_modules', 'npm'),
+    join('/opt/homebrew', 'lib', 'node_modules', 'npm'),
+  ];
+
+  for (const candidate of candidates) {
+    if (hasNpmCliDir(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function bundleWindowsNpmRuntime(appOutDir) {
+  const sourceDir = resolveHostNpmPackageDir();
+  if (!sourceDir) {
+    throw new Error(
+      '[after-pack] Unable to locate the host npm package. Windows plugin installation will fall back to npm.cmd and fail.'
+    );
+  }
+
+  const destDir = join(appOutDir, 'node_modules', 'npm');
+  if (existsSync(normWin(destDir))) {
+    rmSync(normWin(destDir), { recursive: true, force: true });
+  }
+
+  mkdirSync(normWin(dirname(destDir)), { recursive: true });
+  cpSync(normWin(sourceDir), normWin(destDir), { recursive: true, dereference: true });
+  const removedCount = cleanupUnnecessaryFiles(destDir);
+  console.log(
+    `[after-pack] ✅ Bundled npm runtime for Windows: ${sourceDir} -> ${destDir} (removed ${removedCount} extra files).`
+  );
+}
+
 /**
  * Recursively remove unnecessary files to reduce code signing overhead
  */
@@ -280,6 +324,10 @@ exports.default = async function afterPack(context) {
     resourcesDir = join(appOutDir, `${appName}.app`, 'Contents', 'Resources');
   } else {
     resourcesDir = join(appOutDir, 'resources');
+  }
+
+  if (platform === 'win32') {
+    bundleWindowsNpmRuntime(appOutDir);
   }
 
   const uvPath = getBundledUvPath(resourcesDir, platform);

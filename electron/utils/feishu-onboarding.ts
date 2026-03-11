@@ -14,7 +14,7 @@ import {
 import { detectPluginInstallationState } from './openclaw-plugin-install';
 import { renderQrPngBase64 } from './qr-code';
 import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
-import { getNodeExecForCli } from './openclaw-cli';
+import { applyBundledNpmToCliEnv, getNodeExecForCli } from './openclaw-cli';
 
 const FEISHU_REGISTRATION_URL = 'https://accounts.feishu.cn/oauth/v1/app/registration';
 const FEISHU_OFFICIAL_PLUGIN_ID = 'feishu-openclaw-plugin';
@@ -630,6 +630,8 @@ class FeishuOnboardingManager extends EventEmitter {
     } catch (error) {
       logger.warn('[FeishuOnboarding] Failed to apply OpenClaw config env fallbacks', error);
     }
+
+    cliEnv = applyBundledNpmToCliEnv(cliEnv);
 
     return await new Promise((resolve) => {
       const child = spawn(getNodeExecForCli(), [status.entryPath, ...args], {

@@ -19,7 +19,7 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } = require('fs');
+const { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, chmodSync } = require('fs');
 const { basename, dirname, join } = require('path');
 
 function getBundledUvPath(resourcesDir, platform) {
@@ -96,6 +96,65 @@ function bundleWindowsNpmRuntime(appOutDir) {
   const removedCount = cleanupUnnecessaryFiles(destDir);
   console.log(
     `[after-pack] ✅ Bundled npm runtime for Windows: ${sourceDir} -> ${destDir} (removed ${removedCount} extra files).`
+  );
+}
+
+function createPosixNpmWrapper(appName, cliScriptName) {
+  return `#!/bin/sh
+set -eu
+
+BASEDIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+RESOURCES_DIR="$(CDPATH= cd -- "$BASEDIR/.." && pwd)"
+NPM_CLI_JS="$RESOURCES_DIR/npm-runtime/node_modules/npm/bin/${cliScriptName}"
+
+if [ ! -f "$NPM_CLI_JS" ]; then
+  echo "Bundled npm runtime not found: $NPM_CLI_JS" >&2
+  exit 1
+fi
+
+case "$(uname)" in
+  Darwin)
+    NODE_EXE="$RESOURCES_DIR/../Frameworks/${appName} Helper.app/Contents/MacOS/${appName} Helper"
+    ;;
+  *)
+    NODE_EXE="$RESOURCES_DIR/../${appName}"
+    ;;
+esac
+
+if [ ! -x "$NODE_EXE" ]; then
+  NODE_EXE=node
+fi
+
+export ELECTRON_RUN_AS_NODE=1
+exec "$NODE_EXE" "$NPM_CLI_JS" "$@"
+`;
+}
+
+function bundlePosixNpmRuntime(resourcesDir, appName) {
+  const sourceDir = resolveHostNpmPackageDir();
+  if (!sourceDir) {
+    throw new Error('[after-pack] Unable to locate the host npm package for the bundled POSIX runtime.');
+  }
+
+  const runtimeDir = join(resourcesDir, 'npm-runtime', 'node_modules', 'npm');
+  if (existsSync(runtimeDir)) {
+    rmSync(runtimeDir, { recursive: true, force: true });
+  }
+  mkdirSync(dirname(runtimeDir), { recursive: true });
+  cpSync(sourceDir, runtimeDir, { recursive: true, dereference: true });
+  const removedCount = cleanupUnnecessaryFiles(runtimeDir);
+
+  const wrapperDir = join(resourcesDir, 'npm-bin');
+  mkdirSync(wrapperDir, { recursive: true });
+
+  for (const [filename, cliScriptName] of [['npm', 'npm-cli.js'], ['npx', 'npx-cli.js']]) {
+    const wrapperPath = join(wrapperDir, filename);
+    writeFileSync(wrapperPath, createPosixNpmWrapper(appName, cliScriptName), 'utf8');
+    chmodSync(wrapperPath, 0o755);
+  }
+
+  console.log(
+    `[after-pack] ✅ Bundled npm runtime for POSIX: ${sourceDir} -> ${runtimeDir} (removed ${removedCount} extra files).`
   );
 }
 
@@ -315,12 +374,12 @@ exports.default = async function afterPack(context) {
   const appOutDir = context.appOutDir;
   const platform = context.electronPlatformName; // 'win32' | 'darwin' | 'linux'
   const arch = resolveArch(context.arch);
+  const appName = context.packager.appInfo.productFilename;
 
   console.log(`[after-pack] Target: ${platform}/${arch}`);
 
   let resourcesDir;
   if (platform === 'darwin') {
-    const appName = context.packager.appInfo.productFilename;
     resourcesDir = join(appOutDir, `${appName}.app`, 'Contents', 'Resources');
   } else {
     resourcesDir = join(appOutDir, 'resources');
@@ -328,6 +387,8 @@ exports.default = async function afterPack(context) {
 
   if (platform === 'win32') {
     bundleWindowsNpmRuntime(appOutDir);
+  } else if (platform === 'darwin' || platform === 'linux') {
+    bundlePosixNpmRuntime(resourcesDir, appName);
   }
 
   const uvPath = getBundledUvPath(resourcesDir, platform);

@@ -36,8 +36,12 @@ describe('bundled openclaw CLI wrappers', () => {
 
     expect(afterPackScript).toContain("join(appOutDir, 'node_modules', 'npm')");
     expect(afterPackScript).toContain('Bundled npm runtime for Windows');
+    expect(afterPackScript).toContain("join(resourcesDir, 'npm-runtime', 'node_modules', 'npm')");
+    expect(afterPackScript).toContain('Bundled npm runtime for POSIX');
 
     expect(openClawCliSource).toContain('process.env.npm_node_execpath');
     expect(openClawCliSource).toContain('export function getNodeExecForCli');
+    expect(openClawCliSource).toContain('export function applyBundledNpmToCliEnv');
+    expect(openClawCliSource).toContain("join(process.resourcesPath, 'npm-bin')");
   });
 });

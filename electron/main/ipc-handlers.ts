@@ -30,7 +30,7 @@ import {
   getResourcesDir,
   ensureDir,
 } from '../utils/paths';
-import { getNodeExecForCli, getOpenClawCliCommand } from '../utils/openclaw-cli';
+import { applyBundledNpmToCliEnv, getNodeExecForCli, getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { getSetting, setSetting } from '../utils/store';
 import {
   saveProviderKeyToOpenClaw,
@@ -792,6 +792,8 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
       } catch (error) {
         logger.warn('Failed to apply OpenClaw config env fallbacks for CLI execution', error);
       }
+
+      cliEnv = applyBundledNpmToCliEnv(cliEnv);
 
       return await new Promise((resolve) => {
         const child = spawn(getNodeExecForCli(), [status.entryPath, ...args], {

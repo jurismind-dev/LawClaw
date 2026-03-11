@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, delimiter } from 'node:path';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
 
@@ -264,6 +264,14 @@ function getHostNodeExecFromEnv(): string | null {
   return null;
 }
 
+function getBundledNpmWrapperDir(): string | null {
+  if (!app.isPackaged) return null;
+  if (process.platform !== 'darwin' && process.platform !== 'linux') return null;
+
+  const wrapperDir = join(process.resourcesPath, 'npm-bin');
+  return existsSync(join(wrapperDir, 'npm')) ? wrapperDir : null;
+}
+
 export function getNodeExecForCli(): string {
   if (process.platform === 'darwin' && app.isPackaged) {
     const appName = app.getName();
@@ -286,6 +294,22 @@ export function getNodeExecForCli(): string {
   }
 
   return process.execPath;
+}
+
+export function applyBundledNpmToCliEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const wrapperDir = getBundledNpmWrapperDir();
+  if (!wrapperDir) {
+    return { ...baseEnv };
+  }
+
+  const env = { ...baseEnv };
+  const currentPath = String(env.PATH ?? '');
+  const pathParts = currentPath.split(delimiter).filter(Boolean);
+  if (!pathParts.includes(wrapperDir)) {
+    env.PATH = currentPath ? `${wrapperDir}${delimiter}${currentPath}` : wrapperDir;
+  }
+
+  return env;
 }
 
 export function generateCompletionCache(): void {

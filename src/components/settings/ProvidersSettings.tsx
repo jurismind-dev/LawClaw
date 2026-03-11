@@ -81,7 +81,7 @@ export function ProvidersSettings() {
         apiKey.trim() || undefined
       );
 
-      if (shouldAutoSelectLawClawProvider('settings')) {
+      if (type === 'jurismind' || shouldAutoSelectLawClawProvider('settings')) {
         await setDefaultProvider(id);
       }
 
@@ -155,6 +155,9 @@ export function ProvidersSettings() {
                   payload.updates || {},
                   payload.newApiKey
                 );
+                if (provider.type === 'jurismind') {
+                  await setDefaultProvider(provider.id);
+                }
                 setEditingProvider(null);
               }}
               onValidateKey={(key, options) => validateApiKey(provider.id, key, options)}

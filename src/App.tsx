@@ -129,6 +129,31 @@ function App() {
     checkForceSetup();
   }, [markSetupIncomplete]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const ensureSetupForEmptyProviderState = async () => {
+      if (!setupComplete || location.pathname.startsWith('/setup')) {
+        return;
+      }
+
+      try {
+        const providers = await window.electron.ipcRenderer.invoke('provider:list') as unknown[];
+        if (!cancelled && Array.isArray(providers) && providers.length === 0) {
+          markSetupIncomplete();
+        }
+      } catch (error) {
+        console.error('Failed to verify provider bootstrap state:', error);
+      }
+    };
+
+    void ensureSetupForEmptyProviderState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, markSetupIncomplete, setupComplete]);
+
   // Redirect to setup wizard if not complete
   useEffect(() => {
     if (!setupComplete && !location.pathname.startsWith('/setup')) {

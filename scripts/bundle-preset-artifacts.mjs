@@ -10,9 +10,9 @@ const __dirname = dirname(__filename);
 const ROOT_DIR = resolve(__dirname, '..');
 export const PRESET_ROOT = join(ROOT_DIR, 'resources', 'preset-installs');
 export const MANIFEST_PATH = join(PRESET_ROOT, 'manifest.json');
-export const JURISHUB_HIGHLIGHTED_SEARCH_BASE_URL = 'https://lawhub.jurismind.com/api/v1/search';
-export const JURISHUB_HIGHLIGHTED_SEARCH_LIMIT = 20;
-export const JURISHUB_HIGHLIGHTED_TIMEOUT_MS = 20_000;
+export const JURISHUB_CONVEX_ACTION_URL = 'https://convex-api-lawhub.jurismind.com/api/action';
+export const JURISHUB_SKILL_VALIDATION_LIMIT = 20;
+export const JURISHUB_SKILL_VALIDATION_TIMEOUT_MS = 20_000;
 export const SKIP_REMOTE_SKILL_VALIDATION_ARG = '--skip-remote-skill-validation';
 
 function fail(message) {
@@ -93,22 +93,30 @@ export function loadManifest(manifestPath = MANIFEST_PATH) {
   return manifest;
 }
 
-export function buildJurishubHighlightedSearchUrl(skillId) {
-  const url = new URL(JURISHUB_HIGHLIGHTED_SEARCH_BASE_URL);
-  url.searchParams.set('q', skillId);
-  url.searchParams.set('limit', String(JURISHUB_HIGHLIGHTED_SEARCH_LIMIT));
-  url.searchParams.set('highlightedOnly', 'true');
-  return url.toString();
+export function buildJurishubSkillValidationRequest(skillId) {
+  return {
+    url: JURISHUB_CONVEX_ACTION_URL,
+    payload: {
+      path: 'search:searchSkills',
+      args: {
+        query: skillId,
+        limit: JURISHUB_SKILL_VALIDATION_LIMIT,
+        highlightedOnly: true,
+      },
+    },
+  };
 }
 
-export async function verifyJurishubHighlightedSkill(
+export async function verifyJurishubOfficialHighlightedSkill(
   skillId,
-  { fetchImpl = globalThis.fetch, timeoutMs = JURISHUB_HIGHLIGHTED_TIMEOUT_MS } = {}
+  { fetchImpl = globalThis.fetch, timeoutMs = JURISHUB_SKILL_VALIDATION_TIMEOUT_MS } = {}
 ) {
-  const url = buildJurishubHighlightedSearchUrl(skillId);
+  const { url, payload } = buildJurishubSkillValidationRequest(skillId);
   if (typeof fetchImpl !== 'function') {
     return {
+      eligible: false,
       highlighted: false,
+      official: false,
       url,
       error: 'fetch is not available in current Node.js runtime',
     };
@@ -122,14 +130,17 @@ export async function verifyJurishubHighlightedSkill(
   let response;
   try {
     response = await fetchImpl(url, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
   } catch (error) {
     clearTimeout(timeoutHandle);
     return {
+      eligible: false,
       highlighted: false,
+      official: false,
       url,
       error: `request failed: ${getErrorMessage(error)}`,
     };
@@ -138,43 +149,63 @@ export async function verifyJurishubHighlightedSkill(
 
   if (!response.ok) {
     return {
+      eligible: false,
       highlighted: false,
+      official: false,
       url,
       error: `HTTP ${String(response.status)} ${response.statusText || ''}`.trim(),
     };
   }
 
-  let payload;
+  let responsePayload;
   try {
-    payload = await response.json();
+    responsePayload = await response.json();
   } catch (error) {
     return {
+      eligible: false,
       highlighted: false,
+      official: false,
       url,
       error: `invalid JSON response: ${getErrorMessage(error)}`,
     };
   }
 
-  if (!isRecord(payload) || !Array.isArray(payload.results)) {
+  if (!isRecord(responsePayload) || responsePayload.status !== 'success' || !Array.isArray(responsePayload.value)) {
     return {
+      eligible: false,
       highlighted: false,
+      official: false,
       url,
-      error: 'invalid response shape: missing results[]',
+      error: 'invalid response shape: missing value[] or non-success status',
     };
   }
 
-  const highlighted = payload.results.some((entry) => isRecord(entry) && entry.slug === skillId);
-  if (!highlighted) {
+  const matched = responsePayload.value.find(
+    (entry) => isRecord(entry) && isRecord(entry.skill) && entry.skill.slug === skillId
+  );
+  if (!matched || !isRecord(matched.skill)) {
     return {
+      eligible: false,
       highlighted: false,
+      official: false,
       url,
-      error: `slug "${skillId}" not found in highlighted results`,
+      error: `slug "${skillId}" not found in JurisHub highlighted search results`,
     };
   }
+
+  const badges = isRecord(matched.skill.badges) ? matched.skill.badges : {};
+  const highlighted = Boolean(badges.highlighted);
+  const official = Boolean(badges.official);
+  const eligible = highlighted && official;
 
   return {
-    highlighted: true,
+    eligible,
+    highlighted,
+    official,
     url,
+    error: eligible
+      ? undefined
+      : `badge check failed (highlighted=${String(highlighted)}, official=${String(official)})`,
   };
 }
 
@@ -183,13 +214,13 @@ export async function validatePresetManifest(
   {
     presetRoot = PRESET_ROOT,
     fetchImpl = globalThis.fetch,
-    timeoutMs = JURISHUB_HIGHLIGHTED_TIMEOUT_MS,
+    timeoutMs = JURISHUB_SKILL_VALIDATION_TIMEOUT_MS,
     skipRemoteSkillValidation = false,
   } = {}
 ) {
   const seen = new Set();
   const errors = [];
-  const highlightedCache = new Map();
+  const officialHighlightedCache = new Map();
 
   for (const [index, item] of manifest.items.entries()) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
@@ -199,6 +230,13 @@ export async function validatePresetManifest(
 
     const kind = typeof item.kind === 'string' ? item.kind : '';
     const id = typeof item.id === 'string' ? item.id.trim() : '';
+    const targetVersion = typeof item.targetVersion === 'string' ? item.targetVersion.trim() : '';
+    const installMode =
+      item.installMode === 'dir' || item.installMode === 'tgz' || item.installMode === 'market'
+        ? item.installMode
+        : undefined;
+    const market = typeof item.market === 'string' ? item.market.trim() : '';
+    const selection = typeof item.selection === 'string' ? item.selection.trim() : '';
     const artifactPath = typeof item.artifactPath === 'string' ? item.artifactPath.trim() : '';
     const sha256 = typeof item.sha256 === 'string' ? item.sha256.trim().toLowerCase() : '';
 
@@ -210,6 +248,10 @@ export async function validatePresetManifest(
       errors.push(`items[${String(index)}].id is required`);
       continue;
     }
+    if (!targetVersion) {
+      errors.push(`items[${String(index)}](${kind}:${id}) missing targetVersion`);
+      continue;
+    }
 
     const dedupeKey = `${kind}:${id}`;
     if (seen.has(dedupeKey)) {
@@ -218,39 +260,65 @@ export async function validatePresetManifest(
     }
     seen.add(dedupeKey);
 
-    if (!artifactPath) {
-      errors.push(`items[${String(index)}](${dedupeKey}) missing artifactPath`);
-      continue;
-    }
-    if (!sha256 || !/^[a-f0-9]{64}$/.test(sha256)) {
-      errors.push(`items[${String(index)}](${dedupeKey}) has invalid sha256`);
-      continue;
-    }
+    const isMarketInstall = installMode === 'market';
+    if (isMarketInstall) {
+      if (kind !== 'skill') {
+        errors.push(`items[${String(index)}](${dedupeKey}) installMode=market only supports kind=skill`);
+        continue;
+      }
+      if (market !== 'jurismindhub') {
+        errors.push(
+          `items[${String(index)}](${dedupeKey}) installMode=market requires market=jurismindhub`
+        );
+        continue;
+      }
+      if (selection && selection !== 'official-highlighted') {
+        errors.push(
+          `items[${String(index)}](${dedupeKey}) installMode=market selection must be official-highlighted`
+        );
+        continue;
+      }
+      if (artifactPath || sha256) {
+        errors.push(
+          `items[${String(index)}](${dedupeKey}) installMode=market must not define artifactPath/sha256`
+        );
+        continue;
+      }
+    } else {
+      if (!artifactPath) {
+        errors.push(`items[${String(index)}](${dedupeKey}) missing artifactPath`);
+        continue;
+      }
+      if (!sha256 || !/^[a-f0-9]{64}$/.test(sha256)) {
+        errors.push(`items[${String(index)}](${dedupeKey}) has invalid sha256`);
+        continue;
+      }
 
-    const resolvedPath = resolve(presetRoot, artifactPath);
-    const rel = relative(presetRoot, resolvedPath);
-    if (isAbsolute(rel) || rel.startsWith('..')) {
-      errors.push(`items[${String(index)}](${dedupeKey}) artifactPath escapes preset root: ${artifactPath}`);
-      continue;
-    }
-    if (!existsSync(resolvedPath)) {
-      errors.push(`items[${String(index)}](${dedupeKey}) artifact not found: ${resolvedPath}`);
-      continue;
-    }
+      const resolvedPath = resolve(presetRoot, artifactPath);
+      const rel = relative(presetRoot, resolvedPath);
+      if (isAbsolute(rel) || rel.startsWith('..')) {
+        errors.push(`items[${String(index)}](${dedupeKey}) artifactPath escapes preset root: ${artifactPath}`);
+        continue;
+      }
+      if (!existsSync(resolvedPath)) {
+        errors.push(`items[${String(index)}](${dedupeKey}) artifact not found: ${resolvedPath}`);
+        continue;
+      }
 
-    let actualHash;
-    try {
-      actualHash = computeArtifactSha256(resolvedPath);
-    } catch (error) {
-      errors.push(`items[${String(index)}](${dedupeKey}) hash failed: ${String(error)}`);
-      continue;
-    }
+      let actualHash;
+      try {
+        actualHash = computeArtifactSha256(resolvedPath);
+      } catch (error) {
+        errors.push(`items[${String(index)}](${dedupeKey}) hash failed: ${String(error)}`);
+        continue;
+      }
 
-    if (actualHash !== sha256) {
-      errors.push(
-        `items[${String(index)}](${dedupeKey}) sha256 mismatch: expected ${sha256}, actual ${actualHash}`
-      );
-      continue;
+      if (actualHash !== sha256) {
+        errors.push(
+          `items[${String(index)}](${dedupeKey}) sha256 mismatch: expected ${sha256}, actual ${actualHash}`
+        );
+        continue;
+      }
     }
 
     if (kind !== 'skill') {
@@ -261,14 +329,21 @@ export async function validatePresetManifest(
       continue;
     }
 
-    let highlightedResult = highlightedCache.get(id);
-    if (!highlightedResult) {
-      highlightedResult = await verifyJurishubHighlightedSkill(id, { fetchImpl, timeoutMs });
-      highlightedCache.set(id, highlightedResult);
+    if (isMarketInstall && selection === 'official-highlighted') {
+      continue;
     }
-    if (!highlightedResult.highlighted) {
+
+    let officialHighlightedResult = officialHighlightedCache.get(id);
+    if (!officialHighlightedResult) {
+      officialHighlightedResult = await verifyJurishubOfficialHighlightedSkill(id, {
+        fetchImpl,
+        timeoutMs,
+      });
+      officialHighlightedCache.set(id, officialHighlightedResult);
+    }
+    if (!officialHighlightedResult.eligible) {
       errors.push(
-        `items[${String(index)}](${dedupeKey}) JurisHub highlighted validation failed: ${highlightedResult.error}. endpoint=${highlightedResult.url}. fix hint: only JurisHub highlighted skills are allowed in preset manifest.`
+        `items[${String(index)}](${dedupeKey}) JurisHub official+highlighted validation failed: ${officialHighlightedResult.error}. endpoint=${officialHighlightedResult.url}. fix hint: only JurisHub highlighted and official skills are allowed in preset manifest.`
       );
     }
   }
@@ -281,7 +356,7 @@ export async function runBundlePresetArtifacts(
     manifestPath = MANIFEST_PATH,
     presetRoot = PRESET_ROOT,
     fetchImpl = globalThis.fetch,
-    timeoutMs = JURISHUB_HIGHLIGHTED_TIMEOUT_MS,
+    timeoutMs = JURISHUB_SKILL_VALIDATION_TIMEOUT_MS,
     skipRemoteSkillValidation = false,
   } = {}
 ) {

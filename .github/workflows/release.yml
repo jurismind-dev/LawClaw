@@ -2,8 +2,6 @@ name: Release
 
 on:
   push:
-    branches:
-      - "main"
     tags:
       - "v*"
   workflow_dispatch:
@@ -278,6 +276,7 @@ jobs:
           pnpm run build:vite
           pnpm exec zx scripts/bundle-openclaw.mjs
           pnpm exec zx scripts/bundle-qq-plugin.mjs
+          pnpm run bundle:preset-artifacts:offline
 
           if [[ -n "${MAC_CERTS:-}" && -n "${MAC_CERTS_PASSWORD:-}" && -n "${MAC_APPLE_ID:-}" && -n "${MAC_APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${MAC_APPLE_TEAM_ID:-}" ]]; then
             echo "Mac signing secrets are set. Building signed and notarized artifacts."
@@ -327,13 +326,48 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm exec zx scripts/bundle-qq-plugin.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm run bundle:preset-artifacts:offline
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Invoke-WithRetry { pnpm exec electron-builder --win --x64 --publish never }
           Invoke-WithRetry { pnpm exec electron-builder --win --arm64 --publish never }
+
+      - name: Validate artifact file names include release tag version
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const releaseDir = path.join(process.cwd(), 'release');
+          const releaseVersion = process.env.RELEASE_VERSION;
+          const targetPlatform = process.env.TARGET_PLATFORM;
+          const ext = targetPlatform === 'mac' ? '.dmg' : '.exe';
+
+          const files = fs.existsSync(releaseDir)
+            ? fs.readdirSync(releaseDir).filter((name) => name.endsWith(ext))
+            : [];
+
+          if (files.length === 0) {
+            throw new Error(`No ${ext} artifacts found in ${releaseDir}`);
+          }
+
+          const invalid = files.filter((name) => !name.includes(`-${releaseVersion}-`));
+          if (invalid.length > 0) {
+            throw new Error(
+              `Artifacts missing release version ${releaseVersion} in filename: ${invalid.join(', ')}`
+            );
+          }
+
+          console.log(`Validated ${files.length} ${targetPlatform} artifact(s) for version ${releaseVersion}`);
+          NODE
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.platform }}
+          name: release-${{ matrix.platform }}-${{ env.RELEASE_TAG }}
           if-no-files-found: error
           retention-days: 7
           path: |

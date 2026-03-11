@@ -525,14 +525,14 @@ export function Settings() {
             <Button
               variant="link"
               className="h-auto p-0"
-              onClick={() => window.electron.openExternal('https://claw-x.com')}
+              onClick={() => window.electron.openExternal('https://jurismind.com')}
             >
               {t('about.docs')}
             </Button>
             <Button
               variant="link"
               className="h-auto p-0"
-              onClick={() => window.electron.openExternal('https://github.com/ValueCell-ai/ClawX')}
+              onClick={() => window.electron.openExternal('https://github.com/jurismind-dev/LawClaw')}
             >
               {t('about.github')}
             </Button>

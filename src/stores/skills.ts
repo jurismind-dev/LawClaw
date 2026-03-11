@@ -197,10 +197,17 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
             const existing = combinedSkills.find((skill) => skill.id === installedSkill.slug);
             if (existing) {
               existing.version = installedSkill.version || existing.version;
-              existing.installSource = resolveInstallSource(
+              const resolvedSource = resolveInstallSource(
                 installedSkill.installSource,
                 existing.installSource
               );
+              existing.installSource = resolvedSource;
+              // If the skill is found in local install records, treat it as user-installed
+              // so it appears under marketplace source filters consistently.
+              if (resolvedSource === 'clawhub' || resolvedSource === 'jurismindhub') {
+                existing.isBundled = false;
+                existing.isCore = false;
+              }
               return;
             }
 

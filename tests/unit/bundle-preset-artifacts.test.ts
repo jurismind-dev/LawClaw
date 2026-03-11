@@ -38,6 +38,31 @@ function createSkillArtifact(
   };
 }
 
+function createJurishubSearchResponse({
+  slug,
+  highlighted,
+  official,
+}: {
+  slug: string;
+  highlighted: boolean;
+  official: boolean;
+}) {
+  return {
+    status: 'success',
+    value: [
+      {
+        skill: {
+          slug,
+          badges: {
+            highlighted: highlighted ? { at: Date.now(), byUserId: 'users:1' } : undefined,
+            official: official ? { at: Date.now(), byUserId: 'users:1' } : undefined,
+          },
+        },
+      },
+    ],
+  };
+}
+
 afterEach(() => {
   while (createdRoots.length > 0) {
     const root = createdRoots.pop();
@@ -47,15 +72,18 @@ afterEach(() => {
   }
 });
 
-describe('bundle-preset-artifacts highlighted validation', () => {
-  it('allows preset skill when JurisHub highlighted search returns exact slug match', async () => {
+describe('bundle-preset-artifacts official+highlighted validation', () => {
+  it('allows market preset skill when JurisHub skill is highlighted and official', async () => {
     const context = createFixture();
-    const artifact = createSkillArtifact(context, 'skills/contract-review-jurismind', 'contract-review-jurismind', '1.0.0');
     const fetchImpl = vi.fn(async () => {
       return new Response(
-        JSON.stringify({
-          results: [{ slug: 'contract-review-jurismind', score: 0.9 }],
-        }),
+        JSON.stringify(
+          createJurishubSearchResponse({
+            slug: 'contract-review-jurismind',
+            highlighted: true,
+            official: true,
+          })
+        ),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     });
@@ -63,15 +91,14 @@ describe('bundle-preset-artifacts highlighted validation', () => {
     const errors = await validatePresetManifest(
       {
         schemaVersion: 1,
-        presetVersion: '2026.03.06.1',
+        presetVersion: '2026.03.11.1',
         items: [
           {
             kind: 'skill',
             id: 'contract-review-jurismind',
             targetVersion: '1.0.0',
-            artifactPath: artifact.artifactPath,
-            sha256: artifact.sha256,
-            installMode: 'dir',
+            installMode: 'market',
+            market: 'jurismindhub',
           },
         ],
       },
@@ -85,24 +112,70 @@ describe('bundle-preset-artifacts highlighted validation', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('fails when skill is not highlighted in JurisHub search result', async () => {
+  it('fails when market preset skill is highlighted but not official', async () => {
     const context = createFixture();
-    const artifact = createSkillArtifact(context, 'skills/non-highlighted-skill', 'non-highlighted-skill', '1.0.0');
     const fetchImpl = vi.fn(async () => {
-      return new Response(JSON.stringify({ results: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify(
+          createJurishubSearchResponse({
+            slug: 'contract-review-jurismind',
+            highlighted: true,
+            official: false,
+          })
+        ),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
     });
 
     const errors = await validatePresetManifest(
       {
         schemaVersion: 1,
-        presetVersion: '2026.03.06.1',
+        presetVersion: '2026.03.11.1',
         items: [
           {
             kind: 'skill',
-            id: 'non-highlighted-skill',
+            id: 'contract-review-jurismind',
+            targetVersion: '1.0.0',
+            installMode: 'market',
+            market: 'jurismindhub',
+          },
+        ],
+      },
+      {
+        presetRoot: context.presetRoot,
+        fetchImpl,
+      }
+    );
+
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('official+highlighted validation failed');
+    expect(errors[0]).toContain('highlighted=True'.toLowerCase());
+  });
+
+  it('fails when local artifact skill is missing official+highlighted in JurisHub', async () => {
+    const context = createFixture();
+    const artifact = createSkillArtifact(context, 'skills/non-official-skill', 'non-official-skill', '1.0.0');
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify(
+          createJurishubSearchResponse({
+            slug: 'non-official-skill',
+            highlighted: true,
+            official: false,
+          })
+        ),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+
+    const errors = await validatePresetManifest(
+      {
+        schemaVersion: 1,
+        presetVersion: '2026.03.11.1',
+        items: [
+          {
+            kind: 'skill',
+            id: 'non-official-skill',
             targetVersion: '1.0.0',
             artifactPath: artifact.artifactPath,
             sha256: artifact.sha256,
@@ -117,13 +190,11 @@ describe('bundle-preset-artifacts highlighted validation', () => {
     );
 
     expect(errors.length).toBe(1);
-    expect(errors[0]).toContain('JurisHub highlighted validation failed');
-    expect(errors[0]).toContain('only JurisHub highlighted skills are allowed');
+    expect(errors[0]).toContain('official+highlighted validation failed');
   });
 
-  it('fails closed when JurisHub highlighted request errors out', async () => {
+  it('fails closed when JurisHub request errors out', async () => {
     const context = createFixture();
-    const artifact = createSkillArtifact(context, 'skills/network-fail-skill', 'network-fail-skill', '1.0.0');
     const fetchImpl = vi.fn(async () => {
       throw new Error('network offline');
     });
@@ -131,15 +202,14 @@ describe('bundle-preset-artifacts highlighted validation', () => {
     const errors = await validatePresetManifest(
       {
         schemaVersion: 1,
-        presetVersion: '2026.03.06.1',
+        presetVersion: '2026.03.11.1',
         items: [
           {
             kind: 'skill',
             id: 'network-fail-skill',
             targetVersion: '1.0.0',
-            artifactPath: artifact.artifactPath,
-            sha256: artifact.sha256,
-            installMode: 'dir',
+            installMode: 'market',
+            market: 'jurismindhub',
           },
         ],
       },
@@ -154,9 +224,8 @@ describe('bundle-preset-artifacts highlighted validation', () => {
     expect(errors[0]).toContain('network offline');
   });
 
-  it('skips remote highlighted validation when offline validation mode is enabled', async () => {
+  it('skips remote skill validation in offline validation mode', async () => {
     const context = createFixture();
-    const artifact = createSkillArtifact(context, 'skills/offline-skill', 'offline-skill', '1.0.0');
     const fetchImpl = vi.fn(async () => {
       throw new Error('network offline');
     });
@@ -164,15 +233,14 @@ describe('bundle-preset-artifacts highlighted validation', () => {
     const errors = await validatePresetManifest(
       {
         schemaVersion: 1,
-        presetVersion: '2026.03.06.1',
+        presetVersion: '2026.03.11.1',
         items: [
           {
             kind: 'skill',
             id: 'offline-skill',
             targetVersion: '1.0.0',
-            artifactPath: artifact.artifactPath,
-            sha256: artifact.sha256,
-            installMode: 'dir',
+            installMode: 'market',
+            market: 'jurismindhub',
           },
         ],
       },
@@ -187,11 +255,42 @@ describe('bundle-preset-artifacts highlighted validation', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('does not call JurisHub highlighted check for plugin items', async () => {
+  it('allows market selection mode without per-skill slug validation', async () => {
+    const context = createFixture();
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('should not be called');
+    });
+
+    const errors = await validatePresetManifest(
+      {
+        schemaVersion: 1,
+        presetVersion: '2026.03.11.1',
+        items: [
+          {
+            kind: 'skill',
+            id: 'jurismindhub-official-highlighted',
+            targetVersion: 'latest',
+            installMode: 'market',
+            market: 'jurismindhub',
+            selection: 'official-highlighted',
+          },
+        ],
+      },
+      {
+        presetRoot: context.presetRoot,
+        fetchImpl,
+      }
+    );
+
+    expect(errors).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('does not call JurisHub check for plugin items', async () => {
     const context = createFixture();
     const artifact = createSkillArtifact(context, 'plugins/qqbot', 'qqbot', '1.0.0');
     const fetchImpl = vi.fn(async () => {
-      return new Response(JSON.stringify({ results: [] }), {
+      return new Response(JSON.stringify({ status: 'success', value: [] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -200,7 +299,7 @@ describe('bundle-preset-artifacts highlighted validation', () => {
     const errors = await validatePresetManifest(
       {
         schemaVersion: 1,
-        presetVersion: '2026.03.06.1',
+        presetVersion: '2026.03.11.1',
         items: [
           {
             kind: 'plugin',

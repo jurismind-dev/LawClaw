@@ -172,11 +172,6 @@ export function Setup() {
     setCurrentStep((i) => Math.max(i - 1, 0));
   };
 
-  const handleSkip = () => {
-    markSetupComplete();
-    navigate('/');
-  };
-
   // Auto-proceed when installation is complete
   const handleInstallationComplete = useCallback((skills: string[]) => {
     setInstalledSkills(skills);
@@ -268,7 +263,6 @@ export function Setup() {
                 <InstallingContent
                   installQqPlugin={shouldInstallQqPluginForSetupSession(configuredChannelsInSession)}
                   onComplete={handleInstallationComplete}
-                  onSkip={() => setCurrentStep((i) => i + 1)}
                 />
               )}
               {safeStepIndex === STEP.COMPLETE && (
@@ -291,16 +285,6 @@ export function Setup() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  {safeStepIndex === STEP.CHANNEL && (
-                    <Button variant="ghost" onClick={handleNext}>
-                      {t('nav.skipStep')}
-                    </Button>
-                  )}
-                  {!isLastStep && safeStepIndex !== STEP.RUNTIME && safeStepIndex !== STEP.CHANNEL && (
-                    <Button variant="ghost" onClick={handleSkip}>
-                      {t('nav.skipSetup')}
-                    </Button>
-                  )}
                   <Button onClick={handleNext} disabled={!canProceed}>
                     {isLastStep ? (
                       t('nav.getStarted')
@@ -2093,10 +2077,9 @@ interface SkillInstallState {
 interface InstallingContentProps {
   installQqPlugin: boolean;
   onComplete: (installedSkills: string[]) => void;
-  onSkip: () => void;
 }
 
-function InstallingContent({ installQqPlugin, onComplete, onSkip }: InstallingContentProps) {
+function InstallingContent({ installQqPlugin, onComplete }: InstallingContentProps) {
   const { t } = useTranslation('setup');
   const [skillStates, setSkillStates] = useState<SkillInstallState[]>([]);
   const [qqPluginStatus, setQqPluginStatus] = useState<InstallStatus>(
@@ -2138,9 +2121,11 @@ function InstallingContent({ installQqPlugin, onComplete, onSkip }: InstallingCo
           const key = `${item.kind}:${item.id}`;
           const kindLabel =
             item.kind === 'plugin' ? t('installing.kind.plugin') : t('installing.kind.skill');
+          const targetVersion = item.targetVersion?.trim()
+            || (item.kind === 'skill' ? 'latest' : t('installing.versionUnknown'));
           const description = t('installing.presetItemDesc', {
             kind: kindLabel,
-            version: item.targetVersion,
+            version: targetVersion,
           });
           itemNameMap.set(key, item.displayName);
           return {
@@ -2184,9 +2169,11 @@ function InstallingContent({ installQqPlugin, onComplete, onSkip }: InstallingCo
             const existing = prev.find((item) => item.id === key);
             const kindLabel =
               event.kind === 'plugin' ? t('installing.kind.plugin') : t('installing.kind.skill');
+            const targetVersion = event.targetVersion?.trim()
+              || (event.kind === 'skill' ? 'latest' : t('installing.versionUnknown'));
             const description = t('installing.presetItemDesc', {
               kind: kindLabel,
-              version: t('installing.versionUnknown'),
+              version: targetVersion,
             });
             if (!existing) {
               return [
@@ -2204,6 +2191,7 @@ function InstallingContent({ installQqPlugin, onComplete, onSkip }: InstallingCo
                 ? {
                     ...item,
                     name: displayName,
+                    description,
                     status: nextStatus,
                   }
                 : item
@@ -2443,17 +2431,6 @@ function InstallingContent({ installQqPlugin, onComplete, onSkip }: InstallingCo
           {t('installing.wait')}
         </p>
       )}
-      {!installQqPlugin && (
-        <div className="flex justify-end">
-          <Button
-            variant="ghost"
-            className="text-muted-foreground"
-            onClick={onSkip}
-          >
-            {t('installing.skip')}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
@@ -2467,7 +2444,7 @@ function CompleteContent({ selectedProvider, installedSkills }: CompleteContentP
   const gatewayStatus = useGatewayStore((state) => state.status);
 
   const providerData = providers.find((p) => p.id === selectedProvider);
-  const installedSkillNames = installedSkills.join(', ');
+  const installedCount = installedSkills.length;
 
   return (
     <div className="text-center space-y-6">
@@ -2487,7 +2464,7 @@ function CompleteContent({ selectedProvider, installedSkills }: CompleteContentP
         <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
           <span>{t('complete.components')}</span>
           <span className="text-green-400">
-            {installedSkillNames || `${installedSkills.length} ${t('installing.status.installed')}`}
+            {t('complete.componentsSummary', { count: installedCount })}
           </span>
         </div>
         <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">

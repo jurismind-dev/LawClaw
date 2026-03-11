@@ -38,6 +38,7 @@ export interface PresetInstallProgressEvent {
   itemId: string;
   kind: 'skill' | 'plugin';
   displayName: string;
+  targetVersion: string;
   status: 'pending' | 'verifying' | 'installing' | 'completed' | 'skipped' | 'failed';
   progress: number;
   message?: string;
@@ -82,6 +83,25 @@ interface PluginInstallResult {
   error?: string;
 }
 
+interface SkillMarketInstallResult {
+  success: boolean;
+  skipped?: boolean;
+  reason?: string;
+  error?: string;
+}
+
+interface SkillMarketListResult {
+  success: boolean;
+  skills: Array<{
+    id: string;
+    displayName?: string;
+    version?: string;
+    isOfficial?: boolean;
+    isFeatured?: boolean;
+  }>;
+  error?: string;
+}
+
 interface PluginUninstallResult {
   success: boolean;
   error?: string;
@@ -92,6 +112,15 @@ export interface PresetInstallerOptions {
   clawXConfigDir?: string;
   openClawConfigDir?: string;
   openClawSkillsDir?: string;
+  installSkillFromMarket?: (params: {
+    market: 'jurismindhub';
+    skillId: string;
+    version?: string;
+  }) => Promise<SkillMarketInstallResult>;
+  listMarketSkills?: (params: {
+    market: 'jurismindhub';
+    selection: 'official-highlighted';
+  }) => Promise<SkillMarketListResult>;
   installPluginFromLocalPath: (pluginId: string, installPath: string) => Promise<PluginInstallResult>;
   uninstallPlugin: (pluginId: string) => Promise<PluginUninstallResult>;
   onProgress?: (event: PresetInstallProgressEvent) => void;
@@ -256,6 +285,10 @@ interface ClawHubLockFile {
   skills: Record<string, ClawHubLockSkillEntry>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export class PresetInstaller {
   private readonly options: PresetInstallerOptions;
   private readonly openClawConfigDir: string;
@@ -287,6 +320,9 @@ export class PresetInstaller {
     if (state.lastResult?.manifestHash === manifestHash && state.lastResult.status === 'failed') {
       return { manifest, manifestHash, state, pending: true, blockedReason: 'last-failed' };
     }
+    if (this.hasManagedItemDrift(state, manifestHash)) {
+      return { manifest, manifestHash, state, pending: true, blockedReason: 'needs-run' };
+    }
     if (!hasState && manifest.items.length > 0) {
       return { manifest, manifestHash, state, pending: true, blockedReason: 'needs-run' };
     }
@@ -306,12 +342,21 @@ export class PresetInstaller {
           Object.keys(context.state.managedItems).length > 0
       ),
       blockedReason: context.blockedReason,
-      plannedItems: context.manifest.items.map((item) => ({
-        id: item.id,
-        kind: item.kind,
-        displayName: item.displayName || item.id,
-        targetVersion: item.targetVersion,
-      })),
+      plannedItems: context.manifest.items
+        .filter(
+          (item) =>
+            !(
+              item.kind === 'skill' &&
+              item.installMode === 'market' &&
+              item.selection === 'official-highlighted'
+            )
+        )
+        .map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          displayName: item.displayName || item.id,
+          targetVersion: item.targetVersion,
+        })),
       lastResult: context.state.lastResult,
     };
   }
@@ -353,6 +398,84 @@ export class PresetInstaller {
 
   retry(phase: PresetInstallPhase): Promise<PresetInstallRunResult> {
     return this.run(phase);
+  }
+
+  private async expandManifestItems(items: PresetInstallManifest['items']): Promise<PresetInstallItem[]> {
+    const expandedItems: PresetInstallItem[] = [];
+    const seenKeys = new Set<string>();
+
+    for (const item of items) {
+      const isMarketSelection =
+        item.kind === 'skill' &&
+        item.installMode === 'market' &&
+        item.selection === 'official-highlighted';
+      if (!isMarketSelection) {
+        const key = `${item.kind}:${item.id}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          expandedItems.push(item);
+        }
+        continue;
+      }
+
+      if (!this.options.listMarketSkills) {
+        throw new Error('listMarketSkills bridge is not configured');
+      }
+
+      const listResult = await this.options.listMarketSkills({
+        market: item.market,
+        selection: 'official-highlighted',
+      });
+      if (!listResult.success) {
+        throw new Error(listResult.error || 'failed to load market skills');
+      }
+
+      for (const marketSkill of listResult.skills) {
+        const id = marketSkill.id?.trim();
+        if (!id) {
+          continue;
+        }
+        if (marketSkill.isOfficial === false || marketSkill.isFeatured === false) {
+          continue;
+        }
+        const resolvedVersion = (marketSkill.version || '').trim();
+        if (!resolvedVersion) {
+          continue;
+        }
+        const key = `skill:${id}`;
+        if (seenKeys.has(key)) {
+          continue;
+        }
+        seenKeys.add(key);
+        expandedItems.push({
+          kind: 'skill',
+          id,
+          displayName: marketSkill.displayName?.trim() || id,
+          targetVersion: resolvedVersion,
+          installMode: 'market',
+          market: item.market,
+        });
+      }
+    }
+
+    return expandedItems;
+  }
+
+  private hasManagedItemDrift(state: PresetInstallState, manifestHash: string): boolean {
+    const currentManagedItems = Object.values(state.managedItems).filter(
+      (item) => item.manifestHash === manifestHash
+    );
+    if (currentManagedItems.length === 0) {
+      return false;
+    }
+
+    return currentManagedItems.some((item) => {
+      if (item.kind === 'skill') {
+        return !existsSync(join(this.openClawSkillsDir, item.id));
+      }
+      const pluginDir = join(this.openClawConfigDir, 'extensions', item.id);
+      return !existsSync(pluginDir);
+    });
   }
 
   private getClawHubLockPath(): string {
@@ -411,7 +534,11 @@ export class PresetInstaller {
     writeFileSync(this.getClawHubLockPath(), `${JSON.stringify(normalizedLock, null, 2)}\n`, 'utf-8');
   }
 
-  private upsertSkillInstallMetadata(item: Extract<PresetInstallItem, { kind: 'skill' }>, skillDir: string): void {
+  private upsertSkillInstallMetadata(
+    item: Pick<Extract<PresetInstallItem, { kind: 'skill' }>, 'id' | 'targetVersion'>,
+    skillDir: string,
+    installedVersion = item.targetVersion
+  ): void {
     const installedAt = Date.now();
     const skillMetaDir = join(skillDir, '.clawhub');
     ensureDirSafe(skillMetaDir);
@@ -420,17 +547,45 @@ export class PresetInstaller {
       version: 1,
       registry: JURISMINDHUB_REGISTRY_URL,
       slug: item.id,
-      installedVersion: item.targetVersion,
+      installedVersion,
       installedAt,
     };
     writeFileSync(originPath, `${JSON.stringify(originPayload, null, 2)}\n`, 'utf-8');
 
     const lock = this.readClawHubLockFile();
     lock.skills[item.id] = {
-      version: item.targetVersion,
+      version: installedVersion,
       installedAt,
     };
     this.writeClawHubLockFile(lock);
+    this.ensureSkillEnabled(item.id);
+  }
+
+  private ensureSkillEnabled(skillId: string): void {
+    const configPath = join(this.openClawConfigDir, 'openclaw.json');
+    try {
+      let config: Record<string, unknown> = {};
+      if (existsSync(configPath)) {
+        const raw = readFileSync(configPath, 'utf-8').trim();
+        if (raw.length > 0) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (isRecord(parsed)) {
+            config = parsed;
+          }
+        }
+      }
+
+      const skillsNode = isRecord(config.skills) ? config.skills : {};
+      const entriesNode = isRecord(skillsNode.entries) ? skillsNode.entries : {};
+      const existingEntry = isRecord(entriesNode[skillId]) ? entriesNode[skillId] : {};
+      entriesNode[skillId] = { ...existingEntry, enabled: true };
+      skillsNode.entries = entriesNode;
+      config.skills = skillsNode;
+
+      writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
+    } catch (error) {
+      logger.warn(`[PresetInstaller] failed to mark skill enabled: ${skillId}`, error);
+    }
   }
 
   private removeSkillFromClawHubLock(skillId: string): void {
@@ -479,47 +634,61 @@ export class PresetInstaller {
     const state = context.state;
     const installed: string[] = [];
     const skippedItems: string[] = [];
-    const total = Math.max(context.manifest.items.length, 1);
+    let runtimeItems: PresetInstallManifest['items'] = context.manifest.items;
+    let total = Math.max(runtimeItems.length, 1);
     let shouldRestartGateway = false;
 
     try {
+      runtimeItems = await this.expandManifestItems(context.manifest.items);
+      total = Math.max(runtimeItems.length, 1);
+      const runtimeManifest: PresetInstallManifest = {
+        ...context.manifest,
+        items: runtimeItems,
+      };
+
       if (isForcePresetSyncEnabled()) {
-        await this.reconcileManagedItemsStrict(context.manifest, state);
+        await this.reconcileManagedItemsStrict(runtimeManifest, state);
       }
 
-      for (let index = 0; index < context.manifest.items.length; index += 1) {
-        const item = context.manifest.items[index];
+      for (let index = 0; index < runtimeItems.length; index += 1) {
+        const item = runtimeItems[index];
         const displayName = item.displayName || item.id;
         const baseProgress = Math.round((index / total) * 100);
+        const isRemoteMarketSkill = item.kind === 'skill' && item.installMode === 'market';
         this.emitProgress({
           runId,
           phase,
           itemId: item.id,
           kind: item.kind,
           displayName,
+          targetVersion: item.targetVersion,
           status: 'pending',
           progress: baseProgress,
         });
 
-        const artifactPath = resolvePresetInstallArtifactPath(item.artifactPath, this.options.resourcesDir);
+        let artifactPath: string | undefined;
         this.emitProgress({
           runId,
           phase,
           itemId: item.id,
           kind: item.kind,
           displayName,
+          targetVersion: item.targetVersion,
           status: 'verifying',
           progress: Math.min(baseProgress + 5, 100),
         });
 
-        if (!existsSync(artifactPath)) {
-          throw new Error(`Preset artifact not found for ${item.kind}:${item.id} -> ${artifactPath}`);
-        }
-        const actualHash = await computeArtifactSha256(artifactPath);
-        if (actualHash.toLowerCase() !== item.sha256.toLowerCase()) {
-          throw new Error(
-            `SHA256 mismatch for ${item.kind}:${item.id}; expected ${item.sha256}, got ${actualHash}`
-          );
+        if (!isRemoteMarketSkill) {
+          artifactPath = resolvePresetInstallArtifactPath(item.artifactPath, this.options.resourcesDir);
+          if (!existsSync(artifactPath)) {
+            throw new Error(`Preset artifact not found for ${item.kind}:${item.id} -> ${artifactPath}`);
+          }
+          const actualHash = await computeArtifactSha256(artifactPath);
+          if (actualHash.toLowerCase() !== item.sha256.toLowerCase()) {
+            throw new Error(
+              `SHA256 mismatch for ${item.kind}:${item.id}; expected ${item.sha256}, got ${actualHash}`
+            );
+          }
         }
 
         this.emitProgress({
@@ -528,14 +697,17 @@ export class PresetInstaller {
           itemId: item.id,
           kind: item.kind,
           displayName,
+          targetVersion: item.targetVersion,
           status: 'installing',
           progress: Math.min(baseProgress + 12, 100),
         });
 
         const itemResult =
           item.kind === 'skill'
-            ? await this.installSkill(item, artifactPath)
-            : await this.installPlugin(item, artifactPath);
+            ? isRemoteMarketSkill
+              ? await this.installSkillFromMarket(item)
+              : await this.installSkill(item, artifactPath || '')
+            : await this.installPlugin(item, artifactPath || '');
 
         if (itemResult.failed) {
           this.emitProgress({
@@ -544,6 +716,7 @@ export class PresetInstaller {
             itemId: item.id,
             kind: item.kind,
             displayName,
+            targetVersion: item.targetVersion,
             status: 'failed',
             progress: Math.min(Math.round(((index + 1) / total) * 100), 100),
             message: itemResult.message,
@@ -563,6 +736,7 @@ export class PresetInstaller {
             itemId: item.id,
             kind: item.kind,
             displayName,
+            targetVersion: item.targetVersion,
             status: 'skipped',
             progress: Math.min(Math.round(((index + 1) / total) * 100), 100),
             message: itemResult.message,
@@ -582,6 +756,7 @@ export class PresetInstaller {
             itemId: item.id,
             kind: item.kind,
             displayName,
+            targetVersion: item.targetVersion,
             status: 'completed',
             progress: Math.min(Math.round(((index + 1) / total) * 100), 100),
             message: itemResult.message,
@@ -625,8 +800,8 @@ export class PresetInstaller {
         success: false,
         installed,
         skippedItems,
-        failedItem: installed.length + skippedItems.length < context.manifest.items.length
-          ? context.manifest.items[installed.length + skippedItems.length]?.id
+        failedItem: installed.length + skippedItems.length < runtimeItems.length
+          ? runtimeItems[installed.length + skippedItems.length]?.id
           : undefined,
         error: String(error),
       };
@@ -662,13 +837,14 @@ export class PresetInstaller {
   }
 
   private async installSkill(
-    item: Extract<PresetInstallItem, { kind: 'skill' }>,
+    item: Extract<PresetInstallItem, { kind: 'skill'; installMode?: 'dir' | 'tgz' }>,
     artifactPath: string
   ): Promise<{ skipped: boolean; shouldRestartGateway: boolean; message?: string; failed?: boolean }> {
     ensureDirSafe(this.openClawSkillsDir);
     const skillDir = join(this.openClawSkillsDir, item.id);
     const existingVersion = existsSync(skillDir) ? readVersionFromPackageJson(skillDir) : undefined;
     if (existingVersion && compareVersions(existingVersion, item.targetVersion) >= 0) {
+      this.upsertSkillInstallMetadata(item, skillDir, existingVersion);
       return {
         skipped: true,
         shouldRestartGateway: false,
@@ -704,7 +880,8 @@ export class PresetInstaller {
       }
       rmSync(skillDir, { recursive: true, force: true });
       cpSync(sourceDir, skillDir, { recursive: true, dereference: true });
-      this.upsertSkillInstallMetadata(item, skillDir);
+      const installedVersion = readVersionFromPackageJson(skillDir) ?? item.targetVersion;
+      this.upsertSkillInstallMetadata(item, skillDir, installedVersion);
       return {
         skipped: false,
         shouldRestartGateway: false,
@@ -721,6 +898,75 @@ export class PresetInstaller {
         rmSync(tempExtractDir, { recursive: true, force: true });
       }
     }
+  }
+
+  private async installSkillFromMarket(
+    item: Extract<PresetInstallItem, { kind: 'skill'; installMode: 'market' }>
+  ): Promise<{ skipped: boolean; shouldRestartGateway: boolean; message?: string; failed?: boolean }> {
+    if (!this.options.installSkillFromMarket) {
+      return {
+        skipped: false,
+        shouldRestartGateway: false,
+        failed: true,
+        message: 'installSkillFromMarket bridge is not configured',
+      };
+    }
+
+    ensureDirSafe(this.openClawSkillsDir);
+    const skillDir = join(this.openClawSkillsDir, item.id);
+    const existingVersion = existsSync(skillDir) ? readVersionFromPackageJson(skillDir) : undefined;
+    if (existingVersion && compareVersions(existingVersion, item.targetVersion) >= 0) {
+      this.upsertSkillInstallMetadata(item, skillDir, existingVersion);
+      return {
+        skipped: true,
+        shouldRestartGateway: false,
+        message: `kept existing skill version ${existingVersion}`,
+      };
+    }
+
+    const result = await this.options.installSkillFromMarket({
+      market: item.market,
+      skillId: item.id,
+      version: item.targetVersion,
+    });
+
+    if (!result.success) {
+      return {
+        skipped: false,
+        shouldRestartGateway: false,
+        failed: true,
+        message: result.error || `Failed to install market skill ${item.id}`,
+      };
+    }
+
+    if (result.skipped) {
+      if (existsSync(skillDir)) {
+        const installedVersion = readVersionFromPackageJson(skillDir) ?? item.targetVersion;
+        this.upsertSkillInstallMetadata(item, skillDir, installedVersion);
+      }
+      return {
+        skipped: true,
+        shouldRestartGateway: false,
+        message: result.reason || 'already installed',
+      };
+    }
+
+    if (!existsSync(skillDir)) {
+      return {
+        skipped: false,
+        shouldRestartGateway: false,
+        failed: true,
+        message: `Market skill ${item.id} installed but skill directory was not found`,
+      };
+    }
+
+    const installedVersion = readVersionFromPackageJson(skillDir) ?? item.targetVersion;
+    this.upsertSkillInstallMetadata(item, skillDir, installedVersion);
+    return {
+      skipped: false,
+      shouldRestartGateway: false,
+      message: `installed from ${item.market}`,
+    };
   }
 
   private async installPlugin(

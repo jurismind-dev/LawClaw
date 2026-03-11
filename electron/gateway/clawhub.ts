@@ -313,11 +313,18 @@ export class ClawHubService {
         const limit = Math.min(Math.max(params.limit ?? (query ? 200 : 1000), 1), 2000);
 
         if (!query) {
-            const entries = await this.runJurismindConvexRequest<JurismindPublicListEntry[]>(
+            const page = await this.runJurismindConvexRequest<{
+                items?: JurismindPublicListEntry[];
+                nextCursor?: string | null;
+            }>(
                 'query',
-                'skills:listHighlightedPublic',
-                { limit }
+                'skills:listPublicPage',
+                {
+                    limit,
+                    sort: 'updated',
+                }
             );
+            const entries = Array.isArray(page.items) ? page.items : [];
             return entries
                 .map((entry) =>
                     this.mapJurismindSkill(
@@ -327,7 +334,7 @@ export class ClawHubService {
                         entry.ownerHandle
                     )
                 )
-                .filter((item): item is ClawHubSkillResult => item !== null && Boolean(item.isFeatured));
+                .filter((item): item is ClawHubSkillResult => item !== null);
         }
 
         const entries = await this.runJurismindConvexRequest<JurismindSearchEntry[]>(
@@ -336,7 +343,6 @@ export class ClawHubService {
             {
                 query,
                 limit,
-                highlightedOnly: true,
             }
         );
 
@@ -344,7 +350,34 @@ export class ClawHubService {
             .map((entry) =>
                 this.mapJurismindSkill(entry.skill, entry.version?.version, entry.owner, entry.ownerHandle)
             )
-            .filter((item): item is ClawHubSkillResult => item !== null && Boolean(item.isFeatured));
+            .filter((item): item is ClawHubSkillResult => item !== null);
+    }
+
+    async listJurismindOfficialHighlighted(limit = 2000): Promise<ClawHubSkillResult[]> {
+        if (this.market !== 'jurismindhub') {
+            return [];
+        }
+
+        const safeLimit = Math.min(Math.max(limit, 1), 2000);
+        const entries = await this.runJurismindConvexRequest<JurismindPublicListEntry[]>(
+            'query',
+            'skills:listHighlightedPublic',
+            { limit: safeLimit }
+        );
+
+        return entries
+            .map((entry) =>
+                this.mapJurismindSkill(
+                    entry.skill,
+                    entry.latestVersion?.version,
+                    entry.owner,
+                    entry.ownerHandle
+                )
+            )
+            .filter(
+                (item): item is ClawHubSkillResult =>
+                    item !== null && Boolean(item.isFeatured) && Boolean(item.isOfficial)
+            );
     }
 
     /**
@@ -529,27 +562,42 @@ export class ClawHubService {
      * Open skill README/manual in default editor
      */
     async openSkillReadme(slug: string): Promise<boolean> {
-        const skillDir = path.join(this.workDir, 'skills', slug);
+        const homeDir = app.getPath('home');
+        const candidateDirs = Array.from(new Set([
+            path.join(this.workDir, 'skills', slug),
+            path.join(homeDir, '.agents', 'skills', slug),
+            path.join(homeDir, '.codex', 'skills', slug),
+        ]));
 
         // Try to find documentation file
         const possibleFiles = ['SKILL.md', 'README.md', 'skill.md', 'readme.md'];
         let targetFile = '';
 
-        for (const file of possibleFiles) {
-            const filePath = path.join(skillDir, file);
-            if (fs.existsSync(filePath)) {
-                targetFile = filePath;
+        for (const skillDir of candidateDirs) {
+            for (const file of possibleFiles) {
+                const filePath = path.join(skillDir, file);
+                if (fs.existsSync(filePath)) {
+                    targetFile = filePath;
+                    break;
+                }
+            }
+            if (targetFile) {
                 break;
             }
         }
 
         if (!targetFile) {
-            // If no md file, just open the directory
-            if (fs.existsSync(skillDir)) {
-                targetFile = skillDir;
-            } else {
-                throw new Error('Skill directory not found');
+            // If no markdown file is found, open the first existing directory.
+            for (const skillDir of candidateDirs) {
+                if (fs.existsSync(skillDir)) {
+                    targetFile = skillDir;
+                    break;
+                }
             }
+        }
+
+        if (!targetFile) {
+            throw new Error('Skill directory not found');
         }
 
         try {

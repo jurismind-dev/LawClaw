@@ -167,7 +167,12 @@ export function registerIpcHandlers(
   const openClawPluginInstallerBridge = registerOpenClawHandlers();
 
   // Preset install handlers
-  registerPresetInstallHandlers(openClawPluginInstallerBridge, gatewayManager, mainWindow);
+  registerPresetInstallHandlers(
+    openClawPluginInstallerBridge,
+    gatewayManager,
+    jurismindHubService,
+    mainWindow
+  );
 
   // Provider handlers
   registerProviderHandlers(gatewayManager);
@@ -1351,9 +1356,45 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
 function registerPresetInstallHandlers(
   pluginInstallerBridge: OpenClawPluginInstallerBridge,
   gatewayManager: GatewayManager,
+  jurismindHubService: ClawHubService,
   mainWindow: BrowserWindow
 ): void {
   const presetInstaller = new PresetInstaller({
+    listMarketSkills: async ({ market, selection }) => {
+      if (market !== 'jurismindhub' || selection !== 'official-highlighted') {
+        return { success: false, skills: [], error: `Unsupported market selection: ${market}/${selection}` };
+      }
+      try {
+        const results = await jurismindHubService.listJurismindOfficialHighlighted(2000);
+        return {
+          success: true,
+          skills: results.map((skill) => ({
+            id: skill.slug,
+            displayName: skill.name,
+            version: skill.version,
+            isOfficial: skill.isOfficial,
+            isFeatured: skill.isFeatured,
+          })),
+        };
+      } catch (error) {
+        return { success: false, skills: [], error: String(error) };
+      }
+    },
+    installSkillFromMarket: async ({ market, skillId, version }) => {
+      if (market !== 'jurismindhub') {
+        return { success: false, error: `Unsupported preset skill market: ${market}` };
+      }
+      try {
+        await jurismindHubService.install({ slug: skillId, version });
+        return { success: true };
+      } catch (error) {
+        const message = String(error);
+        if (message.toLowerCase().includes('already installed')) {
+          return { success: true, skipped: true, reason: 'already installed' };
+        }
+        return { success: false, error: message };
+      }
+    },
     installPluginFromLocalPath: pluginInstallerBridge.installPluginFromLocalPath,
     uninstallPlugin: pluginInstallerBridge.uninstallPlugin,
     onProgress: (event) => {

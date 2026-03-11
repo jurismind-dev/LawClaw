@@ -29,6 +29,8 @@ interface TestContext {
   clawXConfigDir: string;
   openClawConfigDir: string;
   openClawSkillsDir: string;
+  marketSkillListCalls: Array<{ market: 'jurismindhub'; selection: 'official-highlighted' }>;
+  marketSkillInstallCalls: Array<{ market: 'jurismindhub'; skillId: string; version?: string }>;
   pluginInstallCalls: string[];
   pluginInstallSnapshots: PluginInstallSnapshot[];
   pluginUninstallCalls: string[];
@@ -57,12 +59,49 @@ function createContext(): TestContext {
   const pluginInstallCalls: string[] = [];
   const pluginInstallSnapshots: PluginInstallSnapshot[] = [];
   const pluginUninstallCalls: string[] = [];
+  const marketSkillListCalls: Array<{ market: 'jurismindhub'; selection: 'official-highlighted' }> = [];
+  const marketSkillInstallCalls: Array<{ market: 'jurismindhub'; skillId: string; version?: string }> = [];
 
   const installer = new PresetInstaller({
     resourcesDir,
     clawXConfigDir,
     openClawConfigDir,
     openClawSkillsDir,
+    listMarketSkills: async ({ market, selection }) => {
+      marketSkillListCalls.push({ market, selection });
+      return {
+        success: true,
+        skills: [
+          {
+            id: 'find-skills',
+            displayName: 'Find Skills',
+            version: '0.1.0',
+            isOfficial: true,
+            isFeatured: true,
+          },
+          {
+            id: 'not-official',
+            displayName: 'Not Official',
+            version: '0.0.1',
+            isOfficial: false,
+            isFeatured: true,
+          },
+        ],
+      };
+    },
+    installSkillFromMarket: async ({ market, skillId, version }) => {
+      marketSkillInstallCalls.push({ market, skillId, version });
+      const skillDir = join(openClawSkillsDir, skillId);
+      rmSync(skillDir, { recursive: true, force: true });
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(
+        join(skillDir, 'package.json'),
+        JSON.stringify({ name: skillId, version: version || '0.0.0' }, null, 2),
+        'utf-8'
+      );
+      writeFileSync(join(skillDir, 'SKILL.md'), `# ${skillId}\n`, 'utf-8');
+      return { success: true };
+    },
     installPluginFromLocalPath: async (pluginId, installPath) => {
       pluginInstallCalls.push(pluginId);
       const pkgPath = join(installPath, 'package.json');
@@ -95,6 +134,8 @@ function createContext(): TestContext {
     clawXConfigDir,
     openClawConfigDir,
     openClawSkillsDir,
+    marketSkillListCalls,
+    marketSkillInstallCalls,
     pluginInstallCalls,
     pluginInstallSnapshots,
     pluginUninstallCalls,
@@ -185,10 +226,12 @@ function writeManifest(
       kind: 'skill' | 'plugin';
       id: string;
       targetVersion: string;
-      artifactPath: string;
-      sha256: string;
+      artifactPath?: string;
+      sha256?: string;
       displayName?: string;
-      installMode?: 'dir' | 'tgz';
+      installMode?: 'dir' | 'tgz' | 'market';
+      market?: 'jurismindhub';
+      selection?: 'official-highlighted';
     }>;
   }
 ): void {
@@ -287,6 +330,145 @@ describe('PresetInstaller', () => {
     );
     expect(lock.version).toBe(1);
     expect(lock.skills['base-skill']).toMatchObject({ version: '1.0.0' });
+
+    const openclawConfig = readJson<{ skills?: { entries?: Record<string, { enabled?: boolean }> } }>(
+      join(context.openClawConfigDir, 'openclaw.json')
+    );
+    expect(openclawConfig.skills?.entries?.['base-skill']?.enabled).toBe(true);
+  });
+
+  it('market 预置 skill 不依赖本地产物并通过 jurismindhub 安装', async () => {
+    const context = createContext();
+    writeManifest(context, {
+      presetVersion: '2026.03.11.1',
+      items: [
+        {
+          kind: 'skill',
+          id: 'find-skills',
+          displayName: 'Find Skills',
+          targetVersion: '0.1.0',
+          installMode: 'market',
+          market: 'jurismindhub',
+        },
+      ],
+    });
+
+    const result = await context.installer.run('setup');
+    expect(result.success).toBe(true);
+    expect(result.installed).toEqual(['skill:find-skills']);
+    expect(context.marketSkillInstallCalls).toEqual([
+      { market: 'jurismindhub', skillId: 'find-skills', version: '0.1.0' },
+    ]);
+
+    const installedPkg = JSON.parse(
+      readFileSync(join(context.openClawSkillsDir, 'find-skills', 'package.json'), 'utf-8')
+    ) as { version: string };
+    expect(installedPkg.version).toBe('0.1.0');
+
+    const origin = readJson<{ registry: string; slug: string; installedVersion: string }>(
+      getClawHubOriginPath(context, 'find-skills')
+    );
+    expect(origin.registry).toBe('https://lawhub.jurismind.com');
+    expect(origin.slug).toBe('find-skills');
+    expect(origin.installedVersion).toBe('0.1.0');
+  });
+
+  it('market 安装返回 already installed 时应按 skipped 处理而非失败', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'lawclaw-preset-installer-skip-'));
+    createdRoots.push(rootDir);
+
+    const resourcesDir = join(rootDir, 'resources');
+    const presetRootDir = join(resourcesDir, 'preset-installs');
+    const clawXConfigDir = join(rootDir, '.LawClaw');
+    const openClawConfigDir = join(rootDir, '.openclaw');
+    const openClawSkillsDir = join(openClawConfigDir, 'skills');
+    mkdirSync(presetRootDir, { recursive: true });
+    mkdirSync(openClawSkillsDir, { recursive: true });
+
+    const skillId = 'already-installed-skill';
+    const installedSkillDir = join(openClawSkillsDir, skillId);
+    mkdirSync(installedSkillDir, { recursive: true });
+    writeFileSync(
+      join(installedSkillDir, 'package.json'),
+      JSON.stringify({ name: skillId, version: '1.0.1' }, null, 2),
+      'utf-8'
+    );
+
+    writeFileSync(
+      join(presetRootDir, 'manifest.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          presetVersion: '2026.03.11.10',
+          items: [
+            {
+              kind: 'skill',
+              id: skillId,
+              displayName: 'Already Installed Skill',
+              targetVersion: '1.0.1',
+              installMode: 'market',
+              market: 'jurismindhub',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const installer = new PresetInstaller({
+      resourcesDir,
+      clawXConfigDir,
+      openClawConfigDir,
+      openClawSkillsDir,
+      installSkillFromMarket: async () => ({
+        success: true,
+        skipped: true,
+        reason: 'already installed',
+      }),
+      installPluginFromLocalPath: async () => ({ success: true }),
+      uninstallPlugin: async () => ({ success: true }),
+    });
+
+    const result = await installer.run('setup');
+    expect(result.success).toBe(true);
+    expect(result.skippedItems).toContain(`skill:${skillId}`);
+    expect(result.error).toBeUndefined();
+    expect(existsSync(join(installedSkillDir, '.clawhub', 'origin.json'))).toBe(true);
+    const openclawConfig = readJson<{ skills?: { entries?: Record<string, { enabled?: boolean }> } }>(
+      join(openClawConfigDir, 'openclaw.json')
+    );
+    expect(openclawConfig.skills?.entries?.[skillId]?.enabled).toBe(true);
+  });
+
+  it('market selection=official-highlighted 会动态展开并安装远端列表', async () => {
+    const context = createContext();
+    writeManifest(context, {
+      presetVersion: '2026.03.11.2',
+      items: [
+        {
+          kind: 'skill',
+          id: 'jurismindhub-official-highlighted',
+          displayName: 'JurisHub Official + Highlighted',
+          targetVersion: 'latest',
+          installMode: 'market',
+          market: 'jurismindhub',
+          selection: 'official-highlighted',
+        },
+      ],
+    });
+
+    const result = await context.installer.run('setup');
+    expect(result.success).toBe(true);
+    expect(context.marketSkillListCalls).toEqual([
+      { market: 'jurismindhub', selection: 'official-highlighted' },
+    ]);
+    expect(context.marketSkillInstallCalls).toEqual([
+      { market: 'jurismindhub', skillId: 'find-skills', version: '0.1.0' },
+    ]);
+    expect(result.installed).toContain('skill:find-skills');
+    expect(result.installed).not.toContain('skill:not-official');
   });
 
   it('升级时 manifest hash 变化会触发 pending', async () => {
@@ -395,6 +577,40 @@ describe('PresetInstaller', () => {
     const runResult = await context.installer.run('upgrade');
     expect(runResult.success).toBe(true);
     expect(runResult.skipped).toBe(true);
+  });
+
+  it('已管理的预置 skill 被删除后会重新标记 pending 并补装', async () => {
+    const context = createContext();
+    const skillArtifact = createDirArtifact(context, 'skills/recover-skill', 'recover-skill', '1.0.0');
+    writeManifest(context, {
+      presetVersion: '2026.03.11.9',
+      items: [
+        {
+          kind: 'skill',
+          id: 'recover-skill',
+          targetVersion: '1.0.0',
+          artifactPath: skillArtifact.path,
+          sha256: skillArtifact.sha256,
+          installMode: 'dir',
+        },
+      ],
+    });
+
+    const firstRun = await context.installer.run('setup');
+    expect(firstRun.success).toBe(true);
+    expect(firstRun.installed).toContain('skill:recover-skill');
+
+    const installedSkillDir = join(context.openClawSkillsDir, 'recover-skill');
+    rmSync(installedSkillDir, { recursive: true, force: true });
+    expect(existsSync(installedSkillDir)).toBe(false);
+
+    const driftStatus = context.installer.getStatus();
+    expect(driftStatus.pending).toBe(true);
+    expect(driftStatus.blockedReason).toBe('needs-run');
+
+    const rerun = await context.installer.run('upgrade');
+    expect(rerun.success).toBe(true);
+    expect(existsSync(installedSkillDir)).toBe(true);
   });
 
   it('仅升级不降级：已存在高版本 skill 会跳过', async () => {

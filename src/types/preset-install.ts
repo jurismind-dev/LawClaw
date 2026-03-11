@@ -1,15 +1,28 @@
 export type PresetInstallPhase = 'setup' | 'upgrade';
 
 export type PresetInstallItemKind = 'skill' | 'plugin';
+export type PresetInstallMode = 'dir' | 'tgz' | 'market';
+export type PresetInstallSkillMarket = 'jurismindhub';
 
 export interface PresetInstallSkillItem {
   kind: 'skill';
   id: string;
   displayName?: string;
   targetVersion: string;
+  market?: PresetInstallSkillMarket;
   artifactPath: string;
   sha256: string;
   installMode?: 'dir' | 'tgz';
+}
+
+export interface PresetInstallRemoteSkillItem {
+  kind: 'skill';
+  id: string;
+  displayName?: string;
+  targetVersion: string;
+  installMode: 'market';
+  market: PresetInstallSkillMarket;
+  selection?: 'official-highlighted';
 }
 
 export interface PresetInstallPluginItem {
@@ -22,7 +35,10 @@ export interface PresetInstallPluginItem {
   installMode?: 'dir' | 'tgz';
 }
 
-export type PresetInstallItem = PresetInstallSkillItem | PresetInstallPluginItem;
+export type PresetInstallItem =
+  | PresetInstallSkillItem
+  | PresetInstallRemoteSkillItem
+  | PresetInstallPluginItem;
 
 export interface PresetInstallManifest {
   schemaVersion: number;
@@ -44,6 +60,7 @@ export interface PresetInstallProgressEvent {
   itemId: string;
   kind: PresetInstallItemKind;
   displayName: string;
+  targetVersion: string;
   status: PresetInstallItemStatus;
   progress: number;
   message?: string;

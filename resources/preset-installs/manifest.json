@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "presetVersion": "2026.03.06.2",
+  "presetVersion": "2026.03.11.3",
   "items": [
     {
       "kind": "skill",
-      "id": "contract-review-jurismind",
-      "displayName": "Contract Review Jurismind",
-      "targetVersion": "1.0.0",
-      "artifactPath": "skills/contract-review-jurismind",
-      "sha256": "140b8a8e20700ce3dfcba50fc01fb5f88c5704a869f7c6dd988b7977d0f38a69",
-      "installMode": "dir"
+      "id": "jurismindhub-official-highlighted",
+      "displayName": "JurisHub Official + Highlighted",
+      "targetVersion": "latest",
+      "installMode": "market",
+      "market": "jurismindhub",
+      "selection": "official-highlighted"
     }
   ]
 }

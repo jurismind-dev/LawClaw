@@ -4,15 +4,35 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { getClawXConfigDir, getResourcesDir } from './paths';
 
 export type PresetInstallItemKind = 'skill' | 'plugin';
+export type PresetInstallMode = 'dir' | 'tgz' | 'market';
+export type PresetInstallSkillMarket = 'jurismindhub';
+
+interface PresetInstallBaseItem {
+  kind: PresetInstallItemKind;
+  id: string;
+  displayName?: string;
+  targetVersion: string;
+}
 
 export interface PresetInstallSkillItem {
   kind: 'skill';
   id: string;
   displayName?: string;
   targetVersion: string;
+  market?: PresetInstallSkillMarket;
+  installMode?: 'dir' | 'tgz';
   artifactPath: string;
   sha256: string;
-  installMode?: 'dir' | 'tgz';
+}
+
+export interface PresetInstallRemoteSkillItem {
+  kind: 'skill';
+  id: string;
+  displayName?: string;
+  targetVersion: string;
+  installMode: 'market';
+  market: PresetInstallSkillMarket;
+  selection?: 'official-highlighted';
 }
 
 export interface PresetInstallPluginItem {
@@ -25,7 +45,10 @@ export interface PresetInstallPluginItem {
   installMode?: 'dir' | 'tgz';
 }
 
-export type PresetInstallItem = PresetInstallSkillItem | PresetInstallPluginItem;
+export type PresetInstallItem =
+  | PresetInstallSkillItem
+  | PresetInstallRemoteSkillItem
+  | PresetInstallPluginItem;
 
 export interface PresetInstallManifest {
   schemaVersion: number;
@@ -110,26 +133,77 @@ function assertManifestItem(item: unknown, index: number): PresetInstallItem {
 
   const id = typeof raw.id === 'string' ? raw.id.trim() : '';
   const targetVersion = typeof raw.targetVersion === 'string' ? raw.targetVersion.trim() : '';
+  const installMode =
+    raw.installMode === 'dir' || raw.installMode === 'tgz' || raw.installMode === 'market'
+      ? raw.installMode
+      : undefined;
+  const market = raw.market === 'jurismindhub' ? raw.market : undefined;
+  const selection = raw.selection === 'official-highlighted' ? raw.selection : undefined;
   const artifactPath = typeof raw.artifactPath === 'string' ? raw.artifactPath.trim() : '';
   const sha256 = typeof raw.sha256 === 'string' ? raw.sha256.trim().toLowerCase() : '';
   const displayName = typeof raw.displayName === 'string' ? raw.displayName.trim() : undefined;
-  const installMode = raw.installMode === 'dir' || raw.installMode === 'tgz' ? raw.installMode : undefined;
 
-  if (!id || !targetVersion || !artifactPath || !sha256) {
+  if (!id || !targetVersion) {
     throw new Error(`Invalid preset install item at index ${String(index)}: missing required fields`);
+  }
+
+  if (installMode === 'market') {
+    if (kind !== 'skill') {
+      throw new Error(
+        `Invalid preset install item at index ${String(index)}: installMode=market only supports skill kind`
+      );
+    }
+    if (market !== 'jurismindhub') {
+      throw new Error(
+        `Invalid preset install item at index ${String(index)}: installMode=market requires market=jurismindhub`
+      );
+    }
+    if (raw.selection !== undefined && selection !== 'official-highlighted') {
+      throw new Error(
+        `Invalid preset install item at index ${String(index)}: installMode=market selection must be official-highlighted`
+      );
+    }
+    return {
+      kind: 'skill',
+      id,
+      targetVersion,
+      displayName: displayName && displayName.length > 0 ? displayName : undefined,
+      installMode: 'market',
+      market,
+      selection,
+    };
+  }
+
+  if (!artifactPath || !sha256) {
+    throw new Error(`Invalid preset install item at index ${String(index)}: missing artifact fields`);
   }
   if (!/^[a-f0-9]{64}$/.test(sha256)) {
     throw new Error(`Invalid preset install item at index ${String(index)}: sha256 must be 64 hex chars`);
   }
 
-  return {
+  const base: PresetInstallBaseItem = {
     kind,
     id,
     targetVersion,
+    displayName: displayName && displayName.length > 0 ? displayName : undefined,
+  };
+
+  if (kind === 'skill') {
+    return {
+      ...base,
+      kind: 'skill',
+      artifactPath,
+      sha256,
+      installMode: installMode === 'dir' || installMode === 'tgz' ? installMode : undefined,
+    };
+  }
+
+  return {
+    ...base,
+    kind: 'plugin',
     artifactPath,
     sha256,
-    displayName: displayName && displayName.length > 0 ? displayName : undefined,
-    installMode,
+    installMode: installMode === 'dir' || installMode === 'tgz' ? installMode : undefined,
   };
 }
 
@@ -199,9 +273,11 @@ export function computePresetInstallManifestHash(manifest: PresetInstallManifest
         kind: item.kind,
         id: item.id,
         targetVersion: item.targetVersion,
-        artifactPath: item.artifactPath,
-        sha256: item.sha256,
+        artifactPath: 'artifactPath' in item ? item.artifactPath : null,
+        sha256: 'sha256' in item ? item.sha256 : null,
         installMode: item.installMode,
+        market: 'market' in item ? item.market : null,
+        selection: 'selection' in item ? item.selection : null,
       }))
       .sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`)),
   });

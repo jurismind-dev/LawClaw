@@ -604,8 +604,12 @@ export function Skills() {
     }
   }, [fetchSkills, isGatewayRunning]);
 
+  const visibleSkills = skills.filter(
+    (skill) => skill.isBundled || skill.installSource === 'jurismindhub'
+  );
+
   // Filter skills
-  const filteredSkills = skills
+  const filteredSkills = visibleSkills
     .filter((skill) => {
       const matchesSearch =
         skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -634,12 +638,9 @@ export function Skills() {
     });
 
   const sourceStats = {
-    all: skills.length,
-    builtIn: skills.filter((skill) => skill.isBundled).length,
-    clawhub: skills.filter(
-      (skill) => !skill.isBundled && skill.installSource === 'clawhub'
-    ).length,
-    jurismindhub: skills.filter(
+    all: visibleSkills.length,
+    builtIn: visibleSkills.filter((skill) => skill.isBundled).length,
+    jurismindhub: visibleSkills.filter(
       (skill) => !skill.isBundled && skill.installSource === 'jurismindhub'
     ).length,
   };
@@ -659,7 +660,7 @@ export function Skills() {
     }
   }, [enableSkill, disableSkill, t]);
 
-  const hasInstalledSkills = skills.some(s => !s.isBundled);
+  const hasInstalledSkills = visibleSkills.some(s => !s.isBundled);
 
   const handleOpenSkillsFolder = useCallback(async () => {
     try {

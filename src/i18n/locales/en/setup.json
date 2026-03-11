@@ -100,7 +100,6 @@
         "error": "Setup Error:",
         "restart": "Try restarting the app",
         "wait": "This may take a few moments...",
-        "skip": "Skip this step",
         "retry": "Retry installation",
         "presetItemDesc": "{{kind}} · target {{version}}",
         "presetInstallFailed": "Preset component installation failed. Please retry.",
@@ -119,6 +118,7 @@
         "subtitle": "LawClaw is configured and ready to use. You can now start chatting with your AI assistant.",
         "provider": "AI Provider",
         "components": "Components",
+        "componentsSummary": "{{count}} installed",
         "gateway": "Gateway",
         "running": "Running",
         "footer": "You can customize skills and connect channels in Settings"
@@ -127,7 +127,6 @@
         "next": "Next",
         "back": "Back",
         "skipStep": "Skip this step",
-        "skipSetup": "Skip Setup",
         "getStarted": "Get Started"
     }
 }

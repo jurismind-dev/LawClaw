@@ -56,6 +56,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
+      - name: Build app code
         run: pnpm run build:vite
 
+      - name: Bundle embedded OpenClaw runtime
+        run: pnpm exec zx scripts/bundle-openclaw.mjs
+
+      - name: Bundle bundled plugins
+        run: pnpm exec zx scripts/bundle-qq-plugin.mjs
+
+      - name: Validate preset artifacts
+        run: pnpm run bundle:preset-artifacts:offline

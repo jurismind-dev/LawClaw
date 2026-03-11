@@ -61,6 +61,7 @@ import { applyOpenClawConfigEnvFallbacks } from '../utils/openclaw-config-env';
 import {
   detectPluginInstallationState,
   clearPluginChannelConfigBackup,
+  finalizeBundledPluginConfigAfterInstall,
   isAlreadyInstalledErrorMessage,
   readPluginChannelConfigBackup,
   restorePluginChannelConfigAfterInstall,
@@ -749,6 +750,10 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
   const QQ_PLUGIN_ID = 'qqbot';
   const QQ_PLUGIN_VERSION = '1.5.0';
   const QQ_PLUGIN_NPM_SPEC = `@sliverp/${QQ_PLUGIN_ID}@${QQ_PLUGIN_VERSION}`;
+  const FEISHU_OFFICIAL_PLUGIN_ID = 'feishu-openclaw-plugin';
+  const FEISHU_OFFICIAL_PLUGIN_VERSION = '2026.3.10';
+  const FEISHU_OFFICIAL_PLUGIN_NPM_SPEC =
+    `@larksuite/openclaw-lark@${FEISHU_OFFICIAL_PLUGIN_VERSION}`;
 
   const runOpenClawCli = async (args: string[]): Promise<{
     success: boolean;
@@ -969,6 +974,157 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     }
   };
 
+  const prepareFeishuOfficialLocalInstallDir = async (): Promise<{
+    success: boolean;
+    tempDir?: string;
+    installPath?: string;
+    error?: string;
+    details?: string;
+  }> => {
+    const bundledDir = join(getResourcesDir(), 'plugins', FEISHU_OFFICIAL_PLUGIN_ID);
+    if (existsSync(join(bundledDir, 'package.json'))) {
+      return {
+        success: true,
+        installPath: bundledDir,
+      };
+    }
+
+    if (app.isPackaged) {
+      return {
+        success: false,
+        error: `Bundled plugin directory not found: ${bundledDir}`,
+      };
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), 'lawclaw-feishu-install-'));
+    const extractDir = join(tempDir, 'extract');
+    mkdirSync(extractDir, { recursive: true });
+
+    try {
+      const packResult = await runCommand(
+        'npm',
+        ['pack', FEISHU_OFFICIAL_PLUGIN_NPM_SPEC, '--silent'],
+        tempDir,
+        true
+      );
+      if (!packResult.success) {
+        return {
+          success: false,
+          tempDir,
+          error: packResult.error || 'Failed to download Feishu official plugin package',
+          details: packResult.stderr || packResult.stdout,
+        };
+      }
+
+      const packedName = packResult.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .pop();
+
+      if (!packedName) {
+        return {
+          success: false,
+          tempDir,
+          error: 'npm pack completed but returned no archive filename',
+          details: packResult.stdout,
+        };
+      }
+
+      const archivePath = join(tempDir, packedName);
+      const extractResult = await runCommand('tar', ['-xzf', archivePath, '-C', extractDir], tempDir, false);
+      if (!extractResult.success) {
+        return {
+          success: false,
+          tempDir,
+          error: extractResult.error || 'Failed to extract Feishu official plugin archive',
+          details: extractResult.stderr || extractResult.stdout,
+        };
+      }
+
+      const installPath = join(extractDir, 'package');
+      const depsResult = await runCommand(
+        'npm',
+        ['install', '--omit=dev', '--omit=peer', '--silent', '--ignore-scripts'],
+        installPath,
+        true
+      );
+      if (!depsResult.success) {
+        return {
+          success: false,
+          tempDir,
+          error: depsResult.error || 'Failed to install Feishu official plugin dependencies',
+          details: depsResult.stderr || depsResult.stdout,
+        };
+      }
+
+      sanitizePluginPackageManifestForLocalInstall(installPath);
+
+      return {
+        success: true,
+        tempDir,
+        installPath,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        tempDir,
+        error: String(error),
+      };
+    }
+  };
+
+  const prepareBundledPluginLocalInstallDir = async (
+    pluginId: string
+  ): Promise<{
+    success: boolean;
+    tempDir?: string;
+    installPath?: string;
+    error?: string;
+    details?: string;
+  }> => {
+    if (pluginId === QQ_PLUGIN_ID) {
+      return await prepareQqbotLocalInstallDir();
+    }
+    if (pluginId === FEISHU_OFFICIAL_PLUGIN_ID) {
+      return await prepareFeishuOfficialLocalInstallDir();
+    }
+
+    return {
+      success: false,
+      error: `Unsupported bundled plugin: ${pluginId}`,
+    };
+  };
+
+  const applyBundledPluginPostInstallConfig = (
+    pluginId: string,
+    openclawConfigDir: string,
+    configPath: string
+  ): void => {
+    try {
+      const parsed = existsSync(configPath)
+        ? JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>
+        : {};
+      const finalized = finalizeBundledPluginConfigAfterInstall(parsed, pluginId);
+      if (finalized.changed) {
+        writeFileSync(configPath, JSON.stringify(finalized.config, null, 2), 'utf-8');
+      }
+    } catch (error) {
+      logger.warn('Failed to finalize bundled plugin configuration after install', error);
+    }
+
+    if (pluginId === FEISHU_OFFICIAL_PLUGIN_ID) {
+      const conflictingPluginDir = join(openclawConfigDir, 'extensions', 'feishu');
+      if (existsSync(conflictingPluginDir)) {
+        try {
+          rmSync(conflictingPluginDir, { recursive: true, force: true });
+        } catch (error) {
+          logger.warn('Failed to remove conflicting Feishu plugin directory', error);
+        }
+      }
+    }
+  };
+
   const detectPluginInstalled = (
     pluginId: string
   ): { installed: boolean; source?: 'extensions' | 'plugins.installs' | 'plugins.load.paths' } => {
@@ -995,7 +1151,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
   const installPluginFromLocalPath = async (
     pluginId: string,
     installPath: string,
-    options?: { enforceQqOnly?: boolean }
+    options?: { allowedBundledPluginIds?: string[] }
   ): Promise<OpenClawPluginInstallResult> => {
     if (!pluginId || typeof pluginId !== 'string') {
       return { success: false, error: 'Invalid plugin ID' };
@@ -1003,7 +1159,10 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     if (!installPath || typeof installPath !== 'string') {
       return { success: false, error: 'Invalid plugin install path' };
     }
-    if (options?.enforceQqOnly && pluginId !== QQ_PLUGIN_ID) {
+    if (
+      options?.allowedBundledPluginIds
+      && !options.allowedBundledPluginIds.includes(pluginId)
+    ) {
       return { success: false, error: `Unsupported bundled plugin: ${pluginId}` };
     }
 
@@ -1046,6 +1205,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     try {
       const detectionBeforeInstall = detectPluginInstalled(pluginId);
       if (detectionBeforeInstall.installed) {
+        applyBundledPluginPostInstallConfig(pluginId, openclawConfigDir, configPath);
         return {
           success: true,
           installed: true,
@@ -1072,6 +1232,13 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
         }
       }
 
+      if (pluginId === FEISHU_OFFICIAL_PLUGIN_ID) {
+        const conflictingPluginDir = join(openclawConfigDir, 'extensions', 'feishu');
+        if (existsSync(conflictingPluginDir)) {
+          rmSync(conflictingPluginDir, { recursive: true, force: true });
+        }
+      }
+
       const installResult = await runOpenClawCli(['plugins', 'install', installPath]);
       if (!installResult.success) {
         const installErrorText = [
@@ -1085,6 +1252,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
         if (isAlreadyInstalledErrorMessage(installErrorText)) {
           const detectionAfterFailedInstall = detectPluginInstalled(pluginId);
           if (detectionAfterFailedInstall.installed) {
+            applyBundledPluginPostInstallConfig(pluginId, openclawConfigDir, configPath);
             return {
               success: true,
               installed: true,
@@ -1110,6 +1278,8 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
           details: installResult.stdout,
         };
       }
+
+      applyBundledPluginPostInstallConfig(pluginId, openclawConfigDir, configPath);
 
       return {
         success: true,
@@ -1199,25 +1369,25 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     }
   });
 
-  // Install a bundled plugin tarball from resources/plugins/<pluginId>/
+  // Install a bundled plugin payload from resources/plugins/<pluginId>/
   ipcMain.handle('openclaw:installBundledPlugin', async (_, pluginId: string) => {
     let tempInstallDir: string | undefined;
 
     try {
       logger.info('openclaw:installBundledPlugin requested', { pluginId });
 
-      const prepared = await prepareQqbotLocalInstallDir();
-      if (!prepared.success || !prepared.installPath || !prepared.tempDir) {
+      const prepared = await prepareBundledPluginLocalInstallDir(pluginId);
+      if (!prepared.success || !prepared.installPath) {
         return {
           success: false,
-          error: prepared.error || 'Failed to prepare QQ plugin package',
+          error: prepared.error || `Failed to prepare bundled plugin: ${pluginId}`,
           details: prepared.details,
         };
       }
       tempInstallDir = prepared.tempDir;
 
       return await installPluginFromLocalPath(pluginId, prepared.installPath, {
-        enforceQqOnly: true,
+        allowedBundledPluginIds: [QQ_PLUGIN_ID, FEISHU_OFFICIAL_PLUGIN_ID],
       });
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1345,9 +1515,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
 
   return {
     installPluginFromLocalPath: async (pluginId: string, installPath: string) => {
-      return await installPluginFromLocalPath(pluginId, installPath, {
-        enforceQqOnly: false,
-      });
+      return await installPluginFromLocalPath(pluginId, installPath);
     },
     uninstallPlugin,
   };

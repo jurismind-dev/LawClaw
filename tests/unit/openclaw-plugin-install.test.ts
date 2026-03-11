@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   clearPluginChannelConfigBackup,
   detectPluginInstallationState,
+  finalizeBundledPluginConfigAfterInstall,
   isAlreadyInstalledErrorMessage,
   readPluginChannelConfigBackup,
   restorePluginChannelConfigAfterInstall,
@@ -245,5 +246,106 @@ describe('openclaw plugin manifest sanitizer', () => {
     expect(result.changed).toBe(true);
     expect(saved.dependencies).toEqual({});
     expect(saved.devDependencies).toMatchObject({ typescript: '^5.9.3' });
+  });
+});
+
+describe('bundled feishu plugin config finalizer', () => {
+  it('disables built-in feishu plugin and enables the official bundled plugin', () => {
+    const input = {
+      plugins: {
+        allow: ['feishu', 'other-plugin'],
+        entries: {
+          feishu: { enabled: true },
+          'feishu-openclaw-plugin': { enabled: false, source: 'bundled' },
+        },
+      },
+    };
+
+    const result = finalizeBundledPluginConfigAfterInstall(input, 'feishu-openclaw-plugin');
+
+    expect(result.changed).toBe(true);
+    expect(result.config).toMatchObject({
+      channels: {
+        feishu: {
+          enabled: false,
+          streaming: true,
+          threadSession: true,
+          requireMention: true,
+          footer: {
+            elapsed: true,
+            status: true,
+          },
+        },
+      },
+      plugins: {
+        allow: ['other-plugin', 'feishu-openclaw-plugin'],
+        entries: {
+          feishu: { enabled: false },
+          'feishu-openclaw-plugin': { enabled: true, source: 'bundled' },
+        },
+      },
+    });
+  });
+
+  it('keeps unrelated plugin config unchanged', () => {
+    const input = {
+      plugins: {
+        allow: ['qqbot'],
+      },
+    };
+
+    const result = finalizeBundledPluginConfigAfterInstall(input, 'qqbot');
+
+    expect(result.changed).toBe(false);
+    expect(result.config).toEqual(input);
+  });
+
+  it('keeps existing feishu channel enablement while filling missing defaults', () => {
+    const input = {
+      channels: {
+        feishu: {
+          appId: 'cli_xxx',
+          appSecret: 'secret',
+          enabled: true,
+          streaming: false,
+          footer: {
+            elapsed: false,
+          },
+        },
+      },
+      plugins: {
+        allow: ['feishu'],
+        entries: {
+          feishu: { enabled: true },
+        },
+      },
+    };
+
+    const result = finalizeBundledPluginConfigAfterInstall(input, 'feishu-openclaw-plugin');
+
+    expect(result.changed).toBe(true);
+    expect(result.config).toMatchObject({
+      channels: {
+        feishu: {
+          appId: 'cli_xxx',
+          appSecret: 'secret',
+          enabled: true,
+          streaming: false,
+          threadSession: true,
+          requireMention: true,
+          footer: {
+            elapsed: false,
+            status: true,
+          },
+        },
+      },
+      plugins: {
+        allow: ['feishu-openclaw-plugin'],
+        entries: {
+          feishu: { enabled: false },
+          'feishu-openclaw-plugin': { enabled: true },
+        },
+      },
+    });
   });
 });

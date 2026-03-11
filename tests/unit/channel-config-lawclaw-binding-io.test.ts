@@ -95,4 +95,77 @@ describe('channel config lawclaw binding io', () => {
       { agentId: 'lawclaw-main', match: { channel: 'discord', accountId: '*' } },
     ]);
   });
+
+  it('saveChannelConfig applies feishu defaults while enabling the configured channel', async () => {
+    const mod = await import('@electron/utils/channel-config');
+
+    await mod.saveChannelConfig('feishu', {
+      appId: 'cli_test',
+      appSecret: 'secret_test',
+    });
+
+    const next = await readConfig(homeDir);
+    expect(next.channels).toMatchObject({
+      feishu: {
+        appId: 'cli_test',
+        appSecret: 'secret_test',
+        enabled: true,
+        dmPolicy: 'open',
+        allowFrom: ['*'],
+        streaming: true,
+        threadSession: true,
+        requireMention: true,
+        footer: {
+          elapsed: true,
+          status: true,
+        },
+      },
+    });
+  });
+
+  it('saveChannelConfig preserves explicit feishu toggles while filling missing defaults', async () => {
+    const configPath = join(homeDir, '.openclaw', 'openclaw.json');
+    await mkdir(join(homeDir, '.openclaw'), { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          channels: {
+            feishu: {
+              enabled: false,
+              streaming: false,
+              footer: {
+                elapsed: false,
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await import('@electron/utils/channel-config');
+    await mod.saveChannelConfig('feishu', {
+      appId: 'cli_test',
+      appSecret: 'secret_test',
+    });
+
+    const next = await readConfig(homeDir);
+    expect(next.channels).toMatchObject({
+      feishu: {
+        appId: 'cli_test',
+        appSecret: 'secret_test',
+        enabled: true,
+        streaming: false,
+        threadSession: true,
+        requireMention: true,
+        footer: {
+          elapsed: false,
+          status: true,
+        },
+      },
+    });
+  });
 });

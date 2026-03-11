@@ -8,8 +8,24 @@
 ; - AppData\Roaming\LawClaw / clawx
 ; Handles both per-user and per-machine (all users) installations.
 
+!macro customInstall
+  ; Add resources\cli to the current user's PATH so "openclaw" is available in new terminals.
+  StrCpy $1 "$INSTDIR\\resources\\cli"
+  ReadRegStr $0 HKCU "Environment" "Path"
+  StrCmp $0 "" _ci_writeOnly
+  StrCpy $2 "$0;$1"
+  Goto _ci_write
+
+  _ci_writeOnly:
+    StrCpy $2 "$1"
+
+  _ci_write:
+    WriteRegExpandStr HKCU "Environment" "Path" $2
+    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
+!macroend
+
 !macro customUnInstall
-  ; Remove resources\cli from user PATH
+  ; Refresh the user PATH so new terminals observe the updated environment.
   ReadRegStr $0 HKCU "Environment" "Path"
   StrCmp $0 "" _cu_pathDone
 

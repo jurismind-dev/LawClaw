@@ -109,9 +109,9 @@
             "skill": "Skill",
             "plugin": "Plugin"
         },
-        "qqInstallFailed": "QQ plugin installation failed. Please retry to continue setup.",
-        "qqPluginName": "QQ Plugin",
-        "qqPluginDesc": "QQ channel plugin installation"
+        "feishuInstallFailed": "Feishu official plugin installation failed. Please retry to continue setup.",
+        "feishuPluginName": "Feishu Official Plugin",
+        "feishuPluginDesc": "Bundled Feishu official channel plugin installation"
     },
     "complete": {
         "title": "Setup Complete!",

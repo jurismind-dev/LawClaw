@@ -31,4 +31,12 @@ describe('setup navigation and install flow', () => {
     expect(source).toContain("'presetInstall:run'");
     expect(source).toContain("{ phase: 'setup' }");
   });
+
+  it('removes QQbot from the setup channel picker and installs the bundled Feishu plugin instead', () => {
+    const source = readSetupSource();
+
+    expect(source).toContain("getPrimaryChannels().filter((type) => type !== 'qqbot')");
+    expect(source).toContain("SETUP_BUNDLED_FEISHU_PLUGIN_ID");
+    expect(source).not.toContain("t('installing.qqPluginName')");
+  });
 });

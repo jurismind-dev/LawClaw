@@ -192,7 +192,7 @@
             ]
         },
         "feishu": {
-            "description": "Connect Feishu/Lark bot via WebSocket",
+            "description": "Connect Feishu/Lark via the Feishu official plugin",
             "docsUrl": "https://pcnz0er969s1.feishu.cn/wiki/FgDow7bMDiEPsikR00PcKh25nDh?from=from_copylink",
             "fields": {
                 "appId": {
@@ -205,11 +205,11 @@
                 }
             },
             "instructions": [
-                "Read the documentation, then go to Feishu Open Platform",
+                "LawClaw preinstalls the Feishu official plugin during setup.",
+                "Read the official documentation, then go to Feishu Open Platform",
                 "Create a new application",
                 "Get App ID and App Secret",
-                "Configure event subscription",
-                "Note: Not mentioned in current OpenClaw docs, but you MUST add 'contact:contact.base:readonly' **Application Permission** in Permission Management"
+                "Configure event subscription and required application permissions, including 'contact:contact.base:readonly'"
             ]
         },
         "imessage": {

@@ -192,7 +192,7 @@
             ]
         },
         "feishu": {
-            "description": "通过 WebSocket 连接飞书/Lark 机器人",
+            "description": "通过飞书官方插件连接飞书/Lark 机器人",
             "docsUrl": "https://pcnz0er969s1.feishu.cn/wiki/FgDow7bMDiEPsikR00PcKh25nDh?from=from_copylink",
             "fields": {
                 "appId": {
@@ -205,11 +205,11 @@
                 }
             },
             "instructions": [
-                "阅读文档，前往飞书开放平台",
+                "LawClaw 会在引导安装时预装飞书官方插件。",
+                "阅读官方文档，前往飞书开放平台",
                 "创建一个新应用",
                 "获取 App ID 和 App Secret",
-                "配置事件订阅",
-                "注意：当前OpenClaw文档中未提及，但请务必在权限管理中添加 contact:contact.base:readonly **应用权限**，否则无法正常使用"
+                "配置事件订阅和必要应用权限，至少包含 contact:contact.base:readonly"
             ]
         },
         "imessage": {

@@ -13,6 +13,7 @@ import { appUpdater, registerUpdateHandlers } from './updater';
 import { isQuitting, setQuitting } from './app-state';
 import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
+import { autoInstallCliIfNeeded } from '../utils/openclaw-cli';
 import { runProviderStartupMigration } from '../utils/provider-migration';
 import { runAgentPresetStartupMigration } from '../utils/agent-preset-migration';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
@@ -176,6 +177,12 @@ async function initialize(): Promise<void> {
 
   // Register update handlers
   registerUpdateHandlers(appUpdater, mainWindow);
+
+  void autoInstallCliIfNeeded((installedPath) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('openclaw:cli-installed', installedPath);
+    }
+  });
 
   // Note: Auto-check for updates is driven by the renderer (update store init)
   // so it respects the user's "Auto-check for updates" setting.

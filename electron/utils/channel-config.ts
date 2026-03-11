@@ -9,6 +9,7 @@ import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { getOpenClawResolvedDir } from './paths';
+import { applyFeishuChannelDefaults } from './feishu-channel-defaults';
 import * as logger from './logger';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
@@ -315,6 +316,10 @@ export async function saveChannelConfig(
         }
 
         transformedConfig.allowFrom = allowFrom;
+
+        transformedConfig = applyFeishuChannelDefaults(transformedConfig, {
+            fallbackConfig: existingConfig,
+        }).config;
     }
 
     // Special handling for QQ Bot:

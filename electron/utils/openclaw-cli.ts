@@ -191,8 +191,8 @@ function ensureLocalBinInPath(): void {
     if (content.includes(marker)) return;
 
     const line = shell.includes('fish')
-      ? '\n# Added by ClawX\nfish_add_path "$HOME/.local/bin"\n'
-      : '\n# Added by ClawX\nexport PATH="$HOME/.local/bin:$PATH"\n';
+      ? '\n# Added by LawClaw\nfish_add_path "$HOME/.local/bin"\n'
+      : '\n# Added by LawClaw\nexport PATH="$HOME/.local/bin:$PATH"\n';
 
     appendFileSync(profileFile, line);
     logger.info(`Added ~/.local/bin to PATH in ${profileFile}`);

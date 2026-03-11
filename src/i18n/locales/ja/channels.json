@@ -188,7 +188,7 @@
             ]
         },
         "feishu": {
-            "description": "WebSocket 経由で Feishu/Lark ボットに接続します",
+            "description": "Feishu 公式プラグイン経由で Feishu/Lark ボットに接続します",
             "fields": {
                 "appId": {
                     "label": "App ID",
@@ -200,12 +200,13 @@
                 }
             },
             "instructions": [
-                "ドキュメントを読み、Feishu Open Platform に移動します",
+                "LawClaw はセットアップ中に Feishu 公式プラグインを事前インストールします。",
+                "公式ドキュメントを確認し、Feishu Open Platform を開きます",
                 "新しいアプリケーションを作成します",
                 "App ID と App Secret を取得します",
-                "イベント購読を設定します",
-                "注意：現在のドキュメントには記載されていませんが、権限管理で 'contact:contact.base:readonly' **アプリケーション権限** を必ず追加してください"
-            ]
+                "イベント購読と必須のアプリ権限（contact:contact.base:readonly を含む）を設定します"
+            ],
+            "docsUrl": "https://pcnz0er969s1.feishu.cn/wiki/FgDow7bMDiEPsikR00PcKh25nDh?from=from_copylink"
         },
         "imessage": {
             "description": "BlueBubbles (macOS) 経由で iMessage に接続します",

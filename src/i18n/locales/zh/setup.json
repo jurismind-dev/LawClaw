@@ -109,9 +109,9 @@
             "skill": "Skill",
             "plugin": "\u63d2\u4ef6"
         },
-        "qqInstallFailed": "QQ \u63d2\u4ef6\u5b89\u88c5\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u540e\u7ee7\u7eed\u5b89\u88c5\u3002",
-        "qqPluginName": "QQ \u63d2\u4ef6",
-        "qqPluginDesc": "QQ \u6e20\u9053\u63d2\u4ef6\u5b89\u88c5"
+        "feishuInstallFailed": "\u98de\u4e66\u5b98\u65b9\u63d2\u4ef6\u5b89\u88c5\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u540e\u7ee7\u7eed\u5b89\u88c5\u3002",
+        "feishuPluginName": "\u98de\u4e66\u5b98\u65b9\u63d2\u4ef6",
+        "feishuPluginDesc": "\u5185\u7f6e\u98de\u4e66\u5b98\u65b9\u6e20\u9053\u63d2\u4ef6\u5b89\u88c5"
     },
     "complete": {
         "title": "\u8bbe\u7f6e\u5b8c\u6210\uff01",

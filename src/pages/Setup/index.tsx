@@ -43,9 +43,9 @@ import {
   type ChannelConfigField,
 } from '@/types/channel';
 import {
-  shouldInstallQqPluginForSetupSession,
-  shouldRestartGatewayAfterQqPluginInstall,
-} from './qq-plugin-install';
+  SETUP_BUNDLED_FEISHU_PLUGIN_ID,
+  shouldRestartGatewayAfterBundledPluginInstall,
+} from './feishu-plugin-install';
 import { shouldAutoSelectLawClawProvider } from '@/lib/lawclaw-provider-ui-context';
 import type {
   PresetInstallProgressEvent,
@@ -103,7 +103,6 @@ const steps: SetupStep[] = [
 
 import { SETUP_PROVIDERS, type ProviderTypeInfo, getProviderIconUrl, shouldInvertInDark } from '@/lib/providers';
 import clawxIcon from '@/assets/logo.svg';
-import qqChannelIcon from '@/assets/channels/qq.png';
 
 // Use the shared provider registry for setup providers
 const providers = SETUP_PROVIDERS;
@@ -120,9 +119,6 @@ export function Setup() {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [providerConfigured, setProviderConfigured] = useState(false);
   const [apiKey, setApiKey] = useState('');
-  const [configuredChannelsInSession, setConfiguredChannelsInSession] = useState<Set<ChannelType>>(
-    () => new Set()
-  );
   // Installation state for the Installing step
   const [installedSkills, setInstalledSkills] = useState<string[]>([]);
   // Runtime check status
@@ -249,21 +245,10 @@ export function Setup() {
                 />
               )}
               {safeStepIndex === STEP.CHANNEL && (
-                <SetupChannelContent
-                  onChannelConfigured={(channelType) => {
-                    setConfiguredChannelsInSession((prev) => {
-                      const next = new Set(prev);
-                      next.add(channelType);
-                      return next;
-                    });
-                  }}
-                />
+                <SetupChannelContent />
               )}
               {safeStepIndex === STEP.INSTALLING && (
-                <InstallingContent
-                  installQqPlugin={shouldInstallQqPluginForSetupSession(configuredChannelsInSession)}
-                  onComplete={handleInstallationComplete}
-                />
+                <InstallingContent onComplete={handleInstallationComplete} />
               )}
               {safeStepIndex === STEP.COMPLETE && (
                 <CompleteContent
@@ -1401,25 +1386,11 @@ function ProviderContent({
 
 // ==================== Setup Channel Content ====================
 
-interface SetupChannelContentProps {
-  onChannelConfigured: (channelType: ChannelType) => void;
-}
-
-function renderSetupChannelIcon(type: ChannelType, icon: string) {
-  if (type === 'qqbot') {
-    return (
-      <img
-        src={qqChannelIcon}
-        alt="QQ"
-        className="h-9 w-9 rounded-sm object-contain bg-muted/40 p-0.5"
-      />
-    );
-  }
-
+function renderSetupChannelIcon(_type: ChannelType, icon: string) {
   return <span className="text-3xl">{icon}</span>;
 }
 
-function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) {
+function SetupChannelContent() {
   const { t } = useTranslation(['setup', 'channels']);
   const lawclawAppUrl = 'https://lawclaw-app.jurismind.com';
   const [selectedChannel, setSelectedChannel] = useState<ChannelType | null>(null);
@@ -1435,16 +1406,9 @@ function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const jurismindMarkedRef = useRef(false);
 
   const meta: ChannelMeta | null = selectedChannel ? CHANNEL_META[selectedChannel] : null;
-  const primaryChannels = getPrimaryChannels();
-
-  const markJurismindConfigured = useCallback(() => {
-    if (jurismindMarkedRef.current) return;
-    jurismindMarkedRef.current = true;
-    onChannelConfigured('jurismind');
-  }, [onChannelConfigured]);
+  const primaryChannels = getPrimaryChannels().filter((type) => type !== 'qqbot');
 
   const applyJurismindStatus = useCallback((status: unknown) => {
     const data = status as {
@@ -1462,12 +1426,8 @@ function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) 
     if (typeof data.hasBinding === 'boolean') {
       const configured = data.hasBinding || data.connected === true;
       setJurismindConfigured(configured);
-      if (configured) {
-        markJurismindConfigured();
-      }
     } else if (typeof data.connected === 'boolean' && data.connected) {
       setJurismindConfigured(true);
-      markJurismindConfigured();
     }
     if ('pairUrl' in data) {
       setJurismindPairUrl(typeof data.pairUrl === 'string' ? data.pairUrl : '');
@@ -1478,7 +1438,7 @@ function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) 
     if ('lastError' in data) {
       setJurismindError(typeof data.lastError === 'string' && data.lastError ? data.lastError : null);
     }
-  }, [markJurismindConfigured]);
+  }, []);
 
   const startJurismindPairing = useCallback(async (options: { forceRefresh?: boolean; resetAuth?: boolean } = {}) => {
     const forceRefresh = options.forceRefresh === true;
@@ -1535,7 +1495,6 @@ function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) 
       if (!result?.success) {
         throw new Error(result?.error || 'clear binding failed');
       }
-      jurismindMarkedRef.current = false;
       applyJurismindStatus(result.status);
       setJurismindConnected(false);
       setJurismindConfigured(false);
@@ -1595,7 +1554,6 @@ function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) 
       if (payload?.connected !== false) {
         setJurismindConnected(true);
         setJurismindConfigured(true);
-        markJurismindConfigured();
       }
       setJurismindLoading(false);
       setJurismindError(null);
@@ -1628,7 +1586,7 @@ function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) 
       if (typeof removeStatusListener === 'function') removeStatusListener();
       if (typeof removeErrorListener === 'function') removeErrorListener();
     };
-  }, [applyJurismindStatus, markJurismindConfigured, showJurismindHint, t]);
+  }, [applyJurismindStatus, showJurismindHint, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1718,8 +1676,6 @@ function SetupChannelContent({ onChannelConfigured }: SetupChannelContentProps) 
       await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedChannel, {
         ...configValues,
       });
-      onChannelConfigured(selectedChannel);
-
       const botName = validation.details?.botUsername ? ` (@${validation.details.botUsername})` : '';
       toast.success(`${meta.name} configured${botName}`);
       setSaved(true);
@@ -2075,16 +2031,13 @@ interface SkillInstallState {
 }
 
 interface InstallingContentProps {
-  installQqPlugin: boolean;
   onComplete: (installedSkills: string[]) => void;
 }
 
-function InstallingContent({ installQqPlugin, onComplete }: InstallingContentProps) {
+function InstallingContent({ onComplete }: InstallingContentProps) {
   const { t } = useTranslation('setup');
   const [skillStates, setSkillStates] = useState<SkillInstallState[]>([]);
-  const [qqPluginStatus, setQqPluginStatus] = useState<InstallStatus>(
-    installQqPlugin ? 'pending' : 'completed'
-  );
+  const [feishuPluginStatus, setFeishuPluginStatus] = useState<InstallStatus>('pending');
   const [overallProgress, setOverallProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retrySeed, setRetrySeed] = useState(0);
@@ -2094,7 +2047,6 @@ function InstallingContent({ installQqPlugin, onComplete }: InstallingContentPro
     let cancelled = false;
     let unsubscribeProgress: (() => void) | void;
     const itemNameMap = new Map<string, string>();
-    let qqStatusFinal: InstallStatus = installQqPlugin ? 'pending' : 'completed';
 
     const toInstallStatus = (status: PresetInstallProgressEvent['status']): InstallStatus => {
       if (status === 'failed') return 'failed';
@@ -2108,10 +2060,7 @@ function InstallingContent({ installQqPlugin, onComplete }: InstallingContentPro
         setErrorMessage(null);
         setSkillStates([]);
         setOverallProgress(0);
-        if (installQqPlugin) {
-          setQqPluginStatus('pending');
-          qqStatusFinal = 'pending';
-        }
+        setFeishuPluginStatus('pending');
 
         const presetStatus = await window.electron.ipcRenderer.invoke(
           'presetInstall:getStatus'
@@ -2146,10 +2095,7 @@ function InstallingContent({ installQqPlugin, onComplete }: InstallingContentPro
 
         if (!uvResult.success) {
           setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
-          if (installQqPlugin) {
-            setQqPluginStatus('failed');
-            qqStatusFinal = 'failed';
-          }
+          setFeishuPluginStatus('failed');
           setErrorMessage(uvResult.error || 'Unknown error during installation');
           toast.error('Environment setup failed');
           return;
@@ -2212,10 +2158,7 @@ function InstallingContent({ installQqPlugin, onComplete }: InstallingContentPro
             ...item,
             status: item.status === 'completed' ? item.status : 'failed',
           })));
-          if (installQqPlugin) {
-            setQqPluginStatus('failed');
-            qqStatusFinal = 'failed';
-          }
+          setFeishuPluginStatus('failed');
           setErrorMessage(presetRunResult.error || 'Preset install failed');
           toast.error(t('installing.presetInstallFailed'));
           return;
@@ -2229,50 +2172,31 @@ function InstallingContent({ installQqPlugin, onComplete }: InstallingContentPro
         );
         setOverallProgress(90);
 
-        if (installQqPlugin) {
-          setQqPluginStatus('installing');
-          qqStatusFinal = 'installing';
-          setOverallProgress(95);
-          let shouldRestartGateway = false;
-          const installedCheck = await window.electron.ipcRenderer.invoke(
-            'openclaw:isPluginInstalled',
-            'qqbot'
-          ) as {
-            success?: boolean;
-            installed?: boolean;
-          };
+        setFeishuPluginStatus('installing');
+        setOverallProgress(95);
 
-          if (installedCheck?.success && installedCheck.installed) {
-            setQqPluginStatus('completed');
-            qqStatusFinal = 'completed';
-          } else {
-            const pluginResult = await window.electron.ipcRenderer.invoke(
-              'openclaw:installBundledPlugin',
-              'qqbot'
-            ) as {
-              success?: boolean;
-              skipped?: boolean;
-              reason?: string;
-              error?: string;
-            };
+        const pluginResult = await window.electron.ipcRenderer.invoke(
+          'openclaw:installBundledPlugin',
+          SETUP_BUNDLED_FEISHU_PLUGIN_ID
+        ) as {
+          success?: boolean;
+          skipped?: boolean;
+          reason?: string;
+          error?: string;
+        };
 
-            if (!pluginResult?.success) {
-              setQqPluginStatus('failed');
-              qqStatusFinal = 'failed';
-              setErrorMessage(pluginResult?.error || 'QQ plugin installation failed');
-              toast.error(t('installing.qqInstallFailed'));
-              return;
-            }
+        if (!pluginResult?.success) {
+          setFeishuPluginStatus('failed');
+          setErrorMessage(pluginResult?.error || 'Feishu official plugin installation failed');
+          toast.error(t('installing.feishuInstallFailed'));
+          return;
+        }
 
-            setQqPluginStatus('completed');
-            qqStatusFinal = 'completed';
-            shouldRestartGateway = shouldRestartGatewayAfterQqPluginInstall(false, pluginResult);
-          }
+        setFeishuPluginStatus('completed');
 
-          if (shouldRestartGateway) {
-            // Best effort: restart gateway after actual installation to reload plugin list.
-            await window.electron.ipcRenderer.invoke('gateway:restart').catch(() => {});
-          }
+        if (shouldRestartGatewayAfterBundledPluginInstall(pluginResult)) {
+          // Best effort: restart gateway after actual installation to reload plugin list.
+          await window.electron.ipcRenderer.invoke('gateway:restart').catch(() => {});
         }
 
         if (cancelled) return;
@@ -2281,17 +2205,13 @@ function InstallingContent({ installQqPlugin, onComplete }: InstallingContentPro
         await new Promise((resolve) => setTimeout(resolve, 800));
         if (!cancelled) {
           const installedNames = Array.from(itemNameMap.values());
-          if (installQqPlugin && qqStatusFinal !== 'failed') {
-            installedNames.push(t('installing.qqPluginName'));
-          }
+          installedNames.push(t('installing.feishuPluginName'));
           onComplete(installedNames);
         }
       } catch (err) {
         if (cancelled) return;
         setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
-        if (installQqPlugin) {
-          setQqPluginStatus('failed');
-        }
+        setFeishuPluginStatus('failed');
         setErrorMessage(String(err));
         toast.error('Installation error');
       }
@@ -2305,7 +2225,7 @@ function InstallingContent({ installQqPlugin, onComplete }: InstallingContentPro
         unsubscribeProgress();
       }
     };
-  }, [onComplete, installQqPlugin, retrySeed, t]);
+  }, [onComplete, retrySeed, t]);
 
   const getStatusIcon = (status: InstallStatus) => {
     switch (status) {
@@ -2333,17 +2253,15 @@ function InstallingContent({ installQqPlugin, onComplete }: InstallingContentPro
     }
   };
 
-  const installItems: SkillInstallState[] = installQqPlugin
-    ? [
-      ...skillStates,
-      {
-        id: 'qq-plugin',
-        name: t('installing.qqPluginName'),
-        description: t('installing.qqPluginDesc'),
-        status: qqPluginStatus,
-      },
-    ]
-    : skillStates;
+  const installItems: SkillInstallState[] = [
+    ...skillStates,
+    {
+      id: 'feishu-plugin',
+      name: t('installing.feishuPluginName'),
+      description: t('installing.feishuPluginDesc'),
+      status: feishuPluginStatus,
+    },
+  ];
 
   return (
     <div className="space-y-6">

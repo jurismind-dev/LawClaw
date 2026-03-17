@@ -9,6 +9,8 @@
         "creativeTasks": "Creative Tasks",
         "creativeTasksDesc": "Writing, brainstorming, ideas"
     },
+    "inputPlaceholder": "Import a contract or case file into the workspace to begin.",
+    "inputDisabledPlaceholder": "Gateway not connected...",
     "noLogs": "(No logs available yet)",
     "toolbar": {
         "newSession": "New session",

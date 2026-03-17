@@ -9,6 +9,8 @@
         "creativeTasks": "クリエイティブタスク",
         "creativeTasksDesc": "ライティング、ブレスト、アイデア"
     },
+    "inputPlaceholder": "契約書や案件資料をワークスペースに取り込むと、すぐに処理を開始できます。",
+    "inputDisabledPlaceholder": "ゲートウェイ未接続...",
     "noLogs": "（ログはまだありません）",
     "toolbar": {
         "newSession": "新しいセッション",

@@ -113,12 +113,11 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     set({ isInitialized: true });
 
     // Apply persisted settings from the settings store
-    const { autoCheckUpdate, autoDownloadUpdate } = useSettingsStore.getState();
+    const { autoCheckUpdate, autoDownloadUpdate, updateChannel } = useSettingsStore.getState();
 
-    // Sync auto-download preference to the main process
-    if (autoDownloadUpdate) {
-      window.electron.ipcRenderer.invoke('update:setAutoDownload', true).catch(() => {});
-    }
+    // Sync persisted updater preferences to the main process before any startup check runs.
+    window.electron.ipcRenderer.invoke('update:setChannel', updateChannel).catch(() => {});
+    window.electron.ipcRenderer.invoke('update:setAutoDownload', autoDownloadUpdate).catch(() => {});
 
     // Auto-check for updates on startup (respects user toggle)
     if (autoCheckUpdate) {

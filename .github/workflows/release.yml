@@ -285,13 +285,11 @@ jobs:
             export APPLE_ID="${MAC_APPLE_ID}"
             export APPLE_APP_SPECIFIC_PASSWORD="${MAC_APPLE_APP_SPECIFIC_PASSWORD}"
             export APPLE_TEAM_ID="${MAC_APPLE_TEAM_ID}"
-            retry_cmd 3 pnpm exec electron-builder --mac --x64 --publish never
-            retry_cmd 3 pnpm exec electron-builder --mac --arm64 --publish never
+            retry_cmd 3 pnpm exec electron-builder --mac --x64 --arm64 --publish never
           else
             echo "Mac signing secrets are missing. Building unsigned artifacts."
             unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID CSC_NAME
-            retry_cmd 3 pnpm exec electron-builder --config electron-builder.nosign.yml --mac --x64 --publish never
-            retry_cmd 3 pnpm exec electron-builder --config electron-builder.nosign.yml --mac --arm64 --publish never
+            retry_cmd 3 pnpm exec electron-builder --config electron-builder.nosign.yml --mac --x64 --arm64 --publish never
           fi
 
       - name: Build Windows packages (x64 + arm64)
@@ -328,8 +326,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm run bundle:preset-artifacts:offline
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Invoke-WithRetry { pnpm exec electron-builder --win --x64 --publish never }
-          Invoke-WithRetry { pnpm exec electron-builder --win --arm64 --publish never }
+          Invoke-WithRetry { pnpm exec electron-builder --win --x64 --arm64 --publish never }
 
       - name: Validate artifact file names include release tag version
         shell: bash
@@ -344,14 +341,14 @@ jobs:
           const releaseDir = path.join(process.cwd(), 'release');
           const releaseVersion = process.env.RELEASE_VERSION;
           const targetPlatform = process.env.TARGET_PLATFORM;
-          const ext = targetPlatform === 'mac' ? '.dmg' : '.exe';
+          const exts = targetPlatform === 'mac' ? ['.dmg', '.zip'] : ['.exe'];
 
           const files = fs.existsSync(releaseDir)
-            ? fs.readdirSync(releaseDir).filter((name) => name.endsWith(ext))
+            ? fs.readdirSync(releaseDir).filter((name) => exts.some((ext) => name.endsWith(ext)))
             : [];
 
           if (files.length === 0) {
-            throw new Error(`No ${ext} artifacts found in ${releaseDir}`);
+            throw new Error(`No ${exts.join(', ')} artifacts found in ${releaseDir}`);
           }
 
           const invalid = files.filter((name) => !name.includes(`-${releaseVersion}-`));
@@ -372,7 +369,10 @@ jobs:
           retention-days: 7
           path: |
             release/*.dmg
+            release/*.zip
             release/*.exe
+            release/*.yml
+            release/*.blockmap
             !release/builder-debug.yml
             !release/builder-effective-config.yaml
 
@@ -452,8 +452,16 @@ jobs:
 
           require_pattern "*-mac-arm64.dmg" "macOS Apple Silicon installer"
           require_pattern "*-mac-x64.dmg" "macOS Intel installer"
+          require_pattern "*-mac-arm64.zip" "macOS Apple Silicon updater zip"
+          require_pattern "*-mac-x64.zip" "macOS Intel updater zip"
+          require_pattern "*-mac-arm64.zip.blockmap" "macOS Apple Silicon blockmap"
+          require_pattern "*-mac-x64.zip.blockmap" "macOS Intel blockmap"
           require_pattern "*-win-arm64.exe" "Windows ARM64 installer"
           require_pattern "*-win-x64.exe" "Windows x64 installer"
+          require_pattern "*-win-arm64.exe.blockmap" "Windows ARM64 blockmap"
+          require_pattern "*-win-x64.exe.blockmap" "Windows x64 blockmap"
+          require_pattern "latest-mac.yml" "macOS update metadata"
+          require_pattern "latest.yml" "Windows update metadata"
 
       - name: Upload release artifacts to OSS
         shell: bash
@@ -523,6 +531,20 @@ jobs:
             dedup[name] = (artifact, file_hash)
 
           no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+          release_meta_headers = {
+            "x-oss-meta-version": release_version,
+            "x-oss-meta-release-tag": release_tag,
+            "x-oss-meta-release-date": release_date_iso,
+          }
+
+          def is_oss_release_payload(name: str) -> bool:
+            return (
+              name.endswith(".dmg")
+              or name.endswith(".zip")
+              or name.endswith(".exe")
+              or name.endswith(".blockmap")
+              or name.endswith(".yml")
+            )
 
           def latest_alias(name: str) -> str | None:
             if name.endswith("-mac-arm64.dmg"):
@@ -554,6 +576,14 @@ jobs:
               "Missing required latest artifacts after mapping: " + ", ".join(missing_aliases)
             )
 
+          versioned_payloads = [
+            (name, dedup[name][0])
+            for name in sorted(dedup)
+            if is_oss_release_payload(name)
+          ]
+          if not versioned_payloads:
+            raise SystemExit("No updater payload files resolved for OSS upload.")
+
           # Keep OSS channel directory clean: only latest build artifacts remain.
           channel_prefix = f"{release_channel}/"
           stale_keys = [obj.key for obj in oss2.ObjectIterator(bucket, prefix=channel_prefix)]
@@ -568,13 +598,25 @@ jobs:
             bucket.delete_object(key)
             print(f"Deleted legacy object oss://{bucket_name}/{key}")
 
+          for name, artifact in versioned_payloads:
+            headers = {}
+            if name.endswith(".yml"):
+              headers.update(no_cache_headers)
+            if name.endswith((".dmg", ".zip", ".exe")):
+              headers.update(release_meta_headers)
+            object_key = f"{release_channel}/{name}"
+            result = bucket.put_object_from_file(object_key, str(artifact), headers=headers)
+            if result.status not in (200, 201):
+              raise SystemExit(
+                f"Upload failed for oss://{bucket_name}/{object_key}, status={result.status}"
+              )
+            print(f"Uploaded updater payload {artifact} -> oss://{bucket_name}/{object_key}")
+
           for alias_name in required_aliases:
             artifact = alias_sources[alias_name]
             alias_headers = {
               **no_cache_headers,
-              "x-oss-meta-version": release_version,
-              "x-oss-meta-release-tag": release_tag,
-              "x-oss-meta-release-date": release_date_iso,
+              **release_meta_headers,
             }
             alias_key = f"{release_channel}/{alias_name}"
             alias_result = bucket.put_object_from_file(alias_key, str(artifact), headers=alias_headers)

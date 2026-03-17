@@ -10,6 +10,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useTranslation } from 'react-i18next';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 // ── Component ────────────────────────────────────────────────────
 
 export function ChatInput({ onSend, onStop, disabled = false, sending = false }: ChatInputProps) {
+  const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -361,7 +363,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 isComposingRef.current = false;
               }}
               onPaste={handlePaste}
-              placeholder={disabled ? 'Gateway not connected...' : 'Message (Enter to send, Shift+Enter for new line)'}
+              placeholder={disabled ? t('inputDisabledPlaceholder') : t('inputPlaceholder')}
               disabled={disabled}
               className="min-h-[44px] max-h-[200px] resize-none pr-4"
               rows={1}

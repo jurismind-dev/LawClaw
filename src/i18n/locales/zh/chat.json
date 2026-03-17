@@ -2,13 +2,15 @@
     "gatewayNotRunning": "网关未运行",
     "gatewayRequired": "OpenClaw 网关需要运行才能使用聊天。它将自动启动，或者您可以从设置中启动。",
     "welcome": {
-        "title": "LawClaw 聊天",
-        "subtitle": "您的 AI 助手已就绪。在下方开始对话。",
-        "askQuestions": "提问",
-        "askQuestionsDesc": "获取任何话题的答案",
-        "creativeTasks": "创意任务",
-        "creativeTasksDesc": "写作、头脑风暴、创意"
+        "title": "劳有钳",
+        "subtitle": "你的 AI 法律助手，随时待命。",
+        "askQuestions": "专业研判",
+        "askQuestionsDesc": "法条检索、案情分析、风险评估…",
+        "creativeTasks": "实务处理",
+        "creativeTasksDesc": "合同起草与审查、法律意见书、函件、脱敏翻译…"
     },
+    "inputPlaceholder": "将合同或案件材料导入工作区，即可开始处理",
+    "inputDisabledPlaceholder": "网关未连接...",
     "noLogs": "（暂无日志）",
     "toolbar": {
         "newSession": "新会话",

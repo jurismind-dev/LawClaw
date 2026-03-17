@@ -43,6 +43,11 @@ import {
 // set `"disable-hardware-acceleration": false` in the app config (future).
 app.disableHardwareAcceleration();
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
 // Check for force-setup mode via command line argument or environment variable
 const forceSetup = process.argv.includes('--force-setup') || process.env.FORCE_SETUP === 'true';
 const forceLawclawAgentPreset =
@@ -61,6 +66,19 @@ const jurismindHubService = new ClawHubService({
   siteUrl: JURISMINDHUB_SITE_URL,
   registryUrl: JURISMINDHUB_REGISTRY_URL,
 });
+
+function focusMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
+}
 
 /**
  * Resolve the icons directory path (works in both dev and packaged mode)
@@ -220,21 +238,27 @@ async function initialize(): Promise<void> {
 }
 
 // Application lifecycle
-app.whenReady().then(() => {
-  initialize();
-
-  // Register activate handler AFTER app is ready to prevent
-  // "Cannot create BrowserWindow before app is ready" on macOS.
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createWindow();
-    } else if (mainWindow && !mainWindow.isDestroyed()) {
-      // On macOS, clicking the dock icon should show the window if it's hidden
-      mainWindow.show();
-      mainWindow.focus();
-    }
+if (gotSingleInstanceLock) {
+  app.on('second-instance', () => {
+    logger.info('Detected a second LawClaw instance launch; focusing the existing window');
+    focusMainWindow();
   });
-});
+
+  app.whenReady().then(() => {
+    void initialize();
+
+    // Register activate handler AFTER app is ready to prevent
+    // "Cannot create BrowserWindow before app is ready" on macOS.
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        mainWindow = createWindow();
+      } else {
+        // On macOS, clicking the dock icon should show the window if it's hidden
+        focusMainWindow();
+      }
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

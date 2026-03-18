@@ -416,7 +416,7 @@ describe('jurismind web search sync', () => {
     openclawAuthMock.getOpenClawAgentModelPrimary.mockReturnValue(undefined);
   });
 
-  it('syncs built-in doubao web search config when saving a jurismind provider with key', async () => {
+  it('syncs Jurismind doubao web search config when saving a jurismind provider with key', async () => {
     secureStorageMock.saveProvider.mockResolvedValue(undefined);
     secureStorageMock.storeApiKey.mockResolvedValue(undefined);
 
@@ -469,7 +469,7 @@ describe('jurismind web search sync', () => {
     expect(openclawAuthMock.syncJurismindWebSearchConfig).toHaveBeenCalledWith('sk-jurismind');
   });
 
-  it('clears built-in doubao web search config when deleting a jurismind key', async () => {
+  it('clears Jurismind doubao web search config when deleting a jurismind key', async () => {
     secureStorageMock.getDefaultProvider.mockResolvedValue(null);
     secureStorageMock.deleteApiKey.mockResolvedValue(true);
     secureStorageMock.getProvider.mockResolvedValue({

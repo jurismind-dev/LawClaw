@@ -1,5 +1,5 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -12,6 +12,15 @@ function createPackageFixture(rootDir: string, packageJson: object) {
   mkdirSync(packageDir, { recursive: true });
   writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8');
   return packageDir;
+}
+
+function findDistFile(prefix: string): string {
+  const distDir = join(process.cwd(), 'node_modules', 'openclaw', 'dist');
+  const match = readdirSync(distDir).find((name) => name.startsWith(prefix));
+  if (!match) {
+    throw new Error(`Missing OpenClaw dist file with prefix ${prefix}`);
+  }
+  return join(distDir, match);
 }
 
 describe('openclaw bundle compatibility patches', () => {
@@ -83,5 +92,51 @@ describe('openclaw bundle compatibility patches', () => {
 
     expect(patchedPackages).toEqual([]);
     expect(readFileSync(packageJsonPath, 'utf8')).toBe(before);
+  });
+
+  it('patches OpenClaw runtime chunks to add native doubao web_search support', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-runtime-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const distDir = join(openclawDir, 'dist');
+    mkdirSync(join(distDir, 'plugin-sdk'), { recursive: true });
+
+    const authProfilesSource = findDistFile('auth-profiles-');
+    const onboardSearchSource = findDistFile('onboard-search-');
+    const threadBindingsSource = join(
+      process.cwd(),
+      'node_modules',
+      'openclaw',
+      'dist',
+      'plugin-sdk',
+      'thread-bindings-SYAnWHuW.js'
+    );
+
+    cpSync(authProfilesSource, join(distDir, basename(authProfilesSource)));
+    cpSync(onboardSearchSource, join(distDir, basename(onboardSearchSource)));
+    cpSync(threadBindingsSource, join(distDir, 'plugin-sdk', 'thread-bindings-SYAnWHuW.js'));
+
+    const { patchOpenClawWebSearchRuntime } = await loadCompatTools();
+    const patchedFiles = patchOpenClawWebSearchRuntime(openclawDir);
+    expect(Array.isArray(patchedFiles)).toBe(true);
+
+    const patchedAuthProfiles = readFileSync(
+      join(distDir, basename(authProfilesSource)),
+      'utf8'
+    );
+    expect(patchedAuthProfiles).toContain('DEFAULT_DOUBAO_BASE_URL');
+    expect(patchedAuthProfiles).toContain('"tools.web.search.doubao.apiKey"');
+    expect(patchedAuthProfiles).toContain('provider === "doubao"');
+    expect(patchedAuthProfiles).toContain('/responses');
+
+    const patchedOnboardSearch = readFileSync(
+      join(distDir, basename(onboardSearchSource)),
+      'utf8'
+    );
+    expect(patchedOnboardSearch).toContain('label: "Doubao Search"');
+    expect(patchedOnboardSearch).toContain('case "doubao": return search?.doubao?.apiKey;');
+
+    expect(patchOpenClawWebSearchRuntime(openclawDir)).toEqual([]);
   });
 });

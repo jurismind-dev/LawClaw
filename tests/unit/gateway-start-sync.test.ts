@@ -5,6 +5,7 @@ const runtimeMocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   syncGatewayTokenToConfig: vi.fn(),
   syncBrowserConfigToOpenClaw: vi.fn(),
+  syncJurismindWebSearchConfig: vi.fn(),
 }));
 
 const secureStorageMocks = vi.hoisted(() => ({
@@ -87,6 +88,7 @@ vi.mock('@electron/utils/provider-registry', () => ({
 vi.mock('@electron/utils/openclaw-auth', () => ({
   syncGatewayTokenToConfig: runtimeMocks.syncGatewayTokenToConfig,
   syncBrowserConfigToOpenClaw: runtimeMocks.syncBrowserConfigToOpenClaw,
+  syncJurismindWebSearchConfig: runtimeMocks.syncJurismindWebSearchConfig,
 }));
 
 vi.mock('@electron/gateway/protocol', () => ({
@@ -168,6 +170,7 @@ describe('gateway start pre-sync', () => {
     runtimeMocks.spawn.mockImplementation(() => createFakeChildProcess());
     runtimeMocks.syncGatewayTokenToConfig.mockResolvedValue(undefined);
     runtimeMocks.syncBrowserConfigToOpenClaw.mockResolvedValue(undefined);
+    runtimeMocks.syncJurismindWebSearchConfig.mockImplementation(() => undefined);
     secureStorageMocks.getApiKey.mockResolvedValue(null);
     secureStorageMocks.getDefaultProvider.mockResolvedValue(undefined);
     secureStorageMocks.getProvider.mockResolvedValue(null);
@@ -217,13 +220,16 @@ describe('gateway start pre-sync', () => {
 
     const firstSpawnOptions = runtimeMocks.spawn.mock.calls[0][2] as { env: Record<string, string> };
     expect(firstSpawnOptions.env.JURISMIND_API_KEY).toBe('jm-live-key');
+    expect(runtimeMocks.syncJurismindWebSearchConfig).toHaveBeenCalledWith('jm-live-key');
 
     runtimeMocks.spawn.mockClear();
+    runtimeMocks.syncJurismindWebSearchConfig.mockClear();
     secureStorageMocks.getApiKey.mockResolvedValue(null);
 
     await (manager as unknown as { startProcess: () => Promise<void> }).startProcess();
 
     const secondSpawnOptions = runtimeMocks.spawn.mock.calls[0][2] as { env: Record<string, string> };
     expect(secondSpawnOptions.env.JURISMIND_API_KEY).toBe('__CLAWX_PLACEHOLDER_JURISMIND_API_KEY__');
+    expect(runtimeMocks.syncJurismindWebSearchConfig).not.toHaveBeenCalled();
   });
 });

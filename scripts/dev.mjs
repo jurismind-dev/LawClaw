@@ -4,6 +4,20 @@
  * Unsets ELECTRON_RUN_AS_NODE to ensure Electron runs as GUI app
  */
 import { spawn } from 'child_process';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const require = createRequire(import.meta.url);
+const { patchOpenClawWebSearchRuntime } = require('./openclaw-bundle-compat.cjs');
+
+const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const openclawDir = path.join(projectRoot, 'node_modules', 'openclaw');
+const patchedRuntimeFiles = patchOpenClawWebSearchRuntime(openclawDir);
+
+if (patchedRuntimeFiles.length > 0) {
+  console.log(`[dev] Patched OpenClaw doubao web_search runtime: ${patchedRuntimeFiles.join(', ')}`);
+}
 
 const env = {
   ...process.env,

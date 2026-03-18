@@ -21,7 +21,11 @@ import {
 import { getSetting } from '../utils/store';
 import { getAllProviders, getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
-import { syncBrowserConfigToOpenClaw, syncGatewayTokenToConfig } from '../utils/openclaw-auth';
+import {
+  syncBrowserConfigToOpenClaw,
+  syncGatewayTokenToConfig,
+  syncJurismindWebSearchConfig,
+} from '../utils/openclaw-auth';
 import { applyProviderEnvFallbacks } from './provider-env';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
@@ -896,6 +900,15 @@ export class GatewayManager extends EventEmitter {
     });
     if (fallbackCount > 0) {
       logger.debug(`Injected ${fallbackCount} provider env placeholder(s) for Gateway startup`);
+    }
+
+    try {
+      const jurismindApiKey = resolvedProviderEnv.JURISMIND_API_KEY?.trim();
+      if (jurismindApiKey && !jurismindApiKey.startsWith('__CLAWX_PLACEHOLDER_')) {
+        syncJurismindWebSearchConfig(jurismindApiKey);
+      }
+    } catch (err) {
+      logger.warn('Failed to sync Jurismind doubao web search config to openclaw.json:', err);
     }
 
     const uvEnv = await getUvMirrorEnv();

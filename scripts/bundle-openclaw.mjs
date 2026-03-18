@@ -20,7 +20,7 @@ import 'zx/globals';
 import { spawnSync } from 'node:child_process';
 import compatTools from './openclaw-bundle-compat.cjs';
 
-const { patchOpenClawBundleCompat } = compatTools;
+const { patchOpenClawBundleCompat, patchOpenClawWebSearchRuntime } = compatTools;
 
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
@@ -135,6 +135,11 @@ fs.mkdirSync(OUTPUT, { recursive: true });
 // 3. Copy openclaw package itself to OUTPUT root
 echo`   Copying openclaw package...`;
 fs.cpSync(openclawReal, OUTPUT, { recursive: true, dereference: true });
+
+const patchedRuntimeFiles = patchOpenClawWebSearchRuntime(OUTPUT);
+if (patchedRuntimeFiles.length > 0) {
+  echo`   Patched OpenClaw doubao web_search runtime: ${patchedRuntimeFiles.join(', ')}`;
+}
 
 // 4. Recursively collect ALL transitive dependencies via pnpm virtual store BFS
 //

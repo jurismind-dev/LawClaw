@@ -199,6 +199,33 @@ function cleanupUnnecessaryFiles(dir) {
   return removedCount;
 }
 
+function removeBundledPluginNodeBins(resourcesPayloadDir) {
+  const pluginsRoot = join(resourcesPayloadDir, 'plugins');
+  if (!existsSync(pluginsRoot)) return 0;
+
+  let removed = 0;
+  let entries;
+  try {
+    entries = readdirSync(pluginsRoot, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const binDir = join(pluginsRoot, entry.name, 'node_modules', '.bin');
+    if (!existsSync(normWin(binDir))) continue;
+    try {
+      rmSync(normWin(binDir), { recursive: true, force: true });
+      removed++;
+    } catch (error) {
+      console.warn(`[after-pack] Failed to remove bundled plugin node_modules/.bin at ${binDir}: ${error.message}`);
+    }
+  }
+
+  return removed;
+}
+
 // ── Platform-specific: koffi ─────────────────────────────────────────────────
 // koffi ships 18 platform pre-builds under koffi/build/koffi/{platform}_{arch}/.
 // We only need the one matching the target.
@@ -452,6 +479,12 @@ exports.default = async function afterPack(context) {
   console.log('[after-pack] 🧹 Cleaning up unnecessary files ...');
   const removedRoot = cleanupUnnecessaryFiles(openclawRoot);
   console.log(`[after-pack] ✅ Removed ${removedRoot} unnecessary files/directories.`);
+
+  const bundledResourcesRoot = join(resourcesDir, 'resources');
+  const removedPluginBins = removeBundledPluginNodeBins(bundledResourcesRoot);
+  if (removedPluginBins > 0) {
+    console.log(`[after-pack] ✅ Removed ${removedPluginBins} bundled plugin node_modules/.bin directories.`);
+  }
 
   // 3. Platform-specific: strip koffi non-target platform binaries
   const koffiRemoved = cleanupKoffi(dest, platform, arch);

@@ -21,6 +21,8 @@ extraResources:
       - "!icons/*.md"
       - "!icons/*.svg"
       - "!bin/**"
+      - "!plugins/**/node_modules/.bin"
+      - "!plugins/**/node_modules/.bin/**"
       - "!screenshot/**"
   # OpenClaw package (node_modules copied separately by afterPack hook
   # because electron-builder respects .gitignore which excludes node_modules/)

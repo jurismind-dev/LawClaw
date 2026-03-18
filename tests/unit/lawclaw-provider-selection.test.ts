@@ -14,6 +14,7 @@ const openclawAuthMock = vi.hoisted(() => ({
   setOpenClawAgentModelWithOverride: vi.fn(),
   clearOpenClawAgentModelPrimary: vi.fn(),
   saveProviderKeyToOpenClaw: vi.fn(),
+  syncJurismindWebSearchConfig: vi.fn(),
   getOAuthTokenFromOpenClaw: vi.fn(),
   getOpenClawAgentModelPrimary: vi.fn(),
 }));
@@ -145,6 +146,7 @@ describe('lawclaw provider selection helpers', () => {
       createdAt: '2026-03-01T00:00:00.000Z',
       updatedAt: '2026-03-01T00:00:00.000Z',
     });
+    secureStorageMock.getApiKey.mockResolvedValue('sk-jurismind');
     openclawAuthMock.getOpenClawAgentModelPrimary.mockReturnValue('jurismind/kimi-k2.5');
 
     const mod = await import('@electron/utils/lawclaw-provider-selection');
@@ -156,6 +158,7 @@ describe('lawclaw provider selection helpers', () => {
       'jurismind',
       undefined
     );
+    expect(openclawAuthMock.syncJurismindWebSearchConfig).toHaveBeenCalledWith('sk-jurismind');
   });
 
   it('keeps a user-customized model when default provider refresh uses if-managed', async () => {
@@ -190,6 +193,7 @@ describe('lawclaw provider selection helpers', () => {
   });
 
   it('checks OAuth availability on lawclaw-main first and falls back to main', async () => {
+    secureStorageMock.getApiKey.mockResolvedValue(null);
     openclawAuthMock.getOAuthTokenFromOpenClaw
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce('oauth-token');

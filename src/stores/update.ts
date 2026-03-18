@@ -34,6 +34,7 @@ interface UpdateState {
   updateInfo: UpdateInfo | null;
   progress: ProgressInfo | null;
   error: string | null;
+  manualInstall: boolean;
   isInitialized: boolean;
   /** Seconds remaining before auto-install, or null if inactive. */
   autoInstallCountdown: number | null;
@@ -55,6 +56,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   updateInfo: null,
   progress: null,
   error: null,
+  manualInstall: false,
   isInitialized: false,
   autoInstallCountdown: null,
 
@@ -76,12 +78,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         info?: UpdateInfo;
         progress?: ProgressInfo;
         error?: string;
+        manualInstall?: boolean;
       };
       set({
         status: status.status,
         updateInfo: status.info || null,
         progress: status.progress || null,
         error: status.error || null,
+        manualInstall: status.manualInstall === true,
       });
     } catch (error) {
       console.error('Failed to get update status:', error);
@@ -96,12 +100,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         info?: UpdateInfo;
         progress?: ProgressInfo;
         error?: string;
+        manualInstall?: boolean;
       };
       set({
         status: status.status,
         updateInfo: status.info || null,
         progress: status.progress || null,
         error: status.error || null,
+        manualInstall: status.manualInstall === true,
       });
     });
 

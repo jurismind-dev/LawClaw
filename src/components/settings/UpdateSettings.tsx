@@ -25,6 +25,7 @@ export function UpdateSettings() {
     updateInfo,
     progress,
     error,
+    manualInstall,
     isInitialized,
     autoInstallCountdown,
     init,
@@ -73,6 +74,9 @@ export function UpdateSettings() {
       case 'available':
         return t('updates.status.available', { version: updateInfo?.version });
       case 'downloaded':
+        if (manualInstall) {
+          return t('updates.status.downloadedManual', { version: updateInfo?.version });
+        }
         return t('updates.status.downloaded', { version: updateInfo?.version });
       case 'error':
         return error || t('updates.status.failed');
@@ -103,10 +107,18 @@ export function UpdateSettings() {
         return (
           <Button onClick={downloadUpdate} size="sm">
             <Download className="h-4 w-4 mr-2" />
-            {t('updates.action.download')}
+            {t(manualInstall ? 'updates.action.installManual' : 'updates.action.download')}
           </Button>
         );
       case 'downloaded':
+        if (manualInstall) {
+          return (
+            <Button onClick={installUpdate} size="sm" variant="default">
+              <Rocket className="h-4 w-4 mr-2" />
+              {t('updates.action.reopenManual')}
+            </Button>
+          );
+        }
         if (autoInstallCountdown != null && autoInstallCountdown >= 0) {
           return (
             <Button onClick={cancelAutoInstall} size="sm" variant="outline">
@@ -210,7 +222,7 @@ export function UpdateSettings() {
 
       {/* Help Text */}
       <p className="text-xs text-muted-foreground">
-        {t('updates.help')}
+        {t(manualInstall ? 'updates.helpManual' : 'updates.help')}
       </p>
     </div>
   );

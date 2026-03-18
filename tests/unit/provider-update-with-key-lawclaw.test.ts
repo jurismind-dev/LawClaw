@@ -18,6 +18,7 @@ const secureStorageMock = vi.hoisted(() => ({
 }));
 
 const openclawAuthMock = vi.hoisted(() => ({
+  clearJurismindWebSearchConfig: vi.fn(),
   saveProviderKeyToOpenClaw: vi.fn(),
   removeProviderKeyFromOpenClaw: vi.fn(),
   removeProviderFromOpenClaw: vi.fn(),
@@ -25,6 +26,7 @@ const openclawAuthMock = vi.hoisted(() => ({
   setOpenClawDefaultModelWithOverride: vi.fn(),
   setOpenClawAgentModel: vi.fn(),
   setOpenClawAgentModelWithOverride: vi.fn(),
+  syncJurismindWebSearchConfig: vi.fn(),
   syncProviderConfigToOpenClaw: vi.fn(),
   updateAgentModelProvider: vi.fn(),
   clearOpenClawAgentModelPrimary: vi.fn(),
@@ -404,6 +406,117 @@ describe('provider:validateKey resolves baseUrl for built-in providers', () => {
       'sk-live',
       { baseUrl: 'http://101.132.245.215:3001/v1' }
     );
+  });
+});
+
+describe('jurismind web search sync', () => {
+  beforeEach(() => {
+    registeredHandlers.clear();
+    vi.clearAllMocks();
+    openclawAuthMock.getOpenClawAgentModelPrimary.mockReturnValue(undefined);
+  });
+
+  it('syncs built-in doubao web search config when saving a jurismind provider with key', async () => {
+    secureStorageMock.saveProvider.mockResolvedValue(undefined);
+    secureStorageMock.storeApiKey.mockResolvedValue(undefined);
+
+    const { registerIpcHandlers } = await import('@electron/main/ipc-handlers');
+
+    const gatewayManager = {
+      on: vi.fn(),
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      restart: vi.fn(async () => undefined),
+      debouncedRestart: vi.fn(),
+      getStatus: vi.fn(() => ({ state: 'running', port: 3456 })),
+      rpc: vi.fn(async () => ({})),
+      isConnected: vi.fn(() => true),
+      getControlUiInfo: vi.fn(() => ({ success: false })),
+      setAutoStart: vi.fn(async () => undefined),
+    };
+    const mainWindow = { webContents: { send: vi.fn() } };
+    const marketService = {
+      search: vi.fn(async () => []),
+      install: vi.fn(async () => undefined),
+      uninstall: vi.fn(async () => undefined),
+      listInstalled: vi.fn(async () => []),
+      openSkillReadme: vi.fn(async () => undefined),
+      openSkillPage: vi.fn(async () => undefined),
+    };
+
+    registerIpcHandlers(
+      gatewayManager as never,
+      marketService as never,
+      marketService as never,
+      mainWindow as never
+    );
+
+    const handler = registeredHandlers.get('provider:save');
+    const result = await handler?.(
+      {},
+      {
+        id: 'jurismind',
+        name: 'Jurismind',
+        type: 'jurismind',
+        enabled: true,
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-01T00:00:00.000Z',
+      },
+      'sk-jurismind'
+    ) as { success: boolean; error?: string };
+
+    expect(result.success).toBe(true);
+    expect(openclawAuthMock.syncJurismindWebSearchConfig).toHaveBeenCalledWith('sk-jurismind');
+  });
+
+  it('clears built-in doubao web search config when deleting a jurismind key', async () => {
+    secureStorageMock.getDefaultProvider.mockResolvedValue(null);
+    secureStorageMock.deleteApiKey.mockResolvedValue(true);
+    secureStorageMock.getProvider.mockResolvedValue({
+      id: 'jurismind',
+      name: 'Jurismind',
+      type: 'jurismind',
+      enabled: true,
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+
+    const { registerIpcHandlers } = await import('@electron/main/ipc-handlers');
+
+    const gatewayManager = {
+      on: vi.fn(),
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      restart: vi.fn(async () => undefined),
+      debouncedRestart: vi.fn(),
+      getStatus: vi.fn(() => ({ state: 'running', port: 3456 })),
+      rpc: vi.fn(async () => ({})),
+      isConnected: vi.fn(() => true),
+      getControlUiInfo: vi.fn(() => ({ success: false })),
+      setAutoStart: vi.fn(async () => undefined),
+    };
+    const mainWindow = { webContents: { send: vi.fn() } };
+    const marketService = {
+      search: vi.fn(async () => []),
+      install: vi.fn(async () => undefined),
+      uninstall: vi.fn(async () => undefined),
+      listInstalled: vi.fn(async () => []),
+      openSkillReadme: vi.fn(async () => undefined),
+      openSkillPage: vi.fn(async () => undefined),
+    };
+
+    registerIpcHandlers(
+      gatewayManager as never,
+      marketService as never,
+      marketService as never,
+      mainWindow as never
+    );
+
+    const handler = registeredHandlers.get('provider:deleteApiKey');
+    const result = await handler?.({}, 'jurismind') as { success: boolean; error?: string };
+
+    expect(result.success).toBe(true);
+    expect(openclawAuthMock.clearJurismindWebSearchConfig).toHaveBeenCalledTimes(1);
   });
 });
 

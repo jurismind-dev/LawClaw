@@ -33,9 +33,11 @@ import {
 import { applyBundledNpmToCliEnv, getNodeExecForCli, getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { getSetting, setSetting } from '../utils/store';
 import {
+  clearJurismindWebSearchConfig,
   saveProviderKeyToOpenClaw,
   removeProviderKeyFromOpenClaw,
   removeProviderFromOpenClaw,
+  syncJurismindWebSearchConfig,
   syncProviderConfigToOpenClaw,
   updateAgentModelProvider,
 } from '../utils/openclaw-auth';
@@ -1938,6 +1940,14 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           } catch (err) {
             console.warn('Failed to save key to OpenClaw auth-profiles:', err);
           }
+
+          if (config.type === 'jurismind') {
+            try {
+              syncJurismindWebSearchConfig(trimmedKey);
+            } catch (err) {
+              console.warn('Failed to sync Jurismind web search config:', err);
+            }
+          }
         }
       }
 
@@ -1997,6 +2007,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const ock = getOpenClawProviderKey(existing.type, providerId);
           await removeProviderFromOpenClaw(ock);
 
+          if (existing.type === 'jurismind') {
+            clearJurismindWebSearchConfig();
+          }
+
           // Debounced restart so the gateway stops loading the deleted provider.
           logger.info(`Scheduling Gateway restart after deleting provider "${ock}"`);
           gatewayManager.debouncedRestart();
@@ -2043,6 +2057,14 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         console.warn('Failed to save key to OpenClaw auth-profiles:', err);
       }
 
+      if (providerType === 'jurismind') {
+        try {
+          syncJurismindWebSearchConfig(apiKey);
+        } catch (err) {
+          console.warn('Failed to sync Jurismind web search config:', err);
+        }
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -2082,10 +2104,22 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           if (trimmedKey) {
             await storeApiKey(providerId, trimmedKey);
             saveProviderKeyToOpenClawAgents(ock, trimmedKey);
+
+            if (nextConfig.type === 'jurismind') {
+              syncJurismindWebSearchConfig(trimmedKey);
+            }
           } else {
             await deleteApiKey(providerId);
             removeProviderKeyFromOpenClawAgents(ock);
+
+            if (nextConfig.type === 'jurismind') {
+              clearJurismindWebSearchConfig();
+            }
           }
+        }
+
+        if (existing.type === 'jurismind' && nextConfig.type !== 'jurismind') {
+          clearJurismindWebSearchConfig();
         }
 
         // Sync the provider configuration to openclaw.json so Gateway knows about it
@@ -2186,6 +2220,14 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         removeProviderKeyFromOpenClawAgents(ock);
       } catch (err) {
         console.warn('Failed to completely remove provider from OpenClaw:', err);
+      }
+
+      if (providerType === 'jurismind') {
+        try {
+          clearJurismindWebSearchConfig();
+        } catch (err) {
+          console.warn('Failed to clear Jurismind web search config:', err);
+        }
       }
 
       if (defaultProviderId === providerId && provider) {

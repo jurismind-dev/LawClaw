@@ -16,6 +16,8 @@ import {
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
+const JURISMIND_WEB_SEARCH_PROVIDER = 'doubao';
+const JURISMIND_WEB_SEARCH_MODEL = 'doubao';
 
 interface AuthProfileEntry {
   type: 'api_key';
@@ -959,6 +961,86 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
 
   config.browser = browser;
   writeOpenClawConfig(config);
+}
+
+function resolveJurismindWebSearchBaseUrl(): string {
+  return getProviderConfig('jurismind')?.baseUrl || 'http://101.132.245.215:3001/v1';
+}
+
+/**
+ * Sync LawClaw-managed Doubao web search config into openclaw.json.
+ * OpenClaw's built-in web_search already supports provider="doubao";
+ * LawClaw only needs to wire the Jurismind-issued key into that config.
+ */
+export function syncJurismindWebSearchConfig(apiKey: string): void {
+  const trimmedKey = String(apiKey || '').trim();
+  if (!trimmedKey) {
+    return;
+  }
+
+  const config = readOpenClawConfig();
+  const tools = isRecord(config.tools) ? { ...config.tools } : {};
+  const web = isRecord(tools.web) ? { ...tools.web } : {};
+  const search = isRecord(web.search) ? { ...web.search } : {};
+  const doubao = isRecord(search[JURISMIND_WEB_SEARCH_PROVIDER])
+    ? { ...(search[JURISMIND_WEB_SEARCH_PROVIDER] as Record<string, unknown>) }
+    : {};
+
+  doubao.apiKey = trimmedKey;
+  doubao.baseUrl = resolveJurismindWebSearchBaseUrl();
+  doubao.model = JURISMIND_WEB_SEARCH_MODEL;
+
+  search.enabled = true;
+  search.provider = JURISMIND_WEB_SEARCH_PROVIDER;
+  search[JURISMIND_WEB_SEARCH_PROVIDER] = doubao;
+  web.search = search;
+  tools.web = web;
+  config.tools = tools;
+
+  writeOpenClawConfig(config);
+  console.log('Synced Jurismind-backed Doubao web search config to OpenClaw');
+}
+
+/**
+ * Clear LawClaw-managed Doubao web search config from openclaw.json.
+ * When Doubao was the active provider, disable search so OpenClaw does not
+ * fall back to an invalid placeholder env-based auto-detection path.
+ */
+export function clearJurismindWebSearchConfig(): boolean {
+  const config = readOpenClawConfig();
+  const tools = isRecord(config.tools) ? { ...config.tools } : {};
+  const web = isRecord(tools.web) ? { ...tools.web } : {};
+  const search = isRecord(web.search) ? { ...web.search } : {};
+  const currentProvider = typeof search.provider === 'string' ? search.provider : '';
+  const hasManagedConfig =
+    isRecord(search[JURISMIND_WEB_SEARCH_PROVIDER])
+    || Object.prototype.hasOwnProperty.call(search, JURISMIND_WEB_SEARCH_PROVIDER);
+  const hasDifferentConfiguredProvider =
+    currentProvider.length > 0 && currentProvider !== JURISMIND_WEB_SEARCH_PROVIDER;
+
+  let changed = false;
+
+  if (hasManagedConfig) {
+    delete search[JURISMIND_WEB_SEARCH_PROVIDER];
+    changed = true;
+  }
+
+  if (!hasDifferentConfiguredProvider && (hasManagedConfig || currentProvider.length > 0)) {
+    delete search.provider;
+    search.enabled = false;
+    changed = true;
+  }
+
+  if (!changed) {
+    return false;
+  }
+
+  web.search = search;
+  tools.web = web;
+  config.tools = tools;
+  writeOpenClawConfig(config);
+  console.log('Cleared Jurismind-backed Doubao web search config from OpenClaw');
+  return true;
 }
 
 /**

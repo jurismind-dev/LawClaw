@@ -1,5 +1,9 @@
 extends: ./electron-builder.yml
 
+extraMetadata:
+  lawclawBuild:
+    macUnsigned: true
+
 mac:
   target:
     - target: dmg

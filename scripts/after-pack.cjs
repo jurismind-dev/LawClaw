@@ -21,6 +21,7 @@
 
 const { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, chmodSync } = require('fs');
 const { basename, dirname, join } = require('path');
+const { patchOpenClawBundleCompat } = require('./openclaw-bundle-compat.cjs');
 
 function getBundledUvPath(resourcesDir, platform) {
   const binName = platform === 'win32' ? 'uv.exe' : 'uv';
@@ -504,6 +505,13 @@ exports.default = async function afterPack(context) {
   console.log(`[after-pack] Copying ${depCount} openclaw dependencies to ${dest} ...`);
   cpSync(src, dest, { recursive: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
+
+  const requireCompatPackages = patchOpenClawBundleCompat(dest);
+  if (requireCompatPackages.length > 0) {
+    console.log(
+      `[after-pack] ✅ Patched require() compatibility for bundled packages: ${requireCompatPackages.join(', ')}.`
+    );
+  }
 
   // 1.1 Bundle OpenClaw plugins directly from node_modules into packaged resources.
   //     This is intentionally done in afterPack (not extraResources) because:

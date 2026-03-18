@@ -44,4 +44,33 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(openClawCliSource).toContain('export function applyBundledNpmToCliEnv');
     expect(openClawCliSource).toContain("join(process.resourcesPath, 'npm-bin')");
   });
+
+  it('patches bundled packages that still need require() compatibility', () => {
+    const bundleScript = readRepoFile('scripts/bundle-openclaw.mjs');
+    const afterPackScript = readRepoFile('scripts/after-pack.cjs');
+    const compatScript = readRepoFile('scripts/openclaw-bundle-compat.cjs');
+
+    expect(bundleScript).toContain('patchOpenClawBundleCompat');
+    expect(afterPackScript).toContain('patchOpenClawBundleCompat');
+    expect(compatScript).toContain('https-proxy-agent');
+  });
+
+  it('routes mac builds through the unsigned electron-builder wrapper', () => {
+    const packageJson = JSON.parse(readRepoFile('package.json')) as {
+      scripts: Record<string, string>;
+    };
+    const noSignConfig = readRepoFile('electron-builder.nosign.yml');
+    const builderWrapper = readRepoFile('scripts/run-electron-builder.mjs');
+
+    expect(packageJson.scripts.build).toContain('node scripts/run-electron-builder.mjs');
+    expect(packageJson.scripts.package).toContain('node scripts/run-electron-builder.mjs');
+    expect(packageJson.scripts.packageMac ?? packageJson.scripts['package:mac']).toContain(
+      'node scripts/run-electron-builder.mjs --mac'
+    );
+    expect(packageJson.scripts.release).toContain('node scripts/run-electron-builder.mjs --publish always');
+
+    expect(noSignConfig).toContain('macUnsigned: true');
+    expect(builderWrapper).toContain("process.env.LAWCLAW_MAC_SIGN !== '1'");
+    expect(builderWrapper).toContain('electron-builder.nosign.yml');
+  });
 });

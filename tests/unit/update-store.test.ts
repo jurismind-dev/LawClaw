@@ -19,6 +19,7 @@ describe('Update Store', () => {
       updateInfo: null,
       progress: null,
       error: null,
+      manualInstall: false,
       isInitialized: false,
       autoInstallCountdown: null,
     });

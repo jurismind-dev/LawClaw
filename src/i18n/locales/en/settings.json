@@ -88,6 +88,7 @@
             "downloading": "Downloading update...",
             "available": "Update available: v{{version}}",
             "downloaded": "Ready to install: v{{version}}",
+            "downloadedManual": "Installer opened: v{{version}}",
             "autoInstalling": "Restarting to install update in {{seconds}}s...",
             "failed": "Update check failed",
             "latest": "You have the latest version",
@@ -97,7 +98,9 @@
             "checking": "Checking...",
             "downloading": "Downloading...",
             "download": "Download Update",
+            "installManual": "Open Installer",
             "install": "Install & Restart",
+            "reopenManual": "Reopen Installer",
             "cancelAutoInstall": "Cancel",
             "retry": "Retry",
             "check": "Check for Updates"
@@ -105,7 +108,8 @@
         "currentVersion": "Current Version",
         "whatsNew": "What's New:",
         "errorDetails": "Error Details:",
-        "help": "When auto-update is enabled, updates are downloaded and installed automatically."
+        "help": "When auto-update is enabled, updates are downloaded and installed automatically.",
+        "helpManual": "This macOS build is unsigned. Updates are delivered through an external installer and cannot restart-install automatically."
     },
     "advanced": {
         "title": "Advanced",

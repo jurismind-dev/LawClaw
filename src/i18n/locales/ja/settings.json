@@ -79,6 +79,7 @@
             "downloading": "更新をダウンロード中...",
             "available": "更新あり: v{{version}}",
             "downloaded": "インストール準備完了: v{{version}}",
+            "downloadedManual": "インストーラを開きました: v{{version}}",
             "autoInstalling": "{{seconds}} 秒後に再起動して更新をインストールします...",
             "failed": "更新の確認に失敗しました",
             "latest": "最新バージョンです",
@@ -88,7 +89,9 @@
             "checking": "確認中...",
             "downloading": "ダウンロード中...",
             "download": "更新をダウンロード",
+            "installManual": "インストーラを開く",
             "install": "インストールして再起動",
+            "reopenManual": "インストーラを再度開く",
             "cancelAutoInstall": "キャンセル",
             "retry": "再試行",
             "check": "更新を確認"
@@ -96,7 +99,8 @@
         "currentVersion": "現在のバージョン",
         "whatsNew": "更新内容：",
         "errorDetails": "エラー詳細：",
-        "help": "自動アップデートが有効な場合、更新は自動的にダウンロードされインストールされます。"
+        "help": "自動アップデートが有効な場合、更新は自動的にダウンロードされインストールされます。",
+        "helpManual": "この macOS ビルドは未署名です。更新は外部インストーラ経由で行われ、自動再起動インストールはできません。"
     },
     "advanced": {
         "title": "詳細設定",

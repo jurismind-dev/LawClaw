@@ -14,6 +14,7 @@ import {
   saveProviderKeyToOpenClaw,
   setOpenClawAgentModel,
   setOpenClawAgentModelWithOverride,
+  syncJurismindWebSearchConfig,
 } from './openclaw-auth';
 import { getProviderConfig, getProviderDefaultModel, getProviderEnvVar } from './provider-registry';
 import { logger } from './logger';
@@ -207,6 +208,9 @@ export async function applyLawClawProviderSelection(
   if (providerApiKey) {
     saveProviderKeyToOpenClaw(providerKey, providerApiKey);
     saveProviderKeyToOpenClaw(providerKey, providerApiKey, LAWCLAW_MAIN_AGENT_ID);
+    if (provider.type === 'jurismind') {
+      syncJurismindWebSearchConfig(providerApiKey);
+    }
   }
 
   if (options.restartGateway) {

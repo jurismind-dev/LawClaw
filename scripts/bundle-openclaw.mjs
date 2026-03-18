@@ -18,6 +18,9 @@
 
 import 'zx/globals';
 import { spawnSync } from 'node:child_process';
+import compatTools from './openclaw-bundle-compat.cjs';
+
+const { patchOpenClawBundleCompat } = compatTools;
 
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
@@ -285,6 +288,11 @@ for (const [realPath, pkgName] of collected) {
   } catch (err) {
     echo`   ⚠️  Skipped ${pkgName}: ${err.message}`;
   }
+}
+
+const requireCompatPackages = patchOpenClawBundleCompat(outputNodeModules);
+if (requireCompatPackages.length > 0) {
+  echo`   Patched require() compatibility for: ${requireCompatPackages.join(', ')}`;
 }
 
 // 6. Clean up the bundle to reduce package size

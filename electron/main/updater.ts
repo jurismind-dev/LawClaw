@@ -13,6 +13,7 @@ import { BrowserWindow, app, ipcMain, shell } from 'electron';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
 import { setQuitting } from './app-state';
+import { isUnsignedMacBuild } from '../utils/build-flags';
 
 /** Base OSS URL (without trailing channel path). */
 const DEFAULT_OSS_BASE_URL = 'https://lawclaw.oss-cn-shanghai.aliyuncs.com';
@@ -28,6 +29,7 @@ export interface UpdateStatus {
   info?: UpdateInfo;
   progress?: ProgressInfo;
   error?: string;
+  manualInstall?: boolean;
 }
 
 export interface UpdaterEvents {
@@ -110,12 +112,19 @@ export class AppUpdater extends EventEmitter {
   private autoInstallCountdown = 0;
   private activeChannel: string;
   private manualDownloadUrl: string | null = null;
+  private readonly usesExternalInstaller: boolean;
 
   /** Delay (in seconds) before auto-installing a downloaded update. */
   private static readonly AUTO_INSTALL_DELAY_SECONDS = 5;
 
   constructor() {
     super();
+
+    this.usesExternalInstaller = isUnsignedMacBuild();
+    this.status = {
+      status: 'idle',
+      manualInstall: this.usesExternalInstaller,
+    };
     
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
@@ -152,7 +161,7 @@ export class AppUpdater extends EventEmitter {
   private applyFeedConfig(): void {
     const feedUrl = `${OSS_BASE_URL}/${this.activeChannel}`;
     logger.info(
-      `[Updater] Version: ${app.getVersion()}, channel: ${this.activeChannel}, feedUrl: ${feedUrl}`
+      `[Updater] Version: ${app.getVersion()}, channel: ${this.activeChannel}, feedUrl: ${feedUrl}, manualInstall=${this.usesExternalInstaller}`
     );
 
     autoUpdater.channel = this.activeChannel;
@@ -245,12 +254,12 @@ export class AppUpdater extends EventEmitter {
         releaseDate: releaseDate || undefined,
         releaseNotes,
       };
-      this.updateStatus({ status: 'available', info });
+      this.updateStatus({ status: 'available', info, manualInstall: this.usesExternalInstaller });
       return info;
     }
 
     this.manualDownloadUrl = null;
-    this.updateStatus({ status: 'not-available' });
+    this.updateStatus({ status: 'not-available', manualInstall: this.usesExternalInstaller });
     return null;
   }
 
@@ -303,11 +312,16 @@ export class AppUpdater extends EventEmitter {
    * Update status and notify renderer
    */
   private updateStatus(newStatus: Partial<UpdateStatus>): void {
+    const hasInfo = Object.prototype.hasOwnProperty.call(newStatus, 'info');
+    const hasProgress = Object.prototype.hasOwnProperty.call(newStatus, 'progress');
+    const hasError = Object.prototype.hasOwnProperty.call(newStatus, 'error');
+
     this.status = {
       status: newStatus.status ?? this.status.status,
-      info: newStatus.info,
-      progress: newStatus.progress,
-      error: newStatus.error,
+      info: hasInfo ? newStatus.info : this.status.info,
+      progress: hasProgress ? newStatus.progress : this.status.progress,
+      error: hasError ? newStatus.error : this.status.error,
+      manualInstall: newStatus.manualInstall ?? this.usesExternalInstaller,
     };
     this.sendToRenderer('update:status-changed', this.status);
   }
@@ -331,7 +345,16 @@ export class AppUpdater extends EventEmitter {
    */
   async checkForUpdates(): Promise<UpdateInfo | null> {
     this.manualDownloadUrl = null;
-    this.updateStatus({ status: 'checking', error: undefined });
+    this.updateStatus({
+      status: 'checking',
+      error: undefined,
+      progress: undefined,
+      manualInstall: this.usesExternalInstaller,
+    });
+
+    if (this.usesExternalInstaller) {
+      return await this.checkForUpdatesViaInstallerMetadata();
+    }
 
     try {
       const result = await autoUpdater.checkForUpdates();
@@ -376,7 +399,11 @@ export class AppUpdater extends EventEmitter {
     if (this.manualDownloadUrl) {
       try {
         await shell.openExternal(this.manualDownloadUrl);
-        this.updateStatus({ status: 'downloaded', info: this.status.info });
+        this.updateStatus({
+          status: 'downloaded',
+          info: this.status.info,
+          manualInstall: this.usesExternalInstaller,
+        });
         return;
       } catch (error) {
         logger.error('[Updater] Open installer URL failed:', error);
@@ -461,7 +488,7 @@ export class AppUpdater extends EventEmitter {
    * Set auto-download preference
    */
   setAutoDownload(enable: boolean): void {
-    autoUpdater.autoDownload = enable;
+    autoUpdater.autoDownload = this.usesExternalInstaller ? false : enable;
   }
 
   /**

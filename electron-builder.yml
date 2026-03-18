@@ -21,6 +21,8 @@ extraResources:
       - "!icons/*.md"
       - "!icons/*.svg"
       - "!bin/**"
+      - "!plugins/openclaw-lark"
+      - "!plugins/openclaw-lark/**"
       - "!plugins/**/node_modules/.bin"
       - "!plugins/**/node_modules/.bin/**"
       - "!screenshot/**"

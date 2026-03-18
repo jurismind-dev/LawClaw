@@ -226,6 +226,63 @@ function removeBundledPluginNodeBins(resourcesPayloadDir) {
   return removed;
 }
 
+function hasNodeModulesBinSegment(pathParts) {
+  for (let index = 0; index < pathParts.length; index++) {
+    if (pathParts[index] === '.bin') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function normalizeFsPathForMatch(filePath) {
+  return filePath
+    .replace(/^\\\\\?\\/, '')
+    .replace(/\\/g, '/');
+}
+
+function shouldCopyBundledPluginPath(sourceRoot, sourcePath) {
+  const normalizedRoot = normalizeFsPathForMatch(sourceRoot);
+  const normalizedSource = normalizeFsPathForMatch(sourcePath);
+  const relative = normalizedSource.slice(normalizedRoot.length).replace(/^[\\/]+/, '');
+  if (!relative) return true;
+
+  const parts = relative.split(/[\\/]+/).filter(Boolean);
+  return !hasNodeModulesBinSegment(parts);
+}
+
+function copyBundledResourcePlugin(sourceDir, destDir) {
+  if (!existsSync(sourceDir)) {
+    console.warn(`[after-pack] ⚠️  Bundled resource plugin not found: ${sourceDir}`);
+    return false;
+  }
+
+  if (existsSync(normWin(destDir))) {
+    rmSync(normWin(destDir), { recursive: true, force: true });
+  }
+
+  mkdirSync(normWin(dirname(destDir)), { recursive: true });
+  cpSync(normWin(sourceDir), normWin(destDir), {
+    recursive: true,
+    dereference: true,
+    filter: (sourcePath) => shouldCopyBundledPluginPath(sourceDir, sourcePath),
+  });
+  return true;
+}
+
+function removeBundledResourcePlugin(resourcesPayloadDir, pluginId) {
+  const pluginDir = join(resourcesPayloadDir, 'plugins', pluginId);
+  if (!existsSync(normWin(pluginDir))) return false;
+
+  try {
+    rmSync(normWin(pluginDir), { recursive: true, force: true });
+    return true;
+  } catch (error) {
+    console.warn(`[after-pack] Failed to remove bundled resource plugin mirror at ${pluginDir}: ${error.message}`);
+    return false;
+  }
+}
+
 // ── Platform-specific: koffi ─────────────────────────────────────────────────
 // koffi ships 18 platform pre-builds under koffi/build/koffi/{platform}_{arch}/.
 // We only need the one matching the target.
@@ -431,6 +488,7 @@ exports.default = async function afterPack(context) {
   const dest = join(openclawRoot, 'node_modules');
   const nodeModulesRoot = join(__dirname, '..', 'node_modules');
   const pluginsDestRoot = join(resourcesDir, 'openclaw-plugins');
+  const bundledResourcesRoot = join(resourcesDir, 'resources');
 
   if (!existsSync(src)) {
     console.warn('[after-pack] ⚠️  build/openclaw/node_modules not found. Run bundle-openclaw first.');
@@ -475,12 +533,38 @@ exports.default = async function afterPack(context) {
     }
   }
 
+  const resourceBundledPlugins = [
+    { pluginId: 'openclaw-lark', sourceDir: join(__dirname, '..', 'resources', 'plugins', 'openclaw-lark') },
+  ];
+
+  mkdirSync(pluginsDestRoot, { recursive: true });
+  for (const { pluginId, sourceDir } of resourceBundledPlugins) {
+    const pluginDestDir = join(pluginsDestRoot, pluginId);
+    console.log(`[after-pack] Bundling resource plugin ${pluginId} -> ${pluginDestDir}`);
+    const ok = copyBundledResourcePlugin(sourceDir, pluginDestDir);
+    if (!ok) continue;
+
+    cleanupUnnecessaryFiles(pluginDestDir);
+    const pluginNM = join(pluginDestDir, 'node_modules');
+    if (existsSync(pluginNM)) {
+      cleanupKoffi(pluginNM, platform, arch);
+      cleanupNativePlatformPackages(pluginNM, platform, arch);
+    }
+  }
+
   // 2. General cleanup on the full openclaw directory (not just node_modules)
   console.log('[after-pack] 🧹 Cleaning up unnecessary files ...');
   const removedRoot = cleanupUnnecessaryFiles(openclawRoot);
   console.log(`[after-pack] ✅ Removed ${removedRoot} unnecessary files/directories.`);
 
-  const bundledResourcesRoot = join(resourcesDir, 'resources');
+  let removedBundledPluginMirrors = 0;
+  if (removeBundledResourcePlugin(bundledResourcesRoot, 'openclaw-lark')) {
+    removedBundledPluginMirrors++;
+  }
+  if (removedBundledPluginMirrors > 0) {
+    console.log(`[after-pack] ✅ Removed ${removedBundledPluginMirrors} duplicated bundled plugin resource mirrors.`);
+  }
+
   const removedPluginBins = removeBundledPluginNodeBins(bundledResourcesRoot);
   if (removedPluginBins > 0) {
     console.log(`[after-pack] ✅ Removed ${removedPluginBins} bundled plugin node_modules/.bin directories.`);

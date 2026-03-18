@@ -7,7 +7,7 @@ type PluginChannelBackups = Record<string, JsonObject>;
 
 const BACKUP_FILE_NAME = 'clawx-plugin-channel-backups.json';
 const ALREADY_INSTALLED_REGEX = /already\s+installed/i;
-const FEISHU_OFFICIAL_PLUGIN_ID = 'feishu-openclaw-plugin';
+const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
 
 export type PluginInstallSource = 'extensions' | 'plugins.installs' | 'plugins.load.paths';
 

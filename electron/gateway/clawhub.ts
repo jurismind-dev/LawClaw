@@ -96,6 +96,24 @@ type JurismindConvexResponse<T> = {
     message?: string;
 };
 
+function getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeClawHubTimeoutMessage(errorText?: string): string {
+    const raw = String(errorText || '').trim();
+    if (!raw) {
+        return 'Timeout';
+    }
+
+    const lines = raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const timeoutLine = lines.find((line) => /timeout/i.test(line)) || lines[0] || raw;
+    return timeoutLine.replace(/^(?:Error:\s*)+/i, '').trim();
+}
+
 export class ClawHubService {
     private workDir: string;
     private cliPath: string;
@@ -223,7 +241,7 @@ export class ClawHubService {
                 if (code !== 0 && code !== null) {
                     const errorOutput = (stderr || stdout).trim();
                     if (isClawHubTimeoutFailure(errorOutput)) {
-                        reject(new Error(`Timeout: ${errorOutput || 'ClawHub command timed out'}`));
+                        reject(new Error(normalizeClawHubTimeoutMessage(errorOutput)));
                         return;
                     }
                     console.error(`ClawHub command failed with code ${code}`);
@@ -246,6 +264,9 @@ export class ClawHubService {
                 if (!isClawHubTimeoutFailure(String(error)) || attempt >= retries) {
                     throw error;
                 }
+                console.warn(
+                    `ClawHub command timed out, retrying (${String(attempt + 1)}/${String(retries)}): ${args.join(' ')}`
+                );
             }
         }
         throw lastError;
@@ -497,7 +518,16 @@ export class ClawHubService {
             args.push('--force');
         }
 
-        await this.runCommand(args);
+        try {
+            await this.runCommandWithRetry(args, 2);
+        } catch (error) {
+            if (isClawHubTimeoutFailure(getErrorMessage(error))) {
+                throw new Error(normalizeClawHubTimeoutMessage(getErrorMessage(error)), {
+                    cause: error,
+                });
+            }
+            throw error;
+        }
     }
 
     /**

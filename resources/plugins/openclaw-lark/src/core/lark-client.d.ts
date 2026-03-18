@@ -1,0 +1,108 @@
+/**
+ * Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
+ * SPDX-License-Identifier: MIT
+ *
+ * Feishu / Lark SDK client management.
+ *
+ * Provides `LarkClient` — a unified manager for Lark SDK client instances,
+ * WebSocket connections, EventDispatcher lifecycle, and bot identity.
+ *
+ * Consumers obtain instances via factory methods:
+ *   - `LarkClient.fromCfg(cfg, accountId)` — resolve account from config
+ *   - `LarkClient.fromAccount(account)` — from a pre-resolved account
+ *   - `LarkClient.fromCredentials(credentials)` — ephemeral instance (not cached)
+ */
+import * as Lark from '@larksuiteoapi/node-sdk';
+import type { ClawdbotConfig, PluginRuntime } from 'openclaw/plugin-sdk';
+import type { LarkBrand, LarkAccount, FeishuProbeResult } from './types';
+import type { MessageDedup } from '../messaging/inbound/dedup';
+/** Credential set accepted by the ephemeral `fromCredentials` factory. */
+export interface LarkClientCredentials {
+    accountId?: string;
+    appId?: string;
+    appSecret?: string;
+    brand?: LarkBrand;
+}
+export declare class LarkClient {
+    readonly account: LarkAccount;
+    private _sdk;
+    private _wsClient;
+    private _botOpenId;
+    private _botName;
+    private _lastProbeResult;
+    private _lastProbeAt;
+    /** Attached message deduplicator — disposed together with the client. */
+    messageDedup: MessageDedup | null;
+    private static _runtime;
+    /** Persist the runtime instance for later retrieval (activate 阶段调用一次). */
+    static setRuntime(runtime: PluginRuntime): void;
+    /** Retrieve the stored runtime instance. Throws if not yet initialised. */
+    static get runtime(): PluginRuntime;
+    private static _globalConfig;
+    /** Store the original global config (called during monitor startup). */
+    static setGlobalConfig(cfg: ClawdbotConfig): void;
+    /** Retrieve the stored global config, or `null` if not yet set. */
+    static get globalConfig(): ClawdbotConfig | null;
+    private constructor();
+    /** Shorthand for `this.account.accountId`. */
+    get accountId(): string;
+    /** Resolve account from config and return a cached `LarkClient`. */
+    static fromCfg(cfg: ClawdbotConfig, accountId?: string): LarkClient;
+    /**
+     * Get (or create) a cached `LarkClient` for the given account.
+     * If the cached instance has stale credentials it is replaced.
+     */
+    static fromAccount(account: LarkAccount): LarkClient;
+    /**
+     * Create an ephemeral `LarkClient` from bare credentials.
+     * The instance is **not** added to the global cache — suitable for
+     * one-off probe / diagnose calls that should not pollute account state.
+     */
+    static fromCredentials(credentials: LarkClientCredentials): LarkClient;
+    /** Look up a cached instance by accountId. */
+    static get(accountId: string): LarkClient | null;
+    /**
+     * Dispose one or all cached instances.
+     * With `accountId` — dispose that single instance.
+     * Without — dispose every cached instance and clear the cache.
+     */
+    static clearCache(accountId?: string): void;
+    /** Lazily-created Lark SDK client. */
+    get sdk(): Lark.Client;
+    /**
+     * Probe bot identity via the `bot/v3/info` API.
+     * Results are cached on the instance for subsequent access via
+     * `botOpenId` / `botName`.
+     */
+    probe(opts?: {
+        maxAgeMs?: number;
+    }): Promise<FeishuProbeResult>;
+    /** Cached bot open_id (available after `probe()` or `startWS()`). */
+    get botOpenId(): string | undefined;
+    /** Cached bot name (available after `probe()` or `startWS()`). */
+    get botName(): string | undefined;
+    /**
+     * Start WebSocket event monitoring.
+     *
+     * Flow: probe bot identity → EventDispatcher → WSClient → start.
+     * The returned Promise resolves when `abortSignal` fires.
+     */
+    startWS(opts: {
+        handlers: Record<string, (data: unknown) => Promise<void>>;
+        abortSignal?: AbortSignal;
+        autoProbe?: boolean;
+    }): Promise<void>;
+    /** Whether a WebSocket client is currently active. */
+    get wsConnected(): boolean;
+    /** Disconnect WebSocket but keep instance in cache. */
+    disconnect(): void;
+    /** Disconnect + remove from cache. */
+    dispose(): void;
+    /** Assert credentials exist or throw. */
+    private requireCredentials;
+    /**
+     * Start the WSClient and return a promise that resolves when the
+     * abort signal fires (or immediately if already aborted).
+     */
+    private waitForAbort;
+}

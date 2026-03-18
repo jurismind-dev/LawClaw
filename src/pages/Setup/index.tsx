@@ -692,7 +692,9 @@ function ProviderContent({
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
+  const [providerSelectionHydrated, setProviderSelectionHydrated] = useState(false);
   const providerMenuRef = useRef<HTMLDivElement | null>(null);
+  const jurismindAutoBindAttemptedRef = useRef(false);
 
   const [authMode, setAuthMode] = useState<'oauth' | 'apikey'>('oauth');
   const setupDefaultSyncPolicy = selectedProvider === 'jurismind' ? 'always' : 'if-empty';
@@ -823,8 +825,14 @@ function ProviderContent({
   // When provider changes, load stored key + reset base URL
   useEffect(() => {
     let cancelled = false;
+    setProviderSelectionHydrated(false);
     (async () => {
-      if (!selectedProvider) return;
+      if (!selectedProvider) {
+        if (!cancelled) {
+          setProviderSelectionHydrated(true);
+        }
+        return;
+      }
       try {
         const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
         const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
@@ -853,6 +861,10 @@ function ProviderContent({
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load provider key:', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setProviderSelectionHydrated(true);
         }
       }
     })();
@@ -1051,6 +1063,7 @@ function ProviderContent({
     && !isJurismind;
 
   const handleSelectProvider = (providerId: string) => {
+    jurismindAutoBindAttemptedRef.current = false;
     onSelectProvider(providerId);
     setSelectedProviderConfigId(null);
     onConfiguredChange(false);
@@ -1061,16 +1074,30 @@ function ProviderContent({
   };
 
   useEffect(() => {
-    if (!isJurismind || !selectedProviderData) {
+    if (!isJurismind || !selectedProviderData || !providerSelectionHydrated) {
+      jurismindAutoBindAttemptedRef.current = false;
       return;
     }
 
     if (selectedProviderConfigId && apiKey) {
+      jurismindAutoBindAttemptedRef.current = false;
       return;
     }
 
+    if (jurismindAutoBindAttemptedRef.current) {
+      return;
+    }
+
+    jurismindAutoBindAttemptedRef.current = true;
     void handleBindJurismindToken();
-  }, [apiKey, handleBindJurismindToken, isJurismind, selectedProviderConfigId, selectedProviderData]);
+  }, [
+    apiKey,
+    handleBindJurismindToken,
+    isJurismind,
+    providerSelectionHydrated,
+    selectedProviderConfigId,
+    selectedProviderData,
+  ]);
 
   return (
     <div className="space-y-6">

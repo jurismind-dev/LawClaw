@@ -708,6 +708,36 @@ function extractTextFromContent(content: unknown): string {
   return parts.join('\n');
 }
 
+function normalizeHeartbeatText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function isHeartbeatPromptText(text: string): boolean {
+  if (!text) return false;
+  const normalized = normalizeHeartbeatText(text);
+  return (
+    normalized.includes('Read HEARTBEAT.md if it exists (workspace context).') &&
+    normalized.includes('reply HEARTBEAT_OK.') &&
+    normalized.includes('Current time:')
+  );
+}
+
+function isHeartbeatAckText(text: string): boolean {
+  return normalizeHeartbeatText(text) === 'HEARTBEAT_OK';
+}
+
+function isHiddenHeartbeatMessage(message: unknown): boolean {
+  if (!message || typeof message !== 'object') return false;
+  const msg = message as Record<string, unknown>;
+  const role = typeof msg.role === 'string' ? msg.role.toLowerCase() : '';
+  const text = extractTextFromContent(msg.content ?? msg.text ?? '');
+
+  if (!text) return false;
+  if ((role === 'user' || !role) && isHeartbeatPromptText(text)) return true;
+  if ((role === 'assistant' || !role) && isHeartbeatAckText(text)) return true;
+  return false;
+}
+
 function summarizeToolOutput(text: string): string | undefined {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
@@ -1070,7 +1100,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         // Before filtering: attach images/files from tool_result messages to the next assistant message
         const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-        const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role));
+        const filteredMessages = messagesWithToolImages.filter(
+          (msg) => !isToolResultRole(msg.role) && !isHiddenHeartbeatMessage(msg),
+        );
         // Restore file attachments for user/assistant messages (from cache + text patterns)
         const enrichedMessages = enrichWithCachedImages(filteredMessages);
         const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
@@ -1347,6 +1379,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
+    if (isHiddenHeartbeatMessage(event.message)) {
+      const state = get();
+      if (runId && state.activeRunId === runId) {
+        clearHistoryPoll();
+        clearErrorRecoveryTimer();
+        set({
+          sending: false,
+          activeRunId: null,
+          streamingText: '',
+          streamingMessage: null,
+          streamingTools: [],
+          pendingFinal: false,
+          pendingToolImages: [],
+          lastUserMessageAt: null,
+        });
+      }
+      return;
+    }
+
     // Only pause the history poll when we receive actual streaming data.
     // The gateway sends "agent" events with { phase, startedAt } that carry
     // no message — these must NOT kill the poll, since the poll is our only
@@ -1365,10 +1416,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     switch (resolvedState) {
       case 'started': {
-        // Run just started (e.g. from console); show loading immediately.
-        const { sending: currentSending } = get();
-        if (!currentSending && runId) {
-          set({ sending: true, activeRunId: runId, error: null });
+        // Only bind the runId onto an already user-initiated send.
+        // Background runs such as heartbeat should stay invisible in the UI.
+        const { sending: currentSending, activeRunId: currentActiveRunId } = get();
+        if (currentSending && !currentActiveRunId && runId) {
+          set({ activeRunId: runId, error: null });
         }
         break;
       }

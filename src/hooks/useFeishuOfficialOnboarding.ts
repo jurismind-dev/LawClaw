@@ -96,10 +96,16 @@ export function useFeishuOfficialOnboarding(options: UseFeishuOfficialOnboarding
     try {
       const result = await window.electron.ipcRenderer.invoke('feishu:startPairing', startOptions) as {
         success?: boolean;
+        cancelled?: boolean;
         error?: string;
         result?: FeishuOnboardingResult;
         status?: unknown;
       };
+
+      if (result?.cancelled) {
+        setLoading(false);
+        return;
+      }
 
       if (!result?.success) {
         throw new Error(result?.error || 'start Feishu onboarding failed');
@@ -133,9 +139,15 @@ export function useFeishuOfficialOnboarding(options: UseFeishuOfficialOnboarding
         appSecret,
       }) as {
         success?: boolean;
+        cancelled?: boolean;
         error?: string;
         status?: unknown;
       };
+
+      if (result?.cancelled) {
+        setLoading(false);
+        return;
+      }
 
       if (!result?.success) {
         throw new Error(result?.error || 'configure existing Feishu app failed');
@@ -147,6 +159,27 @@ export function useFeishuOfficialOnboarding(options: UseFeishuOfficialOnboarding
       setError(message);
       setPhase('error');
       setLoading(false);
+    }
+  }, [applyStatus]);
+
+  const resetFlow = useCallback(async () => {
+    setLoading(false);
+    setError(null);
+    setLastMessage(null);
+    setPairUrl('');
+    setPairQrCode(null);
+
+    try {
+      const result = await window.electron.ipcRenderer.invoke('feishu:resetFlow') as {
+        success?: boolean;
+        status?: unknown;
+      };
+
+      if (result?.success) {
+        applyStatus(result.status);
+      }
+    } catch {
+      // ignore flow reset failures during mode switches
     }
   }, [applyStatus]);
 
@@ -247,6 +280,7 @@ export function useFeishuOfficialOnboarding(options: UseFeishuOfficialOnboarding
     phase,
     pluginInstalled,
     configureExistingApp,
+    resetFlow,
     start,
   };
 }

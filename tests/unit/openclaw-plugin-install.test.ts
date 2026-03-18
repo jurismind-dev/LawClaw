@@ -256,12 +256,12 @@ describe('bundled feishu plugin config finalizer', () => {
         allow: ['feishu', 'other-plugin'],
         entries: {
           feishu: { enabled: true },
-          'feishu-openclaw-plugin': { enabled: false, source: 'bundled' },
+          'openclaw-lark': { enabled: false, source: 'bundled' },
         },
       },
     };
 
-    const result = finalizeBundledPluginConfigAfterInstall(input, 'feishu-openclaw-plugin');
+    const result = finalizeBundledPluginConfigAfterInstall(input, 'openclaw-lark');
 
     expect(result.changed).toBe(true);
     expect(result.config).toMatchObject({
@@ -278,10 +278,10 @@ describe('bundled feishu plugin config finalizer', () => {
         },
       },
       plugins: {
-        allow: ['other-plugin', 'feishu-openclaw-plugin'],
+        allow: ['other-plugin', 'openclaw-lark'],
         entries: {
           feishu: { enabled: false },
-          'feishu-openclaw-plugin': { enabled: true },
+          'openclaw-lark': { enabled: true, source: 'bundled' },
         },
       },
     });
@@ -321,7 +321,7 @@ describe('bundled feishu plugin config finalizer', () => {
       },
     };
 
-    const result = finalizeBundledPluginConfigAfterInstall(input, 'feishu-openclaw-plugin');
+    const result = finalizeBundledPluginConfigAfterInstall(input, 'openclaw-lark');
 
     expect(result.changed).toBe(true);
     expect(result.config).toMatchObject({
@@ -340,10 +340,10 @@ describe('bundled feishu plugin config finalizer', () => {
         },
       },
       plugins: {
-        allow: ['feishu-openclaw-plugin'],
+        allow: ['openclaw-lark'],
         entries: {
           feishu: { enabled: false },
-          'feishu-openclaw-plugin': { enabled: true },
+          'openclaw-lark': { enabled: true },
         },
       },
     });

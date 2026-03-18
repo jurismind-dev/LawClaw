@@ -17,9 +17,13 @@ import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
 import { applyBundledNpmToCliEnv, getNodeExecForCli } from './openclaw-cli';
 
 const FEISHU_REGISTRATION_URL = 'https://accounts.feishu.cn/oauth/v1/app/registration';
-const FEISHU_OFFICIAL_PLUGIN_ID = 'feishu-openclaw-plugin';
+const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
 const FEISHU_OFFICIAL_PLUGIN_PACKAGE = '@larksuite/openclaw-lark';
+const FEISHU_OFFICIAL_PLUGIN_VERSION = '2026.3.12';
+const FEISHU_OFFICIAL_PLUGIN_NPM_SPEC =
+  `${FEISHU_OFFICIAL_PLUGIN_PACKAGE}@${FEISHU_OFFICIAL_PLUGIN_VERSION}`;
 const FEISHU_CONFLICT_EXTENSION_DIR = 'feishu';
+const FEISHU_LEGACY_PLUGIN_IDS = ['feishu-openclaw-plugin'];
 
 type FeishuOnboardingPhase =
   | 'idle'
@@ -104,6 +108,19 @@ export interface FeishuOnboardingStartOptions {
   reinstallPlugin?: boolean;
 }
 
+class FeishuOnboardingCancelledError extends Error {
+  constructor(message = '当前飞书流程已取消') {
+    super(message);
+    this.name = 'FeishuOnboardingCancelledError';
+  }
+}
+
+export function isFeishuOnboardingCancelledError(
+  error: unknown
+): error is FeishuOnboardingCancelledError {
+  return error instanceof FeishuOnboardingCancelledError;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -142,7 +159,9 @@ async function postFeishuRegistrationForm<T>(
   try {
     parsed = JSON.parse(text);
   } catch (error) {
-    throw new Error(`飞书官方服务返回了非 JSON 响应: ${String(error)}`);
+    throw new Error(`飞书官方服务返回了非 JSON 响应: ${String(error)}`, {
+      cause: error,
+    });
   }
 
   return parsed as T;
@@ -301,6 +320,9 @@ class FeishuOnboardingManager extends EventEmitter {
         expiresAt,
       })
         .catch((error) => {
+          if (isFeishuOnboardingCancelledError(error)) {
+            return;
+          }
           const message = error instanceof Error ? error.message : String(error);
           this.setStatus({
             phase: 'error',
@@ -322,6 +344,9 @@ class FeishuOnboardingManager extends EventEmitter {
         expiresAt,
       };
     } catch (error) {
+      if (isFeishuOnboardingCancelledError(error)) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this.setStatus({
         phase: 'error',
@@ -365,6 +390,9 @@ class FeishuOnboardingManager extends EventEmitter {
       this.ensureRunIsCurrent(currentRunToken);
       await this.applySuccessfulOnboarding(cleanAppId, cleanAppSecret);
     } catch (error) {
+      if (isFeishuOnboardingCancelledError(error)) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this.setStatus({
         phase: 'error',
@@ -374,6 +402,35 @@ class FeishuOnboardingManager extends EventEmitter {
       this.emit('error', { message });
       throw error;
     }
+  }
+
+  async resetFlow(): Promise<FeishuOnboardingStatus> {
+    this.cancelActiveFlow();
+
+    this.status = {
+      ...this.status,
+      phase: this.status.configured ? 'configured' : 'idle',
+      pairUrl: null,
+      pairQrCode: null,
+      pairIssuedAt: null,
+      expiresAt: null,
+      lastError: null,
+      lastMessage: null,
+    };
+
+    await this.refreshStatus();
+
+    this.setStatus({
+      phase: this.status.configured ? 'configured' : 'idle',
+      pairUrl: null,
+      pairQrCode: null,
+      pairIssuedAt: null,
+      expiresAt: null,
+      lastError: null,
+      lastMessage: null,
+    });
+
+    return this.getStatus();
   }
 
   private cancelActiveFlow(): void {
@@ -387,7 +444,7 @@ class FeishuOnboardingManager extends EventEmitter {
 
   private ensureRunIsCurrent(runToken: number): void {
     if (runToken !== this.runToken) {
-      throw new Error('当前飞书扫码流程已被新的操作替换，请重新开始');
+      throw new FeishuOnboardingCancelledError('当前飞书流程已被新的操作替换');
     }
   }
 
@@ -410,7 +467,7 @@ class FeishuOnboardingManager extends EventEmitter {
 
     await this.preparePluginInstallState(reinstallPlugin || this.status.pluginInstalled);
 
-    const installResult = await this.runOpenClawCli(['plugins', 'install', FEISHU_OFFICIAL_PLUGIN_PACKAGE]);
+    const installResult = await this.runOpenClawCli(['plugins', 'install', FEISHU_OFFICIAL_PLUGIN_NPM_SPEC]);
     if (!installResult.success) {
       const details = [installResult.error, installResult.stderr, installResult.stdout].filter(Boolean).join('\n');
       throw new Error(details || '安装飞书官方插件失败');
@@ -437,7 +494,7 @@ class FeishuOnboardingManager extends EventEmitter {
       enabled: false,
     };
 
-    delete entries['openclaw-lark'];
+    delete entries['feishu-openclaw-plugin'];
     delete entries['@larksuite/openclaw-lark'];
     if (reinstallOfficialPlugin) {
       delete entries[FEISHU_OFFICIAL_PLUGIN_ID];
@@ -447,7 +504,12 @@ class FeishuOnboardingManager extends EventEmitter {
       ? plugins.allow.filter((item): item is string => typeof item === 'string')
       : [];
     const nextAllow = allow.filter((item) => {
-      if (item === 'feishu' || item === 'openclaw-lark' || item === '@larksuite/openclaw-lark') {
+      if (
+        item === 'feishu'
+        || item === 'feishu-openclaw-plugin'
+        || item === 'openclaw-lark'
+        || item === '@larksuite/openclaw-lark'
+      ) {
         return false;
       }
       if (reinstallOfficialPlugin && item === FEISHU_OFFICIAL_PLUGIN_ID) {
@@ -471,6 +533,13 @@ class FeishuOnboardingManager extends EventEmitter {
     const conflictDir = join(openclawConfigDir, 'extensions', FEISHU_CONFLICT_EXTENSION_DIR);
     if (existsSync(conflictDir)) {
       rmSync(conflictDir, { recursive: true, force: true });
+    }
+
+    for (const legacyPluginId of FEISHU_LEGACY_PLUGIN_IDS) {
+      const legacyDir = join(openclawConfigDir, 'extensions', legacyPluginId);
+      if (existsSync(legacyDir)) {
+        rmSync(legacyDir, { recursive: true, force: true });
+      }
     }
 
     if (reinstallOfficialPlugin) {

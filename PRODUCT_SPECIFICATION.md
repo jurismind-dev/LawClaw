@@ -6,7 +6,7 @@
 **开发团队**：法义经纬 (Jurismind)  
 **基于项目**：ValueCell Team 上游实现
 **应用版本**：0.1.16
-**OpenClaw 运行时基线**：`openclaw@2026.3.8`
+**OpenClaw 运行时基线**：`openclaw@2026.3.13`
 **最后更新**：2026-03-11
 
 ---
@@ -98,7 +98,7 @@ OpenClaw Gateway
 | 层级 | 技术（当前实现） |
 |------|------------------|
 | 运行时 | Electron `^40.6.0` |
-| OpenClaw 基线 | `openclaw@2026.3.8` |
+| OpenClaw 基线 | `openclaw@2026.3.13` |
 | UI 框架 | React `^19.2.4` + TypeScript `^5.9.3` |
 | 路由 | `react-router-dom@^7.13.0`（`HashRouter`） |
 | 样式系统 | Tailwind CSS `^3.4.19` + shadcn/ui |

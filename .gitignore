@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+!resources/plugins/openclaw-lark/node_modules/
+!resources/plugins/openclaw-lark/node_modules/**
 .pnp
 .pnp.js
 

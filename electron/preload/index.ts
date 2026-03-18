@@ -118,6 +118,7 @@ const electronAPI = {
         // Feishu official onboarding
         'feishu:startPairing',
         'feishu:configureExistingApp',
+        'feishu:resetFlow',
         'feishu:getStatus',
         // ClawHub
         'clawhub:search',

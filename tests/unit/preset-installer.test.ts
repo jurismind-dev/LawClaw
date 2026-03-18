@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PresetInstaller } from '../../electron/utils/preset-installer';
 import { readPresetInstallState } from '../../electron/utils/preset-install-state';
 
@@ -440,6 +440,46 @@ describe('PresetInstaller', () => {
       join(openClawConfigDir, 'openclaw.json')
     );
     expect(openclawConfig.skills?.entries?.[skillId]?.enabled).toBe(true);
+  });
+
+  it('market 安装超时时返回清晰错误提示', async () => {
+    const context = createContext();
+    writeManifest(context, {
+      presetVersion: '2026.03.11.11',
+      items: [
+        {
+          kind: 'skill',
+          id: 'find-skills',
+          displayName: 'Find Skills',
+          targetVersion: '0.1.0',
+          installMode: 'market',
+          market: 'jurismindhub',
+        },
+      ],
+    });
+
+    const installer = new PresetInstaller({
+      resourcesDir: context.resourcesDir,
+      clawXConfigDir: context.clawXConfigDir,
+      openClawConfigDir: context.openClawConfigDir,
+      openClawSkillsDir: context.openClawSkillsDir,
+      installSkillFromMarket: vi.fn(async () => ({
+        success: false,
+        error:
+          'Error: Timeout: Resolving find-skills\n'
+          + 'Non-error was thrown: "Timeout". You should only throw errors.',
+      })),
+      installPluginFromLocalPath: async () => ({ success: true }),
+      uninstallPlugin: async () => ({ success: true }),
+    });
+
+    const result = await installer.run('setup');
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('市场技能 find-skills 安装超时，请检查网络后重试');
+
+    const state = readPresetInstallState(context.clawXConfigDir);
+    expect(state.lastResult?.status).toBe('failed');
+    expect(state.lastResult?.message).toBe('市场技能 find-skills 安装超时，请检查网络后重试');
   });
 
   it('market selection=official-highlighted 会动态展开并安装远端列表', async () => {

@@ -37,6 +37,7 @@ export function FeishuOfficialOnboardingPanel({
     pairUrl,
     phase,
     pluginInstalled,
+    resetFlow,
     start,
   } = useFeishuOfficialOnboarding({
     onConnected,
@@ -63,6 +64,7 @@ export function FeishuOfficialOnboardingPanel({
 
         if (nextAppId) {
           setMode('existing');
+          void resetFlow();
         }
       } finally {
         if (!cancelled) {
@@ -74,7 +76,7 @@ export function FeishuOfficialOnboardingPanel({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [resetFlow]);
 
   useEffect(() => {
     if (!autoStart || !bootstrapped || configured || mode !== 'qr' || pairUrl || autoStartedRef.current) {
@@ -123,6 +125,15 @@ export function FeishuOfficialOnboardingPanel({
     }
   };
 
+  const handleModeChange = (nextMode: FeishuConnectMode) => {
+    if (mode === nextMode) {
+      return;
+    }
+
+    setMode(nextMode);
+    void resetFlow();
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-muted p-4 rounded-lg space-y-3">
@@ -145,13 +156,13 @@ export function FeishuOfficialOnboardingPanel({
         <div className="flex flex-wrap gap-2">
           <Button
             variant={mode === 'qr' ? 'default' : 'outline'}
-            onClick={() => setMode('qr')}
+            onClick={() => handleModeChange('qr')}
           >
             {t('dialog.feishuOfficial.modeQr')}
           </Button>
           <Button
             variant={mode === 'existing' ? 'default' : 'outline'}
-            onClick={() => setMode('existing')}
+            onClick={() => handleModeChange('existing')}
           >
             {t('dialog.feishuOfficial.modeExisting')}
           </Button>

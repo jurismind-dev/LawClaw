@@ -43,6 +43,19 @@ describe('FeishuOfficialOnboardingPanel', () => {
             },
             payload,
           };
+        case 'feishu:resetFlow':
+          return {
+            success: true,
+            status: {
+              phase: 'idle',
+              configured: false,
+              pluginInstalled: true,
+              pairUrl: null,
+              pairQrCode: null,
+              lastError: null,
+              lastMessage: null,
+            },
+          };
         default:
           return { success: true };
       }
@@ -111,5 +124,17 @@ describe('FeishuOfficialOnboardingPanel', () => {
 
     expect(screen.queryByText('https://pair.example/secret-link')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /copy/i })).not.toBeInTheDocument();
+  });
+
+  it('resets the QR flow when switching to existing-app mode', async () => {
+    render(<FeishuOfficialOnboardingPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.feishuOfficial.modeExisting' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('feishu:resetFlow');
+    });
+
+    expect(screen.getByText('dialog.feishuOfficial.statusIdle')).toBeInTheDocument();
   });
 });

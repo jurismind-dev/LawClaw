@@ -44,16 +44,16 @@ describe('finalizeFeishuOfficialPluginConfig', () => {
         },
       },
       plugins: {
-        allow: ['other-plugin', 'feishu-openclaw-plugin'],
+        allow: ['other-plugin', 'openclaw-lark'],
         entries: {
           feishu: { enabled: false },
-          'feishu-openclaw-plugin': { enabled: true },
+          'openclaw-lark': { enabled: true },
         },
       },
     });
 
     const entries = (result.config.plugins as { entries: Record<string, unknown> }).entries;
-    expect(entries).not.toHaveProperty('openclaw-lark');
+    expect(entries).not.toHaveProperty('feishu-openclaw-plugin');
   });
 
   it('clears stale app-scoped allowlist data when rebinding to another existing app', () => {

@@ -84,7 +84,7 @@ import {
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
 import { bindJurismindProviderToken } from '../utils/jurismind-provider-token-binding';
-import { feishuOnboardingManager } from '../utils/feishu-onboarding';
+import { feishuOnboardingManager, isFeishuOnboardingCancelledError } from '../utils/feishu-onboarding';
 import {
   applyLawClawProviderSelection,
   clearLawClawProviderSelection,
@@ -754,8 +754,8 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
   const QQ_PLUGIN_ID = 'qqbot';
   const QQ_PLUGIN_VERSION = '1.5.0';
   const QQ_PLUGIN_NPM_SPEC = `@sliverp/${QQ_PLUGIN_ID}@${QQ_PLUGIN_VERSION}`;
-  const FEISHU_OFFICIAL_PLUGIN_ID = 'feishu-openclaw-plugin';
-  const FEISHU_OFFICIAL_PLUGIN_VERSION = '2026.3.10';
+  const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
+  const FEISHU_OFFICIAL_PLUGIN_VERSION = '2026.3.12';
   const FEISHU_OFFICIAL_PLUGIN_NPM_SPEC =
     `@larksuite/openclaw-lark@${FEISHU_OFFICIAL_PLUGIN_VERSION}`;
 
@@ -1136,6 +1136,15 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
           rmSync(conflictingPluginDir, { recursive: true, force: true });
         } catch (error) {
           logger.warn('Failed to remove conflicting Feishu plugin directory', error);
+        }
+      }
+
+      const legacyOfficialPluginDir = join(openclawConfigDir, 'extensions', 'feishu-openclaw-plugin');
+      if (existsSync(legacyOfficialPluginDir)) {
+        try {
+          rmSync(legacyOfficialPluginDir, { recursive: true, force: true });
+        } catch (error) {
+          logger.warn('Failed to remove legacy official Feishu plugin directory', error);
         }
       }
     }
@@ -1561,7 +1570,11 @@ function registerPresetInstallHandlers(
           })),
         };
       } catch (error) {
-        return { success: false, skills: [], error: String(error) };
+        return {
+          success: false,
+          skills: [],
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
     installSkillFromMarket: async ({ market, skillId, version }) => {
@@ -1572,7 +1585,7 @@ function registerPresetInstallHandlers(
         await jurismindHubService.install({ slug: skillId, version });
         return { success: true };
       } catch (error) {
-        const message = String(error);
+        const message = error instanceof Error ? error.message : String(error);
         if (message.toLowerCase().includes('already installed')) {
           return { success: true, skipped: true, reason: 'already installed' };
         }
@@ -1767,6 +1780,9 @@ function registerFeishuOnboardingHandlers(
         });
         return { success: true, result, status: feishuOnboardingManager.getStatus() };
       } catch (error) {
+        if (isFeishuOnboardingCancelledError(error)) {
+          return { success: true, cancelled: true, status: feishuOnboardingManager.getStatus() };
+        }
         return { success: false, error: String(error), status: feishuOnboardingManager.getStatus() };
       }
     }
@@ -1779,6 +1795,18 @@ function registerFeishuOnboardingHandlers(
         String(payload?.appSecret || '')
       );
       return { success: true, status: feishuOnboardingManager.getStatus() };
+    } catch (error) {
+      if (isFeishuOnboardingCancelledError(error)) {
+        return { success: true, cancelled: true, status: feishuOnboardingManager.getStatus() };
+      }
+      return { success: false, error: String(error), status: feishuOnboardingManager.getStatus() };
+    }
+  });
+
+  ipcMain.handle('feishu:resetFlow', async () => {
+    try {
+      const status = await feishuOnboardingManager.resetFlow();
+      return { success: true, status };
     } catch (error) {
       return { success: false, error: String(error), status: feishuOnboardingManager.getStatus() };
     }
@@ -1867,6 +1895,8 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
  * Provider-related IPC handlers
  */
 function registerProviderHandlers(gatewayManager: GatewayManager): void {
+  let activeJurismindBindingPromise: Promise<Awaited<ReturnType<typeof bindJurismindProviderToken>>> | null = null;
+
   const saveProviderKeyToOpenClawAgents = (providerType: string, apiKey: string): void => {
     saveProviderKeyToOpenClaw(providerType, apiKey);
     saveProviderKeyToOpenClaw(providerType, apiKey, LAWCLAW_MAIN_AGENT_ID);
@@ -2258,7 +2288,15 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
   // Jurismind provider: browser SSO -> open_id -> credits token_key auto bind
   ipcMain.handle('provider:bindJurismindToken', async () => {
     try {
-      const bound = await bindJurismindProviderToken();
+      if (!activeJurismindBindingPromise) {
+        activeJurismindBindingPromise = bindJurismindProviderToken().finally(() => {
+          activeJurismindBindingPromise = null;
+        });
+      } else {
+        logger.info('provider:bindJurismindToken reusing active SSO binding flow');
+      }
+
+      const bound = await activeJurismindBindingPromise;
       return {
         success: true,
         openId: bound.openId,
@@ -2267,7 +2305,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       };
     } catch (error) {
       logger.error('provider:bindJurismindToken failed', error);
-      return { success: false, error: String(error) };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   });
 }

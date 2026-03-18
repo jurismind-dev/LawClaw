@@ -18,6 +18,7 @@ import { join, relative } from 'node:path';
 import { logger } from './logger';
 import { sanitizePluginPackageManifestForLocalInstall } from './openclaw-plugin-install';
 import { getOpenClawConfigDir } from './paths';
+import { isClawHubTimeoutFailure } from '../gateway/clawhub-timeout';
 import {
   computePresetInstallManifestHash,
   getPresetInstallRootPath,
@@ -289,6 +290,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function getReadableErrorMessage(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error))
+    .replace(/^(?:Error:\s*)+/i, '')
+    .trim();
+}
+
 export class PresetInstaller {
   private readonly options: PresetInstallerOptions;
   private readonly openClawConfigDir: string;
@@ -427,7 +434,12 @@ export class PresetInstaller {
         selection: 'official-highlighted',
       });
       if (!listResult.success) {
-        throw new Error(listResult.error || 'failed to load market skills');
+        const message = getReadableErrorMessage(listResult.error || 'failed to load market skills');
+        throw new Error(
+          isClawHubTimeoutFailure(message)
+            ? '加载预置技能列表超时，请检查网络后重试'
+            : message
+        );
       }
 
       for (const marketSkill of listResult.skills) {
@@ -635,12 +647,11 @@ export class PresetInstaller {
     const installed: string[] = [];
     const skippedItems: string[] = [];
     let runtimeItems: PresetInstallManifest['items'] = context.manifest.items;
-    let total = Math.max(runtimeItems.length, 1);
     let shouldRestartGateway = false;
 
     try {
       runtimeItems = await this.expandManifestItems(context.manifest.items);
-      total = Math.max(runtimeItems.length, 1);
+      const total = Math.max(runtimeItems.length, 1);
       const runtimeManifest: PresetInstallManifest = {
         ...context.manifest,
         items: runtimeItems,
@@ -788,10 +799,11 @@ export class PresetInstaller {
         skippedItems,
       };
     } catch (error) {
+      const message = getReadableErrorMessage(error);
       state.lastResult = {
         status: 'failed',
         manifestHash: context.manifestHash,
-        message: String(error),
+        message,
         updatedAt: new Date().toISOString(),
       };
       state.updatedAt = new Date().toISOString();
@@ -803,7 +815,7 @@ export class PresetInstaller {
         failedItem: installed.length + skippedItems.length < runtimeItems.length
           ? runtimeItems[installed.length + skippedItems.length]?.id
           : undefined,
-        error: String(error),
+        error: message,
       };
     }
   }
@@ -931,11 +943,14 @@ export class PresetInstaller {
     });
 
     if (!result.success) {
+      const message = getReadableErrorMessage(result.error || `Failed to install market skill ${item.id}`);
       return {
         skipped: false,
         shouldRestartGateway: false,
         failed: true,
-        message: result.error || `Failed to install market skill ${item.id}`,
+        message: isClawHubTimeoutFailure(message)
+          ? `市场技能 ${item.id} 安装超时，请检查网络后重试`
+          : message,
       };
     }
 

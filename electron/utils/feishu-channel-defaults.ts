@@ -1,7 +1,12 @@
 export type JsonObject = Record<string, unknown>;
 
-const FEISHU_OFFICIAL_PLUGIN_ID = 'feishu-openclaw-plugin';
-const FEISHU_CONFLICT_PLUGIN_IDS = ['feishu', 'openclaw-lark', '@larksuite/openclaw-lark'];
+const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
+const FEISHU_CONFLICT_PLUGIN_IDS = [
+  'feishu',
+  'feishu-openclaw-plugin',
+  'openclaw-lark',
+  '@larksuite/openclaw-lark',
+];
 
 export interface ApplyFeishuChannelDefaultsOptions {
   fallbackConfig?: JsonObject;
@@ -123,12 +128,15 @@ export function finalizeFeishuOfficialPluginConfig(
   }
 
   const nextEntries: JsonObject = { ...entries };
-  nextEntries[FEISHU_OFFICIAL_PLUGIN_ID] = { enabled: true };
+  nextEntries[FEISHU_OFFICIAL_PLUGIN_ID] = {
+    ...(asObject(entries[FEISHU_OFFICIAL_PLUGIN_ID]) || {}),
+    enabled: true,
+  };
   nextEntries.feishu = {
     ...(asObject(entries.feishu) || {}),
     enabled: false,
   };
-  delete nextEntries['openclaw-lark'];
+  delete nextEntries['feishu-openclaw-plugin'];
   delete nextEntries['@larksuite/openclaw-lark'];
 
   let allowFrom = normalizeStringArray(existingChannel.allowFrom);

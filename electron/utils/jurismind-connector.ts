@@ -4,7 +4,10 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { loadOrCreateDeviceIdentity } from './device-identity';
 import { logger } from './logger';
+import { getOpenClawEntryPath } from './paths';
+import { getNodeExecForCli } from './openclaw-cli';
 import { renderQrPngBase64 } from './qr-code';
 
 export interface JurismindConnectorStatus {
@@ -73,6 +76,7 @@ class JurismindConnectorManager extends EventEmitter {
     process.env.CONNECTOR_AUTH_FILE || join(homedir(), '.lawclaw', 'connector-auth.json')
   ).trim();
   private readonly appDeviceIdentityPath = join(app.getPath('userData'), 'clawx-device-identity.json');
+  private readonly legacyDeviceKeyPath = join(homedir(), '.lawclaw', 'connector-device-key.json');
 
   getStatus(): JurismindConnectorStatus {
     const hasBinding = existsSync(this.authFilePath);
@@ -100,7 +104,7 @@ class JurismindConnectorManager extends EventEmitter {
     if (options.forceRefresh || options.resetAuth) {
       await this.stop(options.resetAuth ? 'rebind-reset-auth' : 'force-refresh');
       if (options.resetAuth) {
-        this.clearSavedBinding();
+        this.clearSavedBindingState({ removeDeviceIdentity: true });
         this.forceLoginOnNextPair = true;
       }
       this.resetPairState();
@@ -128,18 +132,38 @@ class JurismindConnectorManager extends EventEmitter {
     return await this.waitForPairUrl(timeoutMs);
   }
 
-  clearSavedBinding(): void {
-    try {
-      rmSync(this.authFilePath, { force: true });
-      logger.info(`[JurismindConnector] cleared saved binding token: ${this.authFilePath}`);
-    } catch (error) {
-      logger.warn('[JurismindConnector] clearSavedBinding failed:', error);
+  private getManagedDeviceIdentityPaths(): string[] {
+    const configuredPath = String(process.env.CONNECTOR_DEVICE_KEY_PATH || '').trim();
+    const paths = new Set<string>();
+
+    if (configuredPath) {
+      paths.add(configuredPath);
+    }
+    paths.add(this.appDeviceIdentityPath);
+    paths.add(this.legacyDeviceKeyPath);
+
+    return [...paths].filter(Boolean);
+  }
+
+  private clearSavedBindingState(options: { removeDeviceIdentity?: boolean } = {}): void {
+    const targets = [this.authFilePath];
+    if (options.removeDeviceIdentity) {
+      targets.push(...this.getManagedDeviceIdentityPaths());
+    }
+
+    for (const targetPath of targets) {
+      try {
+        rmSync(targetPath, { force: true });
+        logger.info(`[JurismindConnector] cleared local binding state: ${targetPath}`);
+      } catch (error) {
+        logger.warn(`[JurismindConnector] failed to clear local binding state: ${targetPath}`, error);
+      }
     }
   }
 
   async clearBinding(): Promise<void> {
     await this.stop('clear-binding');
-    this.clearSavedBinding();
+    this.clearSavedBindingState({ removeDeviceIdentity: true });
     this.resetPairState();
     this.lastError = null;
     this.emitStatus();
@@ -198,6 +222,21 @@ class JurismindConnectorManager extends EventEmitter {
     this.pairIssuedAt = 0;
   }
 
+  private async resolveConnectorDeviceIdentityPath(): Promise<string> {
+    const explicitPath = String(process.env.CONNECTOR_DEVICE_KEY_PATH || '').trim();
+    if (explicitPath) {
+      return explicitPath;
+    }
+
+    try {
+      await loadOrCreateDeviceIdentity(this.appDeviceIdentityPath);
+      return this.appDeviceIdentityPath;
+    } catch (error) {
+      logger.warn('[JurismindConnector] failed to ensure shared device identity:', error);
+      return existsSync(this.appDeviceIdentityPath) ? this.appDeviceIdentityPath : '';
+    }
+  }
+
   private async ensureRunning(): Promise<void> {
     if (this.connectorProcess && this.running) return;
 
@@ -209,22 +248,25 @@ class JurismindConnectorManager extends EventEmitter {
     this.stdoutBuffer = '';
     this.stderrBuffer = '';
     this.lastError = null;
+    const connectorDeviceIdentityPath = await this.resolveConnectorDeviceIdentityPath();
 
     const env = {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
+      OPENCLAW_NO_RESPAWN: '1',
+      OPENCLAW_EMBEDDED_IN: 'LawClaw',
       RELAY_URL: this.relayUrl,
       CONNECTOR_TOKEN: '',
       CONNECTOR_AUTH_FILE: this.authFilePath,
-      CONNECTOR_DEVICE_KEY_PATH:
-        process.env.CONNECTOR_DEVICE_KEY_PATH ||
-        (existsSync(this.appDeviceIdentityPath) ? this.appDeviceIdentityPath : ''),
+      CONNECTOR_DEVICE_KEY_PATH: connectorDeviceIdentityPath,
       CONNECTOR_AUTH_MODE: 'pair',
       CONNECTOR_AUTO_AUTHORIZE: 'true',
       CONNECTOR_PAIR_OPEN_BROWSER: 'false',
       CONNECTOR_AUTH_OPEN_BROWSER: 'false',
       CONNECTOR_AUTH_TIMEOUT_MS: process.env.CONNECTOR_AUTH_TIMEOUT_MS || '600000',
       CONNECTOR_PAIR_POLL_INTERVAL_MS: process.env.CONNECTOR_PAIR_POLL_INTERVAL_MS || '1500',
+      OPENCLAW_CLI_ENTRY_PATH: getOpenClawEntryPath(),
+      OPENCLAW_CLI_NODE_EXEC_PATH: getNodeExecForCli(),
     };
 
     const child = spawn(process.execPath, [runtime.entryPath], {

@@ -87,6 +87,9 @@ const CONFIG = {
   openclawConfigPath: (process.env.OPENCLAW_CONFIG_PATH || join(homedir(), '.openclaw', 'openclaw.json')).trim(),
   openclawGatewayYamlPath: (process.env.OPENCLAW_GATEWAY_CONFIG_PATH || join(homedir(), '.openclaw', 'gateway.yaml')).trim(),
   deviceKeyPath: (process.env.CONNECTOR_DEVICE_KEY_PATH || DEFAULT_DEVICE_KEY_PATH).trim(),
+  autoApprovePairing: (process.env.CONNECTOR_AUTO_APPROVE_PAIRING || 'true').toLowerCase() !== 'false',
+  openclawCliEntryPath: (process.env.OPENCLAW_CLI_ENTRY_PATH || '').trim(),
+  openclawCliNodeExecPath: (process.env.OPENCLAW_CLI_NODE_EXEC_PATH || process.execPath).trim(),
 };
 
 if (!CONFIG.relayUrl) {
@@ -105,6 +108,8 @@ const SCOPES = ['operator.admin', 'operator.approvals', 'operator.pairing', 'ope
 const REQUEST_TIMEOUT = 30000;
 const CONNECT_TIMEOUT = 12000;
 const RELAY_MAX_RECONNECT_DELAY = 30000;
+const PAIRING_APPROVE_LOOKUP_TIMEOUT = 3000;
+const PAIRING_APPROVE_LOOKUP_INTERVAL = 300;
 
 const relayState = {
   ws: null,
@@ -579,6 +584,144 @@ function clearRelayReconnectTimer() {
   }
 }
 
+function isPairingRequiredErrorMessage(message) {
+  return /pairing required|NOT_PAIRED/i.test(String(message || ''));
+}
+
+function getOpenClawCliCwd() {
+  const configPath = CONFIG.openclawConfigPath || join(homedir(), '.openclaw', 'openclaw.json');
+  const cwd = dirname(configPath);
+  return cwd && cwd !== '.' ? cwd : homedir();
+}
+
+function runOpenClawCli(args) {
+  return new Promise((resolve, reject) => {
+    if (!CONFIG.openclawCliEntryPath) {
+      reject(new Error('未配置 OPENCLAW_CLI_ENTRY_PATH'));
+      return;
+    }
+
+    const child = spawn(CONFIG.openclawCliNodeExecPath, [CONFIG.openclawCliEntryPath, ...args], {
+      cwd: getOpenClawCliCwd(),
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        OPENCLAW_NO_RESPAWN: '1',
+        OPENCLAW_EMBEDDED_IN: 'LawClaw',
+        OPENCLAW_CONFIG_PATH: CONFIG.openclawConfigPath,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout?.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on('error', (error) => {
+      reject(new Error(`启动 OpenClaw CLI 失败: ${error.message}`));
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+
+      reject(
+        new Error(
+          stderr.trim() || stdout.trim() || `OpenClaw CLI exited with code ${String(code)}`
+        )
+      );
+    });
+  });
+}
+
+async function listPendingDevicePairingRequests() {
+  const result = await runOpenClawCli(['devices', 'list', '--json']);
+  const parsed = JSON.parse(String(result.stdout || '{}'));
+  return Array.isArray(parsed?.pending) ? parsed.pending : [];
+}
+
+function selectLatestPendingRequest(requests) {
+  if (!Array.isArray(requests) || requests.length === 0) return null;
+  return requests.reduce((latest, current) => {
+    const latestTs = typeof latest?.ts === 'number' ? latest.ts : 0;
+    const currentTs = typeof current?.ts === 'number' ? current.ts : 0;
+    return currentTs > latestTs ? current : latest;
+  }, null);
+}
+
+function selectMatchingPendingRequest(requests) {
+  const exactMatches = (Array.isArray(requests) ? requests : []).filter((request) => {
+    return (
+      String(request?.deviceId || '').trim() === deviceKey.deviceId &&
+      String(request?.role || '').trim() === 'operator'
+    );
+  });
+
+  if (exactMatches.length > 0) {
+    return selectLatestPendingRequest(exactMatches);
+  }
+
+  const sameDeviceMatches = (Array.isArray(requests) ? requests : []).filter((request) => {
+    return String(request?.deviceId || '').trim() === deviceKey.deviceId;
+  });
+
+  if (sameDeviceMatches.length > 0) {
+    return selectLatestPendingRequest(sameDeviceMatches);
+  }
+
+  if (Array.isArray(requests) && requests.length === 1) {
+    return requests[0];
+  }
+
+  return null;
+}
+
+async function tryAutoApproveLocalPairing() {
+  if (!CONFIG.autoApprovePairing) return false;
+  if (!CONFIG.openclawCliEntryPath) {
+    log.warn('OpenClaw CLI 入口未配置，无法自动批准本机设备配对。');
+    return false;
+  }
+
+  const deadline = Date.now() + PAIRING_APPROVE_LOOKUP_TIMEOUT;
+  let lastError = null;
+
+  while (Date.now() < deadline) {
+    try {
+      const pendingRequests = await listPendingDevicePairingRequests();
+      const request = selectMatchingPendingRequest(pendingRequests);
+      const requestId = String(request?.requestId || '').trim();
+
+      if (requestId) {
+        log.info(`检测到待审批的本机设备配对请求: ${requestId} device=${request.deviceId || '-'} role=${request.role || '-'}`);
+        await runOpenClawCli(['devices', 'approve', requestId, '--json']);
+        log.info(`已自动批准本机 OpenClaw 设备配对: ${requestId}`);
+        return true;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    await sleep(PAIRING_APPROVE_LOOKUP_INTERVAL);
+  }
+
+  if (lastError) {
+    log.warn(`自动批准本机设备配对失败: ${lastError.message || String(lastError)}`);
+  } else {
+    log.warn('未找到可自动批准的本机设备配对请求。');
+  }
+  return false;
+}
+
 function scheduleRelayReconnect() {
   clearRelayReconnectTimer();
   if (relayState.intentionalClose) return;
@@ -804,9 +947,7 @@ async function handleRelayConnect(message) {
     cleanupLocalSession(sid, { notifyRelay: false, reason: 'replaced' });
   }
 
-  const session = createLocalSession(sid);
-
-  try {
+  async function finalizeRelayConnect(session) {
     await connectLocalGateway(session);
 
     const defaults = session.snapshot?.sessionDefaults;
@@ -819,7 +960,28 @@ async function handleRelayConnect(message) {
       snapshot: session.snapshot,
       sessionKey,
     });
+  }
+
+  let session = createLocalSession(sid);
+
+  try {
+    await finalizeRelayConnect(session);
   } catch (error) {
+    if (isPairingRequiredErrorMessage(error?.message || error)) {
+      const approved = await tryAutoApproveLocalPairing();
+      if (approved) {
+        log.info('本机设备配对已批准，正在重试连接本地 Gateway。');
+        cleanupLocalSession(sid, { notifyRelay: false, reason: 'retry-after-auto-approve' });
+        session = createLocalSession(sid);
+        try {
+          await finalizeRelayConnect(session);
+          return;
+        } catch (retryError) {
+          error = retryError;
+        }
+      }
+    }
+
     sendRelay({
       type: 'relay.connect.error',
       sid,

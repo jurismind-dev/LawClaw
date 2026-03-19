@@ -439,6 +439,8 @@ jobs:
 
       - name: Validate release payload
         shell: bash
+        env:
+          RELEASE_CHANNEL: ${{ steps.channel.outputs.release_channel }}
         run: |
           set -euo pipefail
 
@@ -453,6 +455,21 @@ jobs:
             fi
           }
 
+          require_any_pattern() {
+            local label="$1"
+            shift
+            local count=0
+            local pattern
+            for pattern in "$@"; do
+              count="$(find release-artifacts -type f -name "${pattern}" | wc -l | tr -d ' ')"
+              if [[ "${count}" -gt 0 ]]; then
+                return 0
+              fi
+            done
+            echo "Missing required ${label} files (${*}) in release-artifacts/"
+            exit 1
+          }
+
           require_pattern "*-mac-arm64.dmg" "macOS Apple Silicon installer"
           require_pattern "*-mac-x64.dmg" "macOS Intel installer"
           require_pattern "*-mac-arm64.zip" "macOS Apple Silicon updater zip"
@@ -463,8 +480,14 @@ jobs:
           require_pattern "*-win-x64.exe" "Windows x64 installer"
           require_pattern "*-win-arm64.exe.blockmap" "Windows ARM64 blockmap"
           require_pattern "*-win-x64.exe.blockmap" "Windows x64 blockmap"
-          require_pattern "latest-mac.yml" "macOS update metadata"
-          require_pattern "latest.yml" "Windows update metadata"
+
+          if [[ "${RELEASE_CHANNEL}" == "beta" ]]; then
+            require_any_pattern "macOS beta update metadata" "beta-mac.yml" "latest-mac.yml"
+            require_any_pattern "Windows beta update metadata" "beta.yml" "latest.yml"
+          else
+            require_pattern "latest-mac.yml" "macOS update metadata"
+            require_pattern "latest.yml" "Windows update metadata"
+          fi
 
       - name: Upload release artifacts to OSS
         shell: bash

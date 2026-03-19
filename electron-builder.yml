@@ -63,6 +63,7 @@ publish:
   - provider: generic
     url: https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest
     useMultipleRangeRequest: false
+generateUpdatesFilesForAllChannels: true
 
 # macOS Configuration
 mac:

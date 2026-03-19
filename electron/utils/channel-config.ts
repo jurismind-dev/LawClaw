@@ -11,6 +11,7 @@ import { homedir } from 'os';
 import { getOpenClawResolvedDir } from './paths';
 import { applyFeishuChannelDefaults } from './feishu-channel-defaults';
 import * as logger from './logger';
+import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
@@ -162,7 +163,11 @@ export async function readOpenClawConfig(): Promise<OpenClawConfig> {
 
     try {
         const content = await readFile(CONFIG_FILE, 'utf-8');
-        return JSON.parse(content) as OpenClawConfig;
+        const parsed = parseJsonText(content) as OpenClawConfig;
+        if (process.platform === 'win32' && !hasUtf8Bom(content)) {
+            await writeFile(CONFIG_FILE, stringifyJsonText(parsed), 'utf-8');
+        }
+        return parsed;
     } catch (error) {
         logger.error('Failed to read OpenClaw config', error);
         console.error('Failed to read OpenClaw config:', error);
@@ -174,7 +179,7 @@ export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void>
     await ensureConfigDir();
 
     try {
-        await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+        await writeFile(CONFIG_FILE, stringifyJsonText(config), 'utf-8');
     } catch (error) {
         logger.error('Failed to write OpenClaw config', error);
         console.error('Failed to write OpenClaw config:', error);

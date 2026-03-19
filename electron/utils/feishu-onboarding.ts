@@ -15,6 +15,7 @@ import { detectPluginInstallationState } from './openclaw-plugin-install';
 import { renderQrPngBase64 } from './qr-code';
 import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
 import { applyBundledNpmToCliEnv, getNodeExecForCli } from './openclaw-cli';
+import { parseJsonText, stripUtf8Bom } from './text-encoding';
 
 const FEISHU_REGISTRATION_URL = 'https://accounts.feishu.cn/oauth/v1/app/registration';
 const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
@@ -195,7 +196,7 @@ class FeishuOnboardingManager extends EventEmitter {
 
     if (existsSync(configPath)) {
       try {
-        parsedConfig = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+        parsedConfig = parseJsonText(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
       } catch (error) {
         logger.warn('[FeishuOnboarding] Failed to parse OpenClaw config while refreshing state', error);
       }
@@ -694,7 +695,7 @@ class FeishuOnboardingManager extends EventEmitter {
     try {
       const configPath = join(openclawConfigDir, 'openclaw.json');
       if (existsSync(configPath)) {
-        cliEnv = applyOpenClawConfigEnvFallbacks(readFileSync(configPath, 'utf-8'), cliEnv);
+        cliEnv = applyOpenClawConfigEnvFallbacks(stripUtf8Bom(readFileSync(configPath, 'utf-8')), cliEnv);
       }
     } catch (error) {
       logger.warn('[FeishuOnboarding] Failed to apply OpenClaw config env fallbacks', error);

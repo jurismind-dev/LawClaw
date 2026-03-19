@@ -1,6 +1,10 @@
 @echo off
 setlocal
 
+chcp 65001 >nul
+set "PYTHONIOENCODING=utf-8"
+set "PYTHONUTF8=1"
+
 set "UV_EXE=%LAWCLAW_BUNDLED_UV_EXE%"
 if not defined UV_EXE set "UV_EXE=%~dp0..\bin\uv.exe"
 

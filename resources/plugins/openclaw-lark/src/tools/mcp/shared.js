@@ -79,7 +79,7 @@ function readMcpUrlFromOpenclawJson() {
         if (!fs.existsSync(p))
             return undefined;
         const raw = fs.readFileSync(p, 'utf8');
-        const cfg = JSON.parse(raw);
+        const cfg = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
         return extractMcpUrlFromConfig(cfg);
     }
     catch {

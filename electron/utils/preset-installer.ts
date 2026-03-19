@@ -16,6 +16,7 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { logger } from './logger';
+import { parseJsonText, stringifyJsonText } from './text-encoding';
 import { sanitizePluginPackageManifestForLocalInstall } from './openclaw-plugin-install';
 import { getOpenClawConfigDir } from './paths';
 import { isClawHubTimeoutFailure } from '../gateway/clawhub-timeout';
@@ -580,7 +581,7 @@ export class PresetInstaller {
       if (existsSync(configPath)) {
         const raw = readFileSync(configPath, 'utf-8').trim();
         if (raw.length > 0) {
-          const parsed = JSON.parse(raw) as unknown;
+          const parsed = parseJsonText(raw) as unknown;
           if (isRecord(parsed)) {
             config = parsed;
           }
@@ -594,7 +595,7 @@ export class PresetInstaller {
       skillsNode.entries = entriesNode;
       config.skills = skillsNode;
 
-      writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
+      writeFileSync(configPath, stringifyJsonText(config), 'utf-8');
     } catch (error) {
       logger.warn(`[PresetInstaller] failed to mark skill enabled: ${skillId}`, error);
     }

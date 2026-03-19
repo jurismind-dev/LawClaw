@@ -13,6 +13,7 @@ import {
   getProviderDefaultModel,
   getProviderEnvVar,
 } from './provider-registry';
+import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -67,7 +68,7 @@ function readAuthProfiles(agentId = 'main'): AuthProfilesStore {
   try {
     if (existsSync(filePath)) {
       const raw = readFileSync(filePath, 'utf-8');
-      const data = JSON.parse(raw) as AuthProfilesStore;
+      const data = parseJsonText(raw) as AuthProfilesStore;
       if (data.version && data.profiles && typeof data.profiles === 'object') {
         return data;
       }
@@ -90,7 +91,7 @@ function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): void {
     mkdirSync(dir, { recursive: true });
   }
 
-  writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf-8');
+  writeFileSync(filePath, stringifyJsonText(store, { trailingNewline: false }), 'utf-8');
 }
 
 function readOpenClawConfig(): Record<string, unknown> {
@@ -98,7 +99,12 @@ function readOpenClawConfig(): Record<string, unknown> {
 
   try {
     if (existsSync(configPath)) {
-      return JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+      const raw = readFileSync(configPath, 'utf-8');
+      const parsed = parseJsonText(raw) as Record<string, unknown>;
+      if (process.platform === 'win32' && !hasUtf8Bom(raw)) {
+        writeFileSync(configPath, stringifyJsonText(parsed, { trailingNewline: false }), 'utf-8');
+      }
+      return parsed;
     }
   } catch (error) {
     console.warn('Failed to read openclaw.json, creating fresh config:', error);
@@ -113,7 +119,7 @@ function writeOpenClawConfig(config: Record<string, unknown>): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+  writeFileSync(configPath, stringifyJsonText(config, { trailingNewline: false }), 'utf-8');
 }
 
 function upsertAuthProfile(store: AuthProfilesStore, providerId: string, apiKey: string): void {

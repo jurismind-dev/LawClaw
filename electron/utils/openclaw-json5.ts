@@ -1,13 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import JSON5 from 'json5';
+import { ensureWindowsUtf8Bom, stripUtf8Bom } from './text-encoding';
 
 export function readJson5File<T>(filePath: string, fallback: T): T {
   if (!existsSync(filePath)) {
     return fallback;
   }
 
-  const raw = readFileSync(filePath, 'utf-8').trim();
+  const raw = stripUtf8Bom(readFileSync(filePath, 'utf-8')).trim();
   if (!raw) {
     return fallback;
   }
@@ -25,5 +26,5 @@ export function writeJsonFile(filePath: string, value: unknown): void {
     mkdirSync(parentDir, { recursive: true });
   }
 
-  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+  writeFileSync(filePath, ensureWindowsUtf8Bom(`${JSON.stringify(value, null, 2)}\n`), 'utf-8');
 }

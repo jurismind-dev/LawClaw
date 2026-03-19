@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { existsSync } from 'fs';
 import { delimiter, join, resolve } from 'node:path';
+import { applyWindowsUtf8Env } from './text-encoding';
 
 export interface BundledRuntimeEnvOptions {
   nodeExecutablePath?: string;
@@ -45,6 +46,20 @@ function getPackagedRuntimeBridgeDir(): string | null {
 
 function getRuntimeBridgeDir(): string | null {
   return app.isPackaged ? getPackagedRuntimeBridgeDir() : getDevRuntimeBridgeDir();
+}
+
+function getWindowsUtf8CmdWrapperPath(): string | null {
+  if (process.platform !== 'win32') {
+    return null;
+  }
+
+  const runtimeBridgeDir = getRuntimeBridgeDir();
+  if (!runtimeBridgeDir) {
+    return null;
+  }
+
+  const wrapperPath = join(runtimeBridgeDir, 'cmd-utf8.cmd');
+  return existsSync(wrapperPath) ? wrapperPath : null;
 }
 
 function getBundledBinDir(): string {
@@ -121,10 +136,15 @@ export function applyBundledRuntimeToEnv(
   baseEnv: NodeJS.ProcessEnv,
   options: BundledRuntimeEnvOptions = {},
 ): NodeJS.ProcessEnv {
-  const env = { ...baseEnv };
+  const env = applyWindowsUtf8Env(baseEnv);
   const pathEntries = getBundledRuntimePathEntries();
   if (pathEntries.length > 0) {
     env.PATH = prependPathEntries(env.PATH, pathEntries);
+  }
+
+  const utf8CmdWrapper = getWindowsUtf8CmdWrapperPath();
+  if (utf8CmdWrapper) {
+    env.ComSpec = utf8CmdWrapper;
   }
 
   if (!app.isPackaged) {

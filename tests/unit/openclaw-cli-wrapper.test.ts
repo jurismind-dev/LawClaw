@@ -17,6 +17,7 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(posixWrapper).not.toContain('ClawX');
 
     expect(windowsCmdWrapper).toContain('LawClaw.exe');
+    expect(windowsCmdWrapper).toContain('chcp 65001');
     expect(windowsCmdWrapper).not.toContain('ClawX.exe');
 
     expect(windowsShWrapper).toContain('LawClaw.exe');
@@ -53,6 +54,7 @@ describe('bundled openclaw CLI wrappers', () => {
     const builderConfig = readRepoFile('electron-builder.yml');
     const posixNode = readRepoFile('resources/runtime-bridge/posix/node');
     const posixPython = readRepoFile('resources/runtime-bridge/posix/python');
+    const windowsCmdUtf8 = readRepoFile('resources/runtime-bridge/win32/cmd-utf8.cmd');
     const windowsNode = readRepoFile('resources/runtime-bridge/win32/node.cmd');
     const windowsPython = readRepoFile('resources/runtime-bridge/win32/python.cmd');
 
@@ -64,10 +66,14 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(posixPython).toContain('python find 3.12');
     expect(posixPython).toContain('python install 3.12');
 
+    expect(windowsCmdUtf8).toContain('chcp 65001');
+    expect(windowsCmdUtf8).toContain('cmd.exe');
     expect(windowsNode).toContain('LAWCLAW_BUNDLED_NODE_EXE');
     expect(windowsNode).toContain('ELECTRON_RUN_AS_NODE=1');
+    expect(windowsNode).toContain('PYTHONIOENCODING=utf-8');
     expect(windowsPython).toContain('python find 3.12');
     expect(windowsPython).toContain('python install 3.12');
+    expect(windowsPython).toContain('PYTHONUTF8=1');
   });
 
   it('patches bundled packages that still need require() compatibility', () => {

@@ -10,6 +10,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { logger } from './logger';
 import { getResourcesDir } from './paths';
+import { parseJsonText } from './text-encoding';
 
 const CLAWX_BEGIN = '<!-- clawx:begin -->';
 const CLAWX_END = '<!-- clawx:end -->';
@@ -57,7 +58,7 @@ async function resolveAllWorkspaceDirs(): Promise<string[]> {
   const configPath = join(openclawDir, 'openclaw.json');
   try {
     if (await fileExists(configPath)) {
-      const config = JSON.parse(await readFile(configPath, 'utf-8'));
+      const config = parseJsonText(await readFile(configPath, 'utf-8'));
 
       const defaultWs = config?.agents?.defaults?.workspace;
       if (typeof defaultWs === 'string' && defaultWs.trim()) {

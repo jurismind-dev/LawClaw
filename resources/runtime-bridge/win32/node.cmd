@@ -1,6 +1,10 @@
 @echo off
 setlocal
 
+chcp 65001 >nul
+set "PYTHONIOENCODING=utf-8"
+set "PYTHONUTF8=1"
+
 set "NODE_EXE=%LAWCLAW_BUNDLED_NODE_EXE%"
 if not defined NODE_EXE set "NODE_EXE=%~dp0..\..\LawClaw.exe"
 

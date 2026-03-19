@@ -44,6 +44,7 @@ import {
   buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
+import { parseJsonText, stringifyJsonText } from '../utils/text-encoding';
 import { selectGatewayRuntime } from './runtime-selection';
 
 /**
@@ -258,7 +259,7 @@ export class GatewayManager extends EventEmitter {
 
     try {
       const raw = readFileSync(configPath, 'utf-8');
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const parsed = parseJsonText(raw) as Record<string, unknown>;
       const detection = detectPluginInstallationState(pluginId, {
         hasExtensionDir: existsSync(pluginDir),
         config: parsed,
@@ -269,7 +270,7 @@ export class GatewayManager extends EventEmitter {
         return;
       }
 
-      writeFileSync(configPath, JSON.stringify(stripped.config, null, 2), 'utf-8');
+      writeFileSync(configPath, stringifyJsonText(stripped.config), 'utf-8');
       savePluginChannelConfigBackup(configDir, pluginId, stripped.removedChannelConfig);
 
       logger.warn(

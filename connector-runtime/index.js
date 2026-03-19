@@ -197,17 +197,18 @@ function saveConnectorToken(token) {
 
 function extractGatewayTokenFromContent(raw) {
   if (!raw) return '';
+  const normalized = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
 
   // openclaw.json / JSON5 样式
-  const json5Match = raw.match(/gateway[\s\S]{0,2000}?auth[\s\S]{0,1000}?token\s*:\s*['\"]([^'\"\n]+)['\"]/i);
+  const json5Match = normalized.match(/gateway[\s\S]{0,2000}?auth[\s\S]{0,1000}?token\s*:\s*['\"]([^'\"\n]+)['\"]/i);
   if (json5Match?.[1]) return json5Match[1].trim();
 
   // 纯 JSON 样式
-  const jsonMatch = raw.match(/"gateway"[\s\S]{0,2000}?"auth"[\s\S]{0,1000}?"token"\s*:\s*"([^"\n]+)"/i);
+  const jsonMatch = normalized.match(/"gateway"[\s\S]{0,2000}?"auth"[\s\S]{0,1000}?"token"\s*:\s*"([^"\n]+)"/i);
   if (jsonMatch?.[1]) return jsonMatch[1].trim();
 
   // gateway.yaml 样式
-  const yamlMatch = raw.match(/^\s*token\s*:\s*['\"]?([^'\"\s#\n]+)['\"]?\s*$/m);
+  const yamlMatch = normalized.match(/^\s*token\s*:\s*['\"]?([^'\"\s#\n]+)['\"]?\s*$/m);
   if (yamlMatch?.[1]) return yamlMatch[1].trim();
 
   return '';

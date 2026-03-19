@@ -9,6 +9,7 @@ import { readFile, writeFile, access } from 'fs/promises';
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
 
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
 
@@ -39,7 +40,11 @@ async function readConfig(): Promise<OpenClawConfig> {
     }
     try {
         const raw = await readFile(OPENCLAW_CONFIG_PATH, 'utf-8');
-        return JSON.parse(raw);
+        const parsed = parseJsonText(raw);
+        if (process.platform === 'win32' && !hasUtf8Bom(raw)) {
+            await writeFile(OPENCLAW_CONFIG_PATH, stringifyJsonText(parsed), 'utf-8');
+        }
+        return parsed;
     } catch (err) {
         console.error('Failed to read openclaw config:', err);
         return {};
@@ -50,8 +55,7 @@ async function readConfig(): Promise<OpenClawConfig> {
  * Write the OpenClaw config
  */
 async function writeConfig(config: OpenClawConfig): Promise<void> {
-    const json = JSON.stringify(config, null, 2);
-    await writeFile(OPENCLAW_CONFIG_PATH, json, 'utf-8');
+    await writeFile(OPENCLAW_CONFIG_PATH, stringifyJsonText(config), 'utf-8');
 }
 
 /**

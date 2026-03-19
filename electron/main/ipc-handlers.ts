@@ -31,6 +31,7 @@ import {
   ensureDir,
 } from '../utils/paths';
 import { applyBundledNpmToCliEnv, getNodeExecForCli, getOpenClawCliCommand } from '../utils/openclaw-cli';
+import { parseJsonText, stringifyJsonText, stripUtf8Bom } from '../utils/text-encoding';
 import { getSetting, setSetting } from '../utils/store';
 import {
   clearJurismindWebSearchConfig,
@@ -788,7 +789,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
       try {
         const configPath = join(openclawConfigDir, 'openclaw.json');
         if (existsSync(configPath)) {
-          const configRaw = readFileSync(configPath, 'utf-8');
+          const configRaw = stripUtf8Bom(readFileSync(configPath, 'utf-8'));
           cliEnv = applyOpenClawConfigEnvFallbacks(configRaw, cliEnv);
         }
       } catch (error) {
@@ -1121,11 +1122,11 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
   ): void => {
     try {
       const parsed = existsSync(configPath)
-        ? JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>
+        ? parseJsonText(readFileSync(configPath, 'utf-8')) as Record<string, unknown>
         : {};
       const finalized = finalizeBundledPluginConfigAfterInstall(parsed, pluginId);
       if (finalized.changed) {
-        writeFileSync(configPath, JSON.stringify(finalized.config, null, 2), 'utf-8');
+        writeFileSync(configPath, stringifyJsonText(finalized.config), 'utf-8');
       }
     } catch (error) {
       logger.warn('Failed to finalize bundled plugin configuration after install', error);
@@ -1163,7 +1164,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     if (existsSync(configPath)) {
       try {
         const raw = readFileSync(configPath, 'utf-8');
-        parsedConfig = JSON.parse(raw) as Record<string, unknown>;
+        parsedConfig = parseJsonText(raw) as Record<string, unknown>;
       } catch (error) {
         logger.warn('Failed to parse OpenClaw config while detecting plugin installation state', error);
       }
@@ -1216,13 +1217,13 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
         }
 
         const raw = readFileSync(configPath, 'utf-8');
-        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        const parsed = parseJsonText(raw) as Record<string, unknown>;
         const restored = restorePluginChannelConfigAfterInstall(
           parsed,
           pluginId,
           channelConfigToRestore
         );
-        writeFileSync(configPath, JSON.stringify(restored, null, 2), 'utf-8');
+        writeFileSync(configPath, stringifyJsonText(restored), 'utf-8');
         clearPluginChannelConfigBackup(openclawConfigDir, pluginId);
       } catch (error) {
         logger.warn('Failed to restore plugin channel config after install', error);
@@ -1245,12 +1246,12 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
       if (pluginId === QQ_PLUGIN_ID && existsSync(configPath)) {
         try {
           const raw = readFileSync(configPath, 'utf-8');
-          const parsed = JSON.parse(raw) as Record<string, unknown>;
+          const parsed = parseJsonText(raw) as Record<string, unknown>;
           const stripped = stripPluginChannelConfigForInstall(parsed, pluginId);
           strippedChannelConfig = stripped.removedChannelConfig;
 
           if (strippedChannelConfig) {
-            writeFileSync(configPath, JSON.stringify(stripped.config, null, 2), 'utf-8');
+            writeFileSync(configPath, stringifyJsonText(stripped.config), 'utf-8');
             savePluginChannelConfigBackup(openclawConfigDir, pluginId, strippedChannelConfig);
             shouldRestoreChannelConfig = true;
           }

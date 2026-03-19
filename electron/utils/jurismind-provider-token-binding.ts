@@ -214,12 +214,44 @@ function extractCookieHeader(response: Response): string | null {
   return cookiePairs.length > 0 ? cookiePairs.join('; ') : null;
 }
 
-function extractTokenFromPayload(payload: unknown): { tokenKey: string; tokenId: number | null } | null {
-  const formatProviderTokenKey = (token: string): string => {
-    const trimmed = String(token || '').trim();
-    if (!trimmed) return '';
-    return /^sk-/i.test(trimmed) ? trimmed : `sk-${trimmed}`;
-  };
+export function normalizeJurismindProviderToken(token: string): string {
+  const trimmed = String(token || '').trim();
+  if (!trimmed) return '';
+
+  const withoutBearer = trimmed.replace(/^Bearer\s+/i, '').trim();
+  const withoutQuotes = withoutBearer.replace(/^['"`]+|['"`]+$/g, '').trim();
+  const normalized = withoutQuotes.replace(/[，。,；;]+$/g, '').trim();
+
+  if (!normalized) return '';
+  return /^sk-/i.test(normalized) ? normalized : `sk-${normalized}`;
+}
+
+function extractTokenCandidateFromText(value: unknown): string | null {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  const skMatch = text.match(/(sk-[A-Za-z0-9._~-]+)/);
+  if (skMatch?.[1]) {
+    return normalizeJurismindProviderToken(skMatch[1]);
+  }
+
+  const labeledTokenMatch = text.match(
+    /(?:用户已绑定)?token(?:_key)?\s*[:：=]\s*([A-Za-z0-9._~-]{16,})/i
+  );
+  if (labeledTokenMatch?.[1]) {
+    return normalizeJurismindProviderToken(labeledTokenMatch[1]);
+  }
+
+  if (!/\s/.test(text) && !text.includes('://') && /^[A-Za-z0-9._~-]{16,}$/.test(text)) {
+    return normalizeJurismindProviderToken(text);
+  }
+
+  return null;
+}
+
+export function extractTokenFromPayload(
+  payload: unknown
+): { tokenKey: string; tokenId: number | null } | null {
   const normalizeToken = (value: unknown): string => String(value || '').trim();
   const isNonEmptyToken = (token: string): boolean => token.length > 0 && !/\s/.test(token);
   const isLikelyGenericToken = (token: string): boolean => token.length >= 16 && !/\s/.test(token);
@@ -231,9 +263,24 @@ function extractTokenFromPayload(payload: unknown): { tokenKey: string; tokenId:
 
   while (queue.length > 0) {
     const current = queue.shift();
-    if (!current || typeof current !== 'object') continue;
+    if (!current) continue;
+
+    if (typeof current === 'string') {
+      const token = extractTokenCandidateFromText(current);
+      if (token) {
+        foundByMessage = token;
+      }
+      continue;
+    }
+
+    if (typeof current !== 'object') continue;
     if (visited.has(current)) continue;
     visited.add(current);
+
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
 
     const data = current as Record<string, unknown>;
 
@@ -244,7 +291,7 @@ function extractTokenFromPayload(payload: unknown): { tokenKey: string; tokenId:
       if (isNonEmptyToken(token)) {
         const tokenIdRaw = data.token_id ?? data.tokenId ?? data.newapi_token_id ?? data.newapiTokenId ?? null;
         const tokenId = Number.isFinite(Number(tokenIdRaw)) ? Number(tokenIdRaw) : foundTokenId;
-        return { tokenKey: formatProviderTokenKey(token), tokenId: tokenId ?? null };
+        return { tokenKey: normalizeJurismindProviderToken(token), tokenId: tokenId ?? null };
       }
     }
 
@@ -255,7 +302,7 @@ function extractTokenFromPayload(payload: unknown): { tokenKey: string; tokenId:
       if (token.startsWith('sk-') || isLikelyGenericToken(token)) {
         const tokenIdRaw = data.token_id ?? data.tokenId ?? data.newapi_token_id ?? data.newapiTokenId ?? null;
         const tokenId = Number.isFinite(Number(tokenIdRaw)) ? Number(tokenIdRaw) : foundTokenId;
-        return { tokenKey: formatProviderTokenKey(token), tokenId: tokenId ?? null };
+        return { tokenKey: normalizeJurismindProviderToken(token), tokenId: tokenId ?? null };
       }
     }
 
@@ -266,17 +313,9 @@ function extractTokenFromPayload(payload: unknown): { tokenKey: string; tokenId:
 
     const messageCandidates = [data.detail, data.message, data.msg, data.error];
     for (const messageCandidate of messageCandidates) {
-      const text = String(messageCandidate || '').trim();
-      // 优先匹配 sk- 形式
-      const skMatch = text.match(/(sk-[A-Za-z0-9_-]+)/);
-      if (skMatch?.[1]) {
-        foundByMessage = skMatch[1];
-        continue;
-      }
-      // 兼容 "用户已绑定token: xxxxx" 这种返回
-      const genericTokenMatch = text.match(/token(?:_key)?\s*[:：]\s*([A-Za-z0-9._~-]{16,})/i);
-      if (genericTokenMatch?.[1]) {
-        foundByMessage = genericTokenMatch[1];
+      const token = extractTokenCandidateFromText(messageCandidate);
+      if (token) {
+        foundByMessage = token;
       }
     }
 
@@ -288,7 +327,7 @@ function extractTokenFromPayload(payload: unknown): { tokenKey: string; tokenId:
   }
 
   if (foundByMessage) {
-    return { tokenKey: formatProviderTokenKey(foundByMessage), tokenId: foundTokenId };
+    return { tokenKey: normalizeJurismindProviderToken(foundByMessage), tokenId: foundTokenId };
   }
   return null;
 }
@@ -300,6 +339,15 @@ function delay(ms: number): Promise<void> {
 export async function validateJurismindReusableToken(
   tokenKey: string
 ): Promise<{ valid: boolean; authInvalid: boolean; error?: string }> {
+  const normalizedTokenKey = normalizeJurismindProviderToken(tokenKey);
+  if (!normalizedTokenKey) {
+    return {
+      valid: false,
+      authInvalid: false,
+      error: 'token_key is empty',
+    };
+  }
+
   const providerConfig = getProviderConfig('jurismind');
   const baseUrl = String(providerConfig?.baseUrl || '').trim().replace(/\/+$/, '');
   if (!baseUrl) {
@@ -314,7 +362,7 @@ export async function validateJurismindReusableToken(
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${tokenKey}`,
+        Authorization: `Bearer ${normalizedTokenKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -353,19 +401,41 @@ export async function validateJurismindReusableToken(
 
 async function resolveUsableJurismindToken(
   token: JurismindTokenRecord | null,
-  sourceLabel: string
+  sourceLabel: string,
+  options: { allowUnverified?: boolean } = {}
 ): Promise<{
   token: JurismindTokenRecord | null;
   invalidAuth: boolean;
   validationError?: string;
+  unverified?: boolean;
 }> {
   if (!token?.tokenKey) {
     return { token: null, invalidAuth: false };
   }
 
-  const validation = await validateJurismindReusableToken(token.tokenKey);
+  const normalizedTokenKey = normalizeJurismindProviderToken(token.tokenKey);
+  if (!normalizedTokenKey) {
+    return { token: null, invalidAuth: false };
+  }
+
+  const normalizedToken =
+    normalizedTokenKey === token.tokenKey ? token : { ...token, tokenKey: normalizedTokenKey };
+
+  const validation = await validateJurismindReusableToken(normalizedTokenKey);
   if (validation.valid) {
-    return { token, invalidAuth: false };
+    return { token: normalizedToken, invalidAuth: false };
+  }
+
+  if (options.allowUnverified && !validation.authInvalid) {
+    logger.warn(
+      `[JurismindProvider] ${sourceLabel} token_key 校验未通过，但接受绑定接口返回值: ${validation.error || 'unknown'}`
+    );
+    return {
+      token: normalizedToken,
+      invalidAuth: false,
+      validationError: validation.error,
+      unverified: true,
+    };
   }
 
   if (validation.authInvalid) {
@@ -684,7 +754,9 @@ export async function bindJurismindProviderToken(): Promise<JurismindProviderBin
   }
 
   const bindResult = await bindTokenByOpenId(openId, config, auth);
-  const validatedBindToken = await resolveUsableJurismindToken(bindResult.token, '新绑定返回');
+  const validatedBindToken = await resolveUsableJurismindToken(bindResult.token, '新绑定返回', {
+    allowUnverified: true,
+  });
   if (validatedBindToken.token?.tokenKey) {
     logger.info('[JurismindProvider] 绑定新 token_key 成功');
     return {
@@ -699,7 +771,9 @@ export async function bindJurismindProviderToken(): Promise<JurismindProviderBin
 
   logger.warn(`[JurismindProvider] 绑定接口未直接返回 token_key，开始轮询查询: ${bindResult.message}`);
   const fallback = await queryBoundTokenWithRetry(openId, config, auth, 6, 600);
-  const validatedFallback = await resolveUsableJurismindToken(fallback, '轮询查询');
+  const validatedFallback = await resolveUsableJurismindToken(fallback, '轮询查询', {
+    allowUnverified: true,
+  });
   if (validatedFallback.token?.tokenKey) {
     return {
       openId,
@@ -714,7 +788,9 @@ export async function bindJurismindProviderToken(): Promise<JurismindProviderBin
   // 某些服务在首次 bind 只返回“绑定成功”，再次 bind 可能返回“用户已绑定token: sk-xxx”
   logger.warn('[JurismindProvider] 首次绑定后仍未拿到 token_key，尝试再次调用 bind 兜底');
   const secondBind = await bindTokenByOpenId(openId, config, auth);
-  const validatedSecondBind = await resolveUsableJurismindToken(secondBind.token, '二次绑定返回');
+  const validatedSecondBind = await resolveUsableJurismindToken(secondBind.token, '二次绑定返回', {
+    allowUnverified: true,
+  });
   if (validatedSecondBind.token?.tokenKey) {
     return {
       openId,
@@ -729,7 +805,8 @@ export async function bindJurismindProviderToken(): Promise<JurismindProviderBin
   const fallbackAfterSecondBind = await queryBoundTokenWithRetry(openId, config, auth, 8, 1200);
   const validatedFallbackAfterSecondBind = await resolveUsableJurismindToken(
     fallbackAfterSecondBind,
-    '二次绑定后轮询查询'
+    '二次绑定后轮询查询',
+    { allowUnverified: true }
   );
   if (validatedFallbackAfterSecondBind.token?.tokenKey) {
     return {

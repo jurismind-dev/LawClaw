@@ -31,6 +31,8 @@
             "modelId": "モデル ID",
             "cancel": "キャンセル",
             "change": "プロバイダーを変更",
+            "binding": "バインド中...",
+            "rebind": "再バインド",
             "add": "プロバイダーを追加",
             "save": "保存",
             "validate": "検証"
@@ -53,7 +55,9 @@
             "updated": "プロバイダーが更新されました",
             "failedUpdate": "プロバイダーの更新に失敗しました",
             "invalidKey": "無効な API キー",
-            "modelRequired": "モデル ID が必要です"
+            "modelRequired": "モデル ID が必要です",
+            "jurismindBindRequired": "先に Jurismind の SSO バインドを完了してください",
+            "jurismindBindSuccess": "Jurismind の token_key が自動入力されました"
         }
     },
     "gateway": {

@@ -31,6 +31,8 @@
             "modelId": "Model ID",
             "cancel": "Cancel",
             "change": "Change provider",
+            "binding": "Binding...",
+            "rebind": "Rebind",
             "add": "Add Provider",
             "save": "Save",
             "validate": "Validate"

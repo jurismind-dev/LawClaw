@@ -31,6 +31,8 @@
             "modelId": "模型 ID",
             "cancel": "取消",
             "change": "更换提供商",
+            "binding": "绑定中...",
+            "rebind": "重新绑定",
             "add": "添加提供商",
             "save": "保存",
             "validate": "验证"

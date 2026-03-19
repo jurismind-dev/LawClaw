@@ -3,6 +3,7 @@
  * Manage AI provider configurations and API keys
  */
 import React, { useState, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Plus,
   Trash2,
@@ -499,6 +500,7 @@ function AddProviderDialog({
   const mountedRef = React.useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
@@ -582,17 +584,14 @@ function AddProviderDialog({
 
   const handleBindJurismindToken = async () => {
     setJurismindBinding(true);
-    setSaving(true);
     setValidationError(null);
     try {
       const result = await onBindJurismindToken();
       if (!mountedRef.current) return;
-      setApiKey(result.tokenKey);
-      await onAdd(
-        'jurismind',
-        name || typeInfo?.name || 'Jurismind（法义经纬）',
-        result.tokenKey,
-      );
+      flushSync(() => {
+        setApiKey(result.tokenKey);
+      });
+      toast.success(t('aiProviders.toast.jurismindBindSuccess'));
     } catch (error) {
       if (!mountedRef.current) return;
       const message = error instanceof Error ? error.message : String(error);
@@ -601,7 +600,6 @@ function AddProviderDialog({
     } finally {
       if (mountedRef.current) {
         setJurismindBinding(false);
-        setSaving(false);
       }
     }
   };
@@ -645,7 +643,7 @@ function AddProviderDialog({
         setSaving(false);
         return;
       }
-      if (requiresKey && apiKey) {
+      if (requiresKey && apiKey && !isJurismind) {
         const result = await onValidateKey(selectedType, apiKey, {
           baseUrl: typeInfo?.showBaseUrl ? (baseUrl.trim() || undefined) : undefined,
         });
@@ -740,6 +738,19 @@ function AddProviderDialog({
                   >
                     {t('aiProviders.dialog.change')}
                   </button>
+                  {isJurismind && (
+                    <button
+                      onClick={() => {
+                        if (!jurismindBinding) {
+                          void handleBindJurismindToken();
+                        }
+                      }}
+                      className="ml-3 text-sm text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
+                      disabled={jurismindBinding}
+                    >
+                      {jurismindBinding ? t('aiProviders.dialog.binding') : t('aiProviders.dialog.rebind')}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -960,7 +971,7 @@ function AddProviderDialog({
                 !selectedType
                 || saving
                 || jurismindBinding
-                || isJurismind
+                || (isJurismind && !apiKey.trim())
                 || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)
               }
             >

@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+RESOURCES_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+
+if [ -n "${LAWCLAW_BUNDLED_UV_EXE:-}" ] && [ -x "${LAWCLAW_BUNDLED_UV_EXE}" ]; then
+  UV_EXE="${LAWCLAW_BUNDLED_UV_EXE}"
+else
+  UV_EXE="$RESOURCES_DIR/bin/uv"
+fi
+
+if [ ! -x "$UV_EXE" ]; then
+  echo "Bundled uv runtime not found: $UV_EXE" >&2
+  exit 1
+fi
+
+PYTHON_EXE="$("$UV_EXE" python find 3.12 2>/dev/null || true)"
+if [ -z "$PYTHON_EXE" ]; then
+  "$UV_EXE" python install 3.12
+  PYTHON_EXE="$("$UV_EXE" python find 3.12 2>/dev/null || true)"
+fi
+
+if [ -z "$PYTHON_EXE" ] || [ ! -x "$PYTHON_EXE" ]; then
+  echo "Managed Python 3.12 is not available through bundled uv." >&2
+  exit 1
+fi
+
+exec "$PYTHON_EXE" "$@"

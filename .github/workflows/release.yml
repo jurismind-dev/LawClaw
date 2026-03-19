@@ -16,7 +16,7 @@ on:
           - minor
           - major
       tag:
-        description: "可选：指定发布标签（例如 v1.0.0），留空则自动递增"
+        description: "可选：指定发布标签（例如 v1.0.0 或 v1.0.0-beta.1），留空则自动递增正式版"
         required: false
         type: string
 
@@ -65,7 +65,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          tag_regex='^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+          tag_regex='^v[0-9]+\.[0-9]+\.[0-9]+(-beta(\.[0-9]+)?)?$'
           tag=""
           build_ref=""
           target_commitish="${GITHUB_SHA}"
@@ -86,7 +86,11 @@ jobs:
             if [[ -n "${INPUT_TAG}" ]]; then
               tag="${INPUT_TAG}"
             else
-              latest_tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n 1)"
+              latest_tag="$(
+                git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname \
+                  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+                  | head -n 1 || true
+              )"
               if [[ -z "${latest_tag}" ]]; then
                 latest_version="0.0.0"
               else
@@ -391,7 +395,7 @@ jobs:
       - name: Validate release tag format
         shell: bash
         run: |
-          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.].+)?$ ]]; then
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta(\.[0-9]+)?)?$ ]]; then
             echo "Invalid release tag: ${RELEASE_TAG}"
             echo "Expected format like v1.2.3 or v1.2.3-beta.1"
             exit 1
@@ -421,13 +425,12 @@ jobs:
           set -euo pipefail
 
           version="${RELEASE_TAG#v}"
-          channel="$(echo "${version}" | sed -nE 's/.*-([A-Za-z]+).*/\1/p')"
-          if [[ -z "${channel}" ]]; then
-            channel="latest"
-          fi
-
-          # Keep stable aliases on latest feed.
-          if [[ "${channel}" == "stable" ]]; then
+          if [[ "${version}" =~ -beta(\.[0-9]+)?$ ]]; then
+            channel="beta"
+          elif [[ "${version}" =~ - ]]; then
+            echo "Unsupported prerelease tag: ${RELEASE_TAG}"
+            exit 1
+          else
             channel="latest"
           fi
 
@@ -708,8 +711,8 @@ jobs:
           target_commitish: ${{ needs.prepare.outputs.target_commitish }}
           name: LawClaw ${{ env.RELEASE_TAG }}
           draft: false
-          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
-          make_latest: ${{ contains(env.RELEASE_TAG, '-') && 'false' || 'true' }}
+          prerelease: ${{ contains(env.RELEASE_TAG, '-beta') }}
+          make_latest: ${{ contains(env.RELEASE_TAG, '-beta') && 'false' || 'true' }}
           generate_release_notes: true
           body_path: ${{ steps.release_body.outputs.body_path }}
           files: |

@@ -20,12 +20,16 @@ const providerRegistryMocks = vi.hoisted(() => ({
   getKeyableProviderTypes: vi.fn(() => []),
 }));
 
-vi.mock('electron', () => ({
+const electronMocks = vi.hoisted(() => ({
   app: {
     isPackaged: false,
     getPath: vi.fn(() => '/tmp/userData'),
     getName: vi.fn(() => 'LawClaw'),
   },
+}));
+
+vi.mock('electron', () => ({
+  app: electronMocks.app,
 }));
 
 vi.mock('child_process', () => ({
@@ -167,6 +171,7 @@ function createFakeChildProcess(): EventEmitter & {
 describe('gateway start pre-sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    electronMocks.app.isPackaged = false;
     runtimeMocks.spawn.mockImplementation(() => createFakeChildProcess());
     runtimeMocks.syncGatewayTokenToConfig.mockResolvedValue(undefined);
     runtimeMocks.syncBrowserConfigToOpenClaw.mockResolvedValue(undefined);
@@ -231,5 +236,48 @@ describe('gateway start pre-sync', () => {
     const secondSpawnOptions = runtimeMocks.spawn.mock.calls[0][2] as { env: Record<string, string> };
     expect(secondSpawnOptions.env.JURISMIND_API_KEY).toBe('__CLAWX_PLACEHOLDER_JURISMIND_API_KEY__');
     expect(runtimeMocks.syncJurismindWebSearchConfig).not.toHaveBeenCalled();
+  });
+
+  it('prepends the packaged runtime bridge only to the gateway child environment', async () => {
+    const previousPath = process.env.PATH;
+    const previousResourcesPath = process.resourcesPath;
+    process.env.PATH = '/usr/bin:/bin';
+    Object.defineProperty(process, 'resourcesPath', {
+      value: '/Applications/LawClaw.app/Contents/Resources',
+      configurable: true,
+    });
+    electronMocks.app.isPackaged = true;
+
+    try {
+      const { GatewayManager } = await import('@electron/gateway/manager');
+      const manager = new GatewayManager();
+      (manager as unknown as { status: { state: string; port: number } }).status = {
+        state: 'starting',
+        port: 4317,
+      };
+
+      await (manager as unknown as { startProcess: () => Promise<void> }).startProcess();
+
+      const spawnOptions = runtimeMocks.spawn.mock.calls[0][2] as { env: Record<string, string> };
+      expect(spawnOptions.env.PATH).toBe(
+        '/Applications/LawClaw.app/Contents/Resources/runtime-bridge'
+        + ':/Applications/LawClaw.app/Contents/Resources/bin:/usr/bin:/bin'
+      );
+      expect(spawnOptions.env.LAWCLAW_BUNDLED_UV_EXE)
+        .toBe('/Applications/LawClaw.app/Contents/Resources/bin/uv');
+      expect(spawnOptions.env.LAWCLAW_BUNDLED_NPM_CLI_JS)
+        .toBe('/Applications/LawClaw.app/Contents/Resources/npm-runtime/node_modules/npm/bin/npm-cli.js');
+      expect(spawnOptions.env.LAWCLAW_BUNDLED_NPX_CLI_JS)
+        .toBe('/Applications/LawClaw.app/Contents/Resources/npm-runtime/node_modules/npm/bin/npx-cli.js');
+      expect(spawnOptions.env.LAWCLAW_BUNDLED_NODE_EXE).toContain('LawClaw Helper.app');
+      expect(process.env.PATH).toBe('/usr/bin:/bin');
+    } finally {
+      process.env.PATH = previousPath;
+      Object.defineProperty(process, 'resourcesPath', {
+        value: previousResourcesPath,
+        configurable: true,
+      });
+      electronMocks.app.isPackaged = false;
+    }
   });
 });

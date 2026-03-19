@@ -37,3 +37,12 @@
 ## 安全与配置提示
 - 禁止提交真实密钥或敏感配置，使用 `.env.example` 作为模板。
 - 若需运行 Python 脚本（如 `scripts/crop_qr.py`），优先使用仓库内 `.venv`，并通过 `.venv\Scripts\python -m ...` 执行，避免污染全局环境。
+
+## Bundled Runtime 约束
+- LawClaw 自带的 `node` / `npm` / `npx` / `uv` / managed `python` 是 **兜底 runtime**，用于 Gateway、skills、installer、OpenClaw CLI 等由 LawClaw 启动的流程。
+- `skill` / OpenClaw **可以使用系统级 Python / Node**；如果用户已经有可用环境，或明确希望使用系统环境，应优先尊重用户选择。
+- 当用户机器上没有可用的 Python / Node，或系统环境不满足要求时，再回退到 LawClaw 注入的 bundled runtime bridge。
+- 不要混淆两类运行时：
+  - LawClaw 进程内可注入的私有 runtime
+  - 用户电脑上已有的系统 runtime
+- 不要默认把 bundled runtime 描述成唯一合法方案；它是兼容和兜底方案，不是对用户系统环境的强制替代。

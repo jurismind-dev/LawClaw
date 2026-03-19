@@ -29,6 +29,7 @@ import {
 import { applyProviderEnvFallbacks } from './provider-env';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
+import { applyBundledRuntimeToEnv, getBundledRuntimePathEntries } from '../utils/bundled-runtime';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import {
@@ -820,19 +821,8 @@ export class GatewayManager extends EventEmitter {
       ? ['run', 'dev', ...gatewayArgs]
       : [entryScript, ...gatewayArgs];
 
-    // Resolve bundled bin path for uv
-    const platform = process.platform;
-    const arch = process.arch;
-    const target = `${platform}-${arch}`;
-
-    const binPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'bin')
-      : path.join(process.cwd(), 'resources', 'bin', target);
-
-    const binPathExists = existsSync(binPath);
-    const finalPath = binPathExists
-      ? `${binPath}${path.delimiter}${process.env.PATH || ''}`
-      : process.env.PATH || '';
+    const bundledRuntimeEntries = getBundledRuntimePathEntries();
+    const hasBundledRuntime = bundledRuntimeEntries.length > 0;
     
     // Load provider API keys from storage to pass as environment variables
     const providerEnv: Record<string, string> = {};
@@ -913,20 +903,21 @@ export class GatewayManager extends EventEmitter {
 
     const uvEnv = await getUvMirrorEnv();
     logger.info(
-      `Starting Gateway process (mode=${mode}, port=${this.status.port}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount})`
+      `Starting Gateway process (mode=${mode}, port=${this.status.port}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}", bundledRuntime=${hasBundledRuntime ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount})`
     );
     this.lastSpawnSummary = `mode=${mode}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}"`;
     
     return new Promise((resolve, reject) => {
-      const spawnEnv: Record<string, string | undefined> = {
+      const spawnEnv = applyBundledRuntimeToEnv({
         ...process.env,
-        PATH: finalPath,
         ...resolvedProviderEnv,
         ...uvEnv,
         OPENCLAW_GATEWAY_TOKEN: gatewayToken,
         OPENCLAW_SKIP_CHANNELS: '',
         CLAWDBOT_SKIP_CHANNELS: '',
-      };
+      }, {
+        nodeExecutablePath: getNodeExecutablePath(),
+      });
 
       // When using Electron runtime as Node.js, force non-GUI node mode.
       if (useElectronRunAsNode) {

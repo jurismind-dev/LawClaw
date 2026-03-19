@@ -71,6 +71,8 @@ mac:
       to: bin
     - from: resources/cli/posix/
       to: cli/
+    - from: resources/runtime-bridge/posix/
+      to: runtime-bridge/
   category: public.app-category.productivity
   icon: resources/icons/icon.icns
   target:
@@ -118,6 +120,8 @@ win:
       to: bin
     - from: resources/cli/win32/
       to: cli/
+    - from: resources/runtime-bridge/win32/
+      to: runtime-bridge/
   icon: resources/icons/icon.ico
   target:
     - target: nsis
@@ -148,6 +152,8 @@ linux:
   extraResources:
     - from: resources/bin/linux-${arch}
       to: bin
+    - from: resources/runtime-bridge/posix/
+      to: runtime-bridge/
   icon: resources/icons
   target:
     - target: AppImage

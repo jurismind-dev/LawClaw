@@ -16,6 +16,7 @@ vi.mock('electron-updater', () => ({
   autoUpdater: {
     autoDownload: false,
     autoInstallOnAppQuit: false,
+    allowPrerelease: false,
     logger: undefined,
     channel: 'latest',
     setFeedURL: setFeedUrlMock,
@@ -127,5 +128,42 @@ describe('AppUpdater', () => {
 
     expect(checkForUpdatesMock).toHaveBeenCalled();
     expect(updater.getStatus().manualInstall).toBe(false);
+  });
+
+  it('keeps stable builds on the latest feed with prerelease updates disabled', async () => {
+    vi.doMock('../../electron/utils/build-flags', () => ({
+      isUnsignedMacBuild: () => false,
+    }));
+
+    const { AppUpdater } = await import('@electron/main/updater');
+    new AppUpdater();
+
+    expect(setFeedUrlMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'generic',
+        url: 'https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest',
+      })
+    );
+    expect((await import('electron-updater')).autoUpdater.channel).toBe('latest');
+    expect((await import('electron-updater')).autoUpdater.allowPrerelease).toBe(false);
+  });
+
+  it('routes beta builds to the beta feed with prerelease updates enabled', async () => {
+    vi.doMock('../../electron/utils/build-flags', () => ({
+      isUnsignedMacBuild: () => false,
+    }));
+    getVersionMock.mockReturnValue('0.1.16-beta.1');
+
+    const { AppUpdater } = await import('@electron/main/updater');
+    new AppUpdater();
+
+    expect(setFeedUrlMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'generic',
+        url: 'https://lawclaw.oss-cn-shanghai.aliyuncs.com/beta',
+      })
+    );
+    expect((await import('electron-updater')).autoUpdater.channel).toBe('beta');
+    expect((await import('electron-updater')).autoUpdater.allowPrerelease).toBe(true);
   });
 });

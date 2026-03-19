@@ -16,6 +16,7 @@ import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join, dirname, basename, delimiter } from 'node:path';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
+import { applyBundledRuntimeToEnv } from './bundled-runtime';
 import { logger } from './logger';
 
 // ── Quoting helpers ──────────────────────────────────────────────────────────
@@ -297,12 +298,14 @@ export function getNodeExecForCli(): string {
 }
 
 export function applyBundledNpmToCliEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = applyBundledRuntimeToEnv(baseEnv, {
+    nodeExecutablePath: getNodeExecForCli(),
+  });
   const wrapperDir = getBundledNpmWrapperDir();
   if (!wrapperDir) {
-    return { ...baseEnv };
+    return env;
   }
 
-  const env = { ...baseEnv };
   const currentPath = String(env.PATH ?? '');
   const pathParts = currentPath.split(delimiter).filter(Boolean);
   if (!pathParts.includes(wrapperDir)) {

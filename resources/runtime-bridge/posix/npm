@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+RESOURCES_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+
+if [ -n "${LAWCLAW_BUNDLED_NODE_EXE:-}" ] && [ -x "${LAWCLAW_BUNDLED_NODE_EXE}" ]; then
+  NODE_EXE="${LAWCLAW_BUNDLED_NODE_EXE}"
+elif [ "$(uname)" = "Darwin" ]; then
+  CONTENTS_DIR="$(dirname "$RESOURCES_DIR")"
+  NODE_EXE="$CONTENTS_DIR/Frameworks/LawClaw Helper.app/Contents/MacOS/LawClaw Helper"
+else
+  INSTALL_DIR="$(dirname "$RESOURCES_DIR")"
+  NODE_EXE="$INSTALL_DIR/lawclaw"
+fi
+
+if [ -n "${LAWCLAW_BUNDLED_NPM_CLI_JS:-}" ] && [ -f "${LAWCLAW_BUNDLED_NPM_CLI_JS}" ]; then
+  NPM_CLI_JS="${LAWCLAW_BUNDLED_NPM_CLI_JS}"
+else
+  NPM_CLI_JS="$RESOURCES_DIR/npm-runtime/node_modules/npm/bin/npm-cli.js"
+fi
+
+if [ ! -x "$NODE_EXE" ]; then
+  echo "Bundled Node runtime not found: $NODE_EXE" >&2
+  exit 1
+fi
+
+if [ ! -f "$NPM_CLI_JS" ]; then
+  echo "Bundled npm runtime not found: $NPM_CLI_JS" >&2
+  exit 1
+fi
+
+export ELECTRON_RUN_AS_NODE=1
+exec "$NODE_EXE" "$NPM_CLI_JS" "$@"

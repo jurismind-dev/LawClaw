@@ -44,11 +44,17 @@ export interface UpdaterEvents {
 
 /**
  * Detect the update channel from a semver version string.
- * e.g. "0.1.8-alpha.0" → "alpha", "1.0.0-beta.1" → "beta", "1.0.0" → "latest"
+ * e.g. "1.0.0-beta.1" → "beta", "1.0.0-dev.1" → "dev", "1.0.0" → "latest"
  */
 function detectChannel(version: string): string {
-  const match = version.match(/-([a-zA-Z]+)/);
-  return match ? match[1] : 'latest';
+  const prerelease = normalizeVersion(version).split('-', 2)[1]?.toLowerCase() ?? '';
+  if (prerelease === 'beta' || prerelease.startsWith('beta.')) {
+    return 'beta';
+  }
+  if (prerelease === 'dev' || prerelease.startsWith('dev.')) {
+    return 'dev';
+  }
+  return 'latest';
 }
 
 function normalizeVersion(version: string): string {
@@ -88,6 +94,10 @@ function compareSemverLike(aRaw: string, bRaw: string): number {
 
 function resolveChannelFromPreference(channel: 'stable' | 'beta' | 'dev'): string {
   return channel === 'stable' ? 'latest' : channel;
+}
+
+function shouldAllowPrerelease(channel: string): boolean {
+  return channel === 'beta' || channel === 'dev';
 }
 
 function normalizeRuntimeArch(arch: string): 'x64' | 'arm64' | null {
@@ -165,6 +175,7 @@ export class AppUpdater extends EventEmitter {
     );
 
     autoUpdater.channel = this.activeChannel;
+    autoUpdater.allowPrerelease = shouldAllowPrerelease(this.activeChannel);
     autoUpdater.setFeedURL({
       provider: 'generic',
       url: feedUrl,

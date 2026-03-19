@@ -33,6 +33,7 @@ describe('bundled openclaw CLI wrappers', () => {
   it('keeps Windows plugin installation off npm.cmd fallbacks', () => {
     const afterPackScript = readRepoFile('scripts/after-pack.cjs');
     const openClawCliSource = readRepoFile('electron/utils/openclaw-cli.ts');
+    const bundledRuntimeSource = readRepoFile('electron/utils/bundled-runtime.ts');
 
     expect(afterPackScript).toContain("join(appOutDir, 'node_modules', 'npm')");
     expect(afterPackScript).toContain('Bundled npm runtime for Windows');
@@ -43,6 +44,30 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(openClawCliSource).toContain('export function getNodeExecForCli');
     expect(openClawCliSource).toContain('export function applyBundledNpmToCliEnv');
     expect(openClawCliSource).toContain("join(process.resourcesPath, 'npm-bin')");
+    expect(openClawCliSource).toContain('applyBundledRuntimeToEnv');
+    expect(bundledRuntimeSource).toContain('LAWCLAW_BUNDLED_NODE_EXE');
+    expect(bundledRuntimeSource).toContain('LAWCLAW_BUNDLED_UV_EXE');
+  });
+
+  it('ships runtime-bridge wrappers for node, npm, and managed python', () => {
+    const builderConfig = readRepoFile('electron-builder.yml');
+    const posixNode = readRepoFile('resources/runtime-bridge/posix/node');
+    const posixPython = readRepoFile('resources/runtime-bridge/posix/python');
+    const windowsNode = readRepoFile('resources/runtime-bridge/win32/node.cmd');
+    const windowsPython = readRepoFile('resources/runtime-bridge/win32/python.cmd');
+
+    expect(builderConfig).toContain('resources/runtime-bridge/posix/');
+    expect(builderConfig).toContain('resources/runtime-bridge/win32/');
+
+    expect(posixNode).toContain('LAWCLAW_BUNDLED_NODE_EXE');
+    expect(posixNode).toContain('ELECTRON_RUN_AS_NODE=1');
+    expect(posixPython).toContain('python find 3.12');
+    expect(posixPython).toContain('python install 3.12');
+
+    expect(windowsNode).toContain('LAWCLAW_BUNDLED_NODE_EXE');
+    expect(windowsNode).toContain('ELECTRON_RUN_AS_NODE=1');
+    expect(windowsPython).toContain('python find 3.12');
+    expect(windowsPython).toContain('python install 3.12');
   });
 
   it('patches bundled packages that still need require() compatibility', () => {

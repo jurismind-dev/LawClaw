@@ -168,7 +168,11 @@ LawClaw 官方团队深度自研并严选了一系列高质量、开源的法律
 #### 预构建版本（推荐）
 
 推荐从 OSS（国内镜像）下载适用于当前平台的最新版本：
-<!--`https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/`-->
+
+- **windows x64**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-win-x64.exe
+- **Mac x64**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-x64.dmg
+- **Mac arm**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-arm64.dmg
+
 
 GitHub Releases 仍可作为备用下载渠道：[Releases](https://github.com/jurismind-dev/LawClaw/releases)。
 
@@ -358,12 +362,13 @@ LawClaw（劳有钳）基于以下优秀的开源项目构建：
 - [shadcn/ui](https://ui.shadcn.com/) – 精美设计的组件库
 - [Zustand](https://github.com/pmndrs/zustand) – 轻量级状态管理
 
+<!--
 ---
 
 ## 社区
 
 欢迎加入我们的社区，与其他用户交流、获取帮助，并分享你的使用体验。
-<!--
+
 | 企业微信 | 飞书群组 | Discord |
 | :---: | :---: | :---: |
 | <img src="src/assets/community/wecom-qr.png" width="150" alt="企业微信二维码" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="飞书二维码" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord 二维码" /> |

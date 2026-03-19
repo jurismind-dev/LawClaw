@@ -361,11 +361,10 @@ LawClaw (劳有钳) is built on top of the following outstanding open-source pro
 ## Community
 
 Welcome to join our community to connect with other users, get help, and share your experience.
-<!--
-| Enterprise WeChat | Feishu Group | Discord |
-| :---: | :---: | :---: |
-| <img src="src/assets/community/wecom-qr.png" width="150" alt="Enterprise WeChat QR Code" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="Feishu QR Code" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord QR Code" /> |
--->
+
+- **windows x64**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-win-x64.exe
+- **Mac x64**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-x64.dmg
+- **Mac arm**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-arm64.dmg
 
 ---
 

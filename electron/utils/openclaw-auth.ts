@@ -20,6 +20,12 @@ const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const JURISMIND_WEB_SEARCH_PROVIDER = 'doubao';
 const LEGACY_JURISMIND_WEB_SEARCH_PROVIDER = 'perplexity';
 const JURISMIND_WEB_SEARCH_MODEL = 'doubao';
+const OPENCLAW_SAFE_PROVIDER_API_KEY_ENV_MARKERS = new Set([
+  'OPENAI_API_KEY',
+  'OPENROUTER_API_KEY',
+  'MOONSHOT_API_KEY',
+  'MINIMAX_API_KEY',
+]);
 
 interface AuthProfileEntry {
   type: 'api_key';
@@ -52,6 +58,26 @@ interface RuntimeProviderConfigOverride {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function shouldPersistOpenClawApiKeyEnvMarker(apiKeyEnv?: string): boolean {
+  const normalized = String(apiKeyEnv || '').trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return OPENCLAW_SAFE_PROVIDER_API_KEY_ENV_MARKERS.has(normalized);
+}
+
+function applyOpenClawProviderApiKey(
+  target: Record<string, unknown>,
+  apiKeyEnv?: string
+): void {
+  delete target.apiKey;
+
+  if (shouldPersistOpenClawApiKeyEnvMarker(apiKeyEnv)) {
+    target.apiKey = String(apiKeyEnv).trim();
+  }
 }
 
 function getAuthProfilesPath(agentId = 'main'): string {
@@ -457,13 +483,14 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
       mergedModels.push({ id: modelId, name: modelId });
     }
 
-    providers[canonicalProviderId] = {
+    const nextProvider: Record<string, unknown> = {
       ...existingProvider,
       baseUrl: providerCfg.baseUrl,
       api: providerCfg.api,
-      apiKey: providerCfg.apiKeyEnv,
       models: mergedModels,
     };
+    applyOpenClawProviderApiKey(nextProvider, providerCfg.apiKeyEnv);
+    providers[canonicalProviderId] = nextProvider;
 
     // Remove stale alias entries when canonical id differs.
     for (const alias of aliasIds) {
@@ -536,9 +563,7 @@ export function setOpenClawDefaultModelWithOverride(
       api: override.api,
       models: mergedModels,
     };
-    if (override.apiKeyEnv) {
-      nextProvider.apiKey = override.apiKeyEnv;
-    }
+    applyOpenClawProviderApiKey(nextProvider, override.apiKeyEnv);
     if (override.headers && Object.keys(override.headers).length > 0) {
       nextProvider.headers = override.headers;
     }
@@ -617,13 +642,14 @@ export function setOpenClawAgentModel(agentId: string, provider: string, modelOv
       mergedModels.push({ id: modelId, name: modelId });
     }
 
-    providers[canonicalProviderId] = {
+    const nextProvider: Record<string, unknown> = {
       ...existingProvider,
       baseUrl: providerCfg.baseUrl,
       api: providerCfg.api,
-      apiKey: providerCfg.apiKeyEnv,
       models: mergedModels,
     };
+    applyOpenClawProviderApiKey(nextProvider, providerCfg.apiKeyEnv);
+    providers[canonicalProviderId] = nextProvider;
 
     // Remove stale alias entries when canonical id differs.
     for (const alias of aliasIds) {
@@ -693,9 +719,7 @@ export function setOpenClawAgentModelWithOverride(
       api: override.api,
       models: mergedModels,
     };
-    if (override.apiKeyEnv) {
-      nextProvider.apiKey = override.apiKeyEnv;
-    }
+    applyOpenClawProviderApiKey(nextProvider, override.apiKeyEnv);
     if (override.headers && Object.keys(override.headers).length > 0) {
       nextProvider.headers = override.headers;
     }
@@ -881,9 +905,7 @@ export async function syncProviderConfigToOpenClaw(
       api: override.api,
       models: nextModels,
     };
-    if (override.apiKeyEnv) {
-      nextProvider.apiKey = override.apiKeyEnv;
-    }
+    applyOpenClawProviderApiKey(nextProvider, override.apiKeyEnv);
     if (override.headers && Object.keys(override.headers).length > 0) {
       nextProvider.headers = override.headers;
     }

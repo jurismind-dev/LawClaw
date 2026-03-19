@@ -2,8 +2,7 @@ import { shell } from 'electron';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { logger } from './logger';
-import { validateApiKeyWithProvider } from './provider-validation';
-import { getProviderConfig } from './provider-registry';
+import { getProviderConfig, getProviderDefaultModel } from './provider-registry';
 import {
   type JurismindProviderBindingConfig,
   loadJurismindProviderBindingConfig,
@@ -301,13 +300,55 @@ function delay(ms: number): Promise<void> {
 export async function validateJurismindReusableToken(
   tokenKey: string
 ): Promise<{ valid: boolean; authInvalid: boolean; error?: string }> {
-  const baseUrl = getProviderConfig('jurismind')?.baseUrl;
-  const result = await validateApiKeyWithProvider('jurismind', tokenKey, { baseUrl });
-  return {
-    valid: result.valid,
-    authInvalid: result.valid === false && result.error === 'Invalid API key',
-    error: result.error,
-  };
+  const providerConfig = getProviderConfig('jurismind');
+  const baseUrl = String(providerConfig?.baseUrl || '').trim().replace(/\/+$/, '');
+  if (!baseUrl) {
+    return {
+      valid: false,
+      authInvalid: false,
+      error: 'Jurismind base URL is not configured',
+    };
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tokenKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: getProviderDefaultModel('jurismind') || 'jurismind/jurismind',
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+      }),
+    });
+    const body = await response.json().catch(() => null);
+
+    if ((response.status >= 200 && response.status < 300) || response.status === 429) {
+      return { valid: true, authInvalid: false };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        valid: false,
+        authInvalid: true,
+        error: 'Invalid API key',
+      };
+    }
+
+    return {
+      valid: false,
+      authInvalid: false,
+      error: getResponseMessage(body, response.status),
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      authInvalid: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function resolveUsableJurismindToken(
@@ -339,10 +380,10 @@ async function resolveUsableJurismindToken(
   }
 
   logger.warn(
-    `[JurismindProvider] ${sourceLabel} token_key 校验未通过，但不是鉴权失败，仍继续复用: ${validation.error || 'unknown'}`
+    `[JurismindProvider] ${sourceLabel} token_key 无法确认可用，继续尝试重新绑定: ${validation.error || 'unknown'}`
   );
   return {
-    token,
+    token: null,
     invalidAuth: false,
     validationError: validation.error,
   };

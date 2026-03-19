@@ -53,17 +53,31 @@ describe('jurismind provider token binding', () => {
     });
   });
 
-  it('keeps a reusable jurismind token when chat probe succeeds', async () => {
+  it('keeps a reusable jurismind token only when strict chat probe succeeds', async () => {
     const { validateJurismindReusableToken } = await import(
       '@electron/utils/jurismind-provider-token-binding'
     );
 
-    mockFetchWithStatuses([401, 400], {});
+    mockFetchWithStatuses([200], {});
 
     await expect(validateJurismindReusableToken('sk-valid')).resolves.toEqual({
       valid: true,
       authInvalid: false,
       error: undefined,
+    });
+  });
+
+  it('does not treat a 400 jurismind chat probe as reusable', async () => {
+    const { validateJurismindReusableToken } = await import(
+      '@electron/utils/jurismind-provider-token-binding'
+    );
+
+    mockFetchWithStatuses([400], { message: 'bad request' });
+
+    await expect(validateJurismindReusableToken('sk-unknown')).resolves.toEqual({
+      valid: false,
+      authInvalid: false,
+      error: 'bad request',
     });
   });
 
@@ -73,5 +87,6 @@ describe('jurismind provider token binding', () => {
     expect(source).toContain("resolveUsableJurismindToken(existing, '复用已绑定')");
     expect(source).toContain("resolveUsableJurismindToken(bindResult.token, '新绑定返回')");
     expect(source).toContain('token_key 校验失败，准备重新绑定');
+    expect(source).toContain('token_key 无法确认可用，继续尝试重新绑定');
   });
 });

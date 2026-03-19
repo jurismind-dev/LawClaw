@@ -2,6 +2,8 @@ import { shell } from 'electron';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { logger } from './logger';
+import { validateApiKeyWithProvider } from './provider-validation';
+import { getProviderConfig } from './provider-registry';
 import {
   type JurismindProviderBindingConfig,
   loadJurismindProviderBindingConfig,
@@ -17,6 +19,11 @@ interface SsoAuthContext {
   openId: string;
   bearerToken: string | null;
   cookieHeader: string | null;
+}
+
+interface JurismindTokenRecord {
+  tokenKey: string;
+  tokenId: number | null;
 }
 
 function normalizePath(path: string, fallback: string): string {
@@ -289,6 +296,56 @@ function extractTokenFromPayload(payload: unknown): { tokenKey: string; tokenId:
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function validateJurismindReusableToken(
+  tokenKey: string
+): Promise<{ valid: boolean; authInvalid: boolean; error?: string }> {
+  const baseUrl = getProviderConfig('jurismind')?.baseUrl;
+  const result = await validateApiKeyWithProvider('jurismind', tokenKey, { baseUrl });
+  return {
+    valid: result.valid,
+    authInvalid: result.valid === false && result.error === 'Invalid API key',
+    error: result.error,
+  };
+}
+
+async function resolveUsableJurismindToken(
+  token: JurismindTokenRecord | null,
+  sourceLabel: string
+): Promise<{
+  token: JurismindTokenRecord | null;
+  invalidAuth: boolean;
+  validationError?: string;
+}> {
+  if (!token?.tokenKey) {
+    return { token: null, invalidAuth: false };
+  }
+
+  const validation = await validateJurismindReusableToken(token.tokenKey);
+  if (validation.valid) {
+    return { token, invalidAuth: false };
+  }
+
+  if (validation.authInvalid) {
+    logger.warn(
+      `[JurismindProvider] ${sourceLabel} token_key 校验失败，准备重新绑定: ${validation.error || 'Invalid API key'}`
+    );
+    return {
+      token: null,
+      invalidAuth: true,
+      validationError: validation.error,
+    };
+  }
+
+  logger.warn(
+    `[JurismindProvider] ${sourceLabel} token_key 校验未通过，但不是鉴权失败，仍继续复用: ${validation.error || 'unknown'}`
+  );
+  return {
+    token,
+    invalidAuth: false,
+    validationError: validation.error,
+  };
 }
 
 async function openSsoAndWaitTicket(config: JurismindProviderBindingConfig): Promise<string> {
@@ -569,56 +626,82 @@ export async function bindJurismindProviderToken(): Promise<JurismindProviderBin
   const auth = await checkSsoTicket(ticket, config);
   const openId = auth.openId;
   logger.info(`[JurismindProvider] SSO 登录成功 open_id=${openId}`);
+  let lastInvalidTokenError: string | null = null;
 
   const existing = await queryBoundToken(openId, config, auth);
-  if (existing?.tokenKey) {
+  const validatedExisting = await resolveUsableJurismindToken(existing, '复用已绑定');
+  if (validatedExisting.token?.tokenKey) {
     logger.info('[JurismindProvider] 复用已绑定 token_key');
     return {
       openId,
-      tokenKey: existing.tokenKey,
-      tokenId: existing.tokenId,
+      tokenKey: validatedExisting.token.tokenKey,
+      tokenId: validatedExisting.token.tokenId,
     };
+  }
+  if (validatedExisting.invalidAuth) {
+    lastInvalidTokenError = validatedExisting.validationError || lastInvalidTokenError;
   }
 
   const bindResult = await bindTokenByOpenId(openId, config, auth);
-  if (bindResult.token?.tokenKey) {
+  const validatedBindToken = await resolveUsableJurismindToken(bindResult.token, '新绑定返回');
+  if (validatedBindToken.token?.tokenKey) {
     logger.info('[JurismindProvider] 绑定新 token_key 成功');
     return {
       openId,
-      tokenKey: bindResult.token.tokenKey,
-      tokenId: bindResult.token.tokenId,
+      tokenKey: validatedBindToken.token.tokenKey,
+      tokenId: validatedBindToken.token.tokenId,
     };
+  }
+  if (validatedBindToken.invalidAuth) {
+    lastInvalidTokenError = validatedBindToken.validationError || lastInvalidTokenError;
   }
 
   logger.warn(`[JurismindProvider] 绑定接口未直接返回 token_key，开始轮询查询: ${bindResult.message}`);
   const fallback = await queryBoundTokenWithRetry(openId, config, auth, 6, 600);
-  if (fallback?.tokenKey) {
+  const validatedFallback = await resolveUsableJurismindToken(fallback, '轮询查询');
+  if (validatedFallback.token?.tokenKey) {
     return {
       openId,
-      tokenKey: fallback.tokenKey,
-      tokenId: fallback.tokenId,
+      tokenKey: validatedFallback.token.tokenKey,
+      tokenId: validatedFallback.token.tokenId,
     };
+  }
+  if (validatedFallback.invalidAuth) {
+    lastInvalidTokenError = validatedFallback.validationError || lastInvalidTokenError;
   }
 
   // 某些服务在首次 bind 只返回“绑定成功”，再次 bind 可能返回“用户已绑定token: sk-xxx”
   logger.warn('[JurismindProvider] 首次绑定后仍未拿到 token_key，尝试再次调用 bind 兜底');
   const secondBind = await bindTokenByOpenId(openId, config, auth);
-  if (secondBind.token?.tokenKey) {
+  const validatedSecondBind = await resolveUsableJurismindToken(secondBind.token, '二次绑定返回');
+  if (validatedSecondBind.token?.tokenKey) {
     return {
       openId,
-      tokenKey: secondBind.token.tokenKey,
-      tokenId: secondBind.token.tokenId,
+      tokenKey: validatedSecondBind.token.tokenKey,
+      tokenId: validatedSecondBind.token.tokenId,
     };
+  }
+  if (validatedSecondBind.invalidAuth) {
+    lastInvalidTokenError = validatedSecondBind.validationError || lastInvalidTokenError;
   }
 
   const fallbackAfterSecondBind = await queryBoundTokenWithRetry(openId, config, auth, 8, 1200);
-  if (fallbackAfterSecondBind?.tokenKey) {
+  const validatedFallbackAfterSecondBind = await resolveUsableJurismindToken(
+    fallbackAfterSecondBind,
+    '二次绑定后轮询查询'
+  );
+  if (validatedFallbackAfterSecondBind.token?.tokenKey) {
     return {
       openId,
-      tokenKey: fallbackAfterSecondBind.tokenKey,
-      tokenId: fallbackAfterSecondBind.tokenId,
+      tokenKey: validatedFallbackAfterSecondBind.token.tokenKey,
+      tokenId: validatedFallbackAfterSecondBind.token.tokenId,
     };
   }
+  if (validatedFallbackAfterSecondBind.invalidAuth) {
+    lastInvalidTokenError =
+      validatedFallbackAfterSecondBind.validationError || lastInvalidTokenError;
+  }
 
-  throw new Error(`未获取到 token_key，请检查积分服务绑定接口返回: ${bindResult.message}`);
+  const invalidDetail = lastInvalidTokenError ? `；最后校验结果: ${lastInvalidTokenError}` : '';
+  throw new Error(`未获取到可用 token_key，请检查积分服务绑定接口返回: ${bindResult.message}${invalidDetail}`);
 }

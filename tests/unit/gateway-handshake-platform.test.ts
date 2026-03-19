@@ -7,10 +7,12 @@ function readRepoFile(relativePath: string): string {
 }
 
 describe('gateway manager handshake identity', () => {
-  it('uses a stable desktop platform for the internal gateway client', () => {
+  it('uses the OpenClaw backend client identity to skip local self-pairing', () => {
     const source = readRepoFile('electron/gateway/manager.ts');
 
-    expect(source).toContain("platform: 'desktop'");
-    expect(source).toContain('metadata-upgrade re-approval flow');
+    expect(source).toContain("const clientMode = 'backend'");
+    expect(source).toContain("platform: 'node'");
+    expect(source).toContain("const scopes = ['operator.admin', 'operator.approvals', 'operator.pairing']");
+    expect(source).toContain('trusted backend self-connection');
   });
 });

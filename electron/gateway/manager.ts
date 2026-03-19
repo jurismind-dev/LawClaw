@@ -1130,10 +1130,10 @@ export class GatewayManager extends EventEmitter {
 
         connectId = `connect-${Date.now()}`;
         const role = 'operator';
-        const scopes = ['operator.admin'];
+        const scopes = ['operator.admin', 'operator.approvals', 'operator.pairing'];
         const signedAtMs = Date.now();
         const clientId = 'gateway-client';
-        const clientMode = 'ui';
+        const clientMode = 'backend';
 
         const device = (() => {
           if (!this.deviceIdentity) return undefined;
@@ -1169,10 +1169,10 @@ export class GatewayManager extends EventEmitter {
               id: clientId,
               displayName: 'LawClaw',
               version: '0.1.0',
-              // Keep a stable client platform identity for the internal desktop
-              // gateway client so existing pairings do not get forced into a
-              // metadata-upgrade re-approval flow after app upgrades.
-              platform: 'desktop',
+              // Match OpenClaw's internal backend operator client so the local
+              // desktop app is treated as a trusted backend self-connection
+              // rather than a separately paired UI device.
+              platform: 'node',
               mode: clientMode,
             },
             auth: {

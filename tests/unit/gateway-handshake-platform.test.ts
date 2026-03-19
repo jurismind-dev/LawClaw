@@ -14,4 +14,3 @@ describe('gateway manager handshake identity', () => {
     expect(source).toContain('metadata-upgrade re-approval flow');
   });
 });
-  fix(gateway): 修复内部握手触发 metadata-upgrade 配对问题

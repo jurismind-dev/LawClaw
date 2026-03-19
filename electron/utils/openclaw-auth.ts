@@ -80,12 +80,57 @@ function applyOpenClawProviderApiKey(
   }
 }
 
+export function cleanupOpenClawProviderApiKeyConfig(provider: string): boolean {
+  const canonicalProviderId = getCanonicalProviderId(provider);
+  const aliasIds = getProviderAliasIds(provider);
+  const providerCfg = getProviderConfig(provider) || getProviderConfig(canonicalProviderId);
+  const config = readOpenClawConfig();
+  const models = isRecord(config.models) ? { ...config.models } : {};
+  const providers = isRecord(models.providers) ? { ...models.providers } : {};
+
+  let changed = false;
+
+  for (const providerId of new Set([canonicalProviderId, ...aliasIds])) {
+    const existingProvider = providers[providerId];
+    if (!isRecord(existingProvider)) {
+      continue;
+    }
+
+    const nextProvider = { ...existingProvider };
+    const hadApiKey = Object.prototype.hasOwnProperty.call(nextProvider, 'apiKey');
+    const previousApiKey = typeof nextProvider.apiKey === 'string' ? nextProvider.apiKey : undefined;
+
+    applyOpenClawProviderApiKey(nextProvider, providerCfg?.apiKeyEnv);
+
+    const hasApiKey = Object.prototype.hasOwnProperty.call(nextProvider, 'apiKey');
+    const nextApiKey = typeof nextProvider.apiKey === 'string' ? nextProvider.apiKey : undefined;
+
+    if (hadApiKey !== hasApiKey || previousApiKey !== nextApiKey) {
+      providers[providerId] = nextProvider;
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    return false;
+  }
+
+  models.providers = providers;
+  config.models = models;
+  writeOpenClawConfig(config);
+  return true;
+}
+
 function getAuthProfilesPath(agentId = 'main'): string {
   return join(homedir(), '.openclaw', 'agents', agentId, 'agent', AUTH_PROFILE_FILENAME);
 }
 
 function getOpenClawConfigPath(): string {
   return join(homedir(), '.openclaw', 'openclaw.json');
+}
+
+function stringifyAuthProfilesText(store: AuthProfilesStore): string {
+  return `${JSON.stringify(store, null, 2)}\n`;
 }
 
 function readAuthProfiles(agentId = 'main'): AuthProfilesStore {
@@ -117,7 +162,31 @@ function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): void {
     mkdirSync(dir, { recursive: true });
   }
 
-  writeFileSync(filePath, stringifyJsonText(store, { trailingNewline: false }), 'utf-8');
+  // OpenClaw's auth-profiles loader uses raw JSON.parse without stripping a UTF-8 BOM.
+  // Keep this file BOM-free on every platform so packaged Windows builds can read it.
+  writeFileSync(filePath, stringifyAuthProfilesText(store), 'utf-8');
+}
+
+export function cleanupOpenClawAuthProfilesEncoding(agentId = 'main'): boolean {
+  const filePath = getAuthProfilesPath(agentId);
+
+  try {
+    if (!existsSync(filePath)) {
+      return false;
+    }
+
+    const raw = readFileSync(filePath, 'utf-8');
+    if (!hasUtf8Bom(raw)) {
+      return false;
+    }
+
+    const parsed = parseJsonText<AuthProfilesStore>(raw);
+    writeFileSync(filePath, stringifyAuthProfilesText(parsed), 'utf-8');
+    return true;
+  } catch (error) {
+    console.warn('Failed to cleanup auth-profiles.json UTF-8 BOM:', error);
+    return false;
+  }
 }
 
 function readOpenClawConfig(): Record<string, unknown> {

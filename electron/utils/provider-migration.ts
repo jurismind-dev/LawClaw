@@ -6,6 +6,8 @@ import {
   saveProvider,
 } from './secure-storage';
 import {
+  cleanupOpenClawAuthProfilesEncoding,
+  cleanupOpenClawProviderApiKeyConfig,
   cleanupLegacyProviderProfiles,
   cleanupOpenClawProviderEntries,
   getOpenClawAgentModelPrimary,
@@ -33,6 +35,8 @@ export interface ProviderMigrationSummary {
   cleanedLegacyProfiles: boolean;
   rewroteDefaultModel: boolean;
   removedStaleProviderEntries: boolean;
+  cleanedInvalidApiKeyConfig: boolean;
+  cleanedAuthProfileEncoding: boolean;
 }
 
 interface ProviderMigrationDependencies {
@@ -45,6 +49,8 @@ interface ProviderMigrationDependencies {
   setOpenClawAgentModel: typeof setOpenClawAgentModel;
   cleanupOpenClawProviderEntries: typeof cleanupOpenClawProviderEntries;
   getOpenClawAgentModelPrimary: typeof getOpenClawAgentModelPrimary;
+  cleanupOpenClawProviderApiKeyConfig: typeof cleanupOpenClawProviderApiKeyConfig;
+  cleanupOpenClawAuthProfilesEncoding: typeof cleanupOpenClawAuthProfilesEncoding;
 }
 
 const defaultDeps: ProviderMigrationDependencies = {
@@ -57,6 +63,8 @@ const defaultDeps: ProviderMigrationDependencies = {
   setOpenClawAgentModel,
   cleanupOpenClawProviderEntries,
   getOpenClawAgentModelPrimary,
+  cleanupOpenClawProviderApiKeyConfig,
+  cleanupOpenClawAuthProfilesEncoding,
 };
 
 function shouldRenameToOfficialLabel(name: string): boolean {
@@ -168,6 +176,8 @@ export async function migrateMoonshotCodePlanProvider(
     cleanedLegacyProfiles,
     rewroteDefaultModel,
     removedStaleProviderEntries,
+    cleanedInvalidApiKeyConfig: false,
+    cleanedAuthProfileEncoding: false,
   };
 }
 
@@ -178,6 +188,13 @@ export async function migrateJurismindProviderModel(
   const targetProviders = providers.filter((provider) => provider.type === JURISMIND_PROVIDER_TYPE);
   const nowIso = new Date().toISOString();
   let normalizedProviders = 0;
+  let syncedKeys = 0;
+  const cleanedMainAuthProfileEncoding = deps.cleanupOpenClawAuthProfilesEncoding();
+  const cleanedLawClawAuthProfileEncoding = deps.cleanupOpenClawAuthProfilesEncoding(
+    LAWCLAW_AGENT_ID
+  );
+  const cleanedAuthProfileEncoding =
+    cleanedMainAuthProfileEncoding || cleanedLawClawAuthProfileEncoding;
 
   for (const provider of targetProviders) {
     const { changed, next } = normalizeJurismindProvider(provider, nowIso);
@@ -185,9 +202,19 @@ export async function migrateJurismindProviderModel(
       await deps.saveProvider(next);
       normalizedProviders += 1;
     }
+
+    const apiKey = await deps.getApiKey(provider.id);
+    if (apiKey?.trim()) {
+      deps.saveProviderKeyToOpenClaw(JURISMIND_PROVIDER_TYPE, apiKey.trim());
+      deps.saveProviderKeyToOpenClaw(JURISMIND_PROVIDER_TYPE, apiKey.trim(), LAWCLAW_AGENT_ID);
+      syncedKeys += 1;
+    }
   }
 
   let rewroteDefaultModel = false;
+  const cleanedInvalidApiKeyConfig = deps.cleanupOpenClawProviderApiKeyConfig(
+    JURISMIND_PROVIDER_TYPE
+  );
   const defaultProviderId = await deps.getDefaultProvider();
   if (defaultProviderId) {
     const defaultProvider = providers.find((provider) => provider.id === defaultProviderId);
@@ -209,10 +236,12 @@ export async function migrateJurismindProviderModel(
   return {
     touchedProviders: targetProviders.length,
     normalizedProviders,
-    syncedKeys: 0,
+    syncedKeys,
     cleanedLegacyProfiles: false,
     rewroteDefaultModel,
     removedStaleProviderEntries: false,
+    cleanedInvalidApiKeyConfig,
+    cleanedAuthProfileEncoding,
   };
 }
 
@@ -230,7 +259,12 @@ export async function runProviderStartupMigration(): Promise<void> {
     }
 
     const jurismindResult = await migrateJurismindProviderModel();
-    if (jurismindResult.normalizedProviders > 0 || jurismindResult.rewroteDefaultModel) {
+    if (
+      jurismindResult.normalizedProviders > 0
+      || jurismindResult.rewroteDefaultModel
+      || jurismindResult.cleanedInvalidApiKeyConfig
+      || jurismindResult.cleanedAuthProfileEncoding
+    ) {
       logger.info('Jurismind provider model migration completed:', jurismindResult);
     } else {
       logger.debug('Jurismind provider model migration skipped (no legacy data found).');

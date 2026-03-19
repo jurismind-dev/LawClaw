@@ -33,6 +33,8 @@ describe('provider migration', () => {
     });
     const saveProviderKeyToOpenClaw = vi.fn();
     const setOpenClawAgentModel = vi.fn();
+    const cleanupOpenClawProviderApiKeyConfig = vi.fn(() => false);
+    const cleanupOpenClawAuthProfilesEncoding = vi.fn(() => false);
 
     const result = await migrateMoonshotCodePlanProvider({
       getAllProviders: vi.fn(async () => providers),
@@ -43,6 +45,9 @@ describe('provider migration', () => {
       cleanupLegacyProviderProfiles: vi.fn(() => true),
       setOpenClawAgentModel,
       cleanupOpenClawProviderEntries: vi.fn(() => true),
+      getOpenClawAgentModelPrimary: vi.fn(() => undefined),
+      cleanupOpenClawProviderApiKeyConfig,
+      cleanupOpenClawAuthProfilesEncoding,
     });
 
     expect(result).toMatchObject({
@@ -52,6 +57,8 @@ describe('provider migration', () => {
       cleanedLegacyProfiles: true,
       rewroteDefaultModel: true,
       removedStaleProviderEntries: true,
+      cleanedInvalidApiKeyConfig: false,
+      cleanedAuthProfileEncoding: false,
     });
 
     expect(saveProvider).toHaveBeenCalledTimes(1);
@@ -79,6 +86,8 @@ describe('provider migration', () => {
     const saveProvider = vi.fn();
     const saveProviderKeyToOpenClaw = vi.fn();
     const setOpenClawAgentModel = vi.fn();
+    const cleanupOpenClawProviderApiKeyConfig = vi.fn(() => false);
+    const cleanupOpenClawAuthProfilesEncoding = vi.fn(() => false);
 
     const result = await migrateMoonshotCodePlanProvider({
       getAllProviders: vi.fn(async () => [
@@ -98,6 +107,9 @@ describe('provider migration', () => {
       cleanupLegacyProviderProfiles: vi.fn(() => false),
       setOpenClawAgentModel,
       cleanupOpenClawProviderEntries: vi.fn(() => false),
+      getOpenClawAgentModelPrimary: vi.fn(() => undefined),
+      cleanupOpenClawProviderApiKeyConfig,
+      cleanupOpenClawAuthProfilesEncoding,
     });
 
     expect(result).toMatchObject({
@@ -107,6 +119,8 @@ describe('provider migration', () => {
       cleanedLegacyProfiles: false,
       rewroteDefaultModel: false,
       removedStaleProviderEntries: false,
+      cleanedInvalidApiKeyConfig: false,
+      cleanedAuthProfileEncoding: false,
     });
     expect(saveProvider).not.toHaveBeenCalled();
     expect(saveProviderKeyToOpenClaw).not.toHaveBeenCalled();
@@ -119,6 +133,12 @@ describe('provider migration', () => {
       savedProviders.push(config);
     });
     const setOpenClawAgentModel = vi.fn();
+    const cleanupOpenClawProviderApiKeyConfig = vi.fn(() => true);
+    const saveProviderKeyToOpenClaw = vi.fn();
+    const cleanupOpenClawAuthProfilesEncoding = vi
+      .fn()
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
 
     const result = await migrateJurismindProviderModel({
       getAllProviders: vi.fn(async () => [
@@ -132,20 +152,25 @@ describe('provider migration', () => {
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
       ]),
-      getApiKey: vi.fn(async () => null),
+      getApiKey: vi.fn(async () => 'sk-jurismind'),
       saveProvider,
       getDefaultProvider: vi.fn(async () => 'jurismind'),
-      saveProviderKeyToOpenClaw: vi.fn(),
+      saveProviderKeyToOpenClaw,
       cleanupLegacyProviderProfiles: vi.fn(() => false),
       setOpenClawAgentModel,
       cleanupOpenClawProviderEntries: vi.fn(() => false),
       getOpenClawAgentModelPrimary: vi.fn(() => 'jurismind/kimi-k2.5'),
+      cleanupOpenClawProviderApiKeyConfig,
+      cleanupOpenClawAuthProfilesEncoding,
     });
 
     expect(result).toMatchObject({
       touchedProviders: 1,
       normalizedProviders: 1,
+      syncedKeys: 1,
       rewroteDefaultModel: true,
+      cleanedInvalidApiKeyConfig: true,
+      cleanedAuthProfileEncoding: true,
     });
     expect(savedProviders[0]).toMatchObject({
       id: 'jurismind',
@@ -156,11 +181,22 @@ describe('provider migration', () => {
       'jurismind',
       'jurismind/jurismind'
     );
+    expect(cleanupOpenClawProviderApiKeyConfig).toHaveBeenCalledWith('jurismind');
+    expect(cleanupOpenClawAuthProfilesEncoding).toHaveBeenNthCalledWith(1);
+    expect(cleanupOpenClawAuthProfilesEncoding).toHaveBeenNthCalledWith(2, 'lawclaw-main');
+    expect(saveProviderKeyToOpenClaw).toHaveBeenCalledWith('jurismind', 'sk-jurismind');
+    expect(saveProviderKeyToOpenClaw).toHaveBeenCalledWith(
+      'jurismind',
+      'sk-jurismind',
+      'lawclaw-main'
+    );
   });
 
   it('preserves user-customized lawclaw-main model when migrating jurismind provider metadata', async () => {
     const saveProvider = vi.fn();
     const setOpenClawAgentModel = vi.fn();
+    const cleanupOpenClawProviderApiKeyConfig = vi.fn(() => false);
+    const cleanupOpenClawAuthProfilesEncoding = vi.fn(() => false);
 
     const result = await migrateJurismindProviderModel({
       getAllProviders: vi.fn(async () => [
@@ -181,12 +217,16 @@ describe('provider migration', () => {
       setOpenClawAgentModel,
       cleanupOpenClawProviderEntries: vi.fn(() => false),
       getOpenClawAgentModelPrimary: vi.fn(() => 'openai/gpt-5.2'),
+      cleanupOpenClawProviderApiKeyConfig,
+      cleanupOpenClawAuthProfilesEncoding,
     });
 
     expect(result).toMatchObject({
       touchedProviders: 1,
       normalizedProviders: 0,
       rewroteDefaultModel: false,
+      cleanedInvalidApiKeyConfig: false,
+      cleanedAuthProfileEncoding: false,
     });
     expect(saveProvider).not.toHaveBeenCalled();
     expect(setOpenClawAgentModel).not.toHaveBeenCalled();

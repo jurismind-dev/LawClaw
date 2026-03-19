@@ -1169,7 +1169,10 @@ export class GatewayManager extends EventEmitter {
               id: clientId,
               displayName: 'LawClaw',
               version: '0.1.0',
-              platform: process.platform,
+              // Keep a stable client platform identity for the internal desktop
+              // gateway client so existing pairings do not get forced into a
+              // metadata-upgrade re-approval flow after app upgrades.
+              platform: 'desktop',
               mode: clientMode,
             },
             auth: {

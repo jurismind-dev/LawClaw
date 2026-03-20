@@ -9,14 +9,21 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 
 const require = createRequire(import.meta.url);
-const { patchOpenClawWebSearchRuntime } = require('./openclaw-bundle-compat.cjs');
+const {
+  patchOpenClawWebSearchRuntime,
+  patchOpenClawWindowsSpawnRuntime,
+} = require('./openclaw-bundle-compat.cjs');
 
 const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const openclawDir = path.join(projectRoot, 'node_modules', 'openclaw');
 const patchedRuntimeFiles = patchOpenClawWebSearchRuntime(openclawDir);
+const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(openclawDir);
 
 if (patchedRuntimeFiles.length > 0) {
   console.log(`[dev] Patched OpenClaw doubao web_search runtime: ${patchedRuntimeFiles.join(', ')}`);
+}
+if (patchedWindowsSpawnFiles.length > 0) {
+  console.log(`[dev] Patched OpenClaw Windows spawn runtime: ${patchedWindowsSpawnFiles.join(', ')}`);
 }
 
 const env = {

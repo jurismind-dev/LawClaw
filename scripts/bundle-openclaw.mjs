@@ -20,7 +20,11 @@ import 'zx/globals';
 import { spawnSync } from 'node:child_process';
 import compatTools from './openclaw-bundle-compat.cjs';
 
-const { patchOpenClawBundleCompat, patchOpenClawWebSearchRuntime } = compatTools;
+const {
+  patchOpenClawBundleCompat,
+  patchOpenClawWebSearchRuntime,
+  patchOpenClawWindowsSpawnRuntime,
+} = compatTools;
 
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
@@ -139,6 +143,11 @@ fs.cpSync(openclawReal, OUTPUT, { recursive: true, dereference: true });
 const patchedRuntimeFiles = patchOpenClawWebSearchRuntime(OUTPUT);
 if (patchedRuntimeFiles.length > 0) {
   echo`   Patched OpenClaw doubao web_search runtime: ${patchedRuntimeFiles.join(', ')}`;
+}
+
+const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(OUTPUT);
+if (patchedWindowsSpawnFiles.length > 0) {
+  echo`   Patched OpenClaw Windows spawn runtime: ${patchedWindowsSpawnFiles.join(', ')}`;
 }
 
 // 4. Recursively collect ALL transitive dependencies via pnpm virtual store BFS

@@ -21,7 +21,11 @@
 
 const { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, chmodSync } = require('fs');
 const { basename, dirname, join } = require('path');
-const { patchOpenClawBundleCompat, patchOpenClawWebSearchRuntime } = require('./openclaw-bundle-compat.cjs');
+const {
+  patchOpenClawBundleCompat,
+  patchOpenClawWebSearchRuntime,
+  patchOpenClawWindowsSpawnRuntime,
+} = require('./openclaw-bundle-compat.cjs');
 
 function getBundledUvPath(resourcesDir, platform) {
   const binName = platform === 'win32' ? 'uv.exe' : 'uv';
@@ -510,6 +514,13 @@ exports.default = async function afterPack(context) {
   if (patchedRuntimeFiles.length > 0) {
     console.log(
       `[after-pack] ✅ Patched OpenClaw doubao web_search runtime: ${patchedRuntimeFiles.join(', ')}.`
+    );
+  }
+
+  const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(openclawRoot);
+  if (patchedWindowsSpawnFiles.length > 0) {
+    console.log(
+      `[after-pack] ✅ Patched OpenClaw Windows spawn runtime: ${patchedWindowsSpawnFiles.join(', ')}.`
     );
   }
 

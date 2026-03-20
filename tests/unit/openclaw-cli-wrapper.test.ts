@@ -33,6 +33,9 @@ describe('bundled openclaw CLI wrappers', () => {
 
   it('keeps Windows plugin installation off npm.cmd fallbacks', () => {
     const afterPackScript = readRepoFile('scripts/after-pack.cjs');
+    const bundleScript = readRepoFile('scripts/bundle-openclaw.mjs');
+    const devScript = readRepoFile('scripts/dev.mjs');
+    const devSetupScript = readRepoFile('scripts/dev-setup.mjs');
     const openClawCliSource = readRepoFile('electron/utils/openclaw-cli.ts');
     const bundledRuntimeSource = readRepoFile('electron/utils/bundled-runtime.ts');
 
@@ -40,6 +43,10 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(afterPackScript).toContain('Bundled npm runtime for Windows');
     expect(afterPackScript).toContain("join(resourcesDir, 'npm-runtime', 'node_modules', 'npm')");
     expect(afterPackScript).toContain('Bundled npm runtime for POSIX');
+    expect(afterPackScript).toContain('patchOpenClawWindowsSpawnRuntime');
+    expect(bundleScript).toContain('patchOpenClawWindowsSpawnRuntime');
+    expect(devScript).toContain('patchOpenClawWindowsSpawnRuntime');
+    expect(devSetupScript).toContain('patchOpenClawWindowsSpawnRuntime');
 
     expect(openClawCliSource).toContain('process.env.npm_node_execpath');
     expect(openClawCliSource).toContain('export function getNodeExecForCli');
@@ -57,6 +64,7 @@ describe('bundled openclaw CLI wrappers', () => {
     const windowsCmdUtf8 = readRepoFile('resources/runtime-bridge/win32/cmd-utf8.cmd');
     const windowsNode = readRepoFile('resources/runtime-bridge/win32/node.cmd');
     const windowsPython = readRepoFile('resources/runtime-bridge/win32/python.cmd');
+    const windowsPythonBridge = readRepoFile('resources/runtime-bridge/win32/python-bridge.ps1');
 
     expect(builderConfig).toContain('resources/runtime-bridge/posix/');
     expect(builderConfig).toContain('resources/runtime-bridge/win32/');
@@ -71,9 +79,14 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(windowsNode).toContain('LAWCLAW_BUNDLED_NODE_EXE');
     expect(windowsNode).toContain('ELECTRON_RUN_AS_NODE=1');
     expect(windowsNode).toContain('PYTHONIOENCODING=utf-8');
-    expect(windowsPython).toContain('python find 3.12');
-    expect(windowsPython).toContain('python install 3.12');
+    expect(windowsPython).toContain('python-bridge.ps1');
+    expect(windowsPython).toContain('%~dp0python-bridge.ps1');
+    expect(windowsPython).not.toContain('for /f "usebackq delims="');
     expect(windowsPython).toContain('PYTHONUTF8=1');
+    expect(windowsPythonBridge).toContain('& $UvExe python find 3.12');
+    expect(windowsPythonBridge).toContain('& $uvExe python install 3.12');
+    expect(windowsPythonBridge).toContain('& $pythonExe @PythonArgs');
+    expect(windowsPythonBridge).toContain('[Console]::OutputEncoding');
   });
 
   it('patches bundled packages that still need require() compatibility', () => {

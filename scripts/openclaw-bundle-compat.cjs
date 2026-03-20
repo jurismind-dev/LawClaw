@@ -3,6 +3,7 @@ const { join } = require('path');
 
 const DOUBAO_DEFAULT_BASE_URL = 'http://101.132.245.215:3001/v1';
 const DOUBAO_DEFAULT_MODEL = 'doubao';
+const WINDOWS_SPAWN_PATCH_MARKER = 'lawclaw windows spawn patch v1';
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -234,6 +235,278 @@ function patchOnboardSearchChunk(filePath) {
   return writePatchedFile(filePath, content, changed);
 }
 
+function buildPatchedWindowsSpawnSource() {
+  return String.raw`import { readFileSync, statSync } from "node:fs";
+import path from "node:path";
+//#region src/plugin-sdk/windows-spawn.ts
+// ${WINDOWS_SPAWN_PATCH_MARKER}
+const WRAPPER_TEXT_ENCODINGS = ["utf8", "utf-16le", "gbk"];
+const DIRECT_EXECUTABLE_EXTENSIONS = new Set([".exe", ".com"]);
+const SCRIPT_ENTRY_EXTENSIONS = new Set([".js", ".cjs", ".mjs"]);
+function isFilePath(candidate) {
+	try {
+		return statSync(candidate).isFile();
+	} catch {
+		return false;
+	}
+}
+function uniquePreserveOrder(values) {
+	const seen = new Set();
+	const result = [];
+	for (const value of values) {
+		if (!value || seen.has(value)) continue;
+		seen.add(value);
+		result.push(value);
+	}
+	return result;
+}
+function prioritizeWindowsPathExt(exts) {
+	const normalized = uniquePreserveOrder(exts.map((ext) => ext.toLowerCase()));
+	const prioritized = [];
+	for (const ext of [".exe", ".com", ".cmd", ".bat"]) {
+		if (normalized.includes(ext)) prioritized.push(ext);
+	}
+	for (const ext of normalized) {
+		if (!prioritized.includes(ext)) prioritized.push(ext);
+	}
+	return prioritized;
+}
+function resolveWindowsExecutablePath(command, env) {
+	if (command.includes("/") || command.includes("\\") || path.isAbsolute(command)) return command;
+	const pathEntries = (env.PATH ?? env.Path ?? process.env.PATH ?? process.env.Path ?? "").split(";").map((entry) => entry.trim()).filter(Boolean);
+	const hasExtension = path.extname(command).length > 0;
+	const pathExtRaw = env.PATHEXT ?? env.Pathext ?? process.env.PATHEXT ?? process.env.Pathext ?? ".EXE;.CMD;.BAT;.COM";
+	const rawExts = hasExtension ? [""] : pathExtRaw.split(";").map((ext) => ext.trim()).filter(Boolean).map((ext) => ext.startsWith(".") ? ext : "." + ext);
+	const pathExt = hasExtension ? [""] : prioritizeWindowsPathExt(rawExts);
+	for (const dir of pathEntries) for (const ext of pathExt) for (const candidateExt of uniquePreserveOrder([
+		ext,
+		ext.toLowerCase(),
+		ext.toUpperCase()
+	])) {
+		const candidate = path.join(dir, command + candidateExt);
+		if (isFilePath(candidate)) return candidate;
+	}
+	return command;
+}
+function decodeWrapperBuffer(raw, encoding) {
+	const decoded = new TextDecoder(encoding, { fatal: false }).decode(raw);
+	return decoded.charCodeAt(0) === 0xfeff ? decoded.slice(1) : decoded;
+}
+function readWindowsCmdShimContents(raw) {
+	const contents = [];
+	const seen = new Set();
+	const tryPush = (encoding) => {
+		try {
+			const decoded = decodeWrapperBuffer(raw, encoding);
+			if (!decoded.trim() || seen.has(decoded)) return;
+			seen.add(decoded);
+			contents.push(decoded);
+		} catch {}
+	};
+	if (raw.length >= 3 && raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf) tryPush("utf8");
+	if (raw.length >= 2 && raw[0] === 0xff && raw[1] === 0xfe) tryPush("utf-16le");
+	if (raw.length >= 2 && raw[0] === 0xfe && raw[1] === 0xff) tryPush("utf-16be");
+	for (const encoding of WRAPPER_TEXT_ENCODINGS) tryPush(encoding);
+	return contents;
+}
+function resolveDp0Candidate(wrapperPath, token) {
+	const relative = token.match(/%~?dp0%?\s*[\\/]*(.*)$/i)?.[1]?.trim();
+	if (!relative) return null;
+	const normalizedRelative = relative.replace(/[\\/]+/g, path.sep).replace(/^[\\/]+/, "");
+	return path.resolve(path.dirname(wrapperPath), normalizedRelative);
+}
+function collectShimCandidates(wrapperPath, content) {
+	const candidates = [];
+	for (const match of content.matchAll(/"([^"\r\n]*)"/g)) {
+		const token = match[1] ?? "";
+		const candidate = resolveDp0Candidate(wrapperPath, token);
+		if (candidate && isFilePath(candidate)) candidates.push(candidate);
+	}
+	return uniquePreserveOrder(candidates);
+}
+function detectPowerShellCommand(content) {
+	if (/\bpwsh(?:\.exe)?\b/i.test(content)) return "pwsh.exe";
+	if (/\bpowershell(?:\.exe)?\b/i.test(content)) return "powershell.exe";
+	return null;
+}
+function isNodeLauncher(candidate) {
+	const base = path.basename(candidate).toLowerCase();
+	return base === "node.exe" || base === "node";
+}
+function resolveEntrypointFromCmdShim(wrapperPath, env, execPath) {
+	if (!isFilePath(wrapperPath)) return null;
+	try {
+		const raw = readFileSync(wrapperPath);
+		for (const content of readWindowsCmdShimContents(raw)) {
+			const shimCandidates = collectShimCandidates(wrapperPath, content);
+			const powerShellCommand = detectPowerShellCommand(content);
+			if (powerShellCommand && /(?:^|\s)-File(?:\s|$)/i.test(content)) {
+				const scriptPath = shimCandidates.find((candidate) => path.extname(candidate).toLowerCase() === ".ps1");
+				if (scriptPath) return {
+					command: resolveWindowsExecutablePath(powerShellCommand, env),
+					leadingArgv: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath],
+					resolution: "exe-entrypoint",
+					windowsHide: true
+				};
+			}
+			const scriptEntry = shimCandidates.find((candidate) => SCRIPT_ENTRY_EXTENSIONS.has(path.extname(candidate).toLowerCase()));
+			if (scriptEntry) return {
+				command: execPath,
+				leadingArgv: [scriptEntry],
+				resolution: "node-entrypoint",
+				windowsHide: true
+			};
+			const exeEntry = shimCandidates.find((candidate) => DIRECT_EXECUTABLE_EXTENSIONS.has(path.extname(candidate).toLowerCase()) && !isNodeLauncher(candidate));
+			if (exeEntry) return {
+				command: exeEntry,
+				leadingArgv: [],
+				resolution: "exe-entrypoint",
+				windowsHide: true
+			};
+		}
+	} catch {}
+	return null;
+}
+function resolveBinEntry(packageName, binField) {
+	if (typeof binField === "string") return binField.trim() || null;
+	if (!binField || typeof binField !== "object") return null;
+	if (packageName) {
+		const preferred = binField[packageName];
+		if (typeof preferred === "string" && preferred.trim()) return preferred.trim();
+	}
+	for (const value of Object.values(binField)) if (typeof value === "string" && value.trim()) return value.trim();
+	return null;
+}
+function resolveEntrypointFromPackageJson(wrapperPath, packageName) {
+	if (!packageName) return null;
+	const wrapperDir = path.dirname(wrapperPath);
+	const packageDirs = [path.resolve(wrapperDir, "..", packageName), path.resolve(wrapperDir, "node_modules", packageName)];
+	for (const packageDir of packageDirs) {
+		const packageJsonPath = path.join(packageDir, "package.json");
+		if (!isFilePath(packageJsonPath)) continue;
+		try {
+			const entryRel = resolveBinEntry(packageName, JSON.parse(readFileSync(packageJsonPath, "utf8")).bin);
+			if (!entryRel) continue;
+			const entryPath = path.resolve(packageDir, entryRel);
+			if (isFilePath(entryPath)) return entryPath;
+		} catch {}
+	}
+	return null;
+}
+function materializeResolvedEntrypoint(entrypoint, execPath) {
+	if (DIRECT_EXECUTABLE_EXTENSIONS.has(path.extname(entrypoint).toLowerCase())) return {
+		command: entrypoint,
+		leadingArgv: [],
+		resolution: "exe-entrypoint",
+		windowsHide: true
+	};
+	return {
+		command: execPath,
+		leadingArgv: [entrypoint],
+		resolution: "node-entrypoint",
+		windowsHide: true
+	};
+}
+function resolveWindowsSpawnProgramCandidate(params) {
+	const platform = params.platform ?? process.platform;
+	const env = params.env ?? process.env;
+	const execPath = params.execPath ?? process.execPath;
+	if (platform !== "win32") return {
+		command: params.command,
+		leadingArgv: [],
+		resolution: "direct"
+	};
+	const resolvedCommand = resolveWindowsExecutablePath(params.command, env);
+	const ext = path.extname(resolvedCommand).toLowerCase();
+	if (SCRIPT_ENTRY_EXTENSIONS.has(ext)) return {
+		command: execPath,
+		leadingArgv: [resolvedCommand],
+		resolution: "node-entrypoint",
+		windowsHide: true
+	};
+	if (ext === ".cmd" || ext === ".bat") {
+		const shimProgram = resolveEntrypointFromCmdShim(resolvedCommand, env, execPath);
+		if (shimProgram) return shimProgram;
+		const entrypoint = resolveEntrypointFromPackageJson(resolvedCommand, params.packageName);
+		if (entrypoint) return materializeResolvedEntrypoint(entrypoint, execPath);
+		return {
+			command: resolvedCommand,
+			leadingArgv: [],
+			resolution: "unresolved-wrapper"
+		};
+	}
+	return {
+		command: resolvedCommand,
+		leadingArgv: [],
+		resolution: "direct"
+	};
+}
+function applyWindowsSpawnProgramPolicy(params) {
+	if (params.candidate.resolution !== "unresolved-wrapper") return {
+		command: params.candidate.command,
+		leadingArgv: params.candidate.leadingArgv,
+		resolution: params.candidate.resolution,
+		windowsHide: params.candidate.windowsHide
+	};
+	if (params.allowShellFallback !== false) return {
+		command: params.candidate.command,
+		leadingArgv: [],
+		resolution: "shell-fallback",
+		shell: true
+	};
+	throw new Error(path.basename(params.candidate.command) + " wrapper resolved, but no executable/Node entrypoint could be resolved without shell execution.");
+}
+function resolveWindowsSpawnProgram(params) {
+	return applyWindowsSpawnProgramPolicy({
+		candidate: resolveWindowsSpawnProgramCandidate(params),
+		allowShellFallback: params.allowShellFallback
+	});
+}
+function materializeWindowsSpawnProgram(program, argv) {
+	return {
+		command: program.command,
+		argv: [...program.leadingArgv, ...argv],
+		resolution: program.resolution,
+		shell: program.shell,
+		windowsHide: program.windowsHide
+	};
+}
+//#endregion
+export { resolveWindowsSpawnProgramCandidate as a, resolveWindowsSpawnProgram as i, materializeWindowsSpawnProgram as n, resolveWindowsExecutablePath as r, applyWindowsSpawnProgramPolicy as t };
+`;
+}
+
+function patchOpenClawWindowsSpawnFile(filePath) {
+  const original = readFileSync(filePath, 'utf8');
+  if (original.includes(WINDOWS_SPAWN_PATCH_MARKER)) {
+    return false;
+  }
+
+  writeFileSync(filePath, buildPatchedWindowsSpawnSource(), 'utf8');
+  return true;
+}
+
+function patchOpenClawWindowsSpawnRuntime(openClawDir) {
+  const pluginSdkDir = join(openClawDir, 'dist', 'plugin-sdk');
+  if (!existsSync(pluginSdkDir)) {
+    return [];
+  }
+
+  const patchedFiles = [];
+  walkFiles(pluginSdkDir, (filePath) => {
+    const basename = filePath.slice(pluginSdkDir.length + 1).replace(/\\/g, '/');
+    if (!/^windows-spawn-.*\.js$/.test(basename)) {
+      return;
+    }
+
+    if (patchOpenClawWindowsSpawnFile(filePath)) {
+      patchedFiles.push(`plugin-sdk/${basename}`);
+    }
+  });
+
+  return patchedFiles;
+}
+
 function walkFiles(dir, visitor) {
   if (!existsSync(dir)) {
     return;
@@ -307,5 +580,6 @@ function patchOpenClawBundleCompat(nodeModulesDir) {
 module.exports = {
   patchRequireCompatiblePackage,
   patchOpenClawWebSearchRuntime,
+  patchOpenClawWindowsSpawnRuntime,
   patchOpenClawBundleCompat,
 };

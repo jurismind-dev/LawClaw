@@ -13,7 +13,7 @@
  *   - primary: POST /open-apis/calendar/v4/calendars/primary
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ export function registerFeishuCalendarCalendarTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_calendar_calendar');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_calendar_calendar',
         label: 'Feishu Calendar Management',
         description: '【以用户身份】飞书日历管理工具。用于查询日历列表、获取日历信息、查询主日历。Actions: list（查询日历列表）, get（查询指定日历信息）, primary（查询主日历信息）。',
@@ -120,5 +120,4 @@ export function registerFeishuCalendarCalendarTool(api) {
             }
         },
     }, { name: 'feishu_calendar_calendar' });
-    api.logger.info?.('feishu_calendar_calendar: Registered feishu_calendar_calendar tool');
 }

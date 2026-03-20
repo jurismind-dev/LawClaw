@@ -16,7 +16,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum, } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -44,18 +44,7 @@ const FeishuWikiSpaceNodeSchema = Type.Union([
         token: Type.String({
             description: 'node token',
         }),
-        obj_type: Type.Optional(Type.Union([
-            Type.Literal('doc'),
-            Type.Literal('sheet'),
-            Type.Literal('mindnote'),
-            Type.Literal('bitable'),
-            Type.Literal('file'),
-            Type.Literal('docx'),
-            Type.Literal('slides'),
-            Type.Literal('wiki'),
-        ], {
-            description: 'obj_type',
-        })),
+        obj_type: Type.Optional(StringEnum(['doc', 'sheet', 'mindnote', 'bitable', 'file', 'docx', 'slides', 'wiki'], { description: 'obj_type' })),
     }),
     // CREATE NODE
     Type.Object({
@@ -63,21 +52,11 @@ const FeishuWikiSpaceNodeSchema = Type.Union([
         space_id: Type.String({
             description: 'space_id',
         }),
-        obj_type: Type.Union([
-            Type.Literal('doc'),
-            Type.Literal('sheet'),
-            Type.Literal('mindnote'),
-            Type.Literal('bitable'),
-            Type.Literal('file'),
-            Type.Literal('docx'),
-            Type.Literal('slides'),
-        ], {
-            description: 'obj_type',
-        }),
+        obj_type: StringEnum(['doc', 'sheet', 'mindnote', 'bitable', 'file', 'docx', 'slides'], { description: 'obj_type' }),
         parent_node_token: Type.Optional(Type.String({
             description: 'parent_node_token',
         })),
-        node_type: Type.Optional(Type.Union([Type.Literal('origin'), Type.Literal('shortcut')], {
+        node_type: Type.Optional(StringEnum(['origin', 'shortcut'], {
             description: 'node_type',
         })),
         origin_node_token: Type.Optional(Type.String({
@@ -128,7 +107,7 @@ export function registerFeishuWikiSpaceNodeTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_wiki_space_node');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_wiki_space_node',
         label: 'Feishu Wiki Space Nodes',
         description: '飞书知识库节点管理工具。操作：list（列表）、get（获取）、create（创建）、move（移动）、copy（复制）。' +
@@ -249,5 +228,4 @@ export function registerFeishuWikiSpaceNodeTool(api) {
             }
         },
     }, { name: 'feishu_wiki_space_node' });
-    api.logger.info?.('feishu_wiki_space_node: Registered feishu_wiki_space_node tool');
 }

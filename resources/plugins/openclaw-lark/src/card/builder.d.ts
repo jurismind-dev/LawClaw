@@ -28,6 +28,7 @@ export interface FeishuCard {
     config: {
         wide_screen_mode: boolean;
         update_multi?: boolean;
+        locales?: string[];
         summary?: {
             content: string;
         };
@@ -36,6 +37,7 @@ export interface FeishuCard {
         title: {
             tag: 'plain_text';
             content: string;
+            i18n_content?: Record<string, string>;
         };
         template: string;
     };
@@ -66,10 +68,13 @@ export declare function splitReasoningText(text?: string): {
  */
 export declare function stripReasoningTags(text: string): string;
 /**
- * Format reasoning duration into a human-readable string.
- * e.g. "Thought for 3.2s" or "Thought for 1m 15s"
+ * Format reasoning duration into a human-readable i18n pair.
+ * e.g. { zh: "思考了 3.2s", en: "Thought for 3.2s" }
  */
-export declare function formatReasoningDuration(ms: number): string;
+export declare function formatReasoningDuration(ms: number): {
+    zh: string;
+    en: string;
+};
 /**
  * Format milliseconds into a human-readable duration string.
  */

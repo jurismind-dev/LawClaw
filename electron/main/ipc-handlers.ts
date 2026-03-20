@@ -89,6 +89,11 @@ import { jurismindConnectorManager } from '../utils/jurismind-connector';
 import { bindJurismindProviderToken } from '../utils/jurismind-provider-token-binding';
 import { feishuOnboardingManager, isFeishuOnboardingCancelledError } from '../utils/feishu-onboarding';
 import {
+  FEISHU_OFFICIAL_PLUGIN_ID,
+  FEISHU_OFFICIAL_PLUGIN_NPM_SPEC,
+  findBundledFeishuOfficialPluginDir,
+} from '../utils/feishu-official-plugin';
+import {
   applyLawClawProviderSelection,
   clearLawClawProviderSelection,
   isProviderAvailableForLawClaw,
@@ -757,10 +762,6 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
   const QQ_PLUGIN_ID = 'qqbot';
   const QQ_PLUGIN_VERSION = '1.5.0';
   const QQ_PLUGIN_NPM_SPEC = `@sliverp/${QQ_PLUGIN_ID}@${QQ_PLUGIN_VERSION}`;
-  const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
-  const FEISHU_OFFICIAL_PLUGIN_VERSION = '2026.3.12';
-  const FEISHU_OFFICIAL_PLUGIN_NPM_SPEC =
-    `@larksuite/openclaw-lark@${FEISHU_OFFICIAL_PLUGIN_VERSION}`;
 
   const runOpenClawCli = async (args: string[]): Promise<{
     success: boolean;
@@ -990,16 +991,20 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     error?: string;
     details?: string;
   }> => {
-    const bundledDirCandidates = Array.from(new Set([
-      join(getResourcesDir(), 'plugins', FEISHU_OFFICIAL_PLUGIN_ID),
-      ...(app.isPackaged
-        ? [join(process.resourcesPath, 'openclaw-plugins', FEISHU_OFFICIAL_PLUGIN_ID)]
-        : []),
-    ]));
+    const bundledDirCandidates = [
+      ...new Set([
+        join(getResourcesDir(), 'plugins', FEISHU_OFFICIAL_PLUGIN_ID),
+        ...(app.isPackaged
+          ? [join(process.resourcesPath, 'openclaw-plugins', FEISHU_OFFICIAL_PLUGIN_ID)]
+          : []),
+      ]),
+    ];
 
-    const bundledDir = bundledDirCandidates.find((candidate) =>
-      existsSync(join(candidate, 'package.json'))
-    );
+    const bundledDir = findBundledFeishuOfficialPluginDir({
+      resourcesDir: getResourcesDir(),
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+    });
 
     if (bundledDir) {
       return {

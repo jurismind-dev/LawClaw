@@ -18,22 +18,24 @@ export declare const LARK_ERROR: {
     /** access_token 无效 */
     readonly TOKEN_INVALID: 99991668;
     /** access_token 已过期 */
-    readonly TOKEN_EXPIRED: 99991669;
-    /** refresh_token 无效 */
-    readonly REFRESH_TOKEN_INVALID: 20003;
-    /** refresh_token 已过期 */
-    readonly REFRESH_TOKEN_EXPIRED: 20004;
-    /** refresh_token 缺失 */
-    readonly REFRESH_TOKEN_MISSING: 20024;
+    readonly TOKEN_EXPIRED: 99991677;
+    /** refresh_token 本身无效（格式非法或来自 v1 API） */
+    readonly REFRESH_TOKEN_INVALID: 20026;
+    /** refresh_token 已过期（超过 365 天） */
+    readonly REFRESH_TOKEN_EXPIRED: 20037;
     /** refresh_token 已被吊销 */
-    readonly REFRESH_TOKEN_REVOKED: 20063;
+    readonly REFRESH_TOKEN_REVOKED: 20064;
+    /** refresh_token 已被使用（单次消费，rotation 场景） */
+    readonly REFRESH_TOKEN_ALREADY_USED: 20073;
+    /** refresh token 端点服务端内部错误，可重试 */
+    readonly REFRESH_SERVER_ERROR: 20050;
     /** 消息已被撤回 */
     readonly MESSAGE_RECALLED: 230011;
     /** 消息已被删除 */
     readonly MESSAGE_DELETED: 231003;
 };
-/** 不可恢复的 refresh_token 错误码集合，遇到后需要重新授权。 */
-export declare const REFRESH_TOKEN_IRRECOVERABLE: ReadonlySet<number>;
+/** refresh token 端点可重试的错误码集合（服务端瞬时故障）。遇到后重试一次，仍失败则清 token。 */
+export declare const REFRESH_TOKEN_RETRYABLE: ReadonlySet<number>;
 /** 消息终止错误码集合（撤回/删除），遇到后应停止对该消息的后续操作。 */
 export declare const MESSAGE_TERMINAL_CODES: ReadonlySet<number>;
 /** access_token 失效相关的错误码集合，遇到后可尝试刷新重试。 */

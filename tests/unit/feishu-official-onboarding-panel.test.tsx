@@ -137,4 +137,68 @@ describe('FeishuOfficialOnboardingPanel', () => {
 
     expect(screen.getByText('dialog.feishuOfficial.statusIdle')).toBeInTheDocument();
   });
+
+  it('prevents duplicate pairing starts while a start request is still in flight', async () => {
+    let resolveStart: ((value: unknown) => void) | null = null;
+
+    invokeMock.mockImplementation(async (channel: string) => {
+      switch (channel) {
+        case 'feishu:getStatus':
+          return {
+            success: true,
+            status: {
+              phase: 'idle',
+              configured: false,
+              pluginInstalled: false,
+              pairUrl: null,
+              pairQrCode: null,
+            },
+          };
+        case 'channel:getConfig':
+          return {
+            success: true,
+            config: {},
+          };
+        case 'feishu:startPairing':
+          return await new Promise((resolve) => {
+            resolveStart = resolve;
+          });
+        default:
+          return { success: true };
+      }
+    });
+
+    render(<FeishuOfficialOnboardingPanel />);
+
+    const startButton = await screen.findByRole('button', { name: 'dialog.feishuOfficial.start' });
+    fireEvent.click(startButton);
+    fireEvent.click(startButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'dialog.feishuOfficial.refresh' })).toBeDisabled();
+    });
+
+    expect(
+      invokeMock.mock.calls.filter(([channel]) => channel === 'feishu:startPairing')
+    ).toHaveLength(1);
+
+    resolveStart?.({
+      success: true,
+      result: {
+        pairUrl: 'https://pair.example/secret-link',
+        pairQrCode: null,
+      },
+      status: {
+        phase: 'waiting_scan',
+        configured: false,
+        pluginInstalled: true,
+        pairUrl: 'https://pair.example/secret-link',
+        pairQrCode: null,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('dialog.feishuOfficial.statusWaiting')).toBeInTheDocument();
+    });
+  });
 });

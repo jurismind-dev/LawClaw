@@ -18,7 +18,8 @@ import { LarkClient } from '../core/lark-client';
 import { executeAuthorize } from './oauth';
 import { formatLarkError } from '../core/api-error';
 import { filterSensitiveScopes } from '../core/tool-scopes';
-import { json } from './oapi/helpers';
+import { json, registerTool } from './oapi/helpers';
+import { openPlatformDomain } from '../core/domains';
 const FeishuOAuthBatchAuthSchema = Type.Object({}, {
     description: '飞书批量授权工具。一次性授权应用已开通的所有用户权限（User Access Token scope）。' +
         "【使用场景】用户明确要求'授权所有权限'、'一次性授权完成'时使用。" +
@@ -28,7 +29,7 @@ export function registerFeishuOAuthBatchAuthTool(api) {
     if (!api.config)
         return;
     const cfg = api.config;
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_oauth_batch_auth',
         label: 'Feishu: OAuth Batch Authorization',
         description: '飞书批量授权工具，一次性授权应用已开通的所有用户权限。' +
@@ -63,7 +64,7 @@ export function registerFeishuOAuthBatchAuthTool(api) {
                             error: 'app_scope_check_failed',
                             message: `应用缺少核心权限 application:application:self_manage，无法查询可授权 scope 列表。\n\n` +
                                 `请管理员在飞书开放平台开通此权限后重试。`,
-                            permission_link: `https://open.feishu.cn/app/${appId}/auth?q=application:application:self_manage`,
+                            permission_link: `${openPlatformDomain(account.brand)}/app/${appId}/auth?q=application:application:self_manage`,
                             app_id: appId,
                         });
                     }

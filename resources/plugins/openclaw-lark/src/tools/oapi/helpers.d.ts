@@ -8,7 +8,7 @@
  */
 import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
 import type { Client as LarkClient } from '@larksuiteoapi/node-sdk';
-export { formatToolResult, formatToolError, createToolLogger, createClientGetter, createToolContext, getFirstAccount, validateRequiredParams, validateEnum, } from '../helpers';
+export { formatToolResult, formatToolError, createToolLogger, createClientGetter, createToolContext, getFirstAccount, validateRequiredParams, validateEnum, checkToolRegistration, registerTool, } from '../helpers';
 export type { ToolResult, ClientGetter, ToolContext } from '../helpers';
 export { ToolClient, createToolClient, NeedAuthorizationError, AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError, } from '../../core/tool-client';
 export type { ApiFn, InvokeFn, InvokeOptions, InvokeByPathOptions, AuthHint, TryInvokeResult, } from '../../core/tool-client';
@@ -171,3 +171,12 @@ export { assertLarkOk, formatLarkError } from '../../core/api-error';
  */
 export declare function isInvokeError(err: unknown): boolean;
 export { handleInvokeErrorWithAutoAuth } from '../auto-auth';
+import type { SchemaOptions } from '@sinclair/typebox';
+/**
+ * 创建 LLM 友好的字符串枚举 schema。
+ *
+ * 与 `Type.Union([Type.Literal('a'), Type.Literal('b')])` 不同，
+ * 本函数生成 `{ type: 'string', enum: ['a', 'b'] }` 格式，
+ * 兼容性更好。
+ */
+export declare function StringEnum<T extends string>(values: T[], options?: SchemaOptions): import("@sinclair/typebox").TUnsafe<T>;

@@ -6,9 +6,10 @@
  * MCP 工具的共享代码（所有业务域共享）
  * 包含：MCP 客户端、类型定义、通用辅助函数
  */
-import { createToolContext, formatToolResult } from '../helpers';
+import { createToolContext, formatToolResult, registerTool } from '../helpers';
 import { handleInvokeErrorWithAutoAuth } from '../oapi/helpers';
 import { getUserAgent } from '../../core/version';
+import { mcpDomain } from '../../core/domains';
 import fs from 'node:fs';
 import path from 'node:path';
 // ---------------------------------------------------------------------------
@@ -79,7 +80,7 @@ function readMcpUrlFromOpenclawJson() {
         if (!fs.existsSync(p))
             return undefined;
         const raw = fs.readFileSync(p, 'utf8');
-        const cfg = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
+        const cfg = JSON.parse(raw);
         return extractMcpUrlFromConfig(cfg);
     }
     catch {
@@ -87,12 +88,12 @@ function readMcpUrlFromOpenclawJson() {
         return undefined;
     }
 }
-function getMcpEndpoint() {
-    // 优先级：运行时覆盖 > 配置文件 > 环境变量 > 默认值
+function getMcpEndpoint(brand) {
+    // 优先级：运行时覆盖 > 配置文件 > 环境变量 > 基于 brand 的默认值
     return (mcpEndpointOverride ||
         readMcpUrlFromOpenclawJson() ||
         process.env.FEISHU_MCP_ENDPOINT?.trim() ||
-        'https://mcp.feishu.cn/mcp');
+        `${mcpDomain(brand)}/mcp`);
 }
 function buildAuthHeader() {
     // 允许通过环境变量注入鉴权（若服务端要求）
@@ -110,9 +111,10 @@ function buildAuthHeader() {
  * @param args 工具参数
  * @param toolCallId 工具调用 ID
  * @param uat 用户访问令牌(由 invoke 权限检查后传入)
+ * @param brand 当前账号品牌，用于选择 MCP 端点域名
  */
-export async function callMcpTool(name, args, toolCallId, uat) {
-    const endpoint = getMcpEndpoint();
+export async function callMcpTool(name, args, toolCallId, uat, brand) {
+    const endpoint = getMcpEndpoint(brand);
     const auth = buildAuthHeader();
     const body = {
         jsonrpc: '2.0',
@@ -163,7 +165,7 @@ export async function callMcpTool(name, args, toolCallId, uat) {
  */
 export function registerMcpTool(api, config) {
     const { toolClient, log } = createToolContext(api, config.name);
-    api.registerTool({
+    registerTool(api, {
         name: config.name,
         label: config.label,
         description: config.description,
@@ -176,6 +178,7 @@ export function registerMcpTool(api, config) {
                 // 执行参数验证
                 config.validate?.(p);
                 const client = toolClient();
+                const brand = client.account.brand;
                 // 通过 invoke 进行权限检查并调用 MCP
                 // 严格模式：必须拥有 toolActionKey 所需的所有 scope
                 const result = await client.invoke(config.toolActionKey, async (_sdk, _opts, uat) => {
@@ -183,7 +186,7 @@ export function registerMcpTool(api, config) {
                     if (!uat) {
                         throw new Error('UAT not available');
                     }
-                    return callMcpTool(config.mcpToolName, p, toolCallId, uat);
+                    return callMcpTool(config.mcpToolName, p, toolCallId, uat, brand);
                 }, {
                     as: 'user',
                 });

@@ -14,7 +14,7 @@
  * 全部以用户身份（user_access_token）调用，scope 来自 real-scope.json。
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -22,23 +22,13 @@ const FeishuImMessageSchema = Type.Union([
     // SEND
     Type.Object({
         action: Type.Literal('send'),
-        receive_id_type: Type.Union([Type.Literal('open_id'), Type.Literal('chat_id')], {
+        receive_id_type: StringEnum(['open_id', 'chat_id'], {
             description: '接收者 ID 类型：open_id（私聊，ou_xxx）、chat_id（群聊，oc_xxx）',
         }),
         receive_id: Type.String({
             description: "接收者 ID，与 receive_id_type 对应。open_id 填 'ou_xxx'，chat_id 填 'oc_xxx'",
         }),
-        msg_type: Type.Union([
-            Type.Literal('text'),
-            Type.Literal('post'),
-            Type.Literal('image'),
-            Type.Literal('file'),
-            Type.Literal('audio'),
-            Type.Literal('media'),
-            Type.Literal('interactive'),
-            Type.Literal('share_chat'),
-            Type.Literal('share_user'),
-        ], {
+        msg_type: StringEnum(['text', 'post', 'image', 'file', 'audio', 'media', 'interactive', 'share_chat', 'share_user'], {
             description: '消息类型：text（纯文本）、post（富文本）、image（图片）、file（文件）、interactive（消息卡片）、share_chat（群名片）、share_user（个人名片）等',
         }),
         content: Type.String({
@@ -58,17 +48,7 @@ const FeishuImMessageSchema = Type.Union([
         message_id: Type.String({
             description: '被回复消息的 ID（om_xxx 格式）',
         }),
-        msg_type: Type.Union([
-            Type.Literal('text'),
-            Type.Literal('post'),
-            Type.Literal('image'),
-            Type.Literal('file'),
-            Type.Literal('audio'),
-            Type.Literal('media'),
-            Type.Literal('interactive'),
-            Type.Literal('share_chat'),
-            Type.Literal('share_user'),
-        ], {
+        msg_type: StringEnum(['text', 'post', 'image', 'file', 'audio', 'media', 'interactive', 'share_chat', 'share_user'], {
             description: '消息类型：text（纯文本）、post（富文本）、image（图片）、interactive（消息卡片）等',
         }),
         content: Type.String({
@@ -90,7 +70,7 @@ export function registerFeishuImUserMessageTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_im_user_message');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_im_user_message',
         label: 'Feishu: IM User Message',
         description: '飞书用户身份 IM 消息工具。**有且仅当用户明确要求以自己身份发消息、回复消息时使用，当没有明确要求时优先使用message系统工具**。' +
@@ -167,5 +147,4 @@ export function registerFeishuImUserMessageTool(api) {
             }
         },
     }, { name: 'feishu_im_user_message' });
-    api.logger.info?.('feishu_im_user_message: Registered feishu_im_user_message tool');
 }

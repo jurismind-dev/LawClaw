@@ -10,7 +10,7 @@
  * 2. 传 user_id: 获取指定用户的信息 (sdk.contact.v3.user.get)
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@ const GetUserSchema = Type.Object({
     user_id: Type.Optional(Type.String({
         description: '用户 ID（格式如 ou_xxx）。若不传入，则获取当前用户自己的信息',
     })),
-    user_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')])),
+    user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'])),
 });
 // ---------------------------------------------------------------------------
 // Registration
@@ -28,7 +28,7 @@ export function registerGetUserTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_get_user');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_get_user',
         label: 'Feishu: Get User Info',
         description: '获取用户信息。不传 user_id 时获取当前用户自己的信息；传 user_id 时获取指定用户的信息。' +
@@ -104,5 +104,4 @@ export function registerGetUserTool(api) {
             }
         },
     }, { name: 'feishu_get_user' });
-    api.logger.info?.('feishu_get_user: Registered feishu_get_user tool');
 }

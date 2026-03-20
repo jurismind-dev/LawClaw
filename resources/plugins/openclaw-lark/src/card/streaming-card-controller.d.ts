@@ -19,6 +19,7 @@ export declare class StreamingCardController {
     private reasoning;
     private readonly flush;
     private readonly guard;
+    private readonly imageResolver;
     private createEpoch;
     private _terminalReason;
     private dispatchFullyComplete;

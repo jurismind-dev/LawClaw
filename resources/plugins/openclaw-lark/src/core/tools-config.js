@@ -86,3 +86,53 @@ export function resolveAnyEnabledToolsConfig(accounts) {
     }
     return merged;
 }
+// ---------------------------------------------------------------------------
+// Channel-level tool registration control
+// ---------------------------------------------------------------------------
+/**
+ * Check whether a string matches any of the given patterns.
+ * Supports trailing `*` as a simple wildcard (e.g., `feishu_calendar_*`).
+ */
+function matchesAnyPattern(value, patterns) {
+    for (const pattern of patterns) {
+        if (pattern === '*')
+            return true;
+        if (pattern.endsWith('*')) {
+            if (value.startsWith(pattern.slice(0, -1)))
+                return true;
+        }
+        else if (value === pattern) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * 检查工具是否应该被注册（channel 级别的 tools.deny 检查）。
+ *
+ * 从 `channels.feishu.tools.deny` 读取禁用列表，支持通配符模式。
+ *
+ * @param cfg - OpenClaw 配置对象
+ * @param toolName - 工具名称（如 `feishu_im_user_message`）
+ * @returns `true` 如果应该注册，`false` 如果应该跳过
+ *
+ * @example
+ * ```typescript
+ * // 配置示例：
+ * // channels.feishu.tools.deny: ["feishu_im_user_message", "feishu_calendar_*"]
+ *
+ * shouldRegisterTool(cfg, "feishu_im_user_message")  // false
+ * shouldRegisterTool(cfg, "feishu_calendar_event")   // false (匹配通配符)
+ * shouldRegisterTool(cfg, "feishu_task_task")        // true
+ * ```
+ */
+export function shouldRegisterTool(cfg, toolName) {
+    const feishuConfig = cfg.channels?.feishu;
+    const denyList = feishuConfig?.['tools']?.['deny'];
+    if (Array.isArray(denyList) && denyList.length > 0) {
+        if (matchesAnyPattern(toolName, denyList)) {
+            return false;
+        }
+    }
+    return true;
+}

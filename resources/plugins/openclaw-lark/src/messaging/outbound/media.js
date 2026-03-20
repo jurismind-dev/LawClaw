@@ -629,6 +629,16 @@ export async function uploadAndSendMediaLark(params) {
     });
 }
 // ---------------------------------------------------------------------------
+// fetchRemoteImageBuffer — public wrapper for remote-only image downloads
+// ---------------------------------------------------------------------------
+/**
+ * Fetch remote image bytes by URL (http/https only).
+ * Local file access is denied. Includes SSRF protection.
+ */
+export async function fetchRemoteImageBuffer(url) {
+    return fetchMediaBuffer(url, undefined);
+}
+// ---------------------------------------------------------------------------
 // SSRF protection — private/reserved IP filtering
 // ---------------------------------------------------------------------------
 /**

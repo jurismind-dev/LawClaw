@@ -12,7 +12,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, handleInvokeErrorWithAutoAuth, convertTimeRange, unixTimestampToISO8601, } from '../helpers';
+import { json, createToolContext, handleInvokeErrorWithAutoAuth, convertTimeRange, unixTimestampToISO8601, registerTool, StringEnum, } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema - Helper types
 // ---------------------------------------------------------------------------
@@ -24,30 +24,20 @@ const TimeRangeSchema = Type.Object({
         description: "时间范围的截止时间，ISO 8601 / RFC 3339 格式（包含时区），例如 '2024-01-01T00:00:00+08:00'",
     })),
 });
-const DocTypeEnum = Type.Union([
-    Type.Literal('DOC'),
-    Type.Literal('SHEET'),
-    Type.Literal('BITABLE'),
-    Type.Literal('MINDNOTE'),
-    Type.Literal('FILE'),
-    Type.Literal('WIKI'),
-    Type.Literal('DOCX'),
-    Type.Literal('FOLDER'),
-    Type.Literal('CATALOG'),
-    Type.Literal('SLIDES'),
-    Type.Literal('SHORTCUT'),
+const DocTypeEnum = StringEnum([
+    'DOC',
+    'SHEET',
+    'BITABLE',
+    'MINDNOTE',
+    'FILE',
+    'WIKI',
+    'DOCX',
+    'FOLDER',
+    'CATALOG',
+    'SLIDES',
+    'SHORTCUT',
 ]);
-const SortTypeEnum = Type.Union([
-    Type.Literal('DEFAULT_TYPE'),
-    Type.Literal('OPEN_TIME'),
-    Type.Literal('EDIT_TIME'), // User编辑时间降序（推荐获取最新文档）
-    Type.Literal('EDIT_TIME_ASC'),
-    // 以下排序类型暂不支持：
-    // Type.Literal("ENTITY_CREATE_TIME_ASC"),
-    // Type.Literal("ENTITY_CREATE_TIME_DESC"),
-    Type.Literal('CREATE_TIME'),
-    // Type.Literal("CREATE_TIME_ASC"),
-], {
+const SortTypeEnum = StringEnum(['DEFAULT_TYPE', 'OPEN_TIME', 'EDIT_TIME', 'EDIT_TIME_ASC', 'CREATE_TIME'], {
     description: '排序方式。EDIT_TIME=编辑时间降序（最新文档在前，推荐），EDIT_TIME_ASC=编辑时间升序，CREATE_TIME=按文档创建时间排序，OPEN_TIME=打开时间，DEFAULT_TYPE=默认排序',
 });
 // ---------------------------------------------------------------------------
@@ -116,7 +106,7 @@ export function registerFeishuSearchDocWikiTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_search_doc_wiki');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_search_doc_wiki',
         label: 'Feishu Document & Wiki Search',
         description: '【以用户身份】飞书文档与 Wiki 统一搜索工具。同时搜索云空间文档和知识库 Wiki。Actions: search。' +
@@ -199,5 +189,4 @@ export function registerFeishuSearchDocWikiTool(api) {
             }
         },
     }, { name: 'feishu_search_doc_wiki' });
-    api.logger.info?.('feishu_search_doc_wiki: Registered feishu_search_doc_wiki tool');
 }

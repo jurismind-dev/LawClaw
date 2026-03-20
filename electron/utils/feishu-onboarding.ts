@@ -2,7 +2,14 @@ import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { ensureDir, getOpenClawConfigDir, getOpenClawStatus } from './paths';
+import { app } from 'electron';
+import {
+  FEISHU_OFFICIAL_PLUGIN_ID,
+  FEISHU_OFFICIAL_PLUGIN_NPM_SPEC,
+  findBundledFeishuOfficialPluginDir,
+  getBundledFeishuOfficialPluginDirCandidates,
+} from './feishu-official-plugin';
+import { ensureDir, getOpenClawConfigDir, getOpenClawStatus, getResourcesDir } from './paths';
 import { logger } from './logger';
 import { applyOpenClawConfigEnvFallbacks } from './openclaw-config-env';
 import {
@@ -18,13 +25,44 @@ import { applyBundledNpmToCliEnv, getNodeExecForCli } from './openclaw-cli';
 import { parseJsonText, stripUtf8Bom } from './text-encoding';
 
 const FEISHU_REGISTRATION_URL = 'https://accounts.feishu.cn/oauth/v1/app/registration';
-const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
-const FEISHU_OFFICIAL_PLUGIN_PACKAGE = '@larksuite/openclaw-lark';
-const FEISHU_OFFICIAL_PLUGIN_VERSION = '2026.3.12';
-const FEISHU_OFFICIAL_PLUGIN_NPM_SPEC =
-  `${FEISHU_OFFICIAL_PLUGIN_PACKAGE}@${FEISHU_OFFICIAL_PLUGIN_VERSION}`;
 const FEISHU_CONFLICT_EXTENSION_DIR = 'feishu';
 const FEISHU_LEGACY_PLUGIN_IDS = ['feishu-openclaw-plugin'];
+
+export function shouldReinstallFeishuOfficialPlugin(options: FeishuOnboardingStartOptions = {}): boolean {
+  return options.reinstallPlugin === true;
+}
+
+export function resolveFeishuOfficialPluginInstallSpec(options?: {
+  isPackaged?: boolean;
+  pathExists?: (candidate: string) => boolean;
+  resourcesDir?: string;
+  resourcesPath?: string;
+}): string {
+  const isPackaged = options?.isPackaged ?? app.isPackaged;
+  const resourcesDir = options?.resourcesDir ?? getResourcesDir();
+  const resourcesPath = options?.resourcesPath ?? process.resourcesPath;
+  const bundledDirCandidates = getBundledFeishuOfficialPluginDirCandidates({
+    resourcesDir,
+    isPackaged,
+    resourcesPath,
+  });
+  const bundledDir = findBundledFeishuOfficialPluginDir({
+    resourcesDir,
+    isPackaged,
+    resourcesPath,
+    pathExists: options?.pathExists,
+  });
+
+  if (bundledDir) {
+    return bundledDir;
+  }
+
+  if (isPackaged) {
+    throw new Error(`Bundled plugin directory not found. Searched: ${bundledDirCandidates.join(', ')}`);
+  }
+
+  return FEISHU_OFFICIAL_PLUGIN_NPM_SPEC;
+}
 
 type FeishuOnboardingPhase =
   | 'idle'
@@ -184,6 +222,7 @@ class FeishuOnboardingManager extends EventEmitter {
   private runToken = 0;
   private activeAbortController: AbortController | null = null;
   private activePollingPromise: Promise<void> | null = null;
+  private officialPluginInstallPromise: Promise<void> | null = null;
 
   getStatus(): FeishuOnboardingStatus {
     return { ...this.status };
@@ -230,7 +269,7 @@ class FeishuOnboardingManager extends EventEmitter {
 
   async startPairing(options: FeishuOnboardingStartOptions = {}): Promise<FeishuOnboardingResult> {
     const forceRefresh = options.forceRefresh === true || options.resetAuth === true;
-    const reinstallPlugin = options.reinstallPlugin === true;
+    const reinstallPlugin = shouldReinstallFeishuOfficialPlugin(options);
 
     await this.refreshStatus();
 
@@ -265,7 +304,7 @@ class FeishuOnboardingManager extends EventEmitter {
         expiresAt: null,
       });
 
-      await this.ensureOfficialPluginInstalled(reinstallPlugin || forceRefresh);
+      await this.ensureOfficialPluginInstalled(reinstallPlugin);
       this.ensureRunIsCurrent(currentRunToken);
 
       const initResponse = await postFeishuRegistrationForm<FeishuRegistrationInitResponse>({
@@ -466,17 +505,39 @@ class FeishuOnboardingManager extends EventEmitter {
       return;
     }
 
-    await this.preparePluginInstallState(reinstallPlugin || this.status.pluginInstalled);
-
-    const installResult = await this.runOpenClawCli(['plugins', 'install', FEISHU_OFFICIAL_PLUGIN_NPM_SPEC]);
-    if (!installResult.success) {
-      const details = [installResult.error, installResult.stderr, installResult.stdout].filter(Boolean).join('\n');
-      throw new Error(details || '安装飞书官方插件失败');
+    if (this.officialPluginInstallPromise) {
+      await this.officialPluginInstallPromise;
+      await this.refreshStatus();
+      if (this.status.pluginInstalled && !reinstallPlugin) {
+        await this.normalizeOfficialPluginConfig({ seedDisabledWhenEmpty: !this.status.configured });
+        this.status.pluginInstalled = true;
+        return;
+      }
     }
 
-    await this.refreshStatus();
-    await this.normalizeOfficialPluginConfig({ seedDisabledWhenEmpty: !this.status.configured });
-    this.status.pluginInstalled = true;
+    const installPromise = (async () => {
+      await this.preparePluginInstallState(reinstallPlugin || this.status.pluginInstalled);
+
+      const installSpec = resolveFeishuOfficialPluginInstallSpec();
+      const installResult = await this.runOpenClawCli(['plugins', 'install', installSpec]);
+      if (!installResult.success) {
+        const details = [installResult.error, installResult.stderr, installResult.stdout].filter(Boolean).join('\n');
+        throw new Error(details || '安装飞书官方插件失败');
+      }
+
+      await this.refreshStatus();
+      await this.normalizeOfficialPluginConfig({ seedDisabledWhenEmpty: !this.status.configured });
+      this.status.pluginInstalled = true;
+    })();
+
+    this.officialPluginInstallPromise = installPromise;
+    try {
+      await installPromise;
+    } finally {
+      if (this.officialPluginInstallPromise === installPromise) {
+        this.officialPluginInstallPromise = null;
+      }
+    }
   }
 
   private async preparePluginInstallState(reinstallOfficialPlugin: boolean): Promise<void> {

@@ -17,7 +17,7 @@
  *   - batch_delete: POST /open-apis/bitable/v1/apps/:app_token/tables/batch_delete
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ export function registerFeishuBitableAppTableTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_bitable_app_table');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_bitable_app_table',
         label: 'Feishu Bitable Tables',
         description: '【以用户身份】飞书多维表格数据表管理工具。当用户要求创建/查询/管理数据表时使用。' +
@@ -245,5 +245,4 @@ export function registerFeishuBitableAppTableTool(api) {
             }
         },
     }, { name: 'feishu_bitable_app_table' });
-    api.logger.info?.('feishu_bitable_app_table: Registered feishu_bitable_app_table tool');
 }

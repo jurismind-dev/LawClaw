@@ -18,7 +18,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum, } from '../helpers';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 // 分片上传配置
@@ -41,10 +41,10 @@ const FeishuDriveFileSchema = Type.Union([
         page_token: Type.Optional(Type.String({
             description: '分页标记。首次请求无需填写',
         })),
-        order_by: Type.Optional(Type.Union([Type.Literal('EditedTime'), Type.Literal('CreatedTime')], {
+        order_by: Type.Optional(StringEnum(['EditedTime', 'CreatedTime'], {
             description: '排序方式：EditedTime（编辑时间）、CreatedTime（创建时间）',
         })),
-        direction: Type.Optional(Type.Union([Type.Literal('ASC'), Type.Literal('DESC')], {
+        direction: Type.Optional(StringEnum(['ASC', 'DESC'], {
             description: '排序方向：ASC（升序）、DESC（降序）',
         })),
     }),
@@ -180,7 +180,7 @@ export function registerFeishuDriveFileTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_drive_file');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_drive_file',
         label: 'Feishu Drive Files',
         description: '【以用户身份】飞书云空间文件管理工具。当用户要求查看云空间(云盘)中的文件列表、获取文件信息、复制/移动/删除文件、上传/下载文件时使用。消息中的文件读写**禁止**使用该工具!' +
@@ -481,5 +481,4 @@ export function registerFeishuDriveFileTool(api) {
             }
         },
     }, { name: 'feishu_drive_file' });
-    api.logger.info?.('feishu_drive_file: Registered feishu_drive_file tool');
 }

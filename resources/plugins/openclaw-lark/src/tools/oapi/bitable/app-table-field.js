@@ -14,7 +14,7 @@
  *   - delete: DELETE /open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields/:field_id
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@ export function registerFeishuBitableAppTableFieldTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_bitable_app_table_field');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_bitable_app_table_field',
         label: 'Feishu Bitable Fields',
         description: '【以用户身份】飞书多维表格字段（列）管理工具。当用户要求创建/查询/更新/删除字段、调整表结构时使用。Actions: create（创建字段）, list（列出所有字段）, update（更新字段，支持只传 field_name 改名）, delete（删除字段）。',
@@ -220,5 +220,4 @@ export function registerFeishuBitableAppTableFieldTool(api) {
             }
         },
     }, { name: 'feishu_bitable_app_table_field' });
-    api.logger.info?.('feishu_bitable_app_table_field: Registered feishu_bitable_app_table_field tool');
 }

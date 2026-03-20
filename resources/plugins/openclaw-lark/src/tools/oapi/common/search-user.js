@@ -9,7 +9,7 @@
  * 使用搜索接口（/open-apis/search/v1/user）
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ export function registerSearchUserTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_search_user');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_search_user',
         label: 'Feishu: Search User',
         description: '搜索员工信息（通过关键词搜索姓名、手机号、邮箱）。' + '返回匹配的员工列表，包含姓名、部门、open_id 等信息。',
@@ -71,5 +71,4 @@ export function registerSearchUserTool(api) {
             }
         },
     }, { name: 'feishu_search_user' });
-    api.logger.info?.('feishu_search_user: Registered feishu_search_user tool');
 }

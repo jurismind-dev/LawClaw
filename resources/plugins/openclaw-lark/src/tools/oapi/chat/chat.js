@@ -14,7 +14,7 @@
  *   - get:    GET /open-apis/im/v1/chats/:chat_id
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ const FeishuChatSchema = Type.Union([
         page_token: Type.Optional(Type.String({
             description: '分页标记。首次请求无需填写',
         })),
-        user_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')], {
+        user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'], {
             description: '用户 ID 类型（默认 open_id）',
         })),
     }),
@@ -42,7 +42,7 @@ const FeishuChatSchema = Type.Union([
         chat_id: Type.String({
             description: '群 ID（格式如 oc_xxx）',
         }),
-        user_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')], {
+        user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'], {
             description: '用户 ID 类型（默认 open_id）',
         })),
     }),
@@ -55,7 +55,7 @@ export function registerChatSearchTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_chat');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_chat',
         label: 'Feishu: Chat Management',
         description: '以用户身份调用飞书群聊管理工具。Actions: search（搜索群列表，支持关键词匹配群名称、群成员）, get（获取指定群的详细信息，包括群名称、描述、头像、群主、权限配置等）。',
@@ -122,5 +122,4 @@ export function registerChatSearchTool(api) {
             }
         },
     }, { name: 'feishu_chat' });
-    api.logger.info?.('feishu_chat: Registered feishu_chat tool');
 }

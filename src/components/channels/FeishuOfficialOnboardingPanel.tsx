@@ -237,6 +237,7 @@ export function FeishuOfficialOnboardingPanel({
               onClick={() => {
                 void start({ forceRefresh: true });
               }}
+              disabled={loading}
             >
               <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
               {t('dialog.feishuOfficial.refresh')}

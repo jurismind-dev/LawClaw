@@ -14,29 +14,22 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum, } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
 const ReplyElementSchema = Type.Object({
-    type: Type.Union([Type.Literal('text'), Type.Literal('mention'), Type.Literal('link')]),
+    type: StringEnum(['text', 'mention', 'link']),
     text: Type.Optional(Type.String({ description: '文本内容(type=text时必填)' })),
     open_id: Type.Optional(Type.String({ description: '被@用户的open_id(type=mention时必填)' })),
     url: Type.Optional(Type.String({ description: '链接URL(type=link时必填)' })),
 });
 const DocCommentsSchema = Type.Object({
-    action: Type.Union([Type.Literal('list'), Type.Literal('create'), Type.Literal('patch')]),
+    action: StringEnum(['list', 'create', 'patch']),
     file_token: Type.String({
         description: '云文档token或wiki节点token(可从文档URL获取)。如果是wiki token，会自动转换为实际文档的obj_token',
     }),
-    file_type: Type.Union([
-        Type.Literal('doc'),
-        Type.Literal('docx'),
-        Type.Literal('sheet'),
-        Type.Literal('file'),
-        Type.Literal('slides'),
-        Type.Literal('wiki'),
-    ], {
+    file_type: StringEnum(['doc', 'docx', 'sheet', 'file', 'slides', 'wiki'], {
         description: '文档类型。wiki类型会自动解析为实际文档类型(docx/sheet/bitable等)',
     }),
     // list action参数
@@ -59,7 +52,7 @@ const DocCommentsSchema = Type.Object({
     is_solved_value: Type.Optional(Type.Boolean({
         description: '解决状态:true=解决,false=恢复(action=patch时必填)',
     })),
-    user_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')])),
+    user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'])),
 });
 // ---------------------------------------------------------------------------
 // Helper functions
@@ -145,7 +138,7 @@ export function registerDocCommentsTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_doc_comments');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_doc_comments',
         label: 'Feishu: Doc Comments',
         description: '【以用户身份】管理云文档评论。支持: ' +
@@ -284,5 +277,4 @@ export function registerDocCommentsTool(api) {
             }
         },
     }, { name: 'feishu_doc_comments' });
-    api.logger.info?.('feishu_doc_comments: Registered feishu_doc_comments tool');
 }

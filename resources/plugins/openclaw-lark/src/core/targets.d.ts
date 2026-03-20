@@ -26,6 +26,17 @@ export declare function detectIdType(id: string): FeishuIdType | null;
  * Returns `null` when the input is empty or falsy.
  */
 export declare function normalizeFeishuTarget(raw: string): string | null;
+export interface FeishuRouteTarget {
+    target: string;
+    replyToMessageId?: string;
+    threadId?: string;
+}
+export declare function parseFeishuRouteTarget(raw: string): FeishuRouteTarget;
+export declare function encodeFeishuRouteTarget(params: {
+    target: string;
+    replyToMessageId?: string;
+    threadId?: string | number | null;
+}): string;
 /**
  * Add the appropriate OpenClaw routing prefix to a bare Feishu identifier.
  *

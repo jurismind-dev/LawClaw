@@ -15,9 +15,10 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum, } from '../helpers';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { wwwDomain } from '../../../core/domains';
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -310,7 +311,7 @@ const FeishuSheetSchema = Type.Union([
         action: Type.Literal('export'),
         url: UrlOrToken[0],
         spreadsheet_token: UrlOrToken[1],
-        file_extension: Type.Union([Type.Literal('xlsx'), Type.Literal('csv')], {
+        file_extension: StringEnum(['xlsx', 'csv'], {
             description: '导出格式：xlsx 或 csv',
         }),
         output_path: Type.Optional(Type.String({
@@ -329,7 +330,7 @@ export function registerFeishuSheetTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_sheet');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_sheet',
         label: 'Feishu Spreadsheet',
         description: '【以用户身份】飞书电子表格工具。支持创建、读写、查找、导出电子表格。' +
@@ -348,6 +349,7 @@ export function registerFeishuSheetTool(api) {
             const p = params;
             try {
                 const client = toolClient();
+                const brand = client.account.brand;
                 switch (p.action) {
                     // -----------------------------------------------------------------
                     // INFO — 表格信息 + 全部工作表列表
@@ -376,7 +378,7 @@ export function registerFeishuSheetTool(api) {
                         return json({
                             title: spreadsheet?.title,
                             spreadsheet_token: token,
-                            url: `https://www.feishu.cn/sheets/${token}`,
+                            url: `${wwwDomain(brand)}/sheets/${token}`,
                             sheets,
                         });
                     }
@@ -524,7 +526,7 @@ export function registerFeishuSheetTool(api) {
                         if (!token) {
                             return json({ error: 'failed to create spreadsheet: no token returned' });
                         }
-                        const url = `https://www.feishu.cn/sheets/${token}`;
+                        const url = `${wwwDomain(brand)}/sheets/${token}`;
                         log.info(`create: token=${token}`);
                         // Step 2: 如果有 headers 或 data，写入初始数据
                         if (p.headers || p.data) {
@@ -648,5 +650,4 @@ export function registerFeishuSheetTool(api) {
             }
         },
     }, { name: 'feishu_sheet' });
-    api.logger.info?.('feishu_sheet: Registered feishu_sheet tool');
 }

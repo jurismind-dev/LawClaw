@@ -173,6 +173,7 @@ export const TOOL_SCOPES = {
         'search:message',
     ],
     'feishu_search_doc_wiki.search': ['search:docs:read'],
+    'feishu_get_user.basic_batch': ['contact:user.basic_profile:readonly'],
     'feishu_get_user.default': ['contact:contact.base:readonly', 'contact:user.base:readonly'],
     'feishu_search_user.default': ['contact:user:search'],
     'feishu_create_doc.default': [
@@ -319,8 +320,8 @@ export function filterSensitiveScopes(scopes) {
 }
 // ===== 统计信息 =====
 /**
- * 工具动作总数: 98
- * 唯一 scope 总数: 66
+ * 工具动作总数: 99
+ * 唯一 scope 总数: 67
  * 必需应用权限总数: 20
  * 高敏感权限总数: 1
  */

@@ -18,7 +18,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 import { validateLocalMediaRoots } from '../../../messaging/outbound/media-url-utils';
 import * as fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
@@ -102,10 +102,10 @@ const DocMediaSchema = Type.Union([
         file_path: Type.String({
             description: '本地文件的绝对路径（必填）。图片支持 jpg/png/gif/webp 等，文件支持任意格式，最大 20MB',
         }),
-        type: Type.Optional(Type.Union([Type.Literal('image'), Type.Literal('file')], {
+        type: Type.Optional(StringEnum(['image', 'file'], {
             description: '媒体类型："image"（图片，默认）或 "file"（文件附件）',
         })),
-        align: Type.Optional(Type.Union([Type.Literal('left'), Type.Literal('center'), Type.Literal('right')], {
+        align: Type.Optional(StringEnum(['left', 'center', 'right'], {
             description: '对齐方式（仅图片生效）："center"（默认居中）、"left"（居左）、"right"（居右）',
         })),
         caption: Type.Optional(Type.String({
@@ -118,7 +118,7 @@ const DocMediaSchema = Type.Union([
         resource_token: Type.String({
             description: '资源的唯一标识（file_token 用于文档素材，whiteboard_id 用于画板）',
         }),
-        resource_type: Type.Union([Type.Literal('media'), Type.Literal('whiteboard')], {
+        resource_type: StringEnum(['media', 'whiteboard'], {
             description: '资源类型：media（文档素材：图片、视频、文件等）或 whiteboard（画板缩略图）',
         }),
         output_path: Type.String({
@@ -307,7 +307,7 @@ export function registerDocMediaTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_doc_media');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_doc_media',
         label: 'Feishu: Document Media',
         description: '【以用户身份】文档媒体管理工具。' +
@@ -333,5 +333,4 @@ export function registerDocMediaTool(api) {
             }
         },
     }, { name: 'feishu_doc_media' });
-    api.logger.info?.('feishu_doc_media: Registered feishu_doc_media tool (insert, download)');
 }

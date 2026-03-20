@@ -15,7 +15,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -30,12 +30,7 @@ const FeishuCalendarEventAttendeeSchema = Type.Union([
             description: '日程 ID',
         }),
         attendees: Type.Array(Type.Object({
-            type: Type.Union([
-                Type.Literal('user'),
-                Type.Literal('chat'),
-                Type.Literal('resource'),
-                Type.Literal('third_party'),
-            ]),
+            type: StringEnum(['user', 'chat', 'resource', 'third_party']),
             attendee_id: Type.String({
                 description: '参会人 ID。type=user 时为 open_id，type=chat 时为 chat_id，type=resource 时为会议室 ID，type=third_party 时为邮箱地址',
             }),
@@ -45,12 +40,7 @@ const FeishuCalendarEventAttendeeSchema = Type.Union([
         need_notification: Type.Optional(Type.Boolean({
             description: '是否给参会人发送通知（默认 true）',
         })),
-        attendee_ability: Type.Optional(Type.Union([
-            Type.Literal('none'),
-            Type.Literal('can_see_others'),
-            Type.Literal('can_invite_others'),
-            Type.Literal('can_modify_event'),
-        ])),
+        attendee_ability: Type.Optional(StringEnum(['none', 'can_see_others', 'can_invite_others', 'can_modify_event'])),
     }),
     // LIST
     Type.Object({
@@ -67,7 +57,7 @@ const FeishuCalendarEventAttendeeSchema = Type.Union([
         page_token: Type.Optional(Type.String({
             description: '分页标记',
         })),
-        user_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')])),
+        user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'])),
     }),
     // BATCH_DELETE (P1)
     Type.Object({
@@ -96,7 +86,7 @@ export function registerFeishuCalendarEventAttendeeTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_calendar_event_attendee');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_calendar_event_attendee',
         label: 'Feishu Calendar Event Attendees',
         description: '飞书日程参会人管理工具。当用户要求邀请/添加参会人、查看参会人列表、移除参会人时使用。Actions: create（添加参会人）, list（查询参会人列表）, batch_delete（批量删除参会人，注意：不能删除日程组织者）。',
@@ -271,5 +261,4 @@ export function registerFeishuCalendarEventAttendeeTool(api) {
             }
         },
     }, { name: 'feishu_calendar_event_attendee' });
-    api.logger.info?.('feishu_calendar_event_attendee: Registered feishu_calendar_event_attendee tool');
 }

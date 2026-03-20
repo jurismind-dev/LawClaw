@@ -15,7 +15,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, parseTimeToTimestampMs, assertLarkOk, handleInvokeErrorWithAutoAuth, } from '../helpers';
+import { json, createToolContext, parseTimeToTimestampMs, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum, } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ const FeishuTaskTaskSchema = Type.Union([
             id: Type.String({
                 description: '成员 open_id',
             }),
-            role: Type.Optional(Type.Union([Type.Literal('assignee'), Type.Literal('follower')])),
+            role: Type.Optional(StringEnum(['assignee', 'follower'])),
         }), {
             description: '任务成员列表（assignee=负责人，follower=关注人）',
         })),
@@ -69,7 +69,7 @@ const FeishuTaskTaskSchema = Type.Union([
         }), {
             description: '任务所属清单列表',
         })),
-        user_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')])),
+        user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'])),
     }),
     // GET
     Type.Object({
@@ -77,7 +77,7 @@ const FeishuTaskTaskSchema = Type.Union([
         task_guid: Type.String({
             description: 'Task GUID',
         }),
-        user_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')])),
+        user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'])),
     }),
     // LIST
     Type.Object({
@@ -91,7 +91,7 @@ const FeishuTaskTaskSchema = Type.Union([
         completed: Type.Optional(Type.Boolean({
             description: '是否筛选已完成任务',
         })),
-        user_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')])),
+        user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'])),
     }),
     // PATCH
     Type.Object({
@@ -128,14 +128,14 @@ const FeishuTaskTaskSchema = Type.Union([
             id: Type.String({
                 description: '成员 open_id',
             }),
-            role: Type.Optional(Type.Union([Type.Literal('assignee'), Type.Literal('follower')])),
+            role: Type.Optional(StringEnum(['assignee', 'follower'])),
         }), {
             description: '新的任务成员列表',
         })),
         repeat_rule: Type.Optional(Type.String({
             description: '新的重复规则（RRULE 格式）',
         })),
-        user_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')])),
+        user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'])),
     }),
 ]);
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ export function registerFeishuTaskTaskTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_task_task');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_task_task',
         label: 'Feishu Task Management',
         description: "【以用户身份】飞书任务管理工具。用于创建、查询、更新任务。Actions: create（创建任务）, get（获取任务详情）, list（查询任务列表，仅返回我负责的任务）, patch（更新任务）。时间参数使用ISO 8601 / RFC 3339 格式（包含时区），例如 '2024-01-01T00:00:00+08:00'。",
@@ -342,5 +342,4 @@ export function registerFeishuTaskTaskTool(api) {
             }
         },
     }, { name: 'feishu_task_task' });
-    api.logger.info?.('feishu_task_task: Registered feishu_task_task tool');
 }

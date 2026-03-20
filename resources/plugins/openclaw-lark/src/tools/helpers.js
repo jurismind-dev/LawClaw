@@ -11,6 +11,7 @@ import { getEnabledLarkAccounts, getLarkAccount } from '../core/accounts';
 import { LarkClient } from '../core/lark-client';
 import { getTicket } from '../core/lark-ticket';
 import { createToolClient } from '../core/tool-client';
+import { shouldRegisterTool } from '../core/tools-config';
 // ---------------------------------------------------------------------------
 // 客户端管理
 // ---------------------------------------------------------------------------
@@ -137,6 +138,72 @@ export function createToolContext(api, toolName, options) {
         toolClient: () => createToolClient(config, accountIndex),
         log: createToolLogger(api, toolName),
     };
+}
+// ---------------------------------------------------------------------------
+// 工具注册检查
+// ---------------------------------------------------------------------------
+/**
+ * 检查工具是否应该被注册（根据 channels.feishu.tools.deny 配置）。
+ *
+ * 在工具注册函数开头调用此函数，如果返回 `false` 则应该直接 return。
+ *
+ * @param api - OpenClaw Plugin API
+ * @param toolName - 工具名称
+ * @returns `true` 如果应该继续注册，`false` 如果应该跳过
+ *
+ * @example
+ * ```typescript
+ * export function registerMyTool(api: OpenClawPluginApi) {
+ *   if (!checkToolRegistration(api, 'feishu_my_tool')) {
+ *     return;
+ *   }
+ *
+ *   const { toolClient, log } = createToolContext(api, 'feishu_my_tool');
+ *   api.registerTool({ ... });
+ * }
+ * ```
+ */
+export function checkToolRegistration(api, toolName) {
+    if (!api.config)
+        return false;
+    if (!shouldRegisterTool(api.config, toolName)) {
+        api.logger.info?.(`${toolName}: Skipped registration (in deny list)`);
+        return false;
+    }
+    return true;
+}
+/**
+ * 包装的工具注册函数，自动检查 channels.feishu.tools.deny 配置。
+ *
+ * 用法：将 `api.registerTool(...)` 替换为 `registerTool(api, ...)`。
+ *
+ * @param api - OpenClaw Plugin API
+ * @param tool - 工具配置对象或工具工厂函数
+ * @param opts - 可选的工具注册选项
+ *
+ * @example
+ * ```typescript
+ * // 旧代码：
+ * api.registerTool({ name: 'feishu_my_tool', ... });
+ *
+ * // 新代码：
+ * registerTool(api, { name: 'feishu_my_tool', ... });
+ * ```
+ */
+export function registerTool(api, tool, opts) {
+    // 提取工具名称
+    const toolName = typeof tool === 'function' ? tool.name : tool.name;
+    if (!toolName) {
+        // 如果无法提取工具名，直接注册（不拦截）
+        api.registerTool(tool, opts);
+        return;
+    }
+    // 检查是否应该注册
+    if (!checkToolRegistration(api, toolName)) {
+        return;
+    }
+    // 通过检查，调用原始的 registerTool
+    api.registerTool(tool, opts);
 }
 // ---------------------------------------------------------------------------
 // 返回值格式化

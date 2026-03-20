@@ -15,7 +15,7 @@
  *   - delete: DELETE /open-apis/bitable/v1/apps/:app_token/tables/:table_id/views/:view_id
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ export function registerFeishuBitableAppTableViewTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_bitable_app_table_view');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_bitable_app_table_view',
         label: 'Feishu Bitable Views',
         description: '【以用户身份】飞书多维表格视图管理工具。当用户要求创建/查询/更新/删除视图、切换展示方式时使用。Actions: create（创建视图）, get（获取视图详情）, list（列出所有视图）, patch（更新视图）, delete（删除视图）。',
@@ -193,5 +193,4 @@ export function registerFeishuBitableAppTableViewTool(api) {
             }
         },
     }, { name: 'feishu_bitable_app_table_view' });
-    api.logger.info?.('feishu_bitable_app_table_view: Registered feishu_bitable_app_table_view tool');
 }

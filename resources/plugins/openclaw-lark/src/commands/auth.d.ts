@@ -8,8 +8,14 @@
  * 注意：此命令仅限应用 owner 执行（与 onboarding 逻辑一致）
  */
 import type { OpenClawConfig } from 'openclaw/plugin-sdk';
+import type { FeishuLocale } from './locale';
 /**
  * 执行飞书用户权限批量授权命令
  * 直接调用 triggerOnboarding()，包含 owner 检查
  */
-export declare function runFeishuAuth(config: OpenClawConfig): Promise<string>;
+export declare function runFeishuAuth(config: OpenClawConfig, locale?: FeishuLocale): Promise<string>;
+/**
+ * 运行飞书授权命令，同时生成中英双语结果。
+ * 副作用（triggerOnboarding）只执行一次，结果格式化为双语文本。
+ */
+export declare function runFeishuAuthI18n(config: OpenClawConfig): Promise<Record<FeishuLocale, string>>;

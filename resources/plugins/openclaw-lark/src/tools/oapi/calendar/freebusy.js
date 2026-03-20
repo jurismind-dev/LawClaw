@@ -11,7 +11,7 @@
  *   - list: POST /open-apis/calendar/v4/freebusy/batch (批量查询接口)
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, parseTimeToRFC3339, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, parseTimeToRFC3339, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ export function registerFeishuCalendarFreebusyTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_calendar_freebusy');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_calendar_freebusy',
         label: 'Feishu Calendar Free/Busy Status',
         description: '【以用户身份】飞书日历忙闲查询工具。当用户要求查询某时间段内某人是否空闲、查看忙闲状态时使用。支持批量查询 1-10 个用户的主日历忙闲信息，用于安排会议时间。',
@@ -109,5 +109,4 @@ export function registerFeishuCalendarFreebusyTool(api) {
             }
         },
     }, { name: 'feishu_calendar_freebusy' });
-    api.logger.info?.('feishu_calendar_freebusy: Registered feishu_calendar_freebusy tool');
 }

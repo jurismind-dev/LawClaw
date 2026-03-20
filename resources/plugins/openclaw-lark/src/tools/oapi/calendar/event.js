@@ -15,7 +15,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, parseTimeToTimestamp, assertLarkOk, handleInvokeErrorWithAutoAuth, formatLarkError, unixTimestampToISO8601, } from '../helpers';
+import { json, createToolContext, parseTimeToTimestamp, assertLarkOk, handleInvokeErrorWithAutoAuth, formatLarkError, unixTimestampToISO8601, registerTool, StringEnum, } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -42,12 +42,7 @@ const FeishuCalendarEventSchema = Type.Union([
             description: '日程描述',
         })),
         attendees: Type.Optional(Type.Array(Type.Object({
-            type: Type.Union([
-                Type.Literal('user'),
-                Type.Literal('chat'),
-                Type.Literal('resource'),
-                Type.Literal('third_party'),
-            ]),
+            type: StringEnum(['user', 'chat', 'resource', 'third_party']),
             id: Type.String({
                 description: 'Attendee open_id, chat_id, resource_id, or email',
             }),
@@ -55,10 +50,10 @@ const FeishuCalendarEventSchema = Type.Union([
             description: "参会人列表（强烈建议提供，否则日程只在应用日历上，用户看不到）。type='user' 时 id 填 open_id，type='third_party' 时 id 填邮箱。",
         })),
         vchat: Type.Optional(Type.Object({
-            vc_type: Type.Optional(Type.Union([Type.Literal('vc'), Type.Literal('third_party'), Type.Literal('no_meeting')], {
+            vc_type: Type.Optional(StringEnum(['vc', 'third_party', 'no_meeting'], {
                 description: '视频会议类型：vc（飞书视频会议）、third_party（第三方链接）、no_meeting（无视频会议）。默认为空，首次添加参与人时自动生成飞书视频会议。',
             })),
-            icon_type: Type.Optional(Type.Union([Type.Literal('vc'), Type.Literal('live'), Type.Literal('default')], {
+            icon_type: Type.Optional(StringEnum(['vc', 'live', 'default'], {
                 description: '第三方视频会议 icon 类型（仅 vc_type=third_party 时有效）。',
             })),
             description: Type.Optional(Type.String({
@@ -70,18 +65,13 @@ const FeishuCalendarEventSchema = Type.Union([
         }, {
             description: '视频会议信息。不传则默认在首次添加参与人时自动生成飞书视频会议。',
         })),
-        visibility: Type.Optional(Type.Union([Type.Literal('default'), Type.Literal('public'), Type.Literal('private')], {
+        visibility: Type.Optional(StringEnum(['default', 'public', 'private'], {
             description: '日程公开范围。default（默认，跟随日历权限）、public（公开详情）、private（私密，仅自己可见）。默认值：default。',
         })),
-        attendee_ability: Type.Optional(Type.Union([
-            Type.Literal('none'),
-            Type.Literal('can_see_others'),
-            Type.Literal('can_invite_others'),
-            Type.Literal('can_modify_event'),
-        ], {
+        attendee_ability: Type.Optional(StringEnum(['none', 'can_see_others', 'can_invite_others', 'can_modify_event'], {
             description: '参与人权限。none（无法编辑、邀请、查看）、can_see_others（可查看参与人列表）、can_invite_others（可邀请其他人）、can_modify_event（可编辑日程）。默认值：none。',
         })),
-        free_busy_status: Type.Optional(Type.Union([Type.Literal('busy'), Type.Literal('free')], {
+        free_busy_status: Type.Optional(StringEnum(['busy', 'free'], {
             description: '日程占用的忙闲状态。busy（忙碌）、free（空闲）。默认值：busy。',
         })),
         location: Type.Optional(Type.Object({
@@ -197,7 +187,7 @@ const FeishuCalendarEventSchema = Type.Union([
         calendar_id: Type.Optional(Type.String({
             description: 'Calendar ID (optional; primary calendar used if omitted)',
         })),
-        rsvp_status: Type.Union([Type.Literal('accept'), Type.Literal('decline'), Type.Literal('tentative')]),
+        rsvp_status: StringEnum(['accept', 'decline', 'tentative']),
     }),
     // INSTANCES (P1)
     Type.Object({
@@ -307,7 +297,7 @@ export function registerFeishuCalendarEventTool(api) {
             throw new Error('Could not determine primary calendar');
         return resolved;
     };
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_calendar_event',
         label: 'Feishu Calendar Events',
         description: "【以用户身份】飞书日程管理工具。当用户要求查看日程、创建会议、约会议、修改日程、删除日程、搜索日程、回复日程邀请时使用。Actions: create（创建日历事件）, list（查询时间范围内的日程，自动展开重复日程）, get（获取日程详情）, patch（更新日程）, delete（删除日程）, search（搜索日程）, reply（回复日程邀请）, instances（获取重复日程的实例列表，仅对重复日程有效）, instance_view（查看展开后的日程列表）。【重要】create 时必须传 user_open_id 参数，值为消息上下文中的 SenderId（格式 ou_xxx），否则日程只在应用日历上，用户完全看不到。list 操作使用 instance_view 接口，会自动展开重复日程为多个实例，时间区间不能超过40天，返回实例数量上限1000。时间参数使用ISO 8601 / RFC 3339 格式（包含时区），例如 '2024-01-01T00:00:00+08:00'。",
@@ -717,5 +707,4 @@ export function registerFeishuCalendarEventTool(api) {
             }
         },
     }, { name: 'feishu_calendar_event' });
-    api.logger.info?.('feishu_calendar_event: Registered feishu_calendar_event tool');
 }

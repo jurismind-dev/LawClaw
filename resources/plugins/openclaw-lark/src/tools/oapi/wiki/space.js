@@ -13,7 +13,7 @@
  *   - create: POST /open-apis/wiki/v2/spaces
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ export function registerFeishuWikiSpaceTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_wiki_space');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_wiki_space',
         label: 'Feishu Wiki Spaces',
         description: '飞书知识空间管理工具。当用户要求查看知识库列表、获取知识库信息、创建知识库时使用。Actions: list（列出知识空间）, get（获取知识空间信息）, create（创建知识空间）。' +
@@ -128,5 +128,4 @@ export function registerFeishuWikiSpaceTool(api) {
             }
         },
     }, { name: 'feishu_wiki_space' });
-    api.logger.info?.('feishu_wiki_space: Registered feishu_wiki_space tool');
 }

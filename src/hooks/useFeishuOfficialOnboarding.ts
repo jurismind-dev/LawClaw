@@ -41,6 +41,8 @@ interface UseFeishuOfficialOnboardingOptions {
 export function useFeishuOfficialOnboarding(options: UseFeishuOfficialOnboardingOptions = {}) {
   const autoStartedRef = useRef(false);
   const onConnectedRef = useRef(options.onConnected);
+  const startRequestInFlightRef = useRef(false);
+  const configureRequestInFlightRef = useRef(false);
 
   const [phase, setPhase] = useState<FeishuOnboardingPhase>('idle');
   const [configured, setConfigured] = useState(false);
@@ -86,6 +88,10 @@ export function useFeishuOfficialOnboarding(options: UseFeishuOfficialOnboarding
   }, []);
 
   const start = useCallback(async (startOptions: StartOptions = {}) => {
+    if (startRequestInFlightRef.current) {
+      return;
+    }
+    startRequestInFlightRef.current = true;
     setLoading(true);
     setError(null);
     if (startOptions.forceRefresh || startOptions.resetAuth) {
@@ -126,10 +132,16 @@ export function useFeishuOfficialOnboarding(options: UseFeishuOfficialOnboarding
       setError(message);
       setPhase('error');
       setLoading(false);
+    } finally {
+      startRequestInFlightRef.current = false;
     }
   }, [applyStatus]);
 
   const configureExistingApp = useCallback(async (appId: string, appSecret: string) => {
+    if (configureRequestInFlightRef.current) {
+      return;
+    }
+    configureRequestInFlightRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -159,6 +171,8 @@ export function useFeishuOfficialOnboarding(options: UseFeishuOfficialOnboarding
       setError(message);
       setPhase('error');
       setLoading(false);
+    } finally {
+      configureRequestInFlightRef.current = false;
     }
   }, [applyStatus]);
 

@@ -24,6 +24,8 @@ const TAG_USER = 'user:';
 const TAG_OPEN_ID = 'open_id:';
 // Feishu channel prefix (used by SDK for some routing scenarios).
 const TAG_FEISHU = 'feishu:';
+const ROUTE_META_FRAGMENT_REPLY_TO = '__feishu_reply_to';
+const ROUTE_META_FRAGMENT_THREAD_ID = '__feishu_thread_id';
 // ---------------------------------------------------------------------------
 // Detection
 // ---------------------------------------------------------------------------
@@ -56,7 +58,7 @@ export function detectIdType(id) {
 export function normalizeFeishuTarget(raw) {
     if (!raw)
         return null;
-    const trimmed = raw.trim();
+    const trimmed = parseFeishuRouteTarget(raw).target.trim();
     if (!trimmed)
         return null;
     // Handle Feishu channel prefix (e.g., "feishu:ou_xxx" -> "ou_xxx")
@@ -72,6 +74,41 @@ export function normalizeFeishuTarget(raw) {
     if (trimmed.startsWith(TAG_OPEN_ID))
         return trimmed.slice(TAG_OPEN_ID.length);
     return trimmed;
+}
+export function parseFeishuRouteTarget(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed)
+        return { target: '' };
+    const hashIndex = trimmed.indexOf('#');
+    if (hashIndex < 0)
+        return { target: trimmed };
+    const target = trimmed.slice(0, hashIndex).trim();
+    const fragment = trimmed.slice(hashIndex + 1).trim();
+    if (!fragment)
+        return { target };
+    const params = new URLSearchParams(fragment);
+    const replyToMessageId = normalizeMessageId(params.get(ROUTE_META_FRAGMENT_REPLY_TO)?.trim() || undefined);
+    const threadId = params.get(ROUTE_META_FRAGMENT_THREAD_ID)?.trim() || undefined;
+    return {
+        target,
+        ...(replyToMessageId ? { replyToMessageId } : {}),
+        ...(threadId ? { threadId } : {}),
+    };
+}
+export function encodeFeishuRouteTarget(params) {
+    const target = params.target.trim();
+    if (!target)
+        return target;
+    const replyToMessageId = normalizeMessageId(params.replyToMessageId?.trim() || undefined);
+    const threadId = params.threadId != null && String(params.threadId).trim() !== '' ? String(params.threadId).trim() : undefined;
+    if (!replyToMessageId && !threadId)
+        return target;
+    const fragment = new URLSearchParams();
+    if (replyToMessageId)
+        fragment.set(ROUTE_META_FRAGMENT_REPLY_TO, replyToMessageId);
+    if (threadId)
+        fragment.set(ROUTE_META_FRAGMENT_THREAD_ID, threadId);
+    return `${target}#${fragment.toString()}`;
 }
 // ---------------------------------------------------------------------------
 // Formatting

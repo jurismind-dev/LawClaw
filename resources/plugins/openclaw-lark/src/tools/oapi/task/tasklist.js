@@ -20,7 +20,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -33,7 +33,7 @@ const FeishuTaskTasklistSchema = Type.Union([
         }),
         members: Type.Optional(Type.Array(Type.Object({
             id: Type.String({ description: '成员 open_id' }),
-            role: Type.Optional(Type.Union([Type.Literal('editor'), Type.Literal('viewer')])),
+            role: Type.Optional(StringEnum(['editor', 'viewer'])),
         }), {
             description: '清单成员列表（editor=可编辑，viewer=可查看）。注意：创建人自动成为 owner，如在 members 中也指定创建人，该用户最终成为 owner 并从 members 中移除（同一用户只能有一个角色）',
         })),
@@ -74,7 +74,7 @@ const FeishuTaskTasklistSchema = Type.Union([
         tasklist_guid: Type.String({ description: '清单 GUID' }),
         members: Type.Array(Type.Object({
             id: Type.String({ description: '成员 open_id' }),
-            role: Type.Optional(Type.Union([Type.Literal('editor'), Type.Literal('viewer')])),
+            role: Type.Optional(StringEnum(['editor', 'viewer'])),
         }), { description: '要添加的成员列表' }),
     }),
     // REMOVE_MEMBERS (P1)
@@ -83,7 +83,7 @@ const FeishuTaskTasklistSchema = Type.Union([
         tasklist_guid: Type.String({ description: '清单 GUID' }),
         members: Type.Array(Type.Object({
             id: Type.String({ description: '成员 open_id' }),
-            type: Type.Optional(Type.Union([Type.Literal('user'), Type.Literal('chat'), Type.Literal('app')])),
+            type: Type.Optional(StringEnum(['user', 'chat', 'app'])),
         }), {
             description: '要移除的成员列表。注意：移除成员时不需要传 role 字段',
         }),
@@ -97,7 +97,7 @@ export function registerFeishuTaskTasklistTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_task_tasklist');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_task_tasklist',
         label: 'Feishu Task Lists',
         description: '【以用户身份】飞书任务清单管理工具。当用户要求创建/查询/管理清单、查看清单内的任务时使用。Actions: create（创建清单）, get（获取清单详情）, list（列出所有可读取的清单，包括我创建的和他人共享给我的）, tasks（列出清单内的任务）, patch（更新清单）, delete（删除清单）, add_members（添加成员）, remove_members（移除成员）。',
@@ -319,5 +319,4 @@ export function registerFeishuTaskTasklistTool(api) {
             }
         },
     }, { name: 'feishu_task_tasklist' });
-    api.logger.info?.('feishu_task_tasklist: Registered feishu_task_tasklist tool');
 }

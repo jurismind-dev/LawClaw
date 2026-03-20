@@ -9,6 +9,7 @@
  * enabled for a given account.
  */
 import type { FeishuToolsConfig, LarkAccount } from './types';
+import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
 /**
  * The default tools configuration.
  *
@@ -32,3 +33,23 @@ export declare function resolveToolsConfig(cfg?: FeishuToolsConfig): Required<Fe
  * 该工具就应被注册。执行时由 LarkTicket 路由到具体账户。
  */
 export declare function resolveAnyEnabledToolsConfig(accounts: LarkAccount[]): Required<FeishuToolsConfig>;
+/**
+ * 检查工具是否应该被注册（channel 级别的 tools.deny 检查）。
+ *
+ * 从 `channels.feishu.tools.deny` 读取禁用列表，支持通配符模式。
+ *
+ * @param cfg - OpenClaw 配置对象
+ * @param toolName - 工具名称（如 `feishu_im_user_message`）
+ * @returns `true` 如果应该注册，`false` 如果应该跳过
+ *
+ * @example
+ * ```typescript
+ * // 配置示例：
+ * // channels.feishu.tools.deny: ["feishu_im_user_message", "feishu_calendar_*"]
+ *
+ * shouldRegisterTool(cfg, "feishu_im_user_message")  // false
+ * shouldRegisterTool(cfg, "feishu_calendar_event")   // false (匹配通配符)
+ * shouldRegisterTool(cfg, "feishu_task_task")        // true
+ * ```
+ */
+export declare function shouldRegisterTool(cfg: ClawdbotConfig, toolName: string): boolean;

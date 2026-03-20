@@ -9,7 +9,7 @@
  * 使用 sdk.im.v1.chatMembers.get 接口
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -17,7 +17,7 @@ const ChatMembersSchema = Type.Object({
     chat_id: Type.String({
         description: '群 ID（格式如 oc_xxx）。' + '可以通过 feishu_chat_search 工具搜索获取',
     }),
-    member_id_type: Type.Optional(Type.Union([Type.Literal('open_id'), Type.Literal('union_id'), Type.Literal('user_id')])),
+    member_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'])),
     page_size: Type.Optional(Type.Integer({
         description: '分页大小（默认20）',
         minimum: 1,
@@ -34,7 +34,7 @@ export function registerChatMembersTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_chat_members');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_chat_members',
         label: 'Feishu: Get Chat Members',
         description: '以用户的身份获取指定群组的成员列表。' +
@@ -79,5 +79,4 @@ export function registerChatMembersTool(api) {
             }
         },
     }, { name: 'feishu_chat_members' });
-    api.logger.info?.('feishu_chat_members: Registered feishu_chat_members tool');
 }

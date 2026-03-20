@@ -81,7 +81,11 @@ function _optimizeMarkdownStyle(text, cardVersion = 2) {
 const IMAGE_RE = /!\[([^\]]*)\]\(([^)\s]+)\)/g;
 /**
  * Strip `![alt](value)` where value is not a valid Feishu image key
- * (`img_xxx`) or remote URL. Prevents CardKit error 200570.
+ * (`img_xxx`). Prevents CardKit error 200570.
+ *
+ * HTTP URLs are stripped as well — ImageResolver should have already
+ * replaced them with `img_xxx` keys before this point. This serves
+ * as a safety net for any unresolved URLs.
  */
 function stripInvalidImageKeys(text) {
     if (!text.includes('!['))
@@ -89,10 +93,6 @@ function stripInvalidImageKeys(text) {
     return text.replace(IMAGE_RE, (fullMatch, _alt, value) => {
         if (value.startsWith('img_'))
             return fullMatch;
-        if (value.startsWith('http://'))
-            return fullMatch;
-        if (value.startsWith('https://'))
-            return fullMatch;
-        return value;
+        return ''; // strip all non-img_ image references (URLs, local paths, etc.)
     });
 }

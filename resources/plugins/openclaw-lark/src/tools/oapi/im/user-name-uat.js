@@ -11,6 +11,9 @@
  * 设计动机：TAT 调用 contact/v3/users/batch 缺少权限导致返回的用户
  * 条目不含 name 字段，而工具层搜索消息等场景运行在 UAT 上下文中，
  * 用户 token 可以读取其他用户的名称。
+ *
+ * 底层使用 contact/v3/users/basic_batch 接口（scope: contact:user.basic_profile:readonly），
+ * 每次最多查询 10 个用户。
  */
 import { isInvokeError } from '../helpers';
 // ---------------------------------------------------------------------------
@@ -64,7 +67,7 @@ export function setUATUserNames(accountId, entries) {
 // ---------------------------------------------------------------------------
 // 以 UAT 身份批量解析用户名
 // ---------------------------------------------------------------------------
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 10; // basic_batch API 限制每次最多 10 个
 export async function batchResolveUserNamesAsUser(params) {
     const { client, openIds, log } = params;
     if (openIds.length === 0)
@@ -90,30 +93,40 @@ export async function batchResolveUserNamesAsUser(params) {
     const uniqueMissing = [...new Set(missing)];
     if (uniqueMissing.length === 0)
         return result;
-    // 2. 分批通过 SDK 调用 contact/v3/users/batch（UAT）
+    // 2. 分批通过 SDK 调用 contact/v3/users/basic_batch（UAT）
+    const totalBatches = Math.ceil(uniqueMissing.length / BATCH_SIZE);
+    log(`batchResolveUserNamesAsUser: resolving ${uniqueMissing.length} user(s) in ${totalBatches} batch(es), ${result.size} cache hit(s)`);
     for (let i = 0; i < uniqueMissing.length; i += BATCH_SIZE) {
         const chunk = uniqueMissing.slice(i, i + BATCH_SIZE);
+        const batchIndex = Math.floor(i / BATCH_SIZE) + 1;
         try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const res = await client.invoke('feishu_get_user.default', // 注：实际调用 batch API，共享 get_user 的 scope
-            (sdk, opts) => sdk.contact.user.batch({
-                params: {
-                    user_ids: chunk,
-                    user_id_type: 'open_id',
-                },
+            const res = await client.invoke('feishu_get_user.basic_batch', (sdk, opts) => sdk.request({
+                method: 'POST',
+                url: '/open-apis/contact/v3/users/basic_batch',
+                data: { user_ids: chunk },
+                params: { user_id_type: 'open_id' },
             }, opts), {
                 as: 'user',
             });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const items = res?.data?.items ?? [];
-            for (const item of items) {
-                const openId = item.open_id;
-                const name = item.name || item.display_name || item.nickname || item.en_name;
+            const users = res?.data?.users ?? [];
+            let resolved = 0;
+            for (const user of users) {
+                const openId = user.user_id;
+                // 实际返回 name 为字符串，兼容文档中 name.value 的对象结构
+                const rawName = user.name;
+                const name = typeof rawName === 'string' ? rawName : rawName?.value;
                 if (openId && name) {
                     cache.delete(openId);
                     cache.set(openId, { name, expireAt: Date.now() + UAT_TTL_MS });
                     result.set(openId, name);
+                    resolved++;
                 }
+            }
+            const unresolvedCount = chunk.length - resolved;
+            if (unresolvedCount > 0) {
+                log(`batchResolveUserNamesAsUser: batch ${batchIndex}/${totalBatches}: ${resolved} resolved, ${unresolvedCount} missing name`);
             }
         }
         catch (err) {

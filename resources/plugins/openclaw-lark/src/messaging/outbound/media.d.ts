@@ -253,3 +253,8 @@ export declare function uploadAndSendMediaLark(params: {
     /** Allowed root directories for local file access (SSRF prevention). */
     mediaLocalRoots?: readonly string[];
 }): Promise<SendMediaResult>;
+/**
+ * Fetch remote image bytes by URL (http/https only).
+ * Local file access is denied. Includes SSRF protection.
+ */
+export declare function fetchRemoteImageBuffer(url: string): Promise<Buffer>;

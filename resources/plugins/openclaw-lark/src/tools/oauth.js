@@ -32,7 +32,7 @@ import { getStoredToken, setStoredToken, tokenStatus } from '../core/token-store
 import { revokeUAT } from '../core/uat-client';
 import { createCardEntity, sendCardByCardId, updateCardKitCardForAuth } from '../card/cardkit';
 import { buildAuthCard, buildAuthSuccessCard, buildAuthFailedCard, buildAuthIdentityMismatchCard } from './oauth-cards';
-import { json } from './oapi/helpers';
+import { json, registerTool } from './oapi/helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -41,13 +41,12 @@ const FeishuOAuthSchema = Type.Object({
         // Type.Literal("authorize"),  // 已由 auto-auth 自动处理，不再对外暴露
         Type.Literal('revoke'),
     ], {
-        description: 'revoke: 撤销当前用户的授权',
+        description: 'revoke: 撤销当前用户已保存的授权凭据',
     }),
 }, {
-    description: '飞书用户授权管理工具。' +
-        '【注意】授权流程由系统自动发起，不要主动调用此工具触发授权！' +
-        '此工具仅用于撤销授权（revoke）。' +
-        '不需要传入 user_open_id，系统自动识别当前用户。',
+    description: '飞书用户撤销授权工具。' +
+        '仅在用户明确说"撤销授权"、"取消授权"、"退出登录"、"清除授权"时调用。' +
+        '【严禁调用场景】用户说"重新授权"、"发起授权"、"重新发起"、"授权失败"、"授权过期"时，绝对不要调用此工具，授权流程由系统自动处理。',
 });
 const pendingFlows = new Map();
 // ---------------------------------------------------------------------------
@@ -93,14 +92,13 @@ export function registerFeishuOAuthTool(api) {
     if (!api.config)
         return;
     const cfg = api.config;
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_oauth',
         label: 'Feishu OAuth',
-        description: '飞书用户授权（OAuth）管理工具。' +
-            '【注意】授权流程由系统自动发起，不要主动调用此工具触发授权！' +
-            '此工具仅用于 revoke（撤销当前用户的授权）。' +
-            '不需要传入 user_open_id，系统自动从消息上下文获取当前用户。' +
-            '【Token 过期处理】当返回 token_expired 错误时，调用 revoke 撤销后，系统会自动重新发起授权流程。',
+        description: '飞书用户撤销授权工具。' +
+            '仅在用户明确说"撤销授权"、"取消授权"、"退出登录"、"清除授权"时调用 revoke。' +
+            '【严禁调用场景】用户说"重新授权"、"发起授权"、"重新发起"、"授权失败"、"授权过期"时，绝对不要调用此工具，授权流程由系统自动处理，无需人工干预。' +
+            '不需要传入 user_open_id，系统自动从消息上下文获取当前用户。',
         parameters: FeishuOAuthSchema,
         async execute(_toolCallId, params) {
             const p = params;
@@ -308,7 +306,8 @@ export async function executeAuthorize(params) {
                 log.info(`app has not granted scopes [${unavailableScopes.join(', ')}], filtering them out`);
                 if (availableScopes.length === 0) {
                     // 所有 scope 都未开通，直接返回错误
-                    const permissionUrl = `https://open.feishu.cn/app/${appId}/permission`;
+                    const openDomain = brand === 'lark' ? 'https://open.larksuite.com' : 'https://open.feishu.cn';
+                    const permissionUrl = `${openDomain}/app/${appId}/permission`;
                     return json({
                         error: 'app_scopes_not_granted',
                         message: `应用未开通任何请求的用户权限，无法发起授权。请先在开放平台开通以下权限：\n${unavailableScopes.map((s) => `- ${s}`).join('\n')}\n\n权限管理地址：${permissionUrl}`,
@@ -345,6 +344,7 @@ export async function executeAuthorize(params) {
         filteredScopes: unavailableScopes.length > 0 ? unavailableScopes : undefined,
         appId,
         showBatchAuthHint,
+        brand,
     });
     let cardId;
     let seq;
@@ -449,7 +449,7 @@ export async function executeAuthorize(params) {
                     await updateCardKitCardForAuth({
                         cfg,
                         cardId,
-                        card: buildAuthIdentityMismatchCard(),
+                        card: buildAuthIdentityMismatchCard(brand),
                         sequence: ++seq,
                         accountId,
                     });
@@ -481,7 +481,7 @@ export async function executeAuthorize(params) {
                 await updateCardKitCardForAuth({
                     cfg,
                     cardId,
-                    card: buildAuthSuccessCard(),
+                    card: buildAuthSuccessCard(brand),
                     sequence: ++seq,
                     accountId,
                 });
@@ -606,14 +606,16 @@ export async function executeAuthorize(params) {
     }
     // 如果有被过滤的 scope，添加提示信息
     if (unavailableScopes.length > 0) {
-        const permissionUrl = `https://open.feishu.cn/app/${appId}/permission`;
+        const openDomain = brand === 'lark' ? 'https://open.larksuite.com' : 'https://open.feishu.cn';
+        const permissionUrl = `${openDomain}/app/${appId}/permission`;
         message += `\n\n⚠️ **注意**：以下权限因应用未开通而被跳过，如需使用请先在开放平台开通：\n${unavailableScopes.map((s) => `- ${s}`).join('\n')}\n\n权限管理地址：${permissionUrl}`;
     }
+    const openDomainForResult = brand === 'lark' ? 'https://open.larksuite.com' : 'https://open.feishu.cn';
     return json({
         success: true,
         message,
         awaiting_authorization: true,
         filtered_scopes: unavailableScopes.length > 0 ? unavailableScopes : undefined,
-        app_permission_url: unavailableScopes.length > 0 ? `https://open.feishu.cn/app/${appId}/permission` : undefined,
+        app_permission_url: unavailableScopes.length > 0 ? `${openDomainForResult}/app/${appId}/permission` : undefined,
     });
 }

@@ -12,7 +12,7 @@
  *   - list:   GET  /open-apis/task/v2/tasks/:task_guid/subtasks
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, parseTimeToTimestampMs, assertLarkOk, handleInvokeErrorWithAutoAuth, } from '../helpers';
+import { json, createToolContext, parseTimeToTimestampMs, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum, } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ const FeishuTaskSubtaskSchema = Type.Union([
         })),
         members: Type.Optional(Type.Array(Type.Object({
             id: Type.String({ description: '成员 open_id' }),
-            role: Type.Optional(Type.Union([Type.Literal('assignee'), Type.Literal('follower')])),
+            role: Type.Optional(StringEnum(['assignee', 'follower'])),
         }), { description: '子任务成员列表（assignee=负责人，follower=关注人）' })),
     }),
     // LIST (P1)
@@ -56,7 +56,7 @@ export function registerFeishuTaskSubtaskTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_task_subtask');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_task_subtask',
         label: 'Feishu Task Subtasks',
         description: '【以用户身份】飞书任务的子任务管理工具。当用户要求创建子任务、查询任务的子任务列表时使用。Actions: create（创建子任务）, list（列出任务的所有子任务）。',
@@ -160,5 +160,4 @@ export function registerFeishuTaskSubtaskTool(api) {
             }
         },
     }, { name: 'feishu_task_subtask' });
-    api.logger.info?.('feishu_task_subtask: Registered feishu_task_subtask tool');
 }

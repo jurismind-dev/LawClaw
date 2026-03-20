@@ -7,6 +7,7 @@
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import type { TSchema } from '@sinclair/typebox';
+import type { LarkBrand } from '../../core/types';
 export interface McpRpcSuccess {
     jsonrpc: '2.0';
     id: number | string;
@@ -49,8 +50,9 @@ export declare function setMcpEndpointOverride(endpoint: string | undefined): vo
  * @param args 工具参数
  * @param toolCallId 工具调用 ID
  * @param uat 用户访问令牌(由 invoke 权限检查后传入)
+ * @param brand 当前账号品牌，用于选择 MCP 端点域名
  */
-export declare function callMcpTool(name: string, args: Record<string, unknown>, toolCallId: string, uat: string): Promise<unknown>;
+export declare function callMcpTool(name: string, args: Record<string, unknown>, toolCallId: string, uat: string, brand?: LarkBrand): Promise<unknown>;
 /**
  * 注册 MCP 工具的通用函数 (使用 invoke 机制进行权限检查)
  */

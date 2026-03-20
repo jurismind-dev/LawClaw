@@ -13,7 +13,7 @@
  *   - get:    GET  /open-apis/task/v2/comments/:comment_id
  */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -29,7 +29,7 @@ const FeishuTaskCommentSchema = Type.Union([
     Type.Object({
         action: Type.Literal('list'),
         resource_id: Type.String({ description: '要获取评论的资源 ID（任务 GUID）' }),
-        direction: Type.Optional(Type.Union([Type.Literal('asc'), Type.Literal('desc')], {
+        direction: Type.Optional(StringEnum(['asc', 'desc'], {
             description: '排序方式（asc=从旧到新，desc=从新到旧，默认 asc）',
         })),
         page_size: Type.Optional(Type.Number({ description: '每页数量，默认 50，最大 100' })),
@@ -49,7 +49,7 @@ export function registerFeishuTaskCommentTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_task_comment');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_task_comment',
         label: 'Feishu Task Comments',
         description: '【以用户身份】飞书任务评论管理工具。当用户要求添加/查询任务评论、回复评论时使用。Actions: create（添加评论）, list（列出任务的所有评论）, get（获取单个评论详情）。',
@@ -138,5 +138,4 @@ export function registerFeishuTaskCommentTool(api) {
             }
         },
     }, { name: 'feishu_task_comment' });
-    api.logger.info?.('feishu_task_comment: Registered feishu_task_comment tool');
 }

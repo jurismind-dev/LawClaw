@@ -19,7 +19,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth } from '../helpers';
+import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -88,23 +88,12 @@ const FeishuBitableAppTableRecordSchema = Type.Union([
             description: '要返回的字段名列表（可选，不指定则返回所有字段）',
         })),
         filter: Type.Optional(Type.Object({
-            conjunction: Type.Union([Type.Literal('and'), Type.Literal('or')], {
+            conjunction: StringEnum(['and', 'or'], {
                 description: '条件逻辑：and（全部满足）or（任一满足）',
             }),
             conditions: Type.Array(Type.Object({
                 field_name: Type.String({ description: '字段名' }),
-                operator: Type.Union([
-                    Type.Literal('is'),
-                    Type.Literal('isNot'),
-                    Type.Literal('contains'),
-                    Type.Literal('doesNotContain'),
-                    Type.Literal('isEmpty'),
-                    Type.Literal('isNotEmpty'),
-                    Type.Literal('isGreater'),
-                    Type.Literal('isGreaterEqual'),
-                    Type.Literal('isLess'),
-                    Type.Literal('isLessEqual'),
-                ], { description: '运算符' }),
+                operator: StringEnum(['is', 'isNot', 'contains', 'doesNotContain', 'isEmpty', 'isNotEmpty', 'isGreater', 'isGreaterEqual', 'isLess', 'isLessEqual'], { description: '运算符' }),
                 value: Type.Optional(Type.Array(Type.String(), {
                     description: '条件值（isEmpty/isNotEmpty 时可省略）',
                 })),
@@ -131,7 +120,7 @@ export function registerFeishuBitableAppTableRecordTool(api) {
         return;
     const cfg = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_bitable_app_table_record');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_bitable_app_table_record',
         label: 'Feishu Bitable Records',
         description: '【以用户身份】飞书多维表格记录（行）管理工具。当用户要求创建/查询/更新/删除记录、搜索数据时使用。\n\n' +
@@ -445,5 +434,4 @@ export function registerFeishuBitableAppTableRecordTool(api) {
             }
         },
     }, { name: 'feishu_bitable_app_table_record' });
-    api.logger.info?.('feishu_bitable_app_table_record: Registered feishu_bitable_app_table_record tool');
 }

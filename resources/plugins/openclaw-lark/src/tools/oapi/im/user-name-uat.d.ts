@@ -10,6 +10,9 @@
  * 设计动机：TAT 调用 contact/v3/users/batch 缺少权限导致返回的用户
  * 条目不含 name 字段，而工具层搜索消息等场景运行在 UAT 上下文中，
  * 用户 token 可以读取其他用户的名称。
+ *
+ * 底层使用 contact/v3/users/basic_batch 接口（scope: contact:user.basic_profile:readonly），
+ * 每次最多查询 10 个用户。
  */
 import type { ToolClient } from '../../../core/tool-client';
 /** 从 UAT 缓存中获取用户名 */

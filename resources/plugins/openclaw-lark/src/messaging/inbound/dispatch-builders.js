@@ -114,7 +114,7 @@ export function buildInboundPayload(dc, opts) {
         WasMentioned: opts.wasMentioned,
         CommandAuthorized: dc.commandAuthorized,
         OriginatingChannel: 'feishu',
-        OriginatingTo: dc.feishuTo,
+        OriginatingTo: opts.originatingTo ?? dc.feishuTo,
     });
 }
 // ---------------------------------------------------------------------------

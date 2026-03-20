@@ -24,6 +24,12 @@ export interface SendFeishuMessageParams {
     accountId?: string;
     /** When true, the reply appears in the thread instead of main chat. */
     replyInThread?: boolean;
+    /**
+     * Optional multi-locale texts for i18n post messages.
+     * When provided, builds a multi-locale post structure (e.g. { zh_cn: ..., en_us: ... })
+     * and the `text` field is ignored. Feishu client auto-selects locale based on user language.
+     */
+    i18nTexts?: Record<string, string>;
 }
 /**
  * Parameters for sending an interactive card message.
@@ -93,6 +99,17 @@ export declare function updateCardFeishu(params: {
  * @returns A card JSON object ready to be sent via {@link sendCardFeishu}.
  */
 export declare function buildMarkdownCard(text: string): Record<string, unknown>;
+/**
+ * Build an i18n-aware Feishu Interactive Message Card containing a single
+ * markdown element with per-locale content.
+ *
+ * Uses the CardKit v2 `i18n_content` field so the Feishu client
+ * auto-selects the locale matching the user's language setting.
+ *
+ * @param i18nTexts - A map of locale to markdown text (e.g. { zh_cn: '...', en_us: '...' }).
+ * @returns A card JSON object ready to be sent via {@link sendCardFeishu}.
+ */
+export declare function buildI18nMarkdownCard(i18nTexts: Record<string, string>): Record<string, unknown>;
 /**
  * Build a markdown card and send it in one step.
  *

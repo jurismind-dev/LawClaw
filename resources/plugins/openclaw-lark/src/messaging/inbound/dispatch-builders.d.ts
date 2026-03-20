@@ -61,6 +61,7 @@ export declare function buildInboundPayload(dc: DispatchContext, opts: {
     bodyForAgent: string;
     rawBody: string;
     commandBody: string;
+    originatingTo?: string;
     senderName: string;
     senderId: string;
     messageSid: string;

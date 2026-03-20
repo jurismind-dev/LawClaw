@@ -12,7 +12,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from '@sinclair/typebox';
-import { assertLarkOk, createToolContext, getFirstAccount, handleInvokeErrorWithAutoAuth, json } from '../helpers';
+import { assertLarkOk, createToolContext, getFirstAccount, handleInvokeErrorWithAutoAuth, json, registerTool, StringEnum } from '../helpers';
 import { dateTimeToSecondsString, parseTimeRangeToSeconds } from './time-utils';
 import { formatMessageList } from './format-messages';
 import { getUATUserName, batchResolveUserNamesAsUser } from './user-name-uat';
@@ -70,7 +70,7 @@ const GetMessagesSchema = Type.Object({
     chat_id: Type.Optional(Type.String({
         description: '会话 ID（oc_xxx），支持单聊和群聊。与 open_id 互斥',
     })),
-    sort_rule: Type.Optional(Type.Union([Type.Literal('create_time_asc'), Type.Literal('create_time_desc')], {
+    sort_rule: Type.Optional(StringEnum(['create_time_asc', 'create_time_desc'], {
         description: '排序方式，默认 create_time_desc（最新消息在前）',
     })),
     page_size: Type.Optional(Type.Number({ description: '每页消息数（1-50），默认 50', minimum: 1, maximum: 50 })),
@@ -90,7 +90,7 @@ function registerGetMessages(api) {
         return;
     const config = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_im_user_get_messages');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_im_user_get_messages',
         label: 'Feishu: Get IM Messages',
         description: '【以用户身份】获取群聊或单聊的历史消息。' +
@@ -140,7 +140,7 @@ function registerGetMessages(api) {
                     as: 'user',
                 });
                 assertLarkOk(res);
-                return formatAndReturn(res, config, log, client);
+                return await formatAndReturn(res, config, log, client);
             }
             catch (err) {
                 return await handleInvokeErrorWithAutoAuth(err, config);
@@ -153,7 +153,7 @@ function registerGetMessages(api) {
 // ===========================================================================
 const GetThreadMessagesSchema = Type.Object({
     thread_id: Type.String({ description: '话题 ID（omt_xxx 格式）' }),
-    sort_rule: Type.Optional(Type.Union([Type.Literal('create_time_asc'), Type.Literal('create_time_desc')], {
+    sort_rule: Type.Optional(StringEnum(['create_time_asc', 'create_time_desc'], {
         description: '排序方式，默认 create_time_desc（最新消息在前）',
     })),
     page_size: Type.Optional(Type.Number({ description: '每页消息数（1-50），默认 50', minimum: 1, maximum: 50 })),
@@ -164,7 +164,7 @@ function registerGetThreadMessages(api) {
         return;
     const config = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_im_user_get_thread_messages');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_im_user_get_thread_messages',
         label: 'Feishu: Get Thread Messages',
         description: '【以用户身份】获取话题（thread）内的消息列表。' +
@@ -192,7 +192,7 @@ function registerGetThreadMessages(api) {
                     as: 'user',
                 });
                 assertLarkOk(res);
-                return formatAndReturn(res, config, log, client);
+                return await formatAndReturn(res, config, log, client);
             }
             catch (err) {
                 return await handleInvokeErrorWithAutoAuth(err, config);
@@ -210,13 +210,13 @@ const SearchMessagesSchema = Type.Object({
     })),
     chat_id: Type.Optional(Type.String({ description: '限定搜索范围的会话 ID（oc_xxx）' })),
     mention_ids: Type.Optional(Type.Array(Type.String({ description: '被@用户的 open_id（ou_xxx）' }), { description: '被@用户的 open_id 列表' })),
-    message_type: Type.Optional(Type.Union([Type.Literal('file'), Type.Literal('image'), Type.Literal('media')], {
+    message_type: Type.Optional(StringEnum(['file', 'image', 'media'], {
         description: '消息类型过滤：file / image / media。为空则搜索所有类型',
     })),
-    sender_type: Type.Optional(Type.Union([Type.Literal('user'), Type.Literal('bot'), Type.Literal('all')], {
+    sender_type: Type.Optional(StringEnum(['user', 'bot', 'all'], {
         description: '发送者类型：user / bot / all。默认 user',
     })),
-    chat_type: Type.Optional(Type.Union([Type.Literal('group'), Type.Literal('p2p')], {
+    chat_type: Type.Optional(StringEnum(['group', 'p2p'], {
         description: '会话类型：group（群聊）/ p2p（单聊）',
     })),
     relative_time: Type.Optional(Type.String({
@@ -317,7 +317,7 @@ function registerSearchMessages(api) {
         return;
     const config = api.config;
     const { toolClient, log } = createToolContext(api, 'feishu_im_user_search_messages');
-    api.registerTool({
+    registerTool(api, {
         name: 'feishu_im_user_search_messages',
         label: 'Feishu: Search Messages',
         description: '【以用户身份】跨会话搜索飞书消息。' +

@@ -76,7 +76,12 @@
         "appLogs": "应用日志",
         "openFolder": "打开文件夹",
         "autoStart": "自动启动网关",
-        "autoStartDesc": "LawClaw 启动时自动启动网关"
+        "autoStartDesc": "LawClaw 启动时自动启动网关",
+        "slowStartHelp": {
+            "title": "网关启动慢？",
+            "desc": "可查看排查文档。",
+            "action": "查看文档"
+        }
     },
     "updates": {
         "title": "更新",

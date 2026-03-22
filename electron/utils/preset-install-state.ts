@@ -320,3 +320,25 @@ export function writePresetInstallState(
   const statePath = getPresetInstallStatePath(clawXConfigDir);
   writeFileSync(statePath, JSON.stringify(normalizePresetInstallState(state), null, 2), 'utf-8');
 }
+
+export function forgetManagedPresetInstallItem(
+  kind: PresetInstallItemKind,
+  id: string,
+  clawXConfigDir = getClawXConfigDir()
+): boolean {
+  const normalizedId = id.trim();
+  if (!normalizedId) {
+    return false;
+  }
+
+  const state = readPresetInstallState(clawXConfigDir);
+  const key = `${kind}:${normalizedId}`;
+  if (!Object.prototype.hasOwnProperty.call(state.managedItems, key)) {
+    return false;
+  }
+
+  delete state.managedItems[key];
+  state.updatedAt = new Date().toISOString();
+  writePresetInstallState(state, clawXConfigDir);
+  return true;
+}

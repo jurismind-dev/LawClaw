@@ -54,6 +54,11 @@
             "title": "Environment issue detected",
             "desc": "Please ensure OpenClaw is properly installed. Check the logs for details."
         },
+        "slowStartHelp": {
+            "title": "Gateway starting slowly?",
+            "desc": "Open the troubleshooting guide.",
+            "action": "View Guide"
+        },
         "logs": {
             "title": "Application Logs",
             "openFolder": "Open Log Folder",

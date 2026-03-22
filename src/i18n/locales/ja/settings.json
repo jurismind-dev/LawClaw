@@ -69,7 +69,12 @@
         "appLogs": "アプリケーションログ",
         "openFolder": "フォルダーを開く",
         "autoStart": "ゲートウェイ自動起動",
-        "autoStartDesc": "LawClaw 起動時にゲートウェイを自動起動"
+        "autoStartDesc": "LawClaw 起動時にゲートウェイを自動起動",
+        "slowStartHelp": {
+            "title": "ゲートウェイの起動が遅いですか？",
+            "desc": "トラブルシューティングガイドを確認できます。",
+            "action": "ガイドを見る"
+        }
     },
     "updates": {
         "title": "アップデート",

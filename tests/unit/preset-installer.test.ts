@@ -14,7 +14,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PresetInstaller } from '../../electron/utils/preset-installer';
-import { readPresetInstallState } from '../../electron/utils/preset-install-state';
+import {
+  forgetManagedPresetInstallItem,
+  readPresetInstallState,
+} from '../../electron/utils/preset-install-state';
 
 interface PluginInstallSnapshot {
   pluginId: string;
@@ -651,6 +654,41 @@ describe('PresetInstaller', () => {
     const rerun = await context.installer.run('upgrade');
     expect(rerun.success).toBe(true);
     expect(existsSync(installedSkillDir)).toBe(true);
+  });
+
+  it('应用内卸载预置 skill 时会清理 managed state，避免再次触发 pending', async () => {
+    const context = createContext();
+    const skillArtifact = createDirArtifact(context, 'skills/user-removed-skill', 'user-removed-skill', '1.0.0');
+    writeManifest(context, {
+      presetVersion: '2026.03.11.10',
+      items: [
+        {
+          kind: 'skill',
+          id: 'user-removed-skill',
+          targetVersion: '1.0.0',
+          artifactPath: skillArtifact.path,
+          sha256: skillArtifact.sha256,
+          installMode: 'dir',
+        },
+      ],
+    });
+
+    const firstRun = await context.installer.run('setup');
+    expect(firstRun.success).toBe(true);
+    expect(firstRun.installed).toContain('skill:user-removed-skill');
+
+    const installedSkillDir = join(context.openClawSkillsDir, 'user-removed-skill');
+    rmSync(installedSkillDir, { recursive: true, force: true });
+    expect(existsSync(installedSkillDir)).toBe(false);
+
+    expect(forgetManagedPresetInstallItem('skill', 'user-removed-skill', context.clawXConfigDir)).toBe(true);
+
+    const state = readPresetInstallState(context.clawXConfigDir);
+    expect(state.managedItems['skill:user-removed-skill']).toBeUndefined();
+
+    const status = context.installer.getStatus();
+    expect(status.pending).toBe(false);
+    expect(status.blockedReason).toBeUndefined();
   });
 
   it('仅升级不降级：已存在高版本 skill 会跳过', async () => {

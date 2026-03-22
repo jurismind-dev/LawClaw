@@ -76,7 +76,12 @@
         "appLogs": "Application Logs",
         "openFolder": "Open Folder",
         "autoStart": "Auto-start Gateway",
-        "autoStartDesc": "Start Gateway when LawClaw launches"
+        "autoStartDesc": "Start Gateway when LawClaw launches",
+        "slowStartHelp": {
+            "title": "Gateway starting slowly?",
+            "desc": "Open the troubleshooting guide.",
+            "action": "View Guide"
+        }
     },
     "updates": {
         "title": "Updates",

@@ -36,6 +36,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { toast } from 'sonner';
+import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
 import {
   CHANNEL_META,
   getPrimaryChannels,
@@ -348,6 +349,8 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
   const { t } = useTranslation('setup');
   const gatewayStatus = useGatewayStore((state) => state.status);
   const startGateway = useGatewayStore((state) => state.start);
+  const showGatewaySlowStartGuide =
+    window.electron.platform === 'win32' || window.electron.platform === 'darwin';
 
   const [checks, setChecks] = useState({
     nodejs: { status: 'checking' as 'checking' | 'success' | 'error', message: '' },
@@ -517,6 +520,14 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     await startGateway();
   };
 
+  const handleOpenGatewaySlowStartGuide = async () => {
+    try {
+      await window.electron.ipcRenderer.invoke('shell:openExternal', GATEWAY_SLOW_START_GUIDE_URL);
+    } catch {
+      // ignore
+    }
+  };
+
   const handleShowLogs = async () => {
     try {
       const logs = await window.electron.ipcRenderer.invoke('log:readFile', 100) as string;
@@ -616,10 +627,10 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         </div>
         <div className="grid grid-cols-[1fr_auto] items-center gap-4 p-3 rounded-lg bg-muted/50">
           <div className="flex items-center gap-2 text-left">
-            <span>Gateway Service</span>
+            <span>{t('runtime.gateway')}</span>
             {checks.gateway.status === 'error' && (
               <Button variant="outline" size="sm" onClick={handleStartGateway}>
-                Start Gateway
+                {t('runtime.startGateway')}
               </Button>
             )}
           </div>
@@ -627,6 +638,25 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
             {renderStatus(checks.gateway.status, checks.gateway.message)}
           </div>
         </div>
+        {showGatewaySlowStartGuide && (
+          <div className="rounded-lg bg-muted/30 px-3 py-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-left text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{t('runtime.slowStartHelp.title')}</span>
+                <span className="ml-2">{t('runtime.slowStartHelp.desc')}</span>
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 shrink-0 self-start px-2 text-muted-foreground hover:text-foreground sm:self-auto"
+                onClick={handleOpenGatewaySlowStartGuide}
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                {t('runtime.slowStartHelp.action')}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {(checks.nodejs.status === 'error' || checks.openclaw.status === 'error') && (

@@ -30,6 +30,7 @@ import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
+import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
 type ControlUiInfo = {
   url: string;
   token: string;
@@ -61,6 +62,7 @@ export function Settings() {
   const [openclawCliError, setOpenclawCliError] = useState<string | null>(null);
 
   const isWindows = window.electron.platform === 'win32';
+  const showGatewaySlowStartGuide = isWindows || window.electron.platform === 'darwin';
   const showCliTools = true;
   const [showLogs, setShowLogs] = useState(false);
   const [logContent, setLogContent] = useState('');
@@ -144,6 +146,14 @@ export function Settings() {
       toast.success(t('developer.tokenCopied'));
     } catch (error) {
       toast.error(`Failed to copy token: ${String(error)}`);
+    }
+  };
+
+  const handleOpenGatewaySlowStartGuide = async () => {
+    try {
+      await window.electron.ipcRenderer.invoke('shell:openExternal', GATEWAY_SLOW_START_GUIDE_URL);
+    } catch {
+      // ignore
     }
   };
 
@@ -314,6 +324,26 @@ export function Settings() {
               </Button>
             </div>
           </div>
+
+          {showGatewaySlowStartGuide && (
+            <div className="rounded-lg bg-muted/30 px-3 py-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">{t('gateway.slowStartHelp.title')}</span>
+                  <span className="ml-2">{t('gateway.slowStartHelp.desc')}</span>
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 shrink-0 self-start px-2 text-muted-foreground hover:text-foreground sm:self-auto"
+                  onClick={handleOpenGatewaySlowStartGuide}
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  {t('gateway.slowStartHelp.action')}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {showLogs && (
             <div className="mt-4 p-4 rounded-lg bg-black/10 dark:bg-black/40 border border-border">

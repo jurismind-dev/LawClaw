@@ -93,6 +93,7 @@ import {
   FEISHU_OFFICIAL_PLUGIN_NPM_SPEC,
   findBundledFeishuOfficialPluginDir,
 } from '../utils/feishu-official-plugin';
+import { forgetManagedPresetInstallItem } from '../utils/preset-install-state';
 import {
   applyLawClawProviderSelection,
   clearLawClawProviderSelection,
@@ -2411,6 +2412,11 @@ function registerMarketplaceHandlers(channelPrefix: SkillsMarketChannel, service
   ipcMain.handle(`${channelPrefix}:uninstall`, async (_, params: ClawHubUninstallParams) => {
     try {
       await service.uninstall(params);
+      try {
+        forgetManagedPresetInstallItem('skill', params.slug);
+      } catch (error) {
+        logger.warn(`Failed to clear preset-managed skill state after uninstall: ${params.slug}`, error);
+      }
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };

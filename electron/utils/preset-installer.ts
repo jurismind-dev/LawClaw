@@ -1010,7 +1010,7 @@ export class PresetInstaller {
         installPath = extracted.packageDir;
       }
 
-      if (item.id === 'qqbot') {
+      if (installMode === 'tgz') {
         try {
           sanitizePluginPackageManifestForLocalInstall(installPath);
         } catch (error) {

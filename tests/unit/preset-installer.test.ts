@@ -725,10 +725,10 @@ describe('PresetInstaller', () => {
     expect(installedPkg.version).toBe('2.0.0');
   });
 
-  it('qqbot tgz 预置安装前会清理 package.json dependencies', async () => {
+  it('plugin tgz 预置安装前会清理 package.json dependencies', async () => {
     const context = createContext();
-    const artifact = createPluginTgzArtifact(context, 'plugins/qqbot-1.5.0.tgz', {
-      name: '@sliverp/qqbot',
+    const artifact = createPluginTgzArtifact(context, 'plugins/weather-bot-1.5.0.tgz', {
+      name: '@example/weather-bot',
       version: '1.5.0',
       openclaw: { extensions: ['./index.js'] },
       dependencies: {
@@ -745,7 +745,7 @@ describe('PresetInstaller', () => {
       items: [
         {
           kind: 'plugin',
-          id: 'qqbot',
+          id: 'weather-bot',
           targetVersion: '1.5.0',
           artifactPath: artifact.path,
           sha256: artifact.sha256,
@@ -757,7 +757,7 @@ describe('PresetInstaller', () => {
     const result = await context.installer.run('setup');
     expect(result.success).toBe(true);
 
-    const installSnapshot = context.pluginInstallSnapshots.find((entry) => entry.pluginId === 'qqbot');
+    const installSnapshot = context.pluginInstallSnapshots.find((entry) => entry.pluginId === 'weather-bot');
     expect(installSnapshot).toBeTruthy();
     expect(installSnapshot?.dependencies).toEqual({});
   });

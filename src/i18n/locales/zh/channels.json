@@ -100,6 +100,23 @@
             "existingAppSecretPlaceholder": "请输入应用密钥",
             "saveExisting": "绑定已有应用",
             "savingExisting": "正在校验并绑定..."
+        },
+        "weixin": {
+            "statusLabel": "当前状态",
+            "statusIdle": "等待生成微信绑定二维码",
+            "statusLoading": "正在准备微信绑定流程...",
+            "statusInstalling": "正在安装或校验微信插件...",
+            "statusWaiting": "二维码已就绪，等待微信扫码",
+            "statusPolling": "已扫码，等待微信确认绑定",
+            "statusConfigured": "微信已绑定到当前 LawClaw",
+            "pluginReady": "微信插件已就绪",
+            "scanTip": "请使用微信扫描二维码完成绑定。",
+            "start": "生成二维码",
+            "starting": "正在生成二维码...",
+            "refresh": "刷新二维码",
+            "clear": "删除绑定",
+            "clearSuccess": "微信绑定已删除",
+            "configuredHint": "当前微信已绑定。删除绑定后，再次生成二维码即可重新绑定。"
         }
     },
     "meta": {
@@ -229,6 +246,16 @@
                 "创建完成后，LawClaw 会自动写入默认飞书频道配置并重启网关。"
             ]
         },
+        "openclaw-weixin": {
+            "description": "通过腾讯微信 openclaw-weixin 插件连接微信，可扫码绑定并在需要时删除绑定",
+            "docsUrl": "https://www.npmjs.com/package/@tencent-weixin/openclaw-weixin-cli",
+            "instructions": [
+                "LawClaw 会在线安装 openclaw-weixin 插件。",
+                "点击“生成二维码”，等待界面生成微信绑定二维码。",
+                "使用微信扫描二维码，完成当前 LawClaw 实例的绑定。",
+                "如需重新绑定，可先删除绑定并清理当前 openclaw.json 配置，再重新生成二维码。"
+            ]
+        },
         "imessage": {
             "description": "通过 BlueBubbles (macOS) 连接 iMessage",
             "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/bluebubbles",
@@ -339,26 +366,6 @@
                 "前往 Mattermost 集成",
                 "创建一个新的 Bot 账户",
                 "复制访问令牌"
-            ]
-        },
-        "qqbot": {
-            "description": "通过 @sliverp/qqbot 插件连接 QQ",
-            "docsUrl": "https://www.npmjs.com/package/@sliverp/qqbot",
-            "fields": {
-                "appId": {
-                    "label": "App ID",
-                    "placeholder": "您的 QQ App ID"
-                },
-                "clientSecret": {
-                    "label": "Client Secret",
-                    "placeholder": "您的 QQ Client Secret"
-                }
-            },
-            "instructions": [
-                "阅读 @sliverp/qqbot 插件文档并完成基础安装。",
-                "在 QQ 开发者平台获取 App ID 和 Client Secret。",
-                "填写 App ID 和 Client Secret 并保存渠道配置。",
-                "完成 QQ 插件安装后继续引导流程。"
             ]
         }
     },

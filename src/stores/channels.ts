@@ -3,7 +3,7 @@
  * Manages messaging channel state
  */
 import { create } from 'zustand';
-import type { Channel, ChannelType } from '../types/channel';
+import { CHANNEL_META, type Channel, type ChannelType } from '../types/channel';
 
 interface AddChannelParams {
   type: ChannelType;
@@ -26,6 +26,10 @@ interface ChannelsState {
   setChannels: (channels: Channel[]) => void;
   updateChannel: (channelId: string, updates: Partial<Channel>) => void;
   clearError: () => void;
+}
+
+function isSupportedChannelType(channelId: string): channelId is ChannelType {
+  return Object.prototype.hasOwnProperty.call(CHANNEL_META, channelId);
 }
 
 export const useChannelsStore = create<ChannelsState>((set, get) => ({
@@ -69,6 +73,10 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         // Parse the complex channels.status response into simple Channel objects
         const channelOrder = data.channelOrder || Object.keys(data.channels || {});
         for (const channelId of channelOrder) {
+          if (!isSupportedChannelType(channelId)) {
+            continue;
+          }
+
           const summary = (data.channels as Record<string, unknown> | undefined)?.[channelId] as Record<string, unknown> | undefined;
           const configured =
             typeof summary?.configured === 'boolean'
@@ -116,7 +124,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
           channels.push({
             id: `${channelId}-${primaryAccount?.accountId || 'default'}`,
-            type: channelId as ChannelType,
+            type: channelId,
             name: primaryAccount?.name || channelId,
             status,
             accountId: primaryAccount?.accountId,
@@ -179,12 +187,13 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   deleteChannel: async (channelId) => {
-    // Extract channel type from the channelId (format: "channelType-accountId")
-    const channelType = channelId.split('-')[0];
+    const channel = get().channels.find((item) => item.id === channelId);
+    const channelType = channel?.type || (channelId as ChannelType);
+    const accountId = channel?.accountId;
 
     try {
       // Delete the channel configuration from openclaw.json
-      await window.electron.ipcRenderer.invoke('channel:deleteConfig', channelType);
+      await window.electron.ipcRenderer.invoke('channel:deleteConfig', channelType, accountId);
     } catch (error) {
       console.error('Failed to delete channel config:', error);
     }
@@ -192,12 +201,18 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     try {
       await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
-        'channels.delete',
-        { channelId: channelType }
+        'channels.logout',
+        { channel: channelType, accountId }
       );
     } catch (error) {
       // Continue with local deletion even if gateway fails
-      console.error('Failed to delete channel from gateway:', error);
+      console.error('Failed to log out channel from gateway:', error);
+    }
+
+    try {
+      await window.electron.ipcRenderer.invoke('gateway:restart');
+    } catch (error) {
+      console.error('Failed to restart gateway after channel deletion:', error);
     }
 
     // Remove from local state

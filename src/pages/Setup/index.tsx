@@ -30,6 +30,8 @@ import { Select } from '@/components/ui/select';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { FeishuOfficialOnboardingPanel } from '@/components/channels/FeishuOfficialOnboardingPanel';
+import { WeixinOnboardingPanel } from '@/components/channels/WeixinOnboardingPanel';
+import { ChannelIcon } from '@/components/channels/ChannelIcon';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
@@ -1442,8 +1444,15 @@ function ProviderContent({
 
 // ==================== Setup Channel Content ====================
 
-function renderSetupChannelIcon(_type: ChannelType, icon: string) {
-  return <span className="text-3xl">{icon}</span>;
+function renderSetupChannelIcon(type: ChannelType) {
+  return (
+    <ChannelIcon
+      type={type}
+      className="h-12 w-12"
+      imageClassName="h-9 w-9"
+      fallbackClassName="text-3xl"
+    />
+  );
 }
 
 function SetupChannelContent() {
@@ -1464,7 +1473,7 @@ function SetupChannelContent() {
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const meta: ChannelMeta | null = selectedChannel ? CHANNEL_META[selectedChannel] : null;
-  const primaryChannels = getPrimaryChannels().filter((type) => type !== 'qqbot');
+  const primaryChannels = getPrimaryChannels();
 
   const applyJurismindStatus = useCallback((status: unknown) => {
     const data = status as {
@@ -1784,7 +1793,14 @@ function SetupChannelContent() {
             {primaryChannels.map((type) => {
               const channelMeta = CHANNEL_META[type];
               const isJurismind = type === 'jurismind';
-              if (!isJurismind && type !== 'feishu' && channelMeta.connectionType !== 'token') return null;
+              if (
+                !isJurismind
+                && type !== 'feishu'
+                && type !== 'openclaw-weixin'
+                && channelMeta.connectionType !== 'token'
+              ) {
+                return null;
+              }
               const isComingSoon = channelMeta.comingSoon === true && !isJurismind;
               const isConfigured = isJurismind ? jurismindConfigured : false;
               return (
@@ -1809,7 +1825,7 @@ function SetupChannelContent() {
                   )}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    {renderSetupChannelIcon(type, channelMeta.icon)}
+                    {renderSetupChannelIcon(type)}
                     {isComingSoon ? (
                       <span className="text-xs rounded bg-secondary text-secondary-foreground px-2 py-0.5">
                         {t('channels:comingSoonBadge')}
@@ -1951,14 +1967,14 @@ function SetupChannelContent() {
         </button>
         <div>
           <h2 className="text-xl font-semibold flex items-center gap-2">
-            {meta && renderSetupChannelIcon(selectedChannel, meta.icon)}
+            {meta && renderSetupChannelIcon(selectedChannel)}
             {t('channel.configure', { name: meta?.name })}
           </h2>
           <p className="text-muted-foreground text-sm mt-1">{t(meta?.description || '')}</p>
         </div>
       </div>
 
-      {selectedChannel !== 'feishu' && (
+      {selectedChannel !== 'feishu' && selectedChannel !== 'openclaw-weixin' && (
         <div className="p-3 rounded-lg bg-muted/50 text-sm">
           <div className="flex items-center justify-between mb-2">
             <p className="font-medium text-foreground">{t('channel.howTo')}</p>
@@ -1994,6 +2010,13 @@ function SetupChannelContent() {
 
       {selectedChannel === 'feishu' ? (
         <FeishuOfficialOnboardingPanel
+          onConnected={() => {
+            setValidationError(null);
+            setSaved(true);
+          }}
+        />
+      ) : selectedChannel === 'openclaw-weixin' ? (
+        <WeixinOnboardingPanel
           onConnected={() => {
             setValidationError(null);
             setSaved(true);

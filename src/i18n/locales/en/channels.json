@@ -100,6 +100,23 @@
             "existingAppSecretPlaceholder": "Enter your app secret",
             "saveExisting": "Bind Existing App",
             "savingExisting": "Validating and binding..."
+        },
+        "weixin": {
+            "statusLabel": "Status",
+            "statusIdle": "Ready to generate a Weixin binding QR code",
+            "statusLoading": "Preparing the Weixin binding flow...",
+            "statusInstalling": "Installing or verifying the Weixin plugin...",
+            "statusWaiting": "QR code is ready. Waiting for Weixin scan",
+            "statusPolling": "Scanned. Waiting for Weixin to confirm binding",
+            "statusConfigured": "Weixin is bound to this LawClaw instance",
+            "pluginReady": "Weixin plugin is ready",
+            "scanTip": "Scan the QR code with Weixin to finish binding.",
+            "start": "Generate QR Code",
+            "starting": "Generating QR code...",
+            "refresh": "Refresh QR",
+            "clear": "Delete Binding",
+            "clearSuccess": "Weixin binding deleted",
+            "configuredHint": "This Weixin account is already bound. Delete the binding and generate a new QR code to bind again."
         }
     },
     "meta": {
@@ -229,6 +246,16 @@
                 "After creation, LawClaw writes the default Feishu channel config and restarts the gateway automatically."
             ]
         },
+        "openclaw-weixin": {
+            "description": "Connect Weixin through the Tencent openclaw-weixin plugin with QR binding and binding removal support",
+            "docsUrl": "https://www.npmjs.com/package/@tencent-weixin/openclaw-weixin-cli",
+            "instructions": [
+                "LawClaw installs the openclaw-weixin plugin online.",
+                "Click \"Generate QR Code\" and wait for the Weixin binding QR code to appear.",
+                "Scan it with Weixin to bind the current LawClaw instance.",
+                "If you need to bind again, delete the binding first to clear the current openclaw.json config, then generate a new QR code."
+            ]
+        },
         "imessage": {
             "description": "Connect iMessage via BlueBubbles (macOS)",
             "docsUrl": "https://docs.openclaw.ai/channels/bluebubbles",
@@ -339,26 +366,6 @@
                 "Go to Mattermost Integrations",
                 "Create a new Bot Account",
                 "Copy the access token"
-            ]
-        },
-        "qqbot": {
-            "description": "Connect QQ via the @sliverp/qqbot plugin",
-            "docsUrl": "https://www.npmjs.com/package/@sliverp/qqbot",
-            "fields": {
-                "appId": {
-                    "label": "App ID",
-                    "placeholder": "Your QQ App ID"
-                },
-                "clientSecret": {
-                    "label": "Client Secret",
-                    "placeholder": "Your QQ client secret"
-                }
-            },
-            "instructions": [
-                "Install and open the @sliverp/qqbot plugin documentation.",
-                "Create or locate your QQ bot App ID and client secret.",
-                "Fill in App ID and Client Secret, then save the channel configuration.",
-                "Continue setup after QQ plugin installation is complete."
             ]
         }
     },

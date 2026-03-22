@@ -10,6 +10,12 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { getOpenClawResolvedDir } from './paths';
 import { applyFeishuChannelDefaults } from './feishu-channel-defaults';
+import {
+    WEIXIN_CHANNEL_ID,
+    clearWeixinStoredState,
+    hasStoredWeixinCredentials,
+    normalizeWeixinAccountId,
+} from './weixin-channel-state';
 import * as logger from './logger';
 import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
 
@@ -43,6 +49,10 @@ export interface OpenClawConfig {
     plugins?: PluginsConfig;
     bindings?: unknown[];
     [key: string]: unknown;
+}
+
+export interface DeleteChannelConfigResult {
+    stillConfigured: boolean;
 }
 
 interface BindingMatch {
@@ -327,44 +337,6 @@ export async function saveChannelConfig(
         }).config;
     }
 
-    // Special handling for QQ Bot:
-    // - allowFrom: comma separated string -> string[]
-    // - markdownSupport: string -> boolean
-    if (channelType === 'qqbot') {
-        const existingConfig = currentConfig.channels[channelType] || {};
-        const { allowFrom, markdownSupport, ...restConfig } = transformedConfig;
-        transformedConfig = { ...restConfig };
-
-        let allowFromList: string[] = [];
-        if (Array.isArray(allowFrom)) {
-            allowFromList = allowFrom
-                .filter((value): value is string => typeof value === 'string')
-                .map((value) => value.trim())
-                .filter((value) => value.length > 0);
-        } else if (typeof allowFrom === 'string') {
-            allowFromList = allowFrom.split(',')
-                .map((value) => value.trim())
-                .filter((value) => value.length > 0);
-        } else if (Array.isArray(existingConfig.allowFrom)) {
-            allowFromList = existingConfig.allowFrom
-                .filter((value): value is string => typeof value === 'string')
-                .map((value) => value.trim())
-                .filter((value) => value.length > 0);
-        }
-
-        transformedConfig.allowFrom = allowFromList.length > 0 ? allowFromList : ['*'];
-
-        if (typeof markdownSupport === 'boolean') {
-            transformedConfig.markdownSupport = markdownSupport;
-        } else if (typeof markdownSupport === 'string') {
-            transformedConfig.markdownSupport = markdownSupport.toLowerCase() !== 'false';
-        } else if (typeof existingConfig.markdownSupport === 'boolean') {
-            transformedConfig.markdownSupport = existingConfig.markdownSupport;
-        } else {
-            transformedConfig.markdownSupport = true;
-        }
-    }
-
     // Merge with existing config
     currentConfig.channels[channelType] = {
         ...currentConfig.channels[channelType],
@@ -426,22 +398,6 @@ export async function getChannelFormValues(channelType: string): Promise<Record<
                 values[key] = value;
             }
         }
-    } else if (channelType === 'qqbot') {
-        if (Array.isArray(saved.allowFrom)) {
-            values.allowFrom = saved.allowFrom.join(', ');
-        }
-
-        if (typeof saved.markdownSupport === 'boolean') {
-            values.markdownSupport = saved.markdownSupport ? 'true' : 'false';
-        } else {
-            values.markdownSupport = 'true';
-        }
-
-        for (const [key, value] of Object.entries(saved)) {
-            if (typeof value === 'string' && key !== 'enabled') {
-                values[key] = value;
-            }
-        }
     } else {
         for (const [key, value] of Object.entries(saved)) {
             if (typeof value === 'string' && key !== 'enabled') {
@@ -453,7 +409,83 @@ export async function getChannelFormValues(channelType: string): Promise<Record<
     return Object.keys(values).length > 0 ? values : undefined;
 }
 
-export async function deleteChannelConfig(channelType: string): Promise<void> {
+function cleanupPluginAllowEntry(config: OpenClawConfig, pluginId: string): void {
+    if (!config.plugins) {
+        return;
+    }
+
+    if (config.plugins.entries?.[pluginId]) {
+        delete config.plugins.entries[pluginId];
+        if (Object.keys(config.plugins.entries).length === 0) {
+            delete config.plugins.entries;
+        }
+    }
+
+    if (Array.isArray(config.plugins.allow)) {
+        const nextAllow = config.plugins.allow.filter((item) => item !== pluginId);
+        if (nextAllow.length > 0) {
+            config.plugins.allow = nextAllow;
+        } else {
+            delete config.plugins.allow;
+        }
+    }
+
+    if (Object.keys(config.plugins).length === 0) {
+        delete config.plugins;
+    }
+}
+
+async function deleteWeixinChannelConfig(accountId?: string): Promise<DeleteChannelConfigResult> {
+    const currentConfig = await readOpenClawConfig();
+    const normalizedAccountId = accountId ? normalizeWeixinAccountId(accountId) : undefined;
+    const clearResult = await clearWeixinStoredState(normalizedAccountId);
+    const stillConfigured = await hasStoredWeixinCredentials();
+
+    const channelSection = currentConfig.channels?.[WEIXIN_CHANNEL_ID];
+    if (channelSection && !stillConfigured) {
+        delete currentConfig.channels?.[WEIXIN_CHANNEL_ID];
+    } else if (channelSection && normalizedAccountId && isRecord(channelSection)) {
+        const nextSection = { ...channelSection };
+        if (isRecord(nextSection.accounts)) {
+            const nextAccounts = { ...nextSection.accounts };
+            delete nextAccounts[normalizedAccountId];
+            if (Object.keys(nextAccounts).length > 0) {
+                nextSection.accounts = nextAccounts;
+            } else {
+                delete nextSection.accounts;
+            }
+        }
+        currentConfig.channels![WEIXIN_CHANNEL_ID] = nextSection;
+    }
+
+    if (currentConfig.channels && Object.keys(currentConfig.channels).length === 0) {
+        delete currentConfig.channels;
+    }
+
+    if (!stillConfigured) {
+        cleanupPluginAllowEntry(currentConfig, WEIXIN_CHANNEL_ID);
+    }
+
+    await writeOpenClawConfig(currentConfig);
+    console.log(
+        normalizedAccountId
+            ? `Deleted Weixin channel state for account ${normalizedAccountId}`
+            : 'Deleted all Weixin channel state'
+    );
+
+    return {
+        stillConfigured: stillConfigured || clearResult.remainingAccountIds.length > 0,
+    };
+}
+
+export async function deleteChannelConfig(
+    channelType: string,
+    accountId?: string
+): Promise<DeleteChannelConfigResult> {
+    if (normalizeChannelId(channelType) === WEIXIN_CHANNEL_ID) {
+        return deleteWeixinChannelConfig(accountId);
+    }
+
     const currentConfig = await readOpenClawConfig();
 
     if (currentConfig.channels?.[channelType]) {
@@ -486,6 +518,8 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
             console.error('Failed to delete WhatsApp credentials:', error);
         }
     }
+
+    return { stillConfigured: false };
 }
 
 export async function listConfiguredChannels(): Promise<string[]> {
@@ -493,9 +527,12 @@ export async function listConfiguredChannels(): Promise<string[]> {
     const channels: string[] = [];
 
     if (config.channels) {
-        channels.push(...Object.keys(config.channels).filter(
-            (channelType) => config.channels![channelType]?.enabled !== false
-        ));
+        channels.push(...Object.keys(config.channels).filter((channelType) => {
+            if (channelType === WEIXIN_CHANNEL_ID) {
+                return false;
+            }
+            return config.channels![channelType]?.enabled !== false;
+        }));
     }
 
     // Check for WhatsApp credentials directory
@@ -521,7 +558,11 @@ export async function listConfiguredChannels(): Promise<string[]> {
         // Ignore errors checking whatsapp dir
     }
 
-    return channels;
+    if (await hasStoredWeixinCredentials()) {
+        channels.push(WEIXIN_CHANNEL_ID);
+    }
+
+    return Array.from(new Set(channels));
 }
 
 export async function setChannelEnabled(channelType: string, enabled: boolean): Promise<void> {

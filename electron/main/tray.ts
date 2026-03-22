@@ -7,6 +7,20 @@ import { join } from 'path';
 
 let tray: Tray | null = null;
 
+function formatTrayStatus(status: string): string {
+  const normalized = status.trim().toLowerCase();
+  switch (normalized) {
+    case 'running':
+      return '运行中';
+    case 'stopped':
+      return '未运行';
+    case 'error':
+      return '异常';
+    default:
+      return status;
+  }
+}
+
 /**
  * Resolve the icons directory path (works in both dev and packaged mode)
  */
@@ -57,7 +71,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   tray = new Tray(icon);
   
   // Set tooltip
-  tray.setToolTip('LawClaw - AI Assistant');
+  tray.setToolTip('劳有钳 (LawClaw) - AI 法律助手');
   
   const showWindow = () => {
     if (mainWindow.isDestroyed()) return;
@@ -68,18 +82,18 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   // Create context menu
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show LawClaw',
+      label: '显示劳有钳',
       click: showWindow,
     },
     {
       type: 'separator',
     },
     {
-      label: 'Gateway Status',
+      label: '网关状态',
       enabled: false,
     },
     {
-      label: '  Running',
+      label: '  运行中',
       type: 'checkbox',
       checked: true,
       enabled: false,
@@ -88,10 +102,10 @@ export function createTray(mainWindow: BrowserWindow): Tray {
       type: 'separator',
     },
     {
-      label: 'Quick Actions',
+      label: '快捷操作',
       submenu: [
         {
-          label: 'Open Dashboard',
+          label: '打开仪表盘',
           click: () => {
             if (mainWindow.isDestroyed()) return;
             mainWindow.show();
@@ -99,7 +113,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
           },
         },
         {
-          label: 'Open Chat',
+          label: '打开聊天',
           click: () => {
             if (mainWindow.isDestroyed()) return;
             mainWindow.show();
@@ -107,7 +121,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
           },
         },
         {
-          label: 'Open Settings',
+          label: '打开设置',
           click: () => {
             if (mainWindow.isDestroyed()) return;
             mainWindow.show();
@@ -120,7 +134,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
       type: 'separator',
     },
     {
-      label: 'Check for Updates...',
+      label: '检查更新...',
       click: () => {
         if (mainWindow.isDestroyed()) return;
         mainWindow.webContents.send('update:check');
@@ -130,7 +144,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
       type: 'separator',
     },
     {
-      label: 'Quit LawClaw',
+      label: '退出劳有钳',
       click: () => {
         app.quit();
       },
@@ -165,7 +179,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
  */
 export function updateTrayStatus(status: string): void {
   if (tray) {
-    tray.setToolTip(`LawClaw - ${status}`);
+    tray.setToolTip(`劳有钳 (LawClaw) - ${formatTrayStatus(status)}`);
   }
 }
 

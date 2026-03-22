@@ -34,9 +34,10 @@ import { useGatewayStore } from '@/stores/gateway';
 import { StatusBadge, type Status } from '@/components/common/StatusBadge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { FeishuOfficialOnboardingPanel } from '@/components/channels/FeishuOfficialOnboardingPanel';
+import { WeixinOnboardingPanel } from '@/components/channels/WeixinOnboardingPanel';
+import { ChannelIcon } from '@/components/channels/ChannelIcon';
 import { cn } from '@/lib/utils';
 import {
-  CHANNEL_ICONS,
   CHANNEL_NAMES,
   CHANNEL_META,
   getPrimaryChannels,
@@ -64,7 +65,6 @@ export function Channels() {
   const [jurismindError, setJurismindError] = useState<string | null>(null);
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null);
   const [configuredTypes, setConfiguredTypes] = useState<string[]>([]);
-  const [isQqPluginInstalled, setIsQqPluginInstalled] = useState(false);
 
   // Fetch channels on mount
   useEffect(() => {
@@ -86,27 +86,9 @@ export function Channels() {
     }
   }, []);
 
-  const fetchPluginInstallStatus = useCallback(async () => {
-    try {
-      const result = await window.electron.ipcRenderer.invoke(
-        'openclaw:isPluginInstalled',
-        'qqbot'
-      ) as { success?: boolean; installed?: boolean };
-      if (result?.success) {
-        setIsQqPluginInstalled(result.installed === true);
-      } else {
-        setIsQqPluginInstalled(false);
-      }
-    } catch {
-      setIsQqPluginInstalled(false);
-    }
-  }, []);
-
   useEffect(() => {
     void fetchConfiguredTypes();
-
-    void fetchPluginInstallStatus();
-  }, [fetchConfiguredTypes, fetchPluginInstallStatus]);
+  }, [fetchConfiguredTypes]);
 
   useEffect(() => {
     if (gatewayStatus.state !== 'running') {
@@ -115,21 +97,19 @@ export function Channels() {
 
     void fetchChannels();
     void fetchConfiguredTypes();
-    void fetchPluginInstallStatus();
-  }, [gatewayStatus.state, fetchChannels, fetchConfiguredTypes, fetchPluginInstallStatus]);
+  }, [gatewayStatus.state, fetchChannels, fetchConfiguredTypes]);
 
   useEffect(() => {
     const unsubscribe = window.electron.ipcRenderer.on('gateway:channel-status', () => {
       fetchChannels();
       fetchConfiguredTypes();
-      fetchPluginInstallStatus();
     });
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
     };
-  }, [fetchChannels, fetchConfiguredTypes, fetchPluginInstallStatus]);
+  }, [fetchChannels, fetchConfiguredTypes]);
 
   const applyJurismindStatus = useCallback((status: unknown) => {
     const data = status as {
@@ -337,9 +317,7 @@ export function Channels() {
   }, [applyJurismindStatus, showJurismindHint, startJurismindPairing]);
 
   // Get channel types to display
-  const displayedChannelTypes = getPrimaryChannels().filter(
-    (type) => type !== 'qqbot' || isQqPluginInstalled
-  );
+  const displayedChannelTypes = getPrimaryChannels();
   const addDialogChannelTypes = displayedChannelTypes.filter((type) => type !== 'jurismind');
 
   // Connected/disconnected channel counts
@@ -369,7 +347,6 @@ export function Channels() {
             onClick={() => {
               fetchChannels();
               fetchConfiguredTypes();
-              fetchPluginInstallStatus();
             }}
           >
             <RefreshCw className="h-4 w-4 mr-2" />
@@ -510,7 +487,12 @@ export function Channels() {
                   }}
                   disabled={isComingSoon}
                 >
-                  <span className="text-3xl">{meta.icon}</span>
+                  <ChannelIcon
+                    type={type}
+                    className="h-12 w-12"
+                    imageClassName="h-9 w-9"
+                    fallbackClassName="text-3xl"
+                  />
                   <p className="font-medium mt-2">{meta.name}</p>
                   <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                     {t(meta.description)}
@@ -671,9 +653,12 @@ function ChannelCard({ channel, onDelete }: ChannelCardProps) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">
-              {CHANNEL_ICONS[channel.type]}
-            </span>
+            <ChannelIcon
+              type={channel.type}
+              className="h-10 w-10"
+              imageClassName="h-7 w-7"
+              fallbackClassName="text-2xl"
+            />
             <div>
               <CardTitle className="text-base">{channel.name}</CardTitle>
               <CardDescription className="text-xs">
@@ -1078,7 +1063,12 @@ function AddChannelDialog({
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-3xl">{channelMeta.icon}</span>
+                      <ChannelIcon
+                        type={type}
+                        className="h-12 w-12"
+                        imageClassName="h-9 w-9"
+                        fallbackClassName="text-3xl"
+                      />
                       {isComingSoon && (
                         <Badge variant="secondary" className="text-xs">
                           {t('comingSoonBadge')}
@@ -1102,6 +1092,30 @@ function AddChannelDialog({
               <FeishuOfficialOnboardingPanel
                 onConnected={() => {
                   toast.success(t('toast.channelSaved', { name: meta?.name || CHANNEL_NAMES.feishu }));
+                  onChannelAdded();
+                }}
+              />
+
+              <Separator />
+
+              <div className="flex justify-between">
+                <Button variant="outline" onClick={() => onSelectType(null)}>
+                  {t('dialog.back')}
+                </Button>
+                <Button variant="outline" onClick={onClose}>
+                  {t('dialog.close')}
+                </Button>
+              </div>
+            </div>
+          ) : selectedType === 'openclaw-weixin' ? (
+            <div className="space-y-4">
+              <WeixinOnboardingPanel
+                onConnected={() => {
+                  toast.success(
+                    t('toast.channelSaved', {
+                      name: meta?.name || CHANNEL_NAMES['openclaw-weixin'],
+                    })
+                  );
                   onChannelAdded();
                 }}
               />

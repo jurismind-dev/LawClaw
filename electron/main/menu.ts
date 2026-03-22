@@ -2,7 +2,7 @@
  * Application Menu Configuration
  * Creates the native application menu for macOS/Windows/Linux
  */
-import { Menu, app, shell, BrowserWindow } from 'electron';
+import { Menu, shell, BrowserWindow } from 'electron';
 
 /**
  * Create application menu
@@ -15,12 +15,12 @@ export function createMenu(): void {
     ...(isMac
       ? [
           {
-            label: app.name,
+            label: '劳有钳',
             submenu: [
               { role: 'about' as const },
               { type: 'separator' as const },
               {
-                label: 'Preferences...',
+                label: '偏好设置...',
                 accelerator: 'Cmd+,',
                 click: () => {
                   const win = BrowserWindow.getFocusedWindow();
@@ -42,10 +42,10 @@ export function createMenu(): void {
     
     // File menu
     {
-      label: 'File',
+      label: '文件',
       submenu: [
         {
-          label: 'New Chat',
+          label: '新建对话',
           accelerator: 'CmdOrCtrl+N',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
@@ -59,7 +59,7 @@ export function createMenu(): void {
     
     // Edit menu
     {
-      label: 'Edit',
+      label: '编辑',
       submenu: [
         { role: 'undo' },
         { role: 'redo' },
@@ -83,7 +83,7 @@ export function createMenu(): void {
     
     // View menu
     {
-      label: 'View',
+      label: '视图',
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
@@ -99,10 +99,10 @@ export function createMenu(): void {
     
     // Navigate menu
     {
-      label: 'Navigate',
+      label: '导航',
       submenu: [
         {
-          label: 'Dashboard',
+          label: '仪表盘',
           accelerator: 'CmdOrCtrl+1',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
@@ -110,7 +110,7 @@ export function createMenu(): void {
           },
         },
         {
-          label: 'Chat',
+          label: '聊天',
           accelerator: 'CmdOrCtrl+2',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
@@ -118,7 +118,7 @@ export function createMenu(): void {
           },
         },
         {
-          label: 'Channels',
+          label: '频道',
           accelerator: 'CmdOrCtrl+3',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
@@ -126,7 +126,7 @@ export function createMenu(): void {
           },
         },
         {
-          label: 'Skills',
+          label: '技能',
           accelerator: 'CmdOrCtrl+4',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
@@ -134,7 +134,7 @@ export function createMenu(): void {
           },
         },
         {
-          label: 'Cron Tasks',
+          label: '定时任务',
           accelerator: 'CmdOrCtrl+5',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
@@ -142,7 +142,7 @@ export function createMenu(): void {
           },
         },
         {
-          label: 'Settings',
+          label: '设置',
           accelerator: isMac ? 'Cmd+,' : 'Ctrl+,',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
@@ -154,7 +154,7 @@ export function createMenu(): void {
     
     // Window menu
     {
-      label: 'Window',
+      label: '窗口',
       submenu: [
         { role: 'minimize' },
         { role: 'zoom' },
@@ -174,20 +174,20 @@ export function createMenu(): void {
       role: 'help',
       submenu: [
         {
-          label: 'Documentation',
+          label: '使用文档',
           click: async () => {
             await shell.openExternal('https://claw-x.com');
           },
         },
         {
-          label: 'Report Issue',
+          label: '反馈问题',
           click: async () => {
             await shell.openExternal('https://github.com/ValueCell-ai/ClawX/issues');
           },
         },
         { type: 'separator' },
         {
-          label: 'OpenClaw Documentation',
+          label: 'OpenClaw 文档',
           click: async () => {
             await shell.openExternal('https://docs.openclaw.ai');
           },

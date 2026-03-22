@@ -63,14 +63,9 @@ import { validateApiKeyWithProvider } from '../utils/provider-validation';
 import { applyOpenClawConfigEnvFallbacks } from '../utils/openclaw-config-env';
 import {
   detectPluginInstallationState,
-  clearPluginChannelConfigBackup,
   finalizeBundledPluginConfigAfterInstall,
   isAlreadyInstalledErrorMessage,
-  readPluginChannelConfigBackup,
-  restorePluginChannelConfigAfterInstall,
-  savePluginChannelConfigBackup,
   sanitizePluginPackageManifestForLocalInstall,
-  stripPluginChannelConfigForInstall,
 } from '../utils/openclaw-plugin-install';
 import { PresetInstaller, type PresetInstallPhase } from '../utils/preset-installer';
 import { forceSetup } from './index';
@@ -88,6 +83,7 @@ import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
 import { bindJurismindProviderToken } from '../utils/jurismind-provider-token-binding';
 import { feishuOnboardingManager, isFeishuOnboardingCancelledError } from '../utils/feishu-onboarding';
+import { weixinOnboardingManager, isWeixinOnboardingCancelledError } from '../utils/weixin-onboarding';
 import {
   FEISHU_OFFICIAL_PLUGIN_ID,
   FEISHU_OFFICIAL_PLUGIN_NPM_SPEC,
@@ -220,6 +216,9 @@ export function registerIpcHandlers(
 
   // Feishu official onboarding handlers (QR bot creation)
   registerFeishuOnboardingHandlers(mainWindow, gatewayManager);
+
+  // Weixin onboarding handlers (QR binding)
+  registerWeixinOnboardingHandlers(mainWindow, gatewayManager);
 
   // Device OAuth handlers (Code Plan)
   registerDeviceOAuthHandlers(mainWindow);
@@ -760,10 +759,6 @@ export function registerAgentPresetMigrationHandlers(mainWindow: BrowserWindow):
  * For checking package status and channel configuration
  */
 function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
-  const QQ_PLUGIN_ID = 'qqbot';
-  const QQ_PLUGIN_VERSION = '1.5.0';
-  const QQ_PLUGIN_NPM_SPEC = `@sliverp/${QQ_PLUGIN_ID}@${QQ_PLUGIN_VERSION}`;
-
   const runOpenClawCli = async (args: string[]): Promise<{
     success: boolean;
     stdout: string;
@@ -901,90 +896,6 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     });
   };
 
-  const prepareQqbotLocalInstallDir = async (): Promise<{
-    success: boolean;
-    tempDir?: string;
-    installPath?: string;
-    error?: string;
-    details?: string;
-  }> => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'clawx-qqbot-install-'));
-    const extractDir = join(tempDir, 'extract');
-    mkdirSync(extractDir, { recursive: true });
-
-    try {
-      let archivePath = join(
-        getResourcesDir(),
-        'plugins',
-        QQ_PLUGIN_ID,
-        `qqbot-${QQ_PLUGIN_VERSION}.tgz`
-      );
-
-      if (!existsSync(archivePath)) {
-        if (app.isPackaged) {
-          return {
-            success: false,
-            error: `Bundled plugin package not found: ${archivePath}`,
-          };
-        }
-
-        const packResult = await runCommand(
-          'npm',
-          ['pack', QQ_PLUGIN_NPM_SPEC, '--silent'],
-          tempDir,
-          true
-        );
-        if (!packResult.success) {
-          return {
-            success: false,
-            error: packResult.error || 'Failed to download QQ plugin package',
-            details: packResult.stderr || packResult.stdout,
-          };
-        }
-
-        const packedName = packResult.stdout
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .pop();
-
-        if (!packedName) {
-          return {
-            success: false,
-            error: 'npm pack completed but returned no archive filename',
-            details: packResult.stdout,
-          };
-        }
-
-        archivePath = join(tempDir, packedName);
-      }
-
-      // Keep tar execution shell-free so archive paths with spaces are handled safely.
-      const extractResult = await runCommand('tar', ['-xzf', archivePath, '-C', extractDir], tempDir, false);
-      if (!extractResult.success) {
-        return {
-          success: false,
-          error: extractResult.error || 'Failed to extract QQ plugin archive',
-          details: extractResult.stderr || extractResult.stdout,
-        };
-      }
-
-      const installPath = join(extractDir, 'package');
-      sanitizePluginPackageManifestForLocalInstall(installPath);
-
-      return {
-        success: true,
-        tempDir,
-        installPath,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: String(error),
-      };
-    }
-  };
-
   const prepareFeishuOfficialLocalInstallDir = async (): Promise<{
     success: boolean;
     tempDir?: string;
@@ -1108,9 +1019,6 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     error?: string;
     details?: string;
   }> => {
-    if (pluginId === QQ_PLUGIN_ID) {
-      return await prepareQqbotLocalInstallDir();
-    }
     if (pluginId === FEISHU_OFFICIAL_PLUGIN_ID) {
       return await prepareFeishuOfficialLocalInstallDir();
     }
@@ -1202,39 +1110,6 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
 
     const openclawConfigDir = getOpenClawConfigDir();
     const configPath = join(openclawConfigDir, 'openclaw.json');
-    let strippedChannelConfig: Record<string, unknown> | undefined;
-    let shouldRestoreChannelConfig =
-      readPluginChannelConfigBackup(openclawConfigDir, pluginId) !== undefined;
-
-    const restoreChannelConfigAfterInstall = (): void => {
-      if (pluginId !== QQ_PLUGIN_ID || !shouldRestoreChannelConfig) {
-        return;
-      }
-      try {
-        if (!existsSync(configPath)) {
-          return;
-        }
-
-        const backupConfig = readPluginChannelConfigBackup(openclawConfigDir, pluginId);
-        const channelConfigToRestore = strippedChannelConfig ?? backupConfig;
-        if (!channelConfigToRestore) {
-          clearPluginChannelConfigBackup(openclawConfigDir, pluginId);
-          return;
-        }
-
-        const raw = readFileSync(configPath, 'utf-8');
-        const parsed = parseJsonText(raw) as Record<string, unknown>;
-        const restored = restorePluginChannelConfigAfterInstall(
-          parsed,
-          pluginId,
-          channelConfigToRestore
-        );
-        writeFileSync(configPath, stringifyJsonText(restored), 'utf-8');
-        clearPluginChannelConfigBackup(openclawConfigDir, pluginId);
-      } catch (error) {
-        logger.warn('Failed to restore plugin channel config after install', error);
-      }
-    };
 
     try {
       const detectionBeforeInstall = detectPluginInstalled(pluginId);
@@ -1247,23 +1122,6 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
           reason: 'already-installed',
           source: detectionBeforeInstall.source,
         };
-      }
-
-      if (pluginId === QQ_PLUGIN_ID && existsSync(configPath)) {
-        try {
-          const raw = readFileSync(configPath, 'utf-8');
-          const parsed = parseJsonText(raw) as Record<string, unknown>;
-          const stripped = stripPluginChannelConfigForInstall(parsed, pluginId);
-          strippedChannelConfig = stripped.removedChannelConfig;
-
-          if (strippedChannelConfig) {
-            writeFileSync(configPath, stringifyJsonText(stripped.config), 'utf-8');
-            savePluginChannelConfigBackup(openclawConfigDir, pluginId, strippedChannelConfig);
-            shouldRestoreChannelConfig = true;
-          }
-        } catch (error) {
-          logger.warn('Failed to strip plugin channel config before install', error);
-        }
       }
 
       if (pluginId === FEISHU_OFFICIAL_PLUGIN_ID) {
@@ -1322,8 +1180,6 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
       };
     } catch (error) {
       return { success: false, error: String(error) };
-    } finally {
-      restoreChannelConfigAfterInstall();
     }
   };
 
@@ -1421,7 +1277,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
       tempInstallDir = prepared.tempDir;
 
       return await installPluginFromLocalPath(pluginId, prepared.installPath, {
-        allowedBundledPluginIds: [QQ_PLUGIN_ID, FEISHU_OFFICIAL_PLUGIN_ID],
+        allowedBundledPluginIds: [FEISHU_OFFICIAL_PLUGIN_ID],
       });
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1480,12 +1336,12 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
   });
 
   // Delete channel configuration
-  ipcMain.handle('channel:deleteConfig', async (_, channelType: string) => {
+  ipcMain.handle('channel:deleteConfig', async (_, channelType: string, accountId?: string) => {
     try {
-      await deleteChannelConfig(channelType);
+      const result = await deleteChannelConfig(channelType, accountId);
 
       const normalizedChannelType = normalizeChannelType(channelType);
-      if (normalizedChannelType) {
+      if (normalizedChannelType && result.stillConfigured !== true) {
         const managedChannels = await getLawClawManagedChannels();
         if (managedChannels.includes(normalizedChannelType)) {
           await clearLawClawChannelBinding(normalizedChannelType);
@@ -1866,6 +1722,96 @@ function registerFeishuOnboardingHandlers(
   feishuOnboardingManager.on('error', (error) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('feishu:error', error);
+    }
+  });
+}
+
+function registerWeixinOnboardingHandlers(
+  mainWindow: BrowserWindow,
+  gatewayManager: GatewayManager
+): void {
+  ipcMain.handle('weixin:startPairing', async (_, options?: { forceRefresh?: boolean }) => {
+    try {
+      const result = await weixinOnboardingManager.startPairing({
+        forceRefresh: options?.forceRefresh === true,
+      });
+      return { success: true, result, status: weixinOnboardingManager.getStatus() };
+    } catch (error) {
+      if (isWeixinOnboardingCancelledError(error)) {
+        return { success: true, cancelled: true, status: weixinOnboardingManager.getStatus() };
+      }
+      return { success: false, error: String(error), status: weixinOnboardingManager.getStatus() };
+    }
+  });
+
+  ipcMain.handle('weixin:getStatus', async () => {
+    try {
+      await weixinOnboardingManager.refreshStatus();
+      return { success: true, status: weixinOnboardingManager.getStatus() };
+    } catch (error) {
+      return { success: false, error: String(error), status: weixinOnboardingManager.getStatus() };
+    }
+  });
+
+  ipcMain.handle('weixin:clearBinding', async (_, payload?: { accountId?: string }) => {
+    try {
+      const status = await weixinOnboardingManager.clearBinding(payload?.accountId);
+      const managedChannels = await getLawClawManagedChannels();
+      const normalizedChannelType = normalizeChannelType('openclaw-weixin');
+      if (managedChannels.includes(normalizedChannelType) && status.configured !== true) {
+        await clearLawClawChannelBinding(normalizedChannelType);
+        await setSetting(
+          'lawclawManagedChannels',
+          managedChannels.filter((item) => item !== normalizedChannelType)
+        );
+      }
+
+      await gatewayManager.restart().catch((error) => {
+        logger.warn('Failed to restart gateway after clearing Weixin binding', error);
+      });
+
+      return { success: true, status };
+    } catch (error) {
+      return { success: false, error: String(error), status: weixinOnboardingManager.getStatus() };
+    }
+  });
+
+  weixinOnboardingManager.on('pair-url', (data) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('weixin:pair-url', data);
+    }
+  });
+
+  weixinOnboardingManager.on('connected', async (data) => {
+    const normalizedChannelType = normalizeChannelType('openclaw-weixin');
+    try {
+      const managedChannels = await getLawClawManagedChannels();
+      if (!managedChannels.includes(normalizedChannelType)) {
+        managedChannels.push(normalizedChannelType);
+        await setSetting('lawclawManagedChannels', managedChannels);
+      }
+    } catch (error) {
+      logger.warn('Failed to update LawClaw managed channel settings after Weixin onboarding', error);
+    }
+
+    await gatewayManager.restart().catch((error) => {
+      logger.warn('Failed to restart gateway after Weixin onboarding', error);
+    });
+
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('weixin:connected', data);
+    }
+  });
+
+  weixinOnboardingManager.on('status', (status) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('weixin:status', status);
+    }
+  });
+
+  weixinOnboardingManager.on('error', (error) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('weixin:error', error);
     }
   });
 }

@@ -2,6 +2,7 @@
  * Channel Type Definitions
  * Types for messaging channels (WhatsApp, Telegram, etc.)
  */
+import { brandAssets } from '@/assets/branding';
 
 /**
  * Supported channel types
@@ -14,7 +15,7 @@ export type ChannelType =
   | 'discord'
   | 'signal'
   | 'feishu'
-  | 'qqbot'
+  | 'openclaw-weixin'
   | 'imessage'
   | 'matrix'
   | 'line'
@@ -68,6 +69,7 @@ export interface ChannelMeta {
   id: ChannelType;
   name: string;
   icon: string;
+  iconUrl?: string;
   description: string;
   connectionType: ChannelConnectionType;
   docsUrl: string;
@@ -88,13 +90,19 @@ export const CHANNEL_ICONS: Record<ChannelType, string> = {
   discord: '🎮',
   signal: '🔒',
   feishu: '🐦',
-  qqbot: 'QQ',
+  'openclaw-weixin': '微',
   imessage: '💬',
   matrix: '🔗',
   line: '🟢',
   msteams: '👔',
   googlechat: '💭',
   mattermost: '💠',
+};
+
+export const CHANNEL_ICON_URLS: Partial<Record<ChannelType, string>> = {
+  jurismind: brandAssets.jurismind,
+  feishu: brandAssets.feishu,
+  'openclaw-weixin': brandAssets.weixin,
 };
 
 /**
@@ -108,7 +116,7 @@ export const CHANNEL_NAMES: Record<ChannelType, string> = {
   discord: 'Discord',
   signal: 'Signal',
   feishu: 'Feishu / Lark',
-  qqbot: 'QQ',
+  'openclaw-weixin': 'Weixin',
   imessage: 'iMessage',
   matrix: 'Matrix',
   line: 'LINE',
@@ -125,6 +133,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     id: 'jurismind',
     name: 'Jurismind（法义经纬）',
     icon: '⚖️',
+    iconUrl: CHANNEL_ICON_URLS.jurismind,
     description: 'channels:meta.jurismind.description',
     connectionType: 'token',
     docsUrl: 'channels:meta.jurismind.docsUrl',
@@ -303,6 +312,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     id: 'feishu',
     name: 'Feishu / Lark',
     icon: '🐦',
+    iconUrl: CHANNEL_ICON_URLS.feishu,
     description: 'channels:meta.feishu.description',
     connectionType: 'qr',
     docsUrl: 'channels:meta.feishu.docsUrl',
@@ -315,36 +325,20 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     ],
     isPlugin: true,
   },
-  qqbot: {
-    id: 'qqbot',
-    name: 'QQ',
-    icon: 'QQ',
-    description: 'channels:meta.qqbot.description',
-    connectionType: 'token',
-    docsUrl: 'channels:meta.qqbot.docsUrl',
-    configFields: [
-      {
-        key: 'appId',
-        label: 'channels:meta.qqbot.fields.appId.label',
-        type: 'text',
-        placeholder: 'channels:meta.qqbot.fields.appId.placeholder',
-        required: true,
-        envVar: 'QQBOT_APP_ID',
-      },
-      {
-        key: 'clientSecret',
-        label: 'channels:meta.qqbot.fields.clientSecret.label',
-        type: 'password',
-        placeholder: 'channels:meta.qqbot.fields.clientSecret.placeholder',
-        required: true,
-        envVar: 'QQBOT_CLIENT_SECRET',
-      },
-    ],
+  'openclaw-weixin': {
+    id: 'openclaw-weixin',
+    name: 'Weixin',
+    icon: '微',
+    iconUrl: CHANNEL_ICON_URLS['openclaw-weixin'],
+    description: 'channels:meta.openclaw-weixin.description',
+    connectionType: 'qr',
+    docsUrl: 'channels:meta.openclaw-weixin.docsUrl',
+    configFields: [],
     instructions: [
-      'channels:meta.qqbot.instructions.0',
-      'channels:meta.qqbot.instructions.1',
-      'channels:meta.qqbot.instructions.2',
-      'channels:meta.qqbot.instructions.3',
+      'channels:meta.openclaw-weixin.instructions.0',
+      'channels:meta.openclaw-weixin.instructions.1',
+      'channels:meta.openclaw-weixin.instructions.2',
+      'channels:meta.openclaw-weixin.instructions.3',
     ],
     isPlugin: true,
   },
@@ -532,7 +526,11 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
  * Get primary supported channels (non-plugin, commonly used)
  */
 export function getPrimaryChannels(): ChannelType[] {
-  return ['jurismind', 'feishu', 'qqbot'];
+  return ['jurismind', 'feishu', 'openclaw-weixin'];
+}
+
+export function getChannelIconUrl(type: ChannelType): string | undefined {
+  return CHANNEL_ICON_URLS[type];
 }
 
 /**

@@ -28,13 +28,14 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { ChannelIcon } from '@/components/channels/ChannelIcon';
 import { useCronStore } from '@/stores/cron';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, ScheduleType } from '@/types/cron';
-import { CHANNEL_ICONS, type ChannelType } from '@/types/channel';
+import type { ChannelType } from '@/types/channel';
 import { useTranslation } from 'react-i18next';
 
 // Common cron schedule presets
@@ -374,7 +375,12 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
           {job.target && (
             <span className="flex items-center gap-1">
-              {CHANNEL_ICONS[job.target.channelType as ChannelType]}
+              <ChannelIcon
+                type={job.target.channelType as ChannelType}
+                className="h-5 w-5 rounded-md bg-background/70 ring-1 ring-border/50"
+                imageClassName="h-4 w-4"
+                fallbackClassName="text-sm"
+              />
               {job.target.channelName}
             </span>
           )}

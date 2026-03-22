@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { PROVIDER_TYPE_INFO, SETUP_PROVIDERS } from '@/lib/providers';
+import {
+  PROVIDER_TYPE_INFO,
+  SETUP_PROVIDERS,
+  getProviderIconUrl,
+  shouldInvertInDark,
+} from '@/lib/providers';
 
 describe('provider metadata', () => {
   it('keeps the new setup provider order with Jurismind and Code Plan options first', () => {
@@ -43,5 +48,10 @@ describe('provider metadata', () => {
     expect(jurismind?.model).toBeUndefined();
     expect(jurismind?.showBaseUrl).not.toBe(true);
     expect(jurismind?.showModelId).not.toBe(true);
+  });
+
+  it('uses the branded Jurismind logo without dark inversion', () => {
+    expect(getProviderIconUrl('jurismind')).toBeTruthy();
+    expect(shouldInvertInDark('jurismind')).toBe(false);
   });
 });

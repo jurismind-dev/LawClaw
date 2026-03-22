@@ -32,11 +32,13 @@ describe('setup navigation and install flow', () => {
     expect(source).toContain("{ phase: 'setup' }");
   });
 
-  it('removes QQbot from the setup channel picker and uses Feishu QR onboarding instead of bundled install', () => {
+  it('uses the dedicated QR onboarding panels for setup channels', () => {
     const source = readSetupSource();
 
-    expect(source).toContain("getPrimaryChannels().filter((type) => type !== 'qqbot')");
+    expect(source).toContain('const primaryChannels = getPrimaryChannels();');
+    expect(source).not.toContain("type !== 'qqbot'");
     expect(source).toContain("<FeishuOfficialOnboardingPanel");
+    expect(source).toContain("<WeixinOnboardingPanel");
     expect(source).not.toContain("SETUP_BUNDLED_FEISHU_PLUGIN_ID");
     expect(source).not.toContain("'openclaw:installBundledPlugin'");
   });

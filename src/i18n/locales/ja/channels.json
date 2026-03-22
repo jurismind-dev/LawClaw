@@ -100,6 +100,23 @@
             "existingAppSecretPlaceholder": "アプリシークレットを入力",
             "saveExisting": "既存アプリを連携",
             "savingExisting": "検証して連携中..."
+        },
+        "weixin": {
+            "statusLabel": "状態",
+            "statusIdle": "Weixin 連携用 QR コードを生成できます",
+            "statusLoading": "Weixin 連携フローを準備中...",
+            "statusInstalling": "Weixin プラグインをインストールまたは確認中...",
+            "statusWaiting": "QR コードの準備完了。Weixin での読み取り待ち",
+            "statusPolling": "読み取り済み。Weixin の連携確定を待機中",
+            "statusConfigured": "Weixin はこの LawClaw に連携済みです",
+            "pluginReady": "Weixin プラグインの準備ができています",
+            "scanTip": "Weixin で QR コードを読み取って連携を完了してください。",
+            "start": "QR コードを生成",
+            "starting": "QR コードを生成中...",
+            "refresh": "QR を更新",
+            "clear": "連携を削除",
+            "clearSuccess": "Weixin 連携を削除しました",
+            "configuredHint": "この Weixin アカウントはすでに連携済みです。連携を削除してから新しい QR コードを生成すると再連携できます。"
         }
     },
     "meta": {
@@ -225,6 +242,16 @@
             ],
             "docsUrl": "https://pcnz0er969s1.feishu.cn/wiki/FgDow7bMDiEPsikR00PcKh25nDh?from=from_copylink"
         },
+        "openclaw-weixin": {
+            "description": "Tencent の openclaw-weixin プラグイン経由で Weixin に接続し、QR 連携と連携削除に対応します",
+            "docsUrl": "https://www.npmjs.com/package/@tencent-weixin/openclaw-weixin-cli",
+            "instructions": [
+                "LawClaw はオンラインで openclaw-weixin プラグインを導入します。",
+                "「QR コードを生成」を押して、Weixin 連携用 QR コードが表示されるまで待ちます。",
+                "Weixin で QR コードを読み取ると、現在の LawClaw インスタンスに連携されます。",
+                "再連携したい場合は、先に連携を削除して openclaw.json の現在の設定を消し、新しい QR コードを生成してください。"
+            ]
+        },
         "imessage": {
             "description": "BlueBubbles (macOS) 経由で iMessage に接続します",
             "fields": {
@@ -329,26 +356,6 @@
                 "Mattermost Integrations に移動します",
                 "新しい Bot アカウントを作成します",
                 "アクセストークンをコピーします"
-            ]
-        },
-        "qqbot": {
-            "description": "@sliverp/qqbot プラグインで QQ を接続します",
-            "docsUrl": "https://www.npmjs.com/package/@sliverp/qqbot",
-            "fields": {
-                "appId": {
-                    "label": "App ID",
-                    "placeholder": "QQ App ID"
-                },
-                "clientSecret": {
-                    "label": "Client Secret",
-                    "placeholder": "QQ Client Secret"
-                }
-            },
-            "instructions": [
-                "@sliverp/qqbot のドキュメントを確認してプラグインを準備します。",
-                "QQ 開発者プラットフォームで App ID と Client Secret を取得します。",
-                "App ID と Client Secret を入力してチャンネル設定を保存します。",
-                "QQ プラグインのインストール完了後にセットアップを続行します。"
             ]
         }
     },

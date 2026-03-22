@@ -288,7 +288,7 @@ describe('bundle-preset-artifacts official+highlighted validation', () => {
 
   it('does not call JurisHub check for plugin items', async () => {
     const context = createFixture();
-    const artifact = createSkillArtifact(context, 'plugins/qqbot', 'qqbot', '1.0.0');
+    const artifact = createSkillArtifact(context, 'plugins/weather-bot', 'weather-bot', '1.0.0');
     const fetchImpl = vi.fn(async () => {
       return new Response(JSON.stringify({ status: 'success', value: [] }), {
         status: 200,
@@ -303,7 +303,7 @@ describe('bundle-preset-artifacts official+highlighted validation', () => {
         items: [
           {
             kind: 'plugin',
-            id: 'qqbot',
+            id: 'weather-bot',
             targetVersion: '1.0.0',
             artifactPath: artifact.artifactPath,
             sha256: artifact.sha256,

@@ -120,6 +120,9 @@ const electronAPI = {
         'feishu:configureExistingApp',
         'feishu:resetFlow',
         'feishu:getStatus',
+        'weixin:startPairing',
+        'weixin:getStatus',
+        'weixin:clearBinding',
         // ClawHub
         'clawhub:search',
         'clawhub:install',
@@ -191,6 +194,10 @@ const electronAPI = {
         'feishu:connected',
         'feishu:status',
         'feishu:error',
+        'weixin:pair-url',
+        'weixin:connected',
+        'weixin:status',
+        'weixin:error',
         'gateway:exit',
         'gateway:error',
         'navigate',
@@ -260,6 +267,10 @@ const electronAPI = {
         'feishu:connected',
         'feishu:status',
         'feishu:error',
+        'weixin:pair-url',
+        'weixin:connected',
+        'weixin:status',
+        'weixin:error',
       ];
 
       if (validChannels.includes(channel)) {

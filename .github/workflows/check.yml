@@ -62,8 +62,5 @@ jobs:
       - name: Bundle embedded OpenClaw runtime
         run: pnpm exec zx scripts/bundle-openclaw.mjs
 
-      - name: Bundle bundled plugins
-        run: pnpm exec zx scripts/bundle-qq-plugin.mjs
-
       - name: Validate preset artifacts
         run: pnpm run bundle:preset-artifacts:offline

@@ -1,8 +1,8 @@
 /**
  * Chat Page
  * Native React implementation communicating with OpenClaw Gateway
- * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
- * are in the toolbar; messages render with markdown + streaming.
+ * via gateway:rpc IPC. The sidebar owns session creation/switching;
+ * the toolbar keeps quick refresh and thinking controls.
  */
 import { useEffect, useRef } from 'react';
 import { AlertCircle, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
@@ -31,8 +31,7 @@ export function Chat() {
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
-  const loadHistory = useChatStore((s) => s.loadHistory);
-  const loadSessions = useChatStore((s) => s.loadSessions);
+  const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
@@ -44,17 +43,10 @@ export function Chat() {
 
   useEffect(() => {
     if (!isGatewayRunning) return;
-    let cancelled = false;
-    const hasExistingMessages = useChatStore.getState().messages.length > 0;
-    (async () => {
-      await loadSessions();
-      if (cancelled) return;
-      await loadHistory(hasExistingMessages);
-    })();
     return () => {
-      cancelled = true;
+      cleanupEmptySession();
     };
-  }, [isGatewayRunning, loadHistory, loadSessions]);
+  }, [cleanupEmptySession, isGatewayRunning]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

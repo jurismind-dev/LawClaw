@@ -86,6 +86,8 @@ interface ChatState {
   sessions: ChatSession[];
   currentSessionKey: string;
   hasAppliedStartupDefault: boolean;
+  sessionLabels: Record<string, string>;
+  sessionLastActivity: Record<string, number>;
 
   // Thinking
   showThinking: boolean;
@@ -95,6 +97,8 @@ interface ChatState {
   loadSessions: () => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
+  deleteSession: (key: string) => Promise<void>;
+  cleanupEmptySession: () => void;
   loadHistory: (quiet?: boolean) => Promise<void>;
   sendMessage: (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => Promise<void>;
   abortRun: () => Promise<void>;
@@ -173,6 +177,10 @@ function saveImageCache(cache: Map<string, AttachedFileMeta>): void {
 }
 
 const _imageCache = loadImageCache();
+
+function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T, sessionKey: string): T {
+  return Object.fromEntries(Object.entries(entries).filter(([key]) => key !== sessionKey)) as T;
+}
 
 /** Extract plain text from message content (string or content blocks) */
 function getMessageText(content: unknown): string {
@@ -941,6 +949,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   currentSessionKey: DEFAULT_SESSION_KEY,
   hasAppliedStartupDefault: false,
+  sessionLabels: {},
+  sessionLastActivity: {},
 
   showThinking: true,
   thinkingLevel: null,
@@ -1033,6 +1043,55 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (currentSessionKey !== nextSessionKey) {
           get().loadHistory();
         }
+
+        const sessionsToLabel = sessionsWithCurrent.filter((session) => !session.key.endsWith(':main'));
+        if (sessionsToLabel.length > 0) {
+          void Promise.all(
+            sessionsToLabel.map(async (session) => {
+              try {
+                const historyResult = await window.electron.ipcRenderer.invoke(
+                  'gateway:rpc',
+                  'chat.history',
+                  { sessionKey: session.key, limit: 1000 }
+                ) as { success: boolean; result?: Record<string, unknown> };
+
+                if (!historyResult.success || !historyResult.result) return;
+
+                const historyMessages = Array.isArray(historyResult.result.messages)
+                  ? historyResult.result.messages as RawMessage[]
+                  : [];
+                const firstUserMessage = historyMessages.find((message) => message.role === 'user');
+                const lastMessage = historyMessages[historyMessages.length - 1];
+
+                set((state) => {
+                  const nextState: Partial<ChatState> = {};
+
+                  if (firstUserMessage) {
+                    const labelText = getMessageText(firstUserMessage.content).trim();
+                    if (labelText) {
+                      const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+                      nextState.sessionLabels = {
+                        ...state.sessionLabels,
+                        [session.key]: truncated,
+                      };
+                    }
+                  }
+
+                  if (lastMessage?.timestamp) {
+                    nextState.sessionLastActivity = {
+                      ...state.sessionLastActivity,
+                      [session.key]: toMs(lastMessage.timestamp),
+                    };
+                  }
+
+                  return nextState;
+                });
+              } catch {
+                // ignore per-session label errors
+              }
+            }),
+          );
+        }
       }
     } catch (err) {
       console.warn('Failed to load sessions:', err);
@@ -1042,10 +1101,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Switch session ──
 
   switchSession: (key: string) => {
+    const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
+    const leavingEmptySession =
+      !currentSessionKey.endsWith(':main') &&
+      messages.length === 0 &&
+      !sessionLastActivity[currentSessionKey] &&
+      !sessionLabels[currentSessionKey];
     const nextSessionKey = key.startsWith(DEFAULT_CANONICAL_SESSION_PREFIX)
       ? key
       : DEFAULT_SESSION_KEY;
-    set({
+    set((state) => ({
       currentSessionKey: nextSessionKey,
       messages: [],
       streamingText: '',
@@ -1056,19 +1121,91 @@ export const useChatStore = create<ChatState>((set, get) => ({
       pendingFinal: false,
       lastUserMessageAt: null,
       pendingToolImages: [],
-    });
+      ...(leavingEmptySession
+        ? {
+            sessions: state.sessions.filter((session) => session.key !== currentSessionKey),
+            sessionLabels: clearSessionEntryFromMap(state.sessionLabels, currentSessionKey),
+            sessionLastActivity: clearSessionEntryFromMap(state.sessionLastActivity, currentSessionKey),
+          }
+        : {}),
+    }));
     // Load history for new session
     get().loadHistory();
+  },
+
+  // ── Delete session ──
+
+  deleteSession: async (key: string) => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('session:delete', key) as {
+        success: boolean;
+        error?: string;
+      };
+      if (!result.success) {
+        console.warn(`[deleteSession] IPC reported failure for ${key}:`, result.error);
+      }
+    } catch (err) {
+      console.warn(`[deleteSession] IPC call failed for ${key}:`, err);
+    }
+
+    const { currentSessionKey, sessions } = get();
+    const remainingSessions = sessions.filter((session) => session.key !== key);
+
+    if (currentSessionKey === key) {
+      const nextSession = remainingSessions[0];
+      set((state) => ({
+        sessions: remainingSessions,
+        sessionLabels: clearSessionEntryFromMap(state.sessionLabels, key),
+        sessionLastActivity: clearSessionEntryFromMap(state.sessionLastActivity, key),
+        messages: [],
+        streamingText: '',
+        streamingMessage: null,
+        streamingTools: [],
+        activeRunId: null,
+        error: null,
+        pendingFinal: false,
+        lastUserMessageAt: null,
+        pendingToolImages: [],
+        currentSessionKey: nextSession?.key ?? DEFAULT_SESSION_KEY,
+      }));
+      if (nextSession) {
+        get().loadHistory();
+      }
+      return;
+    }
+
+    set((state) => ({
+      sessions: remainingSessions,
+      sessionLabels: clearSessionEntryFromMap(state.sessionLabels, key),
+      sessionLastActivity: clearSessionEntryFromMap(state.sessionLastActivity, key),
+    }));
   },
 
   // ── New session ──
 
   newSession: () => {
+    const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
+    const leavingEmptySession =
+      !currentSessionKey.endsWith(':main') &&
+      messages.length === 0 &&
+      !sessionLastActivity[currentSessionKey] &&
+      !sessionLabels[currentSessionKey];
     const newKey = `${DEFAULT_CANONICAL_PREFIX}:session-${Date.now()}`;
     const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
     set((s) => ({
       currentSessionKey: newKey,
-      sessions: [...s.sessions, newSessionEntry],
+      sessions: [
+        ...(leavingEmptySession
+          ? s.sessions.filter((session) => session.key !== currentSessionKey)
+          : s.sessions),
+        newSessionEntry,
+      ],
+      sessionLabels: leavingEmptySession
+        ? clearSessionEntryFromMap(s.sessionLabels, currentSessionKey)
+        : s.sessionLabels,
+      sessionLastActivity: leavingEmptySession
+        ? clearSessionEntryFromMap(s.sessionLastActivity, currentSessionKey)
+        : s.sessionLastActivity,
       messages: [],
       streamingText: '',
       streamingMessage: null,
@@ -1078,6 +1215,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       pendingFinal: false,
       lastUserMessageAt: null,
       pendingToolImages: [],
+    }));
+  },
+
+  // ── Cleanup empty session on navigate away ──
+
+  cleanupEmptySession: () => {
+    const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
+    const isEmptyNonMainSession =
+      !currentSessionKey.endsWith(':main') &&
+      messages.length === 0 &&
+      !sessionLastActivity[currentSessionKey] &&
+      !sessionLabels[currentSessionKey];
+    if (!isEmptyNonMainSession) return;
+
+    set((state) => ({
+      sessions: state.sessions.filter((session) => session.key !== currentSessionKey),
+      sessionLabels: clearSessionEntryFromMap(state.sessionLabels, currentSessionKey),
+      sessionLastActivity: clearSessionEntryFromMap(state.sessionLastActivity, currentSessionKey),
     }));
   },
 
@@ -1129,6 +1284,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
 
         set({ messages: finalMessages, thinkingLevel, loading: false });
+
+        if (!currentSessionKey.endsWith(':main')) {
+          const firstUserMessage = finalMessages.find((message) => message.role === 'user');
+          if (firstUserMessage) {
+            const labelText = getMessageText(firstUserMessage.content).trim();
+            if (labelText) {
+              const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+              set((state) => ({
+                sessionLabels: {
+                  ...state.sessionLabels,
+                  [currentSessionKey]: truncated,
+                },
+              }));
+            }
+          }
+        }
+
+        const lastMessage = finalMessages[finalMessages.length - 1];
+        if (lastMessage?.timestamp) {
+          const lastActivityAt = toMs(lastMessage.timestamp);
+          set((state) => ({
+            sessionLastActivity: {
+              ...state.sessionLastActivity,
+              [currentSessionKey]: lastActivityAt,
+            },
+          }));
+        }
 
         // Async: load missing image previews from disk (updates in background)
         loadMissingPreviews(finalMessages).then((updated) => {
@@ -1219,6 +1401,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingTools: [],
       pendingFinal: false,
       lastUserMessageAt: nowMs,
+    }));
+
+    const { sessionLabels, messages } = get();
+    const isFirstUserMessage = !messages.slice(0, -1).some((message) => message.role === 'user');
+    if (!currentSessionKey.endsWith(':main') && isFirstUserMessage && !sessionLabels[currentSessionKey] && trimmed) {
+      const truncated = trimmed.length > 50 ? `${trimmed.slice(0, 50)}…` : trimmed;
+      set((state) => ({
+        sessionLabels: {
+          ...state.sessionLabels,
+          [currentSessionKey]: truncated,
+        },
+      }));
+    }
+
+    set((state) => ({
+      sessionLastActivity: {
+        ...state.sessionLastActivity,
+        [currentSessionKey]: nowMs,
+      },
     }));
 
     // Start the history poll and safety timeout IMMEDIATELY (before the

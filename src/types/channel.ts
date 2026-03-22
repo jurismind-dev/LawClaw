@@ -115,8 +115,8 @@ export const CHANNEL_NAMES: Record<ChannelType, string> = {
   telegram: 'Telegram',
   discord: 'Discord',
   signal: 'Signal',
-  feishu: 'Feishu / Lark',
-  'openclaw-weixin': 'Weixin',
+  feishu: '飞书',
+  'openclaw-weixin': '微信',
   imessage: 'iMessage',
   matrix: 'Matrix',
   line: 'LINE',
@@ -310,7 +310,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
   },
   feishu: {
     id: 'feishu',
-    name: 'Feishu / Lark',
+    name: '飞书',
     icon: '🐦',
     iconUrl: CHANNEL_ICON_URLS.feishu,
     description: 'channels:meta.feishu.description',
@@ -327,7 +327,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
   },
   'openclaw-weixin': {
     id: 'openclaw-weixin',
-    name: 'Weixin',
+    name: '微信',
     icon: '微',
     iconUrl: CHANNEL_ICON_URLS['openclaw-weixin'],
     description: 'channels:meta.openclaw-weixin.description',

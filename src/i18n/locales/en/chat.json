@@ -14,8 +14,17 @@
     "noLogs": "(No logs available yet)",
     "toolbar": {
         "newSession": "New session",
+        "currentAgent": "Current Target: {{agent}}",
         "refresh": "Refresh chat",
         "showThinking": "Show thinking",
         "hideThinking": "Hide thinking"
+    },
+    "historyBuckets": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "withinWeek": "Previous 7 Days",
+        "withinTwoWeeks": "Previous 14 Days",
+        "withinMonth": "Previous 30 Days",
+        "older": "Older"
     }
 }

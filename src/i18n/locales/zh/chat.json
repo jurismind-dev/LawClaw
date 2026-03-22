@@ -14,8 +14,17 @@
     "noLogs": "（暂无日志）",
     "toolbar": {
         "newSession": "新会话",
+        "currentAgent": "当前对话对象：{{agent}}",
         "refresh": "刷新聊天",
         "showThinking": "显示思考过程",
         "hideThinking": "隐藏思考过程"
+    },
+    "historyBuckets": {
+        "today": "今天",
+        "yesterday": "昨天",
+        "withinWeek": "过去 7 天",
+        "withinTwoWeeks": "过去 14 天",
+        "withinMonth": "过去 30 天",
+        "older": "更早"
     }
 }

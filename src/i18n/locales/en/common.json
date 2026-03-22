@@ -1,12 +1,17 @@
 {
     "sidebar": {
         "chat": "Chat",
+        "newChat": "New Chat",
+        "mainSession": "Main Session",
         "cronTasks": "Cron Tasks",
         "skills": "Skills",
         "channels": "Channels",
         "dashboard": "Dashboard",
         "settings": "Settings",
-        "devConsole": "Developer Console"
+        "devConsole": "Developer Console",
+        "deleteSessionConfirm": "Are you sure you want to delete session \"{{label}}\"?",
+        "expandSidebar": "Expand Sidebar",
+        "collapseSidebar": "Collapse Sidebar"
     },
     "actions": {
         "save": "Save",

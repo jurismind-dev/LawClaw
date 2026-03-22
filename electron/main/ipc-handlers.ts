@@ -226,6 +226,9 @@ export function registerIpcHandlers(
   // File staging handlers (upload/send separation)
   registerFileHandlers();
 
+  // Session handlers
+  registerSessionHandlers();
+
   // Agent preset migration handlers
   registerAgentPresetMigrationHandlers(mainWindow);
 }
@@ -2311,6 +2314,123 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 /**
  * Shell-related IPC handlers
  */
+function registerSessionHandlers(): void {
+  ipcMain.handle('session:delete', async (_, sessionKey: string) => {
+    try {
+      if (!sessionKey || !sessionKey.startsWith('agent:')) {
+        return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
+      }
+
+      const parts = sessionKey.split(':');
+      if (parts.length < 3) {
+        return { success: false, error: `sessionKey has too few parts: ${sessionKey}` };
+      }
+
+      const agentId = parts[1];
+      const openclawConfigDir = getOpenClawConfigDir();
+      const sessionsDir = join(openclawConfigDir, 'agents', agentId, 'sessions');
+      const sessionsJsonPath = join(sessionsDir, 'sessions.json');
+
+      logger.info(`[session:delete] key=${sessionKey} agentId=${agentId}`);
+      logger.info(`[session:delete] sessionsJson=${sessionsJsonPath}`);
+
+      const fsP = await import('fs/promises');
+
+      let sessionsJson: Record<string, unknown> = {};
+      try {
+        const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
+        sessionsJson = JSON.parse(raw) as Record<string, unknown>;
+      } catch (e) {
+        logger.warn(`[session:delete] Could not read sessions.json: ${String(e)}`);
+        return { success: false, error: `Could not read sessions.json: ${String(e)}` };
+      }
+
+      let uuidFileName: string | undefined;
+      let resolvedSrcPath: string | undefined;
+
+      if (Array.isArray(sessionsJson.sessions)) {
+        const entry = (sessionsJson.sessions as Array<Record<string, unknown>>)
+          .find((session) => session.key === sessionKey || session.sessionKey === sessionKey);
+        if (entry) {
+          uuidFileName = (entry.file ?? entry.fileName ?? entry.path) as string | undefined;
+          if (!uuidFileName) {
+            const uuidValue = (entry.id ?? entry.sessionId) as string | undefined;
+            if (uuidValue) {
+              uuidFileName = uuidValue.endsWith('.jsonl') ? uuidValue : `${uuidValue}.jsonl`;
+            }
+          }
+        }
+      }
+
+      if (!uuidFileName && sessionsJson[sessionKey] != null) {
+        const value = sessionsJson[sessionKey];
+        if (typeof value === 'string') {
+          uuidFileName = value;
+        } else if (typeof value === 'object' && value !== null) {
+          const entry = value as Record<string, unknown>;
+          const absoluteFile = (entry.sessionFile ?? entry.file ?? entry.fileName ?? entry.path) as string | undefined;
+          if (absoluteFile) {
+            if (absoluteFile.startsWith('/') || absoluteFile.match(/^[A-Za-z]:\\/)) {
+              resolvedSrcPath = absoluteFile;
+            } else {
+              uuidFileName = absoluteFile;
+            }
+          } else {
+            const uuidValue = (entry.id ?? entry.sessionId) as string | undefined;
+            if (uuidValue) {
+              uuidFileName = uuidValue.endsWith('.jsonl') ? uuidValue : `${uuidValue}.jsonl`;
+            }
+          }
+        }
+      }
+
+      if (!uuidFileName && !resolvedSrcPath) {
+        const rawValue = sessionsJson[sessionKey];
+        logger.warn(`[session:delete] Cannot resolve file for "${sessionKey}". Raw value: ${JSON.stringify(rawValue)}`);
+        return { success: false, error: `Cannot resolve file for session: ${sessionKey}` };
+      }
+
+      if (!resolvedSrcPath) {
+        if (!uuidFileName!.endsWith('.jsonl')) uuidFileName = `${uuidFileName}.jsonl`;
+        resolvedSrcPath = join(sessionsDir, uuidFileName!);
+      }
+
+      const dstPath = resolvedSrcPath.replace(/\.jsonl$/, '.deleted.jsonl');
+      logger.info(`[session:delete] file: ${resolvedSrcPath}`);
+
+      try {
+        await fsP.access(resolvedSrcPath);
+        await fsP.rename(resolvedSrcPath, dstPath);
+        logger.info(`[session:delete] Renamed ${resolvedSrcPath} → ${dstPath}`);
+      } catch (e) {
+        logger.warn(`[session:delete] Could not rename file: ${String(e)}`);
+      }
+
+      try {
+        const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
+        const nextJson = JSON.parse(raw) as Record<string, unknown>;
+
+        if (Array.isArray(nextJson.sessions)) {
+          nextJson.sessions = (nextJson.sessions as Array<Record<string, unknown>>)
+            .filter((session) => session.key !== sessionKey && session.sessionKey !== sessionKey);
+        } else if (nextJson[sessionKey]) {
+          delete nextJson[sessionKey];
+        }
+
+        await fsP.writeFile(sessionsJsonPath, JSON.stringify(nextJson, null, 2), 'utf8');
+        logger.info(`[session:delete] Removed "${sessionKey}" from sessions.json`);
+      } catch (e) {
+        logger.warn(`[session:delete] Could not update sessions.json: ${String(e)}`);
+      }
+
+      return { success: true };
+    } catch (err) {
+      logger.error(`[session:delete] Unexpected error for ${sessionKey}:`, err);
+      return { success: false, error: String(err) };
+    }
+  });
+}
+
 function registerShellHandlers(): void {
   // Open external URL
   ipcMain.handle('shell:openExternal', async (_, url: string) => {

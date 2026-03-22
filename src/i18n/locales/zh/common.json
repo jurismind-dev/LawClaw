@@ -1,12 +1,17 @@
 {
     "sidebar": {
         "chat": "聊天",
+        "newChat": "新建会话",
+        "mainSession": "主会话",
         "cronTasks": "定时任务",
         "skills": "技能",
         "channels": "频道",
         "dashboard": "仪表盘",
         "settings": "设置",
-        "devConsole": "开发者控制台"
+        "devConsole": "开发者控制台",
+        "deleteSessionConfirm": "确定删除会话“{{label}}”吗？",
+        "expandSidebar": "展开侧边栏",
+        "collapseSidebar": "折叠侧边栏"
     },
     "actions": {
         "save": "保存",

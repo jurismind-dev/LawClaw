@@ -23,7 +23,7 @@ describe('channel metadata', () => {
   it('defines Feishu as QR onboarding with no manual credential fields', () => {
     expect(CHANNEL_META.feishu).toMatchObject({
       id: 'feishu',
-      name: 'Feishu / Lark',
+      name: '飞书',
       connectionType: 'qr',
       docsUrl: 'channels:meta.feishu.docsUrl',
       isPlugin: true,
@@ -34,7 +34,7 @@ describe('channel metadata', () => {
   it('defines Weixin as QR onboarding with no manual credential fields', () => {
     expect(CHANNEL_META['openclaw-weixin']).toMatchObject({
       id: 'openclaw-weixin',
-      name: 'Weixin',
+      name: '微信',
       connectionType: 'qr',
       docsUrl: 'channels:meta.openclaw-weixin.docsUrl',
       isPlugin: true,

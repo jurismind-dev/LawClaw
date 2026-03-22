@@ -51,6 +51,7 @@ describe('chat bot avatar', () => {
       pendingFinal: false,
       loadHistory: vi.fn().mockResolvedValue(undefined),
       loadSessions: vi.fn().mockResolvedValue(undefined),
+      cleanupEmptySession: vi.fn(),
       sendMessage: vi.fn().mockResolvedValue(undefined),
       abortRun: vi.fn().mockResolvedValue(undefined),
       clearError: vi.fn(),

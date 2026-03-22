@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { Minus, Square, X, Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 import { brandAssets } from '@/assets/branding';
 import logoSvg from '@/assets/logo.svg';
 
@@ -13,19 +14,21 @@ const isMac = window.electron?.platform === 'darwin';
 
 export function TitleBar() {
   const { t } = useTranslation('common');
+  const location = useLocation();
+  const showCoinAccessButton = !location.pathname.startsWith('/setup');
 
   if (isMac) {
     return (
       <div className="drag-region flex h-10 shrink-0 items-center justify-end border-b bg-background px-3">
-        <CoinAccessButton label={t('brand.getCoins')} />
+        {showCoinAccessButton && <CoinAccessButton label={t('brand.getCoins')} />}
       </div>
     );
   }
 
-  return <WindowsTitleBar />;
+  return <WindowsTitleBar showCoinAccessButton={showCoinAccessButton} />;
 }
 
-function WindowsTitleBar() {
+function WindowsTitleBar({ showCoinAccessButton }: { showCoinAccessButton: boolean }) {
   const { t } = useTranslation('common');
   const [maximized, setMaximized] = useState(false);
 
@@ -64,7 +67,7 @@ function WindowsTitleBar() {
 
       {/* Right: Coin entry + Window Controls */}
       <div className="no-drag flex h-full items-center gap-2 pr-1">
-        <CoinAccessButton label={t('brand.getCoins')} />
+        {showCoinAccessButton && <CoinAccessButton label={t('brand.getCoins')} />}
         <button
           onClick={handleMinimize}
           className="flex h-full w-11 items-center justify-center text-muted-foreground hover:bg-accent transition-colors"

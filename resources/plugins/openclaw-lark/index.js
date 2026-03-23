@@ -83,10 +83,10 @@ const plugin = {
                 try {
                     if (opts.trace) {
                         const lines = await traceByMessageId(opts.trace);
-                        // eslint-disable-next-line no-console -- CLI 命令直接输出到终端
+                         
                         console.log(formatTraceOutput(lines, opts.trace));
                         if (opts.analyze && lines.length > 0) {
-                            // eslint-disable-next-line no-console -- CLI 命令直接输出到终端
+                             
                             console.log(analyzeTrace(lines, opts.trace));
                         }
                     }
@@ -95,7 +95,7 @@ const plugin = {
                             config: ctx.config,
                             logger: ctx.logger,
                         });
-                        // eslint-disable-next-line no-console -- CLI 命令直接输出到终端
+                         
                         console.log(formatDiagReportCli(report));
                         if (report.overallStatus === 'unhealthy') {
                             process.exitCode = 1;

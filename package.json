@@ -2,6 +2,9 @@
     "name": "lawclaw",
     "version": "0.1.16",
     "pnpm": {
+        "overrides": {
+            "@electron/osx-sign>isbinaryfile": "5.0.7"
+        },
         "onlyBuiltDependencies": [
             "@whiskeysockets/baileys",
             "electron",

@@ -26,14 +26,14 @@ const GRAY = '\x1b[90m';
 const RESET = '\x1b[0m';
 function consoleFallback(subsystem) {
     const tag = `feishu/${subsystem}`;
-    /* eslint-disable no-console -- logger底层实现，console 是最终输出目标 */
+     
     return {
         debug: (msg, meta) => console.debug(`${GRAY}[${tag}]${RESET}`, msg, ...(meta ? [meta] : [])),
         info: (msg, meta) => console.log(`${CYAN}[${tag}]${RESET}`, msg, ...(meta ? [meta] : [])),
         warn: (msg, meta) => console.warn(`${YELLOW}[${tag}]${RESET}`, msg, ...(meta ? [meta] : [])),
         error: (msg, meta) => console.error(`${RED}[${tag}]${RESET}`, msg, ...(meta ? [meta] : [])),
     };
-    /* eslint-enable no-console */
+     
 }
 // ---------------------------------------------------------------------------
 // Lazy runtime resolution

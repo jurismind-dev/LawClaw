@@ -4,8 +4,8 @@
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
@@ -65,7 +65,6 @@ import {
   detectPluginInstallationState,
   finalizeBundledPluginConfigAfterInstall,
   isAlreadyInstalledErrorMessage,
-  sanitizePluginPackageManifestForLocalInstall,
 } from '../utils/openclaw-plugin-install';
 import { PresetInstaller, type PresetInstallPhase } from '../utils/preset-installer';
 import { forceSetup } from './index';
@@ -86,9 +85,8 @@ import { feishuOnboardingManager, isFeishuOnboardingCancelledError } from '../ut
 import { weixinOnboardingManager, isWeixinOnboardingCancelledError } from '../utils/weixin-onboarding';
 import {
   FEISHU_OFFICIAL_PLUGIN_ID,
-  FEISHU_OFFICIAL_PLUGIN_NPM_SPEC,
-  findBundledFeishuOfficialPluginDir,
 } from '../utils/feishu-official-plugin';
+import { prepareFeishuOfficialPluginInstallDir } from '../utils/feishu-official-plugin-installer';
 import { forgetManagedPresetInstallItem } from '../utils/preset-install-state';
 import {
   applyLawClawProviderSelection,
@@ -906,111 +904,12 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     error?: string;
     details?: string;
   }> => {
-    const bundledDirCandidates = [
-      ...new Set([
-        join(getResourcesDir(), 'plugins', FEISHU_OFFICIAL_PLUGIN_ID),
-        ...(app.isPackaged
-          ? [join(process.resourcesPath, 'openclaw-plugins', FEISHU_OFFICIAL_PLUGIN_ID)]
-          : []),
-      ]),
-    ];
-
-    const bundledDir = findBundledFeishuOfficialPluginDir({
-      resourcesDir: getResourcesDir(),
+    return await prepareFeishuOfficialPluginInstallDir({
       isPackaged: app.isPackaged,
+      resourcesDir: getResourcesDir(),
       resourcesPath: process.resourcesPath,
+      runCommand,
     });
-
-    if (bundledDir) {
-      return {
-        success: true,
-        installPath: bundledDir,
-      };
-    }
-
-    if (app.isPackaged) {
-      return {
-        success: false,
-        error: `Bundled plugin directory not found. Searched: ${bundledDirCandidates.join(', ')}`,
-      };
-    }
-
-    const tempDir = mkdtempSync(join(tmpdir(), 'lawclaw-feishu-install-'));
-    const extractDir = join(tempDir, 'extract');
-    mkdirSync(extractDir, { recursive: true });
-
-    try {
-      const packResult = await runCommand(
-        'npm',
-        ['pack', FEISHU_OFFICIAL_PLUGIN_NPM_SPEC, '--silent'],
-        tempDir,
-        true
-      );
-      if (!packResult.success) {
-        return {
-          success: false,
-          tempDir,
-          error: packResult.error || 'Failed to download Feishu official plugin package',
-          details: packResult.stderr || packResult.stdout,
-        };
-      }
-
-      const packedName = packResult.stdout
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .pop();
-
-      if (!packedName) {
-        return {
-          success: false,
-          tempDir,
-          error: 'npm pack completed but returned no archive filename',
-          details: packResult.stdout,
-        };
-      }
-
-      const archivePath = join(tempDir, packedName);
-      const extractResult = await runCommand('tar', ['-xzf', archivePath, '-C', extractDir], tempDir, false);
-      if (!extractResult.success) {
-        return {
-          success: false,
-          tempDir,
-          error: extractResult.error || 'Failed to extract Feishu official plugin archive',
-          details: extractResult.stderr || extractResult.stdout,
-        };
-      }
-
-      const installPath = join(extractDir, 'package');
-      const depsResult = await runCommand(
-        'npm',
-        ['install', '--omit=dev', '--omit=peer', '--silent', '--ignore-scripts'],
-        installPath,
-        true
-      );
-      if (!depsResult.success) {
-        return {
-          success: false,
-          tempDir,
-          error: depsResult.error || 'Failed to install Feishu official plugin dependencies',
-          details: depsResult.stderr || depsResult.stdout,
-        };
-      }
-
-      sanitizePluginPackageManifestForLocalInstall(installPath);
-
-      return {
-        success: true,
-        tempDir,
-        installPath,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        tempDir,
-        error: String(error),
-      };
-    }
   };
 
   const prepareBundledPluginLocalInstallDir = async (

@@ -9,6 +9,7 @@ import {
   findBundledFeishuOfficialPluginDir,
   getBundledFeishuOfficialPluginDirCandidates,
 } from './feishu-official-plugin';
+import { prepareFeishuOfficialPluginInstallDir } from './feishu-official-plugin-installer';
 import { ensureDir, getOpenClawConfigDir, getOpenClawStatus, getResourcesDir } from './paths';
 import { logger } from './logger';
 import { applyOpenClawConfigEnvFallbacks } from './openclaw-config-env';
@@ -518,11 +519,29 @@ class FeishuOnboardingManager extends EventEmitter {
     const installPromise = (async () => {
       await this.preparePluginInstallState(reinstallPlugin || this.status.pluginInstalled);
 
-      const installSpec = resolveFeishuOfficialPluginInstallSpec();
-      const installResult = await this.runOpenClawCli(['plugins', 'install', installSpec]);
-      if (!installResult.success) {
-        const details = [installResult.error, installResult.stderr, installResult.stdout].filter(Boolean).join('\n');
+      const prepared = await prepareFeishuOfficialPluginInstallDir({
+        isPackaged: app.isPackaged,
+        resourcesDir: getResourcesDir(),
+        resourcesPath: process.resourcesPath,
+        runCommand: this.runCommand.bind(this),
+      });
+      if (!prepared.success || !prepared.installPath) {
+        const details = [prepared.error, prepared.details].filter(Boolean).join('\n');
         throw new Error(details || '安装飞书官方插件失败');
+      }
+
+      try {
+        const installResult = await this.runOpenClawCli(['plugins', 'install', prepared.installPath]);
+        if (!installResult.success) {
+          const details = [installResult.error, installResult.stderr, installResult.stdout]
+            .filter(Boolean)
+            .join('\n');
+          throw new Error(details || '安装飞书官方插件失败');
+        }
+      } finally {
+        if (prepared.tempDir) {
+          rmSync(prepared.tempDir, { recursive: true, force: true });
+        }
       }
 
       await this.refreshStatus();
@@ -801,6 +820,59 @@ class FeishuOnboardingManager extends EventEmitter {
           stdout,
           stderr,
           error: stderr.trim() || stdout.trim() || `openclaw exited with code ${String(code)}`,
+        });
+      });
+    });
+  }
+
+  private async runCommand(
+    command: string,
+    args: string[],
+    cwd: string,
+    useShell: boolean
+  ): Promise<{
+    success: boolean;
+    stdout: string;
+    stderr: string;
+    error?: string;
+  }> {
+    return await new Promise((resolve) => {
+      const child = spawn(command, args, {
+        cwd,
+        shell: useShell,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('error', (error) => {
+        resolve({
+          success: false,
+          stdout,
+          stderr,
+          error: String(error),
+        });
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true, stdout, stderr });
+          return;
+        }
+
+        resolve({
+          success: false,
+          stdout,
+          stderr,
+          error: stderr.trim() || stdout.trim() || `${command} exited with code ${String(code)}`,
         });
       });
     });

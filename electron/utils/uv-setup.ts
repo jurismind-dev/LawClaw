@@ -4,7 +4,40 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { getUvMirrorEnv } from './uv-env';
 import { logger } from './logger';
-import { quoteForCmd, needsWinShell } from './paths';
+import { needsWinShell, quoteForCmd } from './paths';
+
+const MANAGED_PYTHON_VERSION = '3.12';
+const MANAGED_PYTHON_BASE_PACKAGES = ['python-docx', 'openpyxl', 'lxml', 'defusedxml'];
+const MANAGED_PYTHON_WINDOWS_PACKAGES = ['pywin32'];
+const MANAGED_PYTHON_BASE_IMPORTS = ['docx', 'openpyxl', 'lxml', 'defusedxml'];
+const MANAGED_PYTHON_WINDOWS_IMPORTS = ['pythoncom', 'win32com.client'];
+
+function getManagedPythonPackages(platform = process.platform): string[] {
+  return platform === 'win32'
+    ? [...MANAGED_PYTHON_BASE_PACKAGES, ...MANAGED_PYTHON_WINDOWS_PACKAGES]
+    : [...MANAGED_PYTHON_BASE_PACKAGES];
+}
+
+function getManagedPythonImports(platform = process.platform): string[] {
+  return platform === 'win32'
+    ? [...MANAGED_PYTHON_BASE_IMPORTS, ...MANAGED_PYTHON_WINDOWS_IMPORTS]
+    : [...MANAGED_PYTHON_BASE_IMPORTS];
+}
+
+function getManagedPythonDependencyCheckScript(platform = process.platform): string {
+  return `import importlib
+modules = ${JSON.stringify(getManagedPythonImports(platform))}
+missing = []
+for name in modules:
+    try:
+        importlib.import_module(name)
+    except Exception as exc:
+        missing.append(f"{name}: {exc}")
+if missing:
+    print("\\n".join(missing))
+    raise SystemExit(1)
+`;
+}
 
 /**
  * Get the path to the bundled uv binary
@@ -14,12 +47,11 @@ function getBundledUvPath(): string {
   const arch = process.arch;
   const target = `${platform}-${arch}`;
   const binName = platform === 'win32' ? 'uv.exe' : 'uv';
-  
+
   if (app.isPackaged) {
     return join(process.resourcesPath, 'bin', binName);
-  } else {
-    return join(process.cwd(), 'resources', 'bin', target, binName);
   }
+  return join(process.cwd(), 'resources', 'bin', target, binName);
 }
 
 /**
@@ -39,7 +71,6 @@ function resolveUvBin(): { bin: string; source: 'bundled' | 'path' | 'bundled-fa
     logger.warn(`Bundled uv binary not found at ${bundled}, falling back to system PATH`);
   }
 
-  // Dev mode or missing bundled binary — check system PATH
   const found = findUvInPathSync();
   if (found) return { bin: 'uv', source: 'path' };
 
@@ -84,24 +115,130 @@ export async function installUv(): Promise<void> {
   logger.info('uv is available and ready to use');
 }
 
+async function findManagedPythonPath(uvBin: string, env: Record<string, string | undefined>): Promise<string> {
+  const useShell = needsWinShell(uvBin);
+
+  return await new Promise<string>((resolve, reject) => {
+    let output = '';
+    let errorOutput = '';
+    const child = spawn(
+      useShell ? quoteForCmd(uvBin) : uvBin,
+      ['python', 'find', MANAGED_PYTHON_VERSION, '--managed-python'],
+      {
+        shell: useShell,
+        env,
+      }
+    );
+
+    child.stdout?.on('data', (data) => {
+      output += data.toString();
+    });
+    child.stderr?.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(
+          new Error(
+            `Managed Python lookup failed with code ${code}\n` +
+              `  uv binary: ${uvBin}\n` +
+              `  platform: ${process.platform}/${process.arch}\n` +
+              `  output: ${(errorOutput || output || '(no output captured)').trim()}`
+          )
+        );
+        return;
+      }
+
+      const candidate = output
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean);
+
+      if (!candidate) {
+        reject(new Error(`Managed Python ${MANAGED_PYTHON_VERSION} path was empty`));
+        return;
+      }
+
+      resolve(candidate);
+    });
+
+    child.on('error', (err) => {
+      reject(
+        new Error(
+          `Managed Python lookup spawn error: ${err.message}\n` +
+            `  uv binary: ${uvBin}\n` +
+            `  platform: ${process.platform}/${process.arch}`
+        )
+      );
+    });
+  });
+}
+
+async function verifyManagedPythonDependencies(pythonExe: string): Promise<void> {
+  const checkScript = getManagedPythonDependencyCheckScript();
+
+  await new Promise<void>((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+    const child = spawn(pythonExe, ['-c', checkScript], {
+      shell: false,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: process.env.PYTHONIOENCODING || 'utf-8',
+        PYTHONUTF8: process.env.PYTHONUTF8 || '1',
+      },
+    });
+
+    child.stdout?.on('data', (data) => {
+      stdout += data.toString();
+    });
+    child.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(
+        new Error(
+          `Managed Python dependency verification failed with code ${code}\n` +
+            `  python: ${pythonExe}\n` +
+            `  platform: ${process.platform}/${process.arch}\n` +
+            `  output: ${(stderr || stdout || '(no output captured)').trim()}`
+        )
+      );
+    });
+
+    child.on('error', (err) => {
+      reject(
+        new Error(
+          `Managed Python verification spawn error: ${err.message}\n` +
+            `  python: ${pythonExe}\n` +
+            `  platform: ${process.platform}/${process.arch}`
+        )
+      );
+    });
+  });
+}
+
 /**
  * Check if a managed Python 3.12 is ready and accessible
  */
 export async function isPythonReady(): Promise<boolean> {
   const { bin: uvBin } = resolveUvBin();
-  const useShell = needsWinShell(uvBin);
 
-  return new Promise<boolean>((resolve) => {
-    try {
-      const child = spawn(useShell ? quoteForCmd(uvBin) : uvBin, ['python', 'find', '3.12'], {
-        shell: useShell,
-      });
-      child.on('close', (code) => resolve(code === 0));
-      child.on('error', () => resolve(false));
-    } catch {
-      resolve(false);
-    }
-  });
+  try {
+    const pythonExe = await findManagedPythonPath(uvBin, { ...process.env });
+    await verifyManagedPythonDependencies(pythonExe);
+    return true;
+  } catch (error) {
+    logger.info('Managed Python readiness check failed:', error);
+    return false;
+  }
 }
 
 /**
@@ -111,17 +248,22 @@ export async function isPythonReady(): Promise<boolean> {
 async function runPythonInstall(
   uvBin: string,
   env: Record<string, string | undefined>,
-  label: string,
+  label: string
 ): Promise<void> {
   const useShell = needsWinShell(uvBin);
+
   return new Promise<void>((resolve, reject) => {
     const stderrChunks: string[] = [];
     const stdoutChunks: string[] = [];
 
-    const child = spawn(useShell ? quoteForCmd(uvBin) : uvBin, ['python', 'install', '3.12'], {
-      shell: useShell,
-      env,
-    });
+    const child = spawn(
+      useShell ? quoteForCmd(uvBin) : uvBin,
+      ['python', 'install', MANAGED_PYTHON_VERSION],
+      {
+        shell: useShell,
+        env,
+      }
+    );
 
     child.stdout?.on('data', (data) => {
       const line = data.toString().trim();
@@ -142,27 +284,130 @@ async function runPythonInstall(
     child.on('close', (code) => {
       if (code === 0) {
         resolve();
-      } else {
-        const stderr = stderrChunks.join('\n');
-        const stdout = stdoutChunks.join('\n');
-        const detail = stderr || stdout || '(no output captured)';
-        reject(new Error(
-          `Python installation failed with code ${code} [${label}]\n` +
-          `  uv binary: ${uvBin}\n` +
-          `  platform: ${process.platform}/${process.arch}\n` +
-          `  output: ${detail}`
-        ));
+        return;
       }
+
+      const stderr = stderrChunks.join('\n');
+      const stdout = stdoutChunks.join('\n');
+      const detail = stderr || stdout || '(no output captured)';
+      reject(
+        new Error(
+          `Python installation failed with code ${code} [${label}]\n` +
+            `  uv binary: ${uvBin}\n` +
+            `  platform: ${process.platform}/${process.arch}\n` +
+            `  output: ${detail}`
+        )
+      );
     });
 
     child.on('error', (err) => {
-      reject(new Error(
-        `Python installation spawn error [${label}]: ${err.message}\n` +
-        `  uv binary: ${uvBin}\n` +
-        `  platform: ${process.platform}/${process.arch}`
-      ));
+      reject(
+        new Error(
+          `Python installation spawn error [${label}]: ${err.message}\n` +
+            `  uv binary: ${uvBin}\n` +
+            `  platform: ${process.platform}/${process.arch}`
+        )
+      );
     });
   });
+}
+
+async function runPythonPackageInstall(
+  uvBin: string,
+  pythonExe: string,
+  env: Record<string, string | undefined>,
+  label: string
+): Promise<void> {
+  const useShell = needsWinShell(uvBin);
+  const packages = getManagedPythonPackages();
+
+  return new Promise<void>((resolve, reject) => {
+    const stderrChunks: string[] = [];
+    const stdoutChunks: string[] = [];
+    const child = spawn(
+      useShell ? quoteForCmd(uvBin) : uvBin,
+      ['pip', 'install', '--python', pythonExe, '--strict', ...packages],
+      {
+        shell: useShell,
+        env,
+      }
+    );
+
+    child.stdout?.on('data', (data) => {
+      const line = data.toString().trim();
+      if (line) {
+        stdoutChunks.push(line);
+        logger.debug(`[python-packages:${label}] stdout: ${line}`);
+      }
+    });
+
+    child.stderr?.on('data', (data) => {
+      const line = data.toString().trim();
+      if (line) {
+        stderrChunks.push(line);
+        logger.info(`[python-packages:${label}] stderr: ${line}`);
+      }
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      const stderr = stderrChunks.join('\n');
+      const stdout = stdoutChunks.join('\n');
+      const detail = stderr || stdout || '(no output captured)';
+      reject(
+        new Error(
+          `Python package installation failed with code ${code} [${label}]\n` +
+            `  uv binary: ${uvBin}\n` +
+            `  python: ${pythonExe}\n` +
+            `  platform: ${process.platform}/${process.arch}\n` +
+            `  packages: ${packages.join(', ')}\n` +
+            `  output: ${detail}`
+        )
+      );
+    });
+
+    child.on('error', (err) => {
+      reject(
+        new Error(
+          `Python package installation spawn error [${label}]: ${err.message}\n` +
+            `  uv binary: ${uvBin}\n` +
+            `  python: ${pythonExe}\n` +
+            `  platform: ${process.platform}/${process.arch}`
+        )
+      );
+    });
+  });
+}
+
+async function runWithMirrorRetry<T>(
+  uvEnv: Record<string, string | undefined>,
+  action: (env: Record<string, string | undefined>, label: string) => Promise<T>,
+  description: string
+): Promise<T> {
+  const baseEnv: Record<string, string | undefined> = { ...process.env };
+  const hasMirror = Object.keys(uvEnv).length > 0;
+
+  try {
+    return await action(hasMirror ? { ...baseEnv, ...uvEnv } : baseEnv, hasMirror ? 'mirror' : 'default');
+  } catch (firstError) {
+    logger.warn(`${description} attempt 1 failed:`, firstError);
+
+    if (!hasMirror) {
+      throw firstError;
+    }
+
+    logger.info(`Retrying ${description} without mirror...`);
+    try {
+      return await action(baseEnv, 'no-mirror');
+    } catch (secondError) {
+      logger.error(`${description} attempt 2 (no-mirror) also failed:`, secondError);
+      throw secondError;
+    }
+  }
 }
 
 /**
@@ -174,52 +419,31 @@ async function runPythonInstall(
 export async function setupManagedPython(): Promise<void> {
   const { bin: uvBin, source } = resolveUvBin();
   const uvEnv = await getUvMirrorEnv();
-  const hasMirror = Object.keys(uvEnv).length > 0;
+  const packages = getManagedPythonPackages();
 
   logger.info(
-    `Setting up managed Python 3.12 ` +
-    `(uv=${uvBin}, source=${source}, arch=${process.arch}, mirror=${hasMirror})`
+    `Setting up managed Python ${MANAGED_PYTHON_VERSION} ` +
+      `(uv=${uvBin}, source=${source}, arch=${process.arch}, packages=${packages.join(', ')})`
   );
 
-  const baseEnv: Record<string, string | undefined> = { ...process.env };
+  await runWithMirrorRetry(
+    uvEnv,
+    async (env, label) => {
+      await runPythonInstall(uvBin, env, label);
+    },
+    'Python install'
+  );
 
-  // Attempt 1: with mirror (if applicable)
-  try {
-    await runPythonInstall(uvBin, { ...baseEnv, ...uvEnv }, hasMirror ? 'mirror' : 'default');
-  } catch (firstError) {
-    logger.warn('Python install attempt 1 failed:', firstError);
+  const pythonExe = await findManagedPythonPath(uvBin, { ...process.env });
 
-    if (hasMirror) {
-      // Attempt 2: retry without mirror to rule out mirror issues
-      logger.info('Retrying Python install without mirror...');
-      try {
-        await runPythonInstall(uvBin, baseEnv, 'no-mirror');
-      } catch (secondError) {
-        logger.error('Python install attempt 2 (no mirror) also failed:', secondError);
-        throw secondError;
-      }
-    } else {
-      throw firstError;
-    }
-  }
+  await runWithMirrorRetry(
+    uvEnv,
+    async (env, label) => {
+      await runPythonPackageInstall(uvBin, pythonExe, env, label);
+    },
+    'Python package install'
+  );
 
-  // After installation, verify and log the Python path
-  const verifyShell = needsWinShell(uvBin);
-  try {
-    const findPath = await new Promise<string>((resolve) => {
-      const child = spawn(verifyShell ? quoteForCmd(uvBin) : uvBin, ['python', 'find', '3.12'], {
-        shell: verifyShell,
-        env: { ...process.env, ...uvEnv },
-      });
-      let output = '';
-      child.stdout?.on('data', (data) => { output += data; });
-      child.on('close', () => resolve(output.trim()));
-    });
-    
-    if (findPath) {
-      logger.info(`Managed Python 3.12 installed at: ${findPath}`);
-    }
-  } catch (err) {
-    logger.warn('Could not determine Python path after install:', err);
-  }
+  await verifyManagedPythonDependencies(pythonExe);
+  logger.info(`Managed Python ${MANAGED_PYTHON_VERSION} installed at: ${pythonExe}`);
 }

@@ -10,8 +10,10 @@ import { existsSync, writeFileSync } from 'fs';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import { 
+  getOpenClawConfigDir,
   getOpenClawDir, 
   getOpenClawEntryPath, 
+  getResourcesDir,
   isOpenClawBuilt, 
   isOpenClawPresent,
   appendNodeRequireToNodeOptions,
@@ -38,6 +40,7 @@ import {
   buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
+import { repairInstalledFeishuOfficialPluginIfNeeded } from '../utils/feishu-official-plugin-installer';
 import { selectGatewayRuntime } from './runtime-selection';
 
 /**
@@ -751,6 +754,28 @@ export class GatewayManager extends EventEmitter {
     } catch (err) {
       logger.warn('Failed to sync browser config to openclaw.json:', err);
     }
+
+    try {
+      const repairResult = await repairInstalledFeishuOfficialPluginIfNeeded({
+        openClawConfigDir: getOpenClawConfigDir(),
+        isPackaged: app.isPackaged,
+        resourcesDir: getResourcesDir(),
+        resourcesPath: process.resourcesPath,
+        runCommand: this.runCommand.bind(this),
+      });
+
+      if (repairResult.repaired) {
+        logger.info(
+          `Repaired installed Feishu official plugin before Gateway start (${repairResult.pluginDir})`
+        );
+      } else if (repairResult.reason === 'failed') {
+        logger.warn(
+          `Failed to repair installed Feishu official plugin before Gateway start (${repairResult.pluginDir}): ${repairResult.error}${repairResult.details ? `\n${repairResult.details}` : ''}`
+        );
+      }
+    } catch (err) {
+      logger.warn('Unexpected error while repairing installed Feishu official plugin before Gateway start:', err);
+    }
     
     let command: string;
     let args: string[];
@@ -1026,6 +1051,59 @@ export class GatewayManager extends EventEmitter {
     
     logger.error(`Gateway failed to become ready after ${retries} attempts on port ${this.status.port}`);
     throw new Error(`Gateway failed to start after ${retries} retries (port ${this.status.port})`);
+  }
+
+  private async runCommand(
+    command: string,
+    args: string[],
+    cwd: string,
+    useShell: boolean
+  ): Promise<{
+    success: boolean;
+    stdout: string;
+    stderr: string;
+    error?: string;
+  }> {
+    return await new Promise((resolve) => {
+      const child = spawn(command, args, {
+        cwd,
+        shell: useShell,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('error', (error) => {
+        resolve({
+          success: false,
+          stdout,
+          stderr,
+          error: String(error),
+        });
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true, stdout, stderr });
+          return;
+        }
+
+        resolve({
+          success: false,
+          stdout,
+          stderr,
+          error: stderr.trim() || stdout.trim() || `${command} exited with code ${String(code)}`,
+        });
+      });
+    });
   }
   
   /**

@@ -3,6 +3,18 @@ set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 RESOURCES_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+PYTHON_CHECK_SCRIPT='import importlib
+modules = ["docx", "openpyxl", "lxml", "defusedxml"]
+missing = []
+for name in modules:
+    try:
+        importlib.import_module(name)
+    except Exception as exc:
+        missing.append(f"{name}: {exc}")
+if missing:
+    print("\n".join(missing))
+    raise SystemExit(1)
+'
 
 if [ -n "${LAWCLAW_BUNDLED_UV_EXE:-}" ] && [ -x "${LAWCLAW_BUNDLED_UV_EXE}" ]; then
   UV_EXE="${LAWCLAW_BUNDLED_UV_EXE}"
@@ -15,15 +27,20 @@ if [ ! -x "$UV_EXE" ]; then
   exit 1
 fi
 
-PYTHON_EXE="$("$UV_EXE" python find 3.12 2>/dev/null || true)"
+PYTHON_EXE="$("$UV_EXE" python find 3.12 --managed-python 2>/dev/null || true)"
 if [ -z "$PYTHON_EXE" ]; then
   "$UV_EXE" python install 3.12
-  PYTHON_EXE="$("$UV_EXE" python find 3.12 2>/dev/null || true)"
+  PYTHON_EXE="$("$UV_EXE" python find 3.12 --managed-python 2>/dev/null || true)"
 fi
 
 if [ -z "$PYTHON_EXE" ] || [ ! -x "$PYTHON_EXE" ]; then
   echo "Managed Python 3.12 is not available through bundled uv." >&2
   exit 1
+fi
+
+if ! "$PYTHON_EXE" -c "$PYTHON_CHECK_SCRIPT" >/dev/null 2>&1; then
+  "$UV_EXE" pip install --python "$PYTHON_EXE" --strict python-docx openpyxl lxml defusedxml
+  "$PYTHON_EXE" -c "$PYTHON_CHECK_SCRIPT"
 fi
 
 exec "$PYTHON_EXE" "$@"

@@ -249,15 +249,26 @@ jobs:
             Start-Sleep -Seconds $delay
           }
 
+      - name: Prepare macOS signing and notarization env
+        if: matrix.platform == 'mac'
+        id: mac_signing
+        env:
+          MAC_CERTS: ${{ secrets.MAC_CERTS }}
+          MAC_CERTS_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
+        run: node scripts/prepare-macos-signing-env.mjs
+
       - name: Build macOS packages (x64 + arm64)
         if: matrix.platform == 'mac'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MAC_CERTS: ${{ secrets.MAC_CERTS }}
-          MAC_CERTS_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          MAC_APPLE_ID: ${{ secrets.APPLE_ID }}
-          MAC_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          MAC_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
 
@@ -281,17 +292,11 @@ jobs:
           pnpm exec zx scripts/bundle-openclaw.mjs
           pnpm run bundle:preset-artifacts:offline
 
-          if [[ -n "${MAC_CERTS:-}" && -n "${MAC_CERTS_PASSWORD:-}" && -n "${MAC_APPLE_ID:-}" && -n "${MAC_APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${MAC_APPLE_TEAM_ID:-}" ]]; then
-            echo "Mac signing secrets are set. Building signed and notarized artifacts."
-            export CSC_LINK="${MAC_CERTS}"
-            export CSC_KEY_PASSWORD="${MAC_CERTS_PASSWORD}"
-            export APPLE_ID="${MAC_APPLE_ID}"
-            export APPLE_APP_SPECIFIC_PASSWORD="${MAC_APPLE_APP_SPECIFIC_PASSWORD}"
-            export APPLE_TEAM_ID="${MAC_APPLE_TEAM_ID}"
+          if [[ "${MAC_SIGN_ENABLED:-false}" == "true" ]]; then
+            echo "Mac signing secrets are set (mode=${MAC_SIGN_MODE}). Building signed and notarized artifacts."
             retry_cmd 3 pnpm exec electron-builder --mac --x64 --arm64 --publish never
           else
             echo "Mac signing secrets are missing. Building unsigned artifacts."
-            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID CSC_NAME
             retry_cmd 3 pnpm exec electron-builder --config electron-builder.nosign.yml --mac --x64 --arm64 --publish never
           fi
 
@@ -656,6 +661,15 @@ jobs:
         env:
           TARGET_COMMITISH: ${{ needs.prepare.outputs.target_commitish }}
           RELEASE_CHANNEL: ${{ steps.channel.outputs.release_channel }}
+          MAC_CERTS: ${{ secrets.MAC_CERTS }}
+          MAC_CERTS_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
         run: |
           set -euo pipefail
 
@@ -675,6 +689,16 @@ jobs:
           direct_commits="$(git log "${range}" --no-merges --pretty=format:'- %s (%h)' -n 20 || true)"
 
           body_file="${RUNNER_TEMP}/release-body.md"
+          mac_signed="false"
+          if [[ -n "${MAC_CERTS:-}" && -n "${MAC_CERTS_PASSWORD+x}" ]]; then
+            if [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
+              mac_signed="true"
+            elif [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_KEY_ID:-}" && -n "${APPLE_API_ISSUER:-}" ]]; then
+              mac_signed="true"
+            elif [[ -n "${APPLE_KEYCHAIN_PROFILE:-}" ]]; then
+              mac_signed="true"
+            fi
+          fi
 
           {
             echo "## 发布概览"
@@ -708,11 +732,15 @@ jobs:
             echo
             echo "## 安装提示"
             echo
-            echo "- macOS（未签名版本）可能出现“已损坏，无法打开。你应该将它移到废纸篓”或“无法验证开发者”提示，请按以下步骤操作："
-            echo "  1. 将 \`LawClaw.app\` 从 DMG 拖入“应用程序”目录。"
-            echo "  2. 完成复制后，先退出（Eject）磁盘映像，再从“应用程序”中启动。"
-            echo "  3. 首次启动时按住 \`Control\` 键点击应用，选择“打开”，并在弹窗中确认。"
-            echo "  4. 如仍被系统拦截，在终端执行：\`xattr -dr com.apple.quarantine /Applications/LawClaw.app\`，然后重新打开应用。"
+            if [[ "${mac_signed}" == "true" ]]; then
+              echo "- macOS 安装包已使用 Developer ID 签名并完成公证；首次启动通常不需要手动绕过 Gatekeeper。"
+            else
+              echo "- macOS（未签名版本）可能出现“已损坏，无法打开。你应该将它移到废纸篓”或“无法验证开发者”提示，请按以下步骤操作："
+              echo "  1. 将 \`LawClaw.app\` 从 DMG 拖入“应用程序”目录。"
+              echo "  2. 完成复制后，先退出（Eject）磁盘映像，再从“应用程序”中启动。"
+              echo "  3. 首次启动时按住 \`Control\` 键点击应用，选择“打开”，并在弹窗中确认。"
+              echo "  4. 如仍被系统拦截，在终端执行：\`xattr -dr com.apple.quarantine /Applications/LawClaw.app\`，然后重新打开应用。"
+            fi
             echo "- Windows 若触发 SmartScreen，请点击“更多信息”后选择“仍要运行”继续安装。"
             echo
             echo "---"

@@ -17,6 +17,7 @@ import { autoInstallCliIfNeeded } from '../utils/openclaw-cli';
 import { runProviderStartupMigration } from '../utils/provider-migration';
 import { runAgentPresetStartupMigration } from '../utils/agent-preset-migration';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
+import { ensureGlobalRuntimeShims } from '../utils/global-runtime-shims';
 import { ensureMacUninstallWatcher } from '../utils/mac-uninstall-watcher';
 
 import { ClawHubService } from '../gateway/clawhub';
@@ -168,6 +169,9 @@ async function initialize(): Promise<void> {
   // Warm up network optimization (non-blocking)
   void warmupNetworkOptimization();
   ensureMacUninstallWatcher();
+  void ensureGlobalRuntimeShims().catch((error) => {
+    logger.warn('Failed to ensure global runtime shims:', error);
+  });
 
   // Set application menu
   createMenu();

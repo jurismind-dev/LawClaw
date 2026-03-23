@@ -45,6 +45,7 @@ extraResources:
   # don't need an extraResources entry here.
 
 afterPack: ./scripts/after-pack.cjs
+afterAllArtifactBuild: ./scripts/after-all-artifact-build.cjs
 
 asar: true
 asarUnpack:

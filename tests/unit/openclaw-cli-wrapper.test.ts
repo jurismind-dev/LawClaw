@@ -29,6 +29,8 @@ describe('bundled openclaw CLI wrappers', () => {
 
     expect(installerScript).toContain('!macro customInstall');
     expect(installerScript).toContain('$INSTDIR\\\\resources\\\\cli');
+    expect(installerScript).toContain('PendingCliPath');
+    expect(installerScript).toContain("Get-ItemProperty -Path $$key -ErrorAction SilentlyContinue");
   });
 
   it('keeps Windows plugin installation off npm.cmd fallbacks', () => {
@@ -73,6 +75,8 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(posixNode).toContain('ELECTRON_RUN_AS_NODE=1');
     expect(posixPython).toContain('python find 3.12');
     expect(posixPython).toContain('python install 3.12');
+    expect(posixPython).toContain('pip install --python "$PYTHON_EXE" --strict python-docx openpyxl lxml defusedxml');
+    expect(posixPython).toContain('modules = ["docx", "openpyxl", "lxml", "defusedxml"]');
 
     expect(windowsCmdUtf8).toContain('chcp 65001');
     expect(windowsCmdUtf8).toContain('cmd.exe');
@@ -85,6 +89,8 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(windowsPython).toContain('PYTHONUTF8=1');
     expect(windowsPythonBridge).toContain('& $UvExe python find 3.12');
     expect(windowsPythonBridge).toContain('& $uvExe python install 3.12');
+    expect(windowsPythonBridge).toContain('& $uvExe pip install --python $pythonExe --strict python-docx openpyxl lxml defusedxml pywin32');
+    expect(windowsPythonBridge).toContain('modules = ["docx", "openpyxl", "lxml", "defusedxml", "pythoncom", "win32com.client"]');
     expect(windowsPythonBridge).toContain('& $pythonExe @PythonArgs');
     expect(windowsPythonBridge).toContain('[Console]::OutputEncoding');
   });
@@ -114,7 +120,7 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(packageJson.scripts.release).toContain('node scripts/run-electron-builder.mjs --publish always');
 
     expect(noSignConfig).toContain('macUnsigned: true');
-    expect(builderWrapper).toContain("process.env.LAWCLAW_MAC_SIGN !== '1'");
+    expect(builderWrapper).toContain("process.env.LAWCLAW_MAC_SIGN === '0'");
     expect(builderWrapper).toContain('electron-builder.nosign.yml');
   });
 });

@@ -9,28 +9,25 @@
 ; Handles both per-user and per-machine (all users) installations.
 
 !macro customInstall
-  ; Add resources\cli to the current user's PATH so "openclaw" is available in new terminals.
+  ; Keep a single LawClaw CLI entry in the current user's PATH so updates and
+  ; reinstalls do not accumulate stale duplicates.
   StrCpy $1 "$INSTDIR\\resources\\cli"
-  ReadRegStr $0 HKCU "Environment" "Path"
-  StrCmp $0 "" _ci_writeOnly
-  StrCpy $2 "$0;$1"
-  Goto _ci_write
+  WriteRegStr HKCU "Software\\LawClaw" "PendingCliPath" "$1"
+  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$key = ''HKCU:\Software\LawClaw''; $$props = Get-ItemProperty -Path $$key -ErrorAction SilentlyContinue; $$currentCli = $$props.PendingCliPath; $$previousCli = $$props.CliPath; $$current = [Environment]::GetEnvironmentVariable(''Path'', ''User''); $$parts = @(); if ($$current) { $$parts = $$current -split ''\;'' | Where-Object { $_ } }; $$parts = $$parts | Where-Object { [string]::Compare($_, $$currentCli, $$true) -ne 0 -and [string]::Compare($_, $$previousCli, $$true) -ne 0 }; if ($$currentCli) { $$parts += $$currentCli }; [Environment]::SetEnvironmentVariable(''Path'', ($$parts -join ''\;''), ''User'')"'
+  WriteRegStr HKCU "Software\\LawClaw" "CliPath" "$1"
+  DeleteRegValue HKCU "Software\\LawClaw" "PendingCliPath"
+  ReadRegStr $2 HKCU "Environment" "Path"
+  StrCmp $2 "" _ci_pathDone
+  WriteRegExpandStr HKCU "Environment" "Path" $2
+  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
 
-  _ci_writeOnly:
-    StrCpy $2 "$1"
-
-  _ci_write:
-    WriteRegExpandStr HKCU "Environment" "Path" $2
-    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
+  _ci_pathDone:
 !macroend
 
 !macro customUnInstall
-  ; Refresh the user PATH so new terminals observe the updated environment.
+  ; Refresh the user PATH so new terminals observe the current environment.
   ReadRegStr $0 HKCU "Environment" "Path"
   StrCmp $0 "" _cu_pathDone
-
-  ; Keep existing PATH as-is for uninstall.
-  ; (Custom string helper calls can break NSIS multi-arch build resolution.)
   WriteRegExpandStr HKCU "Environment" "Path" $0
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
 

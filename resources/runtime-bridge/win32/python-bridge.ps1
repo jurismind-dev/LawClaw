@@ -9,6 +9,19 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Console]::OutputEncoding
 $BridgeDir = Split-Path -Parent $PSCommandPath
+$PythonCheckScript = @'
+import importlib
+modules = ["docx", "openpyxl", "lxml", "defusedxml", "pythoncom", "win32com.client"]
+missing = []
+for name in modules:
+    try:
+        importlib.import_module(name)
+    except Exception as exc:
+        missing.append(f"{name}: {exc}")
+if missing:
+    print("\n".join(missing))
+    raise SystemExit(1)
+'@
 
 if (-not $env:PYTHONIOENCODING) {
   $env:PYTHONIOENCODING = 'utf-8'
@@ -32,7 +45,7 @@ function Find-ManagedPythonPath {
     [string]$UvExe
   )
 
-  $lines = & $UvExe python find 3.12 2>$null
+  $lines = & $UvExe python find 3.12 --managed-python 2>$null
   if ($LASTEXITCODE -ne 0) {
     return $null
   }
@@ -45,6 +58,22 @@ function Find-ManagedPythonPath {
   }
 
   return $null
+}
+
+function Test-ManagedPythonDependencies {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$PythonExe,
+    [switch]$Quiet
+  )
+
+  if ($Quiet) {
+    & $PythonExe -c $PythonCheckScript *> $null
+  } else {
+    & $PythonExe -c $PythonCheckScript
+  }
+
+  return $LASTEXITCODE -eq 0
 }
 
 $uvExe = Get-BundledUvPath
@@ -71,6 +100,17 @@ if (-not $pythonExe) {
 if (-not (Test-Path -LiteralPath $pythonExe)) {
   [Console]::Error.WriteLine("Managed Python executable not found: $pythonExe")
   exit 1
+}
+
+if (-not (Test-ManagedPythonDependencies -PythonExe $pythonExe -Quiet)) {
+  & $uvExe pip install --python $pythonExe --strict python-docx openpyxl lxml defusedxml pywin32
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+
+  if (-not (Test-ManagedPythonDependencies -PythonExe $pythonExe)) {
+    exit $LASTEXITCODE
+  }
 }
 
 & $pythonExe @PythonArgs

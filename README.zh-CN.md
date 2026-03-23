@@ -123,15 +123,15 @@ LawClaw（劳有钳）不仅仅是一个对话框，而是一个专为法律行�
 
 **🎯 开箱即用的专业工作台**
 
-- 面向法律专业人士设计，提供类似 IDE 的多标签页工作台。从安装到第一次咨询，均可通过可视化流程完成；API 凭证通过系统原生 Keychain 安全存储，并支持浅色 / 深色主题自适应。
+- 面向法律专业人士设计，提供类似 IDE 的多标签页工作台。从安装到第一次咨询，均可通过可视化流程完成；Provider 凭证当前通过本地 `electron-store` 持久化，并同步到 OpenClaw auth profiles 供 Gateway 使用，同时支持浅色 / 深色主题自适应。
 
 **🧠 上下文管理与智能记忆**
 
 - 具备超长上下文窗口，能够精准追踪复杂对话逻辑。即使在数十轮深度交互后，AI 仍可回溯此前的关键事实与指令，帮助保持法律分析的连贯性与准确性。
 
-**🧩 开源技能商店与安全生态（Open Skill Store）**
+**🧩 技能市场与精选生态**
 
-- 内置开源技能商店，可像安装浏览器插件一样一键扩展 AI 能力。我们鼓励社区共建，允许用户提交自定义 Skill；同时，所有第三方技能均需经过官方严格的代码安全审查与质量把控，确保生态既开放活跃，又具备法律场景所需的安全可靠性。
+- 内置技能市场，可像安装浏览器插件一样一键扩展 AI 能力。当前 UI 聚焦 JurisHub，并在已安装技能视图中展示来源与官方标识；默认预置安装器仅同步 JurisHub 的官方 + 推荐（highlighted）技能集合，以确保开箱体验保持精选、可控且稳定。
 
 ### 官方严选法律技能
 
@@ -197,8 +197,8 @@ pnpm dev
 1. **语言** —— 配置首选语言（中文 / English / 日本語）
 2. **环境检查** —— 检查 Node.js 运行时、OpenClaw 包与网关状态
 3. **AI 供应商** —— 配置受支持的模型供应商（含 `Jurismind（法义经纬）`、`Kimi Coding（官方）`、`GLM - Code Plan（智谱-编程包月）` 等）。其中 `Jurismind（法义经纬）` 通过浏览器登录授权，部分供应商仅需填写 API Key。
-4. **消息平台（可选）** —— 在设置向导中可配置 `Jurismind（法义经纬）` 与 `Feishu / Lark`；其中 `Jurismind（法义经纬）` 提供配对绑定入口，`Feishu / Lark` 使用官方引导面板完成接入，其他渠道可在进入主界面后于设置中继续添加。
-5. **基础组件安装** —— 安装或检查 uv、托管 Python 运行时，并执行预设技能 / 插件安装。
+4. **消息平台（可选）** —— 在设置向导中可配置 `Jurismind（法义经纬）` 与 `Feishu / Lark`；其中 `Jurismind（法义经纬）` 提供配对绑定入口，`Feishu / Lark` 使用官方引导面板完成接入，其他频道配置会在进入主界面后通过 `Channels` 页面继续完成。
+5. **基础组件安装** —— 安装或检查 uv、托管 Python 运行时，并执行预设技能 / 插件安装。当前默认预置同步入口指向 JurisHub 的官方 + 推荐技能集合。QQ 频道配置与 bundled 插件安装当前不在 Setup Wizard 中直接暴露。
 6. **完成确认** —— 在进入主界面前查看已配置的 AI 供应商、已安装组件与网关状态。
 
 ---
@@ -246,7 +246,8 @@ LawClaw 采用 **双进程架构**，将 UI 层与 AI 运行时操作分离，�
 
 - **进程隔离**：AI 运行时在独立进程中运行，即使在高负载计算期间，UI 也能保持响应。
 - **优雅恢复**：内置带指数退避的重连逻辑，能够自动处理瞬时故障。
-- **本地持久化**：Provider 配置与 API Key 当前通过本地 `electron-store` 持久化，不依赖云端同步。
+- **本地持久化**：Provider 配置与 API Key 当前通过本地 `electron-store` 持久化，并同步到 OpenClaw auth profiles，不依赖云端同步，也未接入操作系统级 Keychain。
+- **Bundled Runtime 兜底**：打包版本会把内置运行时桥接层与 bundled 二进制注入子进程环境，确保在系统运行时缺失或不一致时，Gateway / CLI 相关流程仍可用。
 - **热重载**：开发模式支持即时 UI 更新，无需重启网关。
 
 ---
@@ -266,12 +267,14 @@ LawClaw/
 │   ├── main/              # 应用入口、窗口管理
 │   ├── gateway/           # OpenClaw 网关进程管理
 │   ├── preload/           # 安全 IPC 桥接脚本
-│   └── utils/             # 工具模块（存储、认证、路径）
+│   └── utils/             # 工具模块（存储、认证、运行时桥接、路径）
 ├── src/                   # React 渲染进程
 │   ├── components/        # 可复用 UI 组件
+│   │   ├── channels/      # 频道接入 / 引导面板
 │   │   ├── ui/            # 基础组件（shadcn/ui）
 │   │   ├── layout/        # 布局组件（侧边栏、顶栏）
 │   │   └── common/        # 公共组件
+│   ├── hooks/             # 共享 React Hooks
 │   ├── pages/             # 应用页面
 │   │   ├── Setup/         # 初始设置向导
 │   │   ├── Dashboard/     # 首页仪表盘
@@ -279,11 +282,12 @@ LawClaw/
 │   │   ├── Channels/      # 频道管理
 │   │   ├── Skills/        # 技能浏览与管理
 │   │   ├── Cron/          # 定时任务
+│   │   ├── UpgradeInstalling/ # 预置升级阻塞页
 │   │   └── Settings/      # 配置面板
 │   ├── stores/            # Zustand 状态仓库
 │   ├── lib/               # 前端工具库
 │   └── types/             # TypeScript 类型定义
-├── resources/             # 静态资源与随包资源（图标、图片、预设安装清单、插件等）
+├── resources/             # 静态资源与随包资源（图标、预设安装清单、插件、runtime bridge、bundled bin 等）
 ├── scripts/               # 构建与工具脚本
 └── tests/                 # 测试套件
 ```
@@ -305,6 +309,10 @@ pnpm typecheck            # TypeScript 类型检查
 # 测试
 pnpm test                 # 运行单元测试
 pnpm test:e2e             # 运行 Playwright E2E 测试
+
+# 预置产物校验
+pnpm run bundle:preset-artifacts
+pnpm run bundle:preset-artifacts:offline
 
 # 构建与打包
 pnpm run build:vite       # 仅构建前后端代码

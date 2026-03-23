@@ -7,7 +7,7 @@
 **基于项目**：ValueCell Team 上游实现
 **应用版本**：0.1.16
 **OpenClaw 运行时基线**：`openclaw@2026.3.13`
-**最后更新**：2026-03-11
+**最后更新**：2026-03-20
 
 ---
 
@@ -37,7 +37,7 @@ LawClaw 是基于 Electron + OpenClaw Gateway 的桌面 AI 助手应用，当前
 - 首次启动图形化引导（Setup Wizard）
 - OpenClaw 运行时检查、Gateway 启动与日志查看
 - AI Provider 配置、校验、OAuth/Jurismind 绑定与默认切换
-- 多频道接入配置，覆盖 token 流程、Jurismind 绑定流程与 WhatsApp QR 流程
+- 多频道接入配置，覆盖 token 流程、Jurismind 绑定流程、Feishu / Lark 官方插件扫码引导；代码层仍保留 WhatsApp QR 连接逻辑
 - Chat 对话、流式输出、工具调用状态、附件发送与会话收敛
 - Skills 浏览、启停、安装、卸载、配置，以及 JurisHub 技能市场接入
 - 预置安装清单（preset installs）与升级补装阻塞页
@@ -135,6 +135,9 @@ LawClaw 当前通过“专用 Agent 定向写入 + 应用层强制约束 + 启�
   - provider registry 会写入全局 `~/.openclaw/openclaw.json`
   - API key / OAuth token 会同步到 `main` 与 `lawclaw-main` 的 auth profile
   - custom/ollama 还会涉及 OpenClaw runtime provider 配置写入
+- 打包态会通过 `bundled-runtime` 将 `resources/runtime-bridge` 与 `resources/bin/<platform-arch>` 注入 PATH，并向 Gateway / OpenClaw CLI 注入 bundled Node、uv、npm、npx 路径环境变量，作为系统运行时不可用时的兜底 bridge
+- Windows 兼容层会为 Gateway 相关进程注入 UTF-8 Python 环境变量；`openclaw.json` / channel config / skill config 等 JSON 文件在 Windows 下会规范为 UTF-8 BOM，而 `auth-profiles.json` 会保持 BOM-free，以兼容上游直接 `JSON.parse` 的读取方式
+- 当 Jurismind provider 可用时，主进程会同步 Jurismind Responses API 支撑的 `doubao` 原生 web search 配置到 `openclaw.json` 的 `tools.web.search`
 - IPC 层会话键规范化：`gateway:rpc` 与 `chat:sendWithMedia` 收到非 `agent:lawclaw-main:*` 的 `sessionKey` 时，会统一回落到 `agent:lawclaw-main:main`
 - `sessions.list` 在应用层仅回传 `agent:lawclaw-main:*`；历史非 LawClaw 会话仍保留在网关存储中，但在 UI 隐藏
 - 仅对“通过 LawClaw UI 成功保存”的频道写入 `lawclawManagedChannels`，并为这些频道维护唯一的 `lawclaw-main` binding
@@ -247,25 +250,28 @@ Setup 当前保留 6 步流程：Welcome → Runtime → Provider → Channel �
 #### 4.1.4 Channel（频道连接，可选）
 
 - 该步骤可跳过，不阻塞 setup 完成
-- Setup 主展示频道来自 `getPrimaryChannels()`，当前为：
+- Setup 主展示频道来自 `getPrimaryChannels().filter((type) => type !== 'qqbot')`，当前为：
   - `jurismind`
   - `feishu`
-  - `qqbot`
 - `jurismind` 在 channel metadata 中仍为 `comingSoon=true`，但 Setup 对其使用独立的绑定提示面板与二维码/链接流程
-- Setup 对非 Jurismind 主展示频道仅渲染 `connectionType=token` 的配置入口，因此不会在该步骤显示 WhatsApp QR 配置
-- QQ 频道的选择结果会影响安装步骤是否需要执行 `openclaw:installBundledPlugin('qqbot')` 兜底安装
+- `feishu` 在 Setup 中走 `FeishuOfficialOnboardingPanel`，支持安装/复用内置官方插件、扫码创建机器人，以及手动绑定已有 `App ID / App Secret`
+- 当前 Setup 主展示列表不再暴露 `qqbot`；WhatsApp QR 与 `qqbot` 配置链路虽在代码层保留，但不在该步骤主展示列表中开放
 
 #### 4.1.5 Installing（组件安装）
 
-- 该步骤按“环境准备 + 预置清单安装 + 可选 QQ 插件兜底”执行：
+- 该步骤按“环境准备 + 预置清单安装”执行：
   1. 调用 `uv:install-all`，完成 bundled uv 校验与托管 Python 安装
   2. 调用 `presetInstall:getStatus` 读取预置安装清单并渲染安装项
   3. 调用 `presetInstall:run({ phase: 'setup' })` 执行预置项安装
-  4. 如本次 Setup 选择了 QQ 频道，则执行 `openclaw:installBundledPlugin('qqbot')` 兜底安装 QQ 插件
 - 预置安装步骤与用户选择的 Provider 类型无关；只要完成 Setup 主流程进入 Installing，就会执行内置 manifest 中的 skill/plugin 安装
 - Setup 的 Installing 步骤当前不提供“跳过安装”入口；失败时仅允许重试，避免绕过内置 skill 安装
 - 安装进度来自主进程事件 `presetInstall:progress`
-- 当前默认预置清单仅内置 1 个 skill：`contract-review-jurismind@1.0.0`
+- 当前默认预置清单包含 1 个远程市场 skill 入口：`jurismindhub-official-highlighted`
+  - `installMode=market`
+  - `market=jurismindhub`
+  - `selection=official-highlighted`
+  - `targetVersion=latest`
+- 安装时会先从 JurisHub 拉取当前“官方 + 推荐（highlighted）”技能集合，再逐项执行安装；因此最终安装技能数量由远端市场集合决定，不再固定为单个本地 skill 包
 - 对预置 skill，安装后会写入：
   - `~/.openclaw/skills/<skillId>/.clawhub/origin.json`
   - `~/.openclaw/.clawhub/lock.json`
@@ -404,18 +410,25 @@ Setup 当前保留 6 步流程：Welcome → Runtime → Provider → Channel �
 
 #### 4.4.4 添加频道与连接流程
 
+- 当前“添加频道”对话框实际来源于 `displayedChannelTypes.filter((type) => type !== 'jurismind')`，因此当前 UI 暴露的新增入口为：
+  - `feishu`
+  - `qqbot`（仅当 QQ 插件已安装）
 - Jurismind：
   - 展示专用提示面板
   - 支持二维码/链接展示、复制链接、刷新、重新绑定、清除绑定
-- Token 类型频道：
+- Feishu / Lark：
+  - 通过 `FeishuOfficialOnboardingPanel` 走官方插件引导
+  - 支持复用内置 `openclaw-lark@2026.3.17` 官方插件，或按需在线安装到本地
+  - 支持扫码创建机器人与手动绑定已有应用
+  - 成功后自动写入默认频道配置并重启 Gateway
+- Token 类型频道（当前主入口主要为 `qqbot`）：
   - 输入配置字段
   - 调用 `channel:validateCredentials` 校验
   - 保存 `channel:saveConfig`
   - 保存后由主进程落盘配置并重启 Gateway
-- WhatsApp（QR）频道：
-  - 请求二维码 `channel:requestWhatsAppQr`
-  - 监听 `channel:whatsapp-qr / success / error`
-  - 成功后保存配置并重启 Gateway
+- WhatsApp：
+  - 页面代码与 IPC 仍保留 `channel:requestWhatsAppQr` / `channel:whatsapp-*` QR 流程
+  - 但当前 Channels 页面“添加频道”入口未直接暴露该类型，属于已实现底层链路、未作为主展示入口开放的状态
 
 #### 4.4.5 LawClaw 管理频道绑定策略（已实施）
 
@@ -509,7 +522,8 @@ Setup 当前保留 6 步流程：Welcome → Runtime → Provider → Channel �
 - Provider 列表管理（新增、删除、设默认）
 - 编辑 API Key / Base URL / Model ID（按类型）
 - 提交前可执行 API Key 校验
-- Jurismind 绑定成功后仅保存配置；只有显式点击“设为默认”时才调用 `provider:setDefault`
+- Jurismind 提供商支持浏览器 SSO 回填 `token_key`；主进程会先校验旧 token 是否可复用，必要时再重新绑定，并在接口未直接返回时轮询查询结果
+- Jurismind 绑定成功后在 Settings 页仅保存配置；只有显式点击“设为默认”时才调用 `provider:setDefault`
 - 仅 `custom` 允许创建多个实例；其余 provider 类型默认单实例
 - 删除当前默认 provider，或删除/清空其最后一个有效 API Key 时，主进程会按最近更新时间自动补位到其他可用 provider；仅当 `lawclaw-main.model.primary` 仍是系统受管值时才同步补位
 
@@ -525,9 +539,11 @@ Setup 当前保留 6 步流程：Welcome → Runtime → Provider → Channel �
 #### 4.7.4 更新设置（`UpdateSettings`）
 
 - 检查、下载、安装更新
-- 下载进度与版本说明展示
-- 自动下载开启后，下载完成进入自动安装倒计时
-- 支持取消自动安装倒计时
+- 下载进度、当前版本与版本说明展示
+- 设置页当前额外提供“自动检查更新”“自动下载更新”两个开关
+- 自动下载开启后，下载完成进入自动安装倒计时，并支持取消倒计时
+- `updateChannel` 仍通过 `settings` / `update` store 与 IPC 生效，但当前 Settings UI 未单独暴露切换控件
+- 当当前构建使用外部安装器（如未签名 macOS DMG）时，更新流转为 `manualInstall` 分支，界面展示“打开安装器 / 重新打开”而非应用内静默安装
 
 #### 4.7.5 高级设置
 
@@ -664,6 +680,24 @@ interface SettingsState {
 ```
 
 > 说明：i18n 资源当前包含 `en / zh / ja`，但 `settings` store 的 `normalizeLanguage()` 目前只会将 `zh*` 归一为 `zh`，其他值归一为 `en`。
+
+#### update store（当前定义）
+
+```typescript
+interface UpdateState {
+  status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+  currentVersion: string;
+  updateInfo: UpdateInfo | null;
+  progress: ProgressInfo | null;
+  error: string | null;
+  manualInstall: boolean;
+  isInitialized: boolean;
+  autoInstallCountdown: number | null;
+}
+```
+
+- `manualInstall=true` 表示当前平台/构建不能走应用内静默安装，而是需要用户手动打开外部安装器
+- `autoInstallCountdown` 仅在下载完成且当前构建支持应用内安装时生效
 
 #### agent preset migration 状态（当前定义）
 
@@ -843,11 +877,12 @@ const { t } = useTranslation('chat');
 
 **状态：已支持**
 
-- 安装项由 `resources/preset-installs/manifest.json` 定义，支持 `skill` 与 `plugin` 两类
-- 每个安装项需提供：`id`、`targetVersion`、`artifactPath`、`sha256`（可选 `displayName`、`installMode`）
-- 当 `kind=skill` 时，`id` 必须是 JurisHub 商店 highlighted 技能 slug；构建阶段会强校验
+- 安装项由 `resources/preset-installs/manifest.json` 定义，支持 `skill` 与 `plugin` 两类，以及 `dir / tgz / market` 三种安装模式
+- `dir / tgz` 模式需提供 `artifactPath` 与 `sha256`
+- `market` 模式当前仅允许 `kind=skill` 且 `market=jurismindhub`；若配置 `selection`，当前仅支持 `official-highlighted`
+- 构建阶段会对默认 market 入口执行远端校验，确保只打入 JurisHub 当前“官方 + 推荐”技能集合
 - Setup 与 Upgrade 复用同一份 preset install manifest；是否触发安装由 manifest hash 与本地状态共同决定
-- 当前仓库默认清单只内置 1 个 skill：`contract-review-jurismind@1.0.0`
+- 当前仓库默认清单为 1 个远程市场入口：`jurismindhub-official-highlighted`，安装时会展开为 JurisHub 当前官方 + 推荐技能集合，而非固定单个本地 skill 包
 
 #### 8.4.2 升级安装阻塞页策略
 
@@ -909,9 +944,9 @@ const { t } = useTranslation('chat');
 
 **状态：已实施**
 
-- Setup 流程可按需安装 bundled `qqbot` 插件
+- 当前 Setup 流程不会直接触发 bundled `qqbot` 插件安装
 - `pnpm package*` 流程会在打包前处理 QQBot 相关产物
-- QQ 频道当前不在 preset install manifest 内作为预置插件项，而是由 Setup 会话选择结果驱动安装兜底逻辑
+- QQ 频道当前不在 preset install manifest 内作为预置插件项；bundled 安装能力已保留，但当前未由 Setup Wizard 直接驱动
 
 ---
 
@@ -936,18 +971,25 @@ LawClaw/
 │  ├─ preload/
 │  └─ utils/
 │     ├─ agent-preset-migration.ts
+│     ├─ bundled-runtime.ts
 │     ├─ channel-config.ts
+│     ├─ feishu-official-plugin.ts
+│     ├─ jurismind-provider-token-binding.ts
 │     ├─ openclaw-auth.ts
+│     ├─ openclaw-cli.ts
 │     ├─ preset-install-state.ts
 │     ├─ preset-installer.ts
 │     ├─ provider-migration.ts
-│     └─ skill-config.ts
+│     ├─ skill-config.ts
+│     └─ text-encoding.ts
 ├─ src/
 │  ├─ components/
+│  │  ├─ channels/
 │  │  ├─ ui/
 │  │  ├─ layout/
 │  │  ├─ common/
 │  │  └─ settings/
+│  ├─ hooks/
 │  ├─ pages/
 │  │  ├─ Setup/
 │  │  ├─ Dashboard/
@@ -972,8 +1014,14 @@ LawClaw/
 │  └─ i18n/
 ├─ resources/
 │  ├─ agent-presets/
+│  ├─ bin/
+│  ├─ cli/
+│  ├─ config/
+│  ├─ context/
 │  ├─ icons/
-│  └─ preset-installs/
+│  ├─ plugins/
+│  ├─ preset-installs/
+│  └─ runtime-bridge/
 ├─ scripts/
 └─ tests/
 ```

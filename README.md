@@ -121,7 +121,7 @@ LawClaw (劳有钳) is not just a chat box. It is an agent platform purpose-buil
 
 **🎯 A ready-to-use professional workspace**
 
-- Designed for legal professionals, it provides a multi-tab workspace similar to an IDE. From installation to the first consultation, the full process can be completed through a visual interface; API credentials are stored securely via the system-native keychain, and light / dark themes are supported automatically.
+- Designed for legal professionals, it provides a multi-tab workspace similar to an IDE. From installation to the first consultation, the full process can be completed through a visual interface; provider credentials are currently persisted locally via `electron-store` and synchronized to OpenClaw auth profiles for gateway use, while light / dark themes are supported automatically.
 
 **🧠 Context management and intelligent memory**
 
@@ -129,7 +129,7 @@ LawClaw (劳有钳) is not just a chat box. It is an agent platform purpose-buil
 
 **🧩 Open Skill Store and secure ecosystem**
 
-- A built-in open skill store lets you expand AI capabilities with one click, much like installing browser extensions. We encourage community co-creation and allow users to submit custom skills, while all third-party skills are subject to strict official code security review and quality control to ensure an ecosystem that is both open and reliable for legal-grade workflows.
+- A built-in skill marketplace lets you expand AI capabilities with one click, much like installing browser extensions. The current UI focuses on JurisHub, surfaces source / official metadata in the installed-skill view, and the default preset installer only syncs the JurisHub official + highlighted skill set so the out-of-box experience stays curated and predictable.
 
 ### Officially Curated Legal Skills
 
@@ -191,8 +191,8 @@ When you launch LawClaw (劳有钳) for the first time, the **Setup Wizard** wil
 1. **Language** — Configure your preferred language (`中文 / English / 日本語`)
 2. **Environment Check** — Check the Node.js runtime, OpenClaw package, and gateway status
 3. **AI Providers** — Configure supported model providers (including `Jurismind（法义经纬）`, `Kimi Coding（官方）`, and `GLM - Code Plan（智谱-编程包月）`). `Jurismind（法义经纬）` uses browser-based sign-in authorization, while some providers only require an API key.
-4. **Messaging Platforms (Optional)** — Configure `Jurismind（法义经纬）` and `Feishu / Lark` in the setup wizard. `Jurismind（法义经纬）` provides a pairing and binding entry point, while `Feishu / Lark` uses the official guided setup panel. Additional channels can be added later in Settings after entering the main interface.
-5. **Base Component Installation** — Install or check `uv`, the managed Python runtime, and the preset skill / plugin installation set.
+4. **Messaging Platforms (Optional)** — Configure `Jurismind（法义经纬）` and `Feishu / Lark` in the setup wizard. `Jurismind（法义经纬）` provides a pairing and binding entry point, while `Feishu / Lark` uses the official guided setup panel. Additional channel configuration happens later from the main interface’s `Channels` page.
+5. **Base Component Installation** — Install or check `uv`, the managed Python runtime, and the preset skill / plugin installation set. The current default preset sync entry targets the JurisHub official + highlighted skill collection. QQ channel setup and bundled plugin installation are not currently exposed from the Setup Wizard.
 6. **Final Confirmation** — Review configured AI providers, installed components, and gateway status before entering the main interface.
 
 ---
@@ -240,7 +240,8 @@ LawClaw uses a **dual-process architecture** that separates the UI layer from AI
 
 - **Process Isolation**: The AI runtime runs in a separate process, so the UI remains responsive even under heavy computation.
 - **Graceful Recovery**: Built-in reconnection logic with exponential backoff can automatically handle transient failures.
-- **Local Persistence**: Provider configuration and API keys are currently persisted locally via `electron-store`, without depending on cloud synchronization.
+- **Local Persistence**: Provider configuration and API keys are currently persisted locally via `electron-store` and synchronized to OpenClaw auth profiles, without depending on cloud synchronization or OS keychain integration.
+- **Bundled Runtime Fallback**: Packaged builds inject the bundled runtime bridge and bundled binaries into the child-process environment so Gateway / CLI flows still work when the system runtime is unavailable or inconsistent.
 - **Hot Reload**: Development mode supports immediate UI updates without restarting the gateway.
 
 ---
@@ -260,12 +261,14 @@ LawClaw/
 │   ├── main/              # Application entry, window management
 │   ├── gateway/           # OpenClaw gateway process management
 │   ├── preload/           # Secure IPC bridge scripts
-│   └── utils/             # Utility modules (storage, auth, paths)
+│   └── utils/             # Utility modules (storage, auth, runtime bridge, paths)
 ├── src/                   # React renderer process
 │   ├── components/        # Reusable UI components
+│   │   ├── channels/      # Channel onboarding panels
 │   │   ├── ui/            # Base components (shadcn/ui)
 │   │   ├── layout/        # Layout components (sidebar, header)
 │   │   └── common/        # Shared components
+│   ├── hooks/             # Shared React hooks
 │   ├── pages/             # Application pages
 │   │   ├── Setup/         # Initial setup wizard
 │   │   ├── Dashboard/     # Home dashboard
@@ -273,11 +276,12 @@ LawClaw/
 │   │   ├── Channels/      # Channel management
 │   │   ├── Skills/        # Skill browsing and management
 │   │   ├── Cron/          # Scheduled tasks
+│   │   ├── UpgradeInstalling/ # Preset upgrade blocking page
 │   │   └── Settings/      # Configuration panel
 │   ├── stores/            # Zustand state stores
 │   ├── lib/               # Front-end utility library
 │   └── types/             # TypeScript type definitions
-├── resources/             # Static and bundled assets (icons, images, preset install manifests, plugins, etc.)
+├── resources/             # Static and bundled assets (icons, preset manifests, plugins, runtime bridge, bundled bins, etc.)
 ├── scripts/               # Build and utility scripts
 └── tests/                 # Test suites
 ```
@@ -299,6 +303,10 @@ pnpm typecheck            # Run TypeScript type checks
 # Testing
 pnpm test                 # Run unit tests
 pnpm test:e2e             # Run Playwright E2E tests
+
+# Preset artifact validation
+pnpm run bundle:preset-artifacts
+pnpm run bundle:preset-artifacts:offline
 
 # Build and package
 pnpm run build:vite       # Build front-end and Electron code only

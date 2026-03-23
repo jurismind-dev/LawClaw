@@ -1,5 +1,4 @@
 const { execFileSync } = require('node:child_process');
-const os = require('node:os');
 const { readdirSync } = require('node:fs');
 const { join } = require('node:path');
 
@@ -35,50 +34,12 @@ function findAppBundles(rootDir) {
   return result.sort();
 }
 
-function getNotarytoolAuthArgs(state, appleApiKeyPath) {
-  switch (state.mode) {
-    case 'apple-id':
-      return [
-        '--apple-id',
-        state.appleId,
-        '--password',
-        state.appleIdPassword,
-        '--team-id',
-        state.teamId,
-      ];
-    case 'api-key':
-      return [
-        '--key',
-        appleApiKeyPath,
-        '--key-id',
-        state.appleApiKeyId,
-        '--issuer',
-        state.appleApiIssuer,
-      ];
-    case 'keychain': {
-      const args = ['--keychain-profile', state.keychainProfile];
-      if (state.keychain) {
-        args.push('--keychain', state.keychain);
-      }
-      return args;
-    }
-    default:
-      throw new Error(`Unsupported notarization mode: ${state.mode}`);
-  }
-}
-
 module.exports = async function afterAllArtifactBuild(buildResult) {
   if (process.platform !== 'darwin') {
     return [];
   }
 
-  if (buildResult?.configuration?.mac?.notarize === false) {
-    console.log('[after-all-artifact-build] macOS notarization disabled in build config; skipping artifact verification.');
-    return [];
-  }
-
   const {
-    ensureAppleApiKeyPath,
     resolveMacSigningState,
   } = await import('./macos-signing-utils.mjs');
 
@@ -94,35 +55,16 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
   }
 
   if (!state.enabled) {
-    console.log('[after-all-artifact-build] macOS signing/notarization credentials not configured; skipping DMG notarization.');
+    console.log('[after-all-artifact-build] macOS signing/notarization credentials not configured; skipping artifact verification.');
     return [];
   }
 
-  let appleApiKeyPath;
-  if (state.mode === 'api-key') {
-    appleApiKeyPath = await ensureAppleApiKeyPath(
-      state.appleApiKey,
-      state.appleApiKeyId,
-      join(os.tmpdir(), 'lawclaw-apple-api-key')
-    );
-  }
-
-  const notarytoolAuthArgs = getNotarytoolAuthArgs(state, appleApiKeyPath);
-  const artifactPaths = Array.isArray(buildResult?.artifactPaths) ? buildResult.artifactPaths : [];
-  const dmgPaths = artifactPaths.filter((artifactPath) => artifactPath.endsWith('.dmg')).sort();
   const appPaths = findAppBundles(buildResult.outDir);
 
   for (const appPath of appPaths) {
     run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath]);
     run('spctl', ['-a', '-vv', '-t', 'execute', appPath]);
     run('xcrun', ['stapler', 'validate', appPath]);
-  }
-
-  for (const dmgPath of dmgPaths) {
-    run('xcrun', ['notarytool', 'submit', dmgPath, '--wait', ...notarytoolAuthArgs]);
-    run('xcrun', ['stapler', 'staple', '-v', dmgPath]);
-    run('xcrun', ['stapler', 'validate', dmgPath]);
-    run('spctl', ['-a', '-vv', '-t', 'open', dmgPath]);
   }
 
   return [];

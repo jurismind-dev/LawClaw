@@ -272,6 +272,8 @@ jobs:
           DEBUG: electron-builder,electron-builder:*,app-builder-lib,electron-osx-sign,electron-osx-sign*,electron-notarize*
           CSC_DEBUG: '1'
           DEBUG_COLORS: '0'
+          LAWCLAW_MAC_NOTARY_TIMEOUT_MINUTES: '90'
+          LAWCLAW_MAC_NOTARY_POLL_SECONDS: '30'
         run: |
           set -euo pipefail
 
@@ -300,6 +302,8 @@ jobs:
           echo "  MAC_SIGN_MODE=${MAC_SIGN_MODE:-unset}"
           echo "  DEBUG=${DEBUG}"
           echo "  CSC_DEBUG=${CSC_DEBUG}"
+          echo "  LAWCLAW_MAC_NOTARY_TIMEOUT_MINUTES=${LAWCLAW_MAC_NOTARY_TIMEOUT_MINUTES}"
+          echo "  LAWCLAW_MAC_NOTARY_POLL_SECONDS=${LAWCLAW_MAC_NOTARY_POLL_SECONDS}"
           xcrun notarytool --version || true
           security find-identity -v -p codesigning || true
 

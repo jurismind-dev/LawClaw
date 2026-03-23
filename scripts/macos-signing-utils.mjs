@@ -243,3 +243,35 @@ export async function ensureAppleApiKeyPath(apiKeyValue, apiKeyId, directory) {
   await writeFile(outputPath, pemContents, { mode: 0o600 });
   return outputPath;
 }
+
+export function buildNotarytoolAuthArgs(state, appleApiKeyPath) {
+  switch (state.mode) {
+    case 'apple-id':
+      return [
+        '--apple-id',
+        state.appleId,
+        '--password',
+        state.appleIdPassword,
+        '--team-id',
+        state.teamId,
+      ];
+    case 'api-key':
+      return [
+        '--key',
+        appleApiKeyPath,
+        '--key-id',
+        state.appleApiKeyId,
+        '--issuer',
+        state.appleApiIssuer,
+      ];
+    case 'keychain': {
+      const args = ['--keychain-profile', state.keychainProfile];
+      if (state.keychain) {
+        args.push('--keychain', state.keychain);
+      }
+      return args;
+    }
+    default:
+      throw new Error(`Unsupported notarization mode: ${state.mode}`);
+  }
+}

@@ -45,6 +45,7 @@ extraResources:
   # don't need an extraResources entry here.
 
 afterPack: ./scripts/after-pack.cjs
+afterSign: ./scripts/after-sign.cjs
 afterAllArtifactBuild: ./scripts/after-all-artifact-build.cjs
 
 asar: true
@@ -91,7 +92,9 @@ mac:
   gatekeeperAssess: false
   entitlements: entitlements.mac.plist
   entitlementsInherit: entitlements.mac.plist
-  notarize: true
+  # Handled by scripts/after-sign.cjs so CI can log request ids, poll status,
+  # and avoid electron-builder's opaque built-in wait.
+  notarize: false
   extendInfo:
     NSMicrophoneUsageDescription: LawClaw requires microphone access for voice features
     NSCameraUsageDescription: LawClaw requires camera access for video features

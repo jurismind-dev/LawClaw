@@ -60,6 +60,14 @@ function Find-ManagedPythonPath {
   return $null
 }
 
+function Get-ManagedPythonVenvRoot {
+  return Join-Path $HOME '.LawClaw\support\managed-python\3.12\win32'
+}
+
+function Get-ManagedPythonVenvExe {
+  return Join-Path (Get-ManagedPythonVenvRoot) 'Scripts\python.exe'
+}
+
 function Test-ManagedPythonDependencies {
   param(
     [Parameter(Mandatory = $true)]
@@ -82,23 +90,36 @@ if (-not (Test-Path -LiteralPath $uvExe)) {
   exit 1
 }
 
-$pythonExe = Find-ManagedPythonPath -UvExe $uvExe
-if (-not $pythonExe) {
+$basePythonExe = Find-ManagedPythonPath -UvExe $uvExe
+if (-not $basePythonExe) {
   & $uvExe python install 3.12
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
   }
 
-  $pythonExe = Find-ManagedPythonPath -UvExe $uvExe
+  $basePythonExe = Find-ManagedPythonPath -UvExe $uvExe
 }
 
-if (-not $pythonExe) {
+if (-not $basePythonExe) {
   [Console]::Error.WriteLine('Managed Python 3.12 is not available through bundled uv.')
   exit 1
 }
 
+if (-not (Test-Path -LiteralPath $basePythonExe)) {
+  [Console]::Error.WriteLine("Managed Python executable not found: $basePythonExe")
+  exit 1
+}
+
+$pythonExe = Get-ManagedPythonVenvExe
 if (-not (Test-Path -LiteralPath $pythonExe)) {
-  [Console]::Error.WriteLine("Managed Python executable not found: $pythonExe")
+  & $uvExe venv --no-project --clear --python $basePythonExe (Get-ManagedPythonVenvRoot)
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+
+if (-not (Test-Path -LiteralPath $pythonExe)) {
+  [Console]::Error.WriteLine("Managed Python venv executable not found: $pythonExe")
   exit 1
 }
 

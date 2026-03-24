@@ -32,6 +32,7 @@ env:
   OSS_BUCKET: lawclaw
   OSS_ENDPOINT: oss-cn-shanghai.aliyuncs.com
   OSS_PUBLIC_BASE_URL: https://lawclaw.oss-cn-shanghai.aliyuncs.com
+  OSS_PREVIEW_PREFIX: preview
 
 jobs:
   prepare:
@@ -396,6 +397,122 @@ jobs:
             release/*.blockmap
             !release/builder-debug.yml
             !release/builder-effective-config.yaml
+
+      - name: Upload platform preview artifacts to OSS
+        shell: bash
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_SECURITY_TOKEN: ${{ secrets.OSS_SECURITY_TOKEN }}
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${OSS_ACCESS_KEY_ID:-}" || -z "${OSS_ACCESS_KEY_SECRET:-}" ]]; then
+            echo "OSS credentials are missing; skipping preview upload."
+            exit 0
+          fi
+
+          if command -v python3 >/dev/null 2>&1; then
+            PYTHON_BIN=python3
+          else
+            PYTHON_BIN=python
+          fi
+
+          "${PYTHON_BIN}" -m pip install --disable-pip-version-check --quiet oss2
+
+          "${PYTHON_BIN}" - <<'PY'
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          import oss2
+
+          release_dir = Path("release")
+          target_platform = os.environ["TARGET_PLATFORM"]
+          release_tag = os.environ["RELEASE_TAG"]
+          bucket_name = os.environ["OSS_BUCKET"]
+          endpoint = os.environ["OSS_ENDPOINT"]
+          public_base_url = os.environ["OSS_PUBLIC_BASE_URL"].rstrip("/")
+          preview_prefix = os.environ.get("OSS_PREVIEW_PREFIX", "preview").strip("/")
+          access_key_id = os.environ["OSS_ACCESS_KEY_ID"]
+          access_key_secret = os.environ["OSS_ACCESS_KEY_SECRET"]
+          security_token = os.environ.get("OSS_SECURITY_TOKEN") or None
+          release_version = release_tag[1:] if release_tag.startswith("v") else release_tag
+          release_date_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+          if target_platform == "mac":
+            def include_file(name: str) -> bool:
+              return (
+                name.endswith(".dmg")
+                or name.endswith(".zip")
+                or name.endswith(".blockmap")
+                or name in {"latest-mac.yml", "beta-mac.yml"}
+              )
+          elif target_platform == "win":
+            def include_file(name: str) -> bool:
+              return (
+                name.endswith(".exe")
+                or name.endswith(".blockmap")
+                or name in {"latest.yml", "beta.yml"}
+              )
+          else:
+            raise SystemExit(f"Unsupported preview upload platform: {target_platform}")
+
+          files = sorted(
+            artifact for artifact in release_dir.iterdir()
+            if artifact.is_file() and include_file(artifact.name)
+          )
+          if not files:
+            raise SystemExit(f"No preview artifacts found in {release_dir} for platform={target_platform}")
+
+          if security_token:
+            auth = oss2.StsAuth(access_key_id, access_key_secret, security_token)
+          else:
+            auth = oss2.Auth(access_key_id, access_key_secret)
+
+          bucket = oss2.Bucket(auth, f"https://{endpoint}", bucket_name)
+          object_prefix = f"{preview_prefix}/{release_tag}/{target_platform}/"
+
+          stale_keys = [obj.key for obj in oss2.ObjectIterator(bucket, prefix=object_prefix)]
+          for key in stale_keys:
+            bucket.delete_object(key)
+            print(f"Deleted stale preview object oss://{bucket_name}/{key}")
+
+          no_cache_headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+          artifact_meta_headers = {
+            "x-oss-meta-preview": "true",
+            "x-oss-meta-platform": target_platform,
+            "x-oss-meta-version": release_version,
+            "x-oss-meta-release-tag": release_tag,
+            "x-oss-meta-release-date": release_date_iso,
+          }
+
+          uploaded_urls: list[str] = []
+          for artifact in files:
+            headers = dict(artifact_meta_headers)
+            if artifact.name.endswith(".yml"):
+              headers.update(no_cache_headers)
+
+            object_key = f"{object_prefix}{artifact.name}"
+            result = bucket.put_object_from_file(object_key, str(artifact), headers=headers)
+            if result.status not in (200, 201):
+              raise SystemExit(
+                f"Preview upload failed for oss://{bucket_name}/{object_key}, status={result.status}"
+              )
+
+            public_url = f"{public_base_url}/{object_key}"
+            uploaded_urls.append(public_url)
+            print(f"Uploaded preview artifact {artifact} -> {public_url}")
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as handle:
+              handle.write(f"\n### Preview artifacts ({target_platform})\n")
+              handle.write(f"- Prefix: `{object_prefix}`\n")
+              for url in uploaded_urls:
+                handle.write(f"- {url}\n")
+          PY
 
   publish:
     needs:

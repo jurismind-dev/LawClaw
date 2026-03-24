@@ -75,7 +75,9 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(posixNode).toContain('ELECTRON_RUN_AS_NODE=1');
     expect(posixPython).toContain('python find 3.12');
     expect(posixPython).toContain('python install 3.12');
-    expect(posixPython).toContain('pip install --python "$PYTHON_EXE" --strict python-docx openpyxl lxml defusedxml');
+    expect(posixPython).toContain('VENV_DIR="$HOME/.LawClaw/support/managed-python/3.12/');
+    expect(posixPython).toContain('venv --no-project --clear --python "$BASE_PYTHON_EXE" "$VENV_DIR"');
+    expect(posixPython).toContain('pip install --python "$VENV_PYTHON_EXE" --strict python-docx openpyxl lxml defusedxml');
     expect(posixPython).toContain('modules = ["docx", "openpyxl", "lxml", "defusedxml"]');
 
     expect(windowsCmdUtf8).toContain('chcp 65001');
@@ -89,6 +91,8 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(windowsPython).toContain('PYTHONUTF8=1');
     expect(windowsPythonBridge).toContain('& $UvExe python find 3.12');
     expect(windowsPythonBridge).toContain('& $uvExe python install 3.12');
+    expect(windowsPythonBridge).toContain("return Join-Path $HOME '.LawClaw\\support\\managed-python\\3.12\\win32'");
+    expect(windowsPythonBridge).toContain('& $uvExe venv --no-project --clear --python $basePythonExe (Get-ManagedPythonVenvRoot)');
     expect(windowsPythonBridge).toContain('& $uvExe pip install --python $pythonExe --strict python-docx openpyxl lxml defusedxml pywin32');
     expect(windowsPythonBridge).toContain('modules = ["docx", "openpyxl", "lxml", "defusedxml", "pythoncom", "win32com.client"]');
     expect(windowsPythonBridge).toContain('& $pythonExe @PythonArgs');

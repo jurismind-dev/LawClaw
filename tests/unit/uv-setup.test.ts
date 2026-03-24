@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const childProcessMocks = vi.hoisted(() => ({
@@ -30,6 +31,7 @@ const loggerMocks = vi.hoisted(() => ({
 const pathMocks = vi.hoisted(() => ({
   needsWinShell: vi.fn(() => false),
   quoteForCmd: vi.fn((value: string) => value),
+  getClawXConfigDir: vi.fn(() => '/Users/test/.LawClaw'),
 }));
 
 vi.mock('child_process', () => ({
@@ -63,6 +65,7 @@ vi.mock('@electron/utils/logger', () => ({
 vi.mock('@electron/utils/paths', () => ({
   needsWinShell: pathMocks.needsWinShell,
   quoteForCmd: pathMocks.quoteForCmd,
+  getClawXConfigDir: pathMocks.getClawXConfigDir,
 }));
 
 type FakeChildProcess = EventEmitter & {
@@ -107,6 +110,8 @@ describe('uv managed python setup', () => {
     vi.resetModules();
     vi.clearAllMocks();
     (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath = '/bundle';
+    fsMocks.existsSync.mockImplementation(() => true);
+    pathMocks.getClawXConfigDir.mockReturnValue('/Users/test/.LawClaw');
     setPlatform('darwin');
   });
 
@@ -116,36 +121,68 @@ describe('uv managed python setup', () => {
 
   it('installs baseline managed Python packages on macOS', async () => {
     const managedPython = '/Users/test/.local/share/uv/python/cpython-3.12.11/bin/python3';
+    const managedVenvPython = '/Users/test/.LawClaw/support/managed-python/3.12/darwin/bin/python';
+    let venvExists = false;
+    fsMocks.existsSync.mockImplementation((value) => {
+      if (value === managedVenvPython) {
+        const current = venvExists;
+        venvExists = true;
+        return current;
+      }
+      return true;
+    });
     queueSpawnResult({});
     queueSpawnResult({ stdout: `${managedPython}\n` });
+    queueSpawnResult({});
     queueSpawnResult({});
     queueSpawnResult({});
 
     const mod = await import('@electron/utils/uv-setup');
     await mod.setupManagedPython();
 
-    expect(childProcessMocks.spawn).toHaveBeenCalledTimes(4);
+    expect(childProcessMocks.spawn).toHaveBeenCalledTimes(5);
     expect(childProcessMocks.spawn.mock.calls[0]?.[1]).toEqual(['python', 'install', '3.12']);
     expect(childProcessMocks.spawn.mock.calls[1]?.[1]).toEqual(['python', 'find', '3.12', '--managed-python']);
     expect(childProcessMocks.spawn.mock.calls[2]?.[1]).toEqual([
+      'venv',
+      '--no-project',
+      '--clear',
+      '--python',
+      managedPython,
+      '/Users/test/.LawClaw/support/managed-python/3.12/darwin',
+    ]);
+    expect(childProcessMocks.spawn.mock.calls[3]?.[1]).toEqual([
       'pip',
       'install',
       '--python',
-      managedPython,
+      managedVenvPython,
       '--strict',
       'python-docx',
       'openpyxl',
       'lxml',
       'defusedxml',
     ]);
-    expect(childProcessMocks.spawn.mock.calls[3]?.[0]).toBe(managedPython);
+    expect(childProcessMocks.spawn.mock.calls[4]?.[0]).toBe(managedVenvPython);
   });
 
   it('includes pywin32 when installing the managed Python baseline on Windows', async () => {
     setPlatform('win32');
+    pathMocks.getClawXConfigDir.mockReturnValue('C:\\Users\\test\\.LawClaw');
     const managedPython = 'C:\\Users\\test\\AppData\\Roaming\\uv\\python\\cpython-3.12.11-windows-x86_64-none\\python.exe';
+    const managedVenvRoot = join('C:\\Users\\test\\.LawClaw', 'support', 'managed-python', '3.12', 'win32');
+    const managedVenvPython = join(managedVenvRoot, 'Scripts', 'python.exe');
+    let venvExists = false;
+    fsMocks.existsSync.mockImplementation((value) => {
+      if (value === managedVenvPython) {
+        const current = venvExists;
+        venvExists = true;
+        return current;
+      }
+      return true;
+    });
     queueSpawnResult({});
     queueSpawnResult({ stdout: `${managedPython}\r\n` });
+    queueSpawnResult({});
     queueSpawnResult({});
     queueSpawnResult({});
 
@@ -153,10 +190,18 @@ describe('uv managed python setup', () => {
     await mod.setupManagedPython();
 
     expect(childProcessMocks.spawn.mock.calls[2]?.[1]).toEqual([
+      'venv',
+      '--no-project',
+      '--clear',
+      '--python',
+      managedPython,
+      managedVenvRoot,
+    ]);
+    expect(childProcessMocks.spawn.mock.calls[3]?.[1]).toEqual([
       'pip',
       'install',
       '--python',
-      managedPython,
+      managedVenvPython,
       '--strict',
       'python-docx',
       'openpyxl',
@@ -168,14 +213,14 @@ describe('uv managed python setup', () => {
 
   it('treats missing managed Python modules as not ready', async () => {
     const managedPython = '/Users/test/.local/share/uv/python/cpython-3.12.11/bin/python3';
+    const managedVenvPython = '/Users/test/.LawClaw/support/managed-python/3.12/darwin/bin/python';
+    fsMocks.existsSync.mockImplementation((value) => value !== managedVenvPython ? true : false);
     queueSpawnResult({ stdout: `${managedPython}\n` });
-    queueSpawnResult({ code: 1, stderr: 'docx: No module named docx\n' });
 
     const mod = await import('@electron/utils/uv-setup');
 
     await expect(mod.isPythonReady()).resolves.toBe(false);
-    expect(childProcessMocks.spawn).toHaveBeenCalledTimes(2);
+    expect(childProcessMocks.spawn).toHaveBeenCalledTimes(1);
     expect(childProcessMocks.spawn.mock.calls[0]?.[1]).toEqual(['python', 'find', '3.12', '--managed-python']);
-    expect(childProcessMocks.spawn.mock.calls[1]?.[0]).toBe(managedPython);
   });
 });

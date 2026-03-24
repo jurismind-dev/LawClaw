@@ -4,7 +4,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { getUvMirrorEnv } from './uv-env';
 import { logger } from './logger';
-import { needsWinShell, quoteForCmd } from './paths';
+import { getClawXConfigDir, needsWinShell, quoteForCmd } from './paths';
 
 const MANAGED_PYTHON_VERSION = '3.12';
 const MANAGED_PYTHON_BASE_PACKAGES = ['python-docx', 'openpyxl', 'lxml', 'defusedxml'];
@@ -37,6 +37,17 @@ if missing:
     print("\\n".join(missing))
     raise SystemExit(1)
 `;
+}
+
+function getManagedPythonVenvDir(platform = process.platform): string {
+  return join(getClawXConfigDir(), 'support', 'managed-python', MANAGED_PYTHON_VERSION, platform);
+}
+
+function getManagedPythonVenvExecutable(platform = process.platform): string {
+  const venvDir = getManagedPythonVenvDir(platform);
+  return platform === 'win32'
+    ? join(venvDir, 'Scripts', 'python.exe')
+    : join(venvDir, 'bin', 'python');
 }
 
 /**
@@ -225,6 +236,91 @@ async function verifyManagedPythonDependencies(pythonExe: string): Promise<void>
   });
 }
 
+async function ensureManagedPythonVenv(
+  uvBin: string,
+  basePythonExe: string,
+  env: Record<string, string | undefined>,
+  label: string
+): Promise<string> {
+  const platform = process.platform;
+  const venvDir = getManagedPythonVenvDir(platform);
+  const venvPythonExe = getManagedPythonVenvExecutable(platform);
+
+  if (existsSync(venvPythonExe)) {
+    return venvPythonExe;
+  }
+
+  const useShell = needsWinShell(uvBin);
+
+  await new Promise<void>((resolve, reject) => {
+    const stderrChunks: string[] = [];
+    const stdoutChunks: string[] = [];
+    const child = spawn(
+      useShell ? quoteForCmd(uvBin) : uvBin,
+      ['venv', '--no-project', '--clear', '--python', basePythonExe, venvDir],
+      {
+        shell: useShell,
+        env,
+      }
+    );
+
+    child.stdout?.on('data', (data) => {
+      const line = data.toString().trim();
+      if (line) {
+        stdoutChunks.push(line);
+        logger.debug(`[python-venv:${label}] stdout: ${line}`);
+      }
+    });
+
+    child.stderr?.on('data', (data) => {
+      const line = data.toString().trim();
+      if (line) {
+        stderrChunks.push(line);
+        logger.info(`[python-venv:${label}] stderr: ${line}`);
+      }
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      const stderr = stderrChunks.join('\n');
+      const stdout = stdoutChunks.join('\n');
+      const detail = stderr || stdout || '(no output captured)';
+      reject(
+        new Error(
+          `Python venv creation failed with code ${code} [${label}]\n` +
+            `  uv binary: ${uvBin}\n` +
+            `  python: ${basePythonExe}\n` +
+            `  venv: ${venvDir}\n` +
+            `  platform: ${process.platform}/${process.arch}\n` +
+            `  output: ${detail}`
+        )
+      );
+    });
+
+    child.on('error', (err) => {
+      reject(
+        new Error(
+          `Python venv creation spawn error [${label}]: ${err.message}\n` +
+            `  uv binary: ${uvBin}\n` +
+            `  python: ${basePythonExe}\n` +
+            `  venv: ${venvDir}\n` +
+            `  platform: ${process.platform}/${process.arch}`
+        )
+      );
+    });
+  });
+
+  if (!existsSync(venvPythonExe)) {
+    throw new Error(`Managed Python venv executable not found after creation: ${venvPythonExe}`);
+  }
+
+  return venvPythonExe;
+}
+
 /**
  * Check if a managed Python 3.12 is ready and accessible
  */
@@ -232,8 +328,12 @@ export async function isPythonReady(): Promise<boolean> {
   const { bin: uvBin } = resolveUvBin();
 
   try {
-    const pythonExe = await findManagedPythonPath(uvBin, { ...process.env });
-    await verifyManagedPythonDependencies(pythonExe);
+    await findManagedPythonPath(uvBin, { ...process.env });
+    const venvPythonExe = getManagedPythonVenvExecutable();
+    if (!existsSync(venvPythonExe)) {
+      return false;
+    }
+    await verifyManagedPythonDependencies(venvPythonExe);
     return true;
   } catch (error) {
     logger.info('Managed Python readiness check failed:', error);
@@ -434,16 +534,21 @@ export async function setupManagedPython(): Promise<void> {
     'Python install'
   );
 
-  const pythonExe = await findManagedPythonPath(uvBin, { ...process.env });
+  const basePythonExe = await findManagedPythonPath(uvBin, { ...process.env });
+  const venvPythonExe = await ensureManagedPythonVenv(uvBin, basePythonExe, { ...process.env }, 'default');
 
   await runWithMirrorRetry(
     uvEnv,
     async (env, label) => {
+      const pythonExe = await ensureManagedPythonVenv(uvBin, basePythonExe, env, label);
       await runPythonPackageInstall(uvBin, pythonExe, env, label);
     },
     'Python package install'
   );
 
-  await verifyManagedPythonDependencies(pythonExe);
-  logger.info(`Managed Python ${MANAGED_PYTHON_VERSION} installed at: ${pythonExe}`);
+  await verifyManagedPythonDependencies(venvPythonExe);
+  logger.info(
+    `Managed Python ${MANAGED_PYTHON_VERSION} runtime ready ` +
+      `(base=${basePythonExe}, venv=${venvPythonExe})`
+  );
 }

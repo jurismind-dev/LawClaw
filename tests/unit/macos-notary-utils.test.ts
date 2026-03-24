@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   findDeveloperIdApplicationIdentities,
   parseTeamIdentifier,
+  resolveDeveloperIdApplicationIdentity,
   selectDeveloperIdApplicationIdentity,
 } from '../../scripts/macos-notary-utils.cjs';
 
@@ -61,5 +62,47 @@ Runtime Version=26.0.0
         ],
       })
     ).toThrow('Multiple Developer ID Application identities found');
+  });
+
+  it('queries an explicit signing keychain when resolving the Developer ID Application identity', () => {
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const appPath = '/tmp/LawClaw.app';
+    const keychainFile = '/tmp/lawclaw-signing.keychain-db';
+
+    const identity = resolveDeveloperIdApplicationIdentity(
+      appPath,
+      { CSC_KEYCHAIN: keychainFile },
+      '[test]',
+      {
+        runTextImpl(command: string, args: string[]) {
+          calls.push({ command, args });
+
+          if (command === 'codesign') {
+            return `
+Executable=${appPath}/Contents/MacOS/LawClaw
+TeamIdentifier=G52MS3PL77
+Runtime Version=26.0.0
+`;
+          }
+
+          return `
+  1) AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "Developer ID Application: Jurismind Inc. (G52MS3PL77)"
+     1 valid identities found
+`;
+        },
+      }
+    );
+
+    expect(identity).toBe('Developer ID Application: Jurismind Inc. (G52MS3PL77)');
+    expect(calls).toEqual([
+      {
+        command: 'codesign',
+        args: ['-dv', '--verbose=4', appPath],
+      },
+      {
+        command: 'security',
+        args: ['find-identity', '-v', '-p', 'codesigning', keychainFile],
+      },
+    ]);
   });
 });

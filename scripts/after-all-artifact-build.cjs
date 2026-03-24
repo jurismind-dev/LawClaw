@@ -1,6 +1,7 @@
 const { readdirSync } = require('node:fs');
 const { join } = require('node:path');
 const {
+  createTemporaryDeveloperIdApplicationKeychain,
   parsePositiveIntEnv,
   pollNotarization,
   resolveDeveloperIdApplicationIdentity,
@@ -94,52 +95,80 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
   const pollSeconds = parsePositiveIntEnv('LAWCLAW_MAC_NOTARY_POLL_SECONDS', 30);
   const timeoutMs = timeoutMinutes * 60 * 1000;
   const intervalMs = pollSeconds * 1000;
-  const signingIdentity = resolveDeveloperIdApplicationIdentity(appPaths[0], process.env, '[after-all-artifact-build]');
 
-  for (const dmgPath of dmgPaths) {
-    let submissionId = '';
+  let signingKeychainFile = process.env.CSC_KEYCHAIN || '';
+  let cleanupSigningKeychain = null;
 
-    try {
-      run('codesign', ['--force', '--sign', signingIdentity, '--timestamp', dmgPath]);
-      run('codesign', ['--verify', '--verbose=1', dmgPath]);
-
-      const submission = runJson('xcrun', [
-        'notarytool',
-        'submit',
-        dmgPath,
-        '--output-format',
-        'json',
-        ...authArgs,
-      ], {}, '[after-all-artifact-build]');
-
-      submissionId = resolveSubmissionId(submission);
-      if (!submissionId) {
-        throw new Error(`[after-all-artifact-build] Apple notarization response did not include a submission id for ${dmgPath}`);
-      }
-
-      console.log(`[after-all-artifact-build] DMG notary submission created for ${dmgPath}: ${submissionId}`);
-      await pollNotarization(
-        submissionId,
-        authArgs,
-        timeoutMs,
-        intervalMs,
-        '[after-all-artifact-build]'
-      );
-
-      run('xcrun', ['notarytool', 'log', submissionId, ...authArgs]);
-      run('xcrun', ['stapler', 'staple', '-v', dmgPath]);
-      run('xcrun', ['stapler', 'validate', dmgPath]);
-      run('spctl', ['-a', '-vv', '-t', 'open', '--context', 'context:primary-signature', dmgPath]);
-    } catch (error) {
-      if (submissionId) {
-        try {
-          run('xcrun', ['notarytool', 'log', submissionId, ...authArgs]);
-        } catch (logError) {
-          console.warn(`[after-all-artifact-build] Failed to fetch notary log for ${submissionId}: ${logError.message}`);
-        }
-      }
-      throw error;
+  try {
+    if (!signingKeychainFile) {
+      const temporaryKeychain = createTemporaryDeveloperIdApplicationKeychain(process.env, {
+        currentDir: process.cwd(),
+        logPrefix: '[after-all-artifact-build]',
+      });
+      signingKeychainFile = temporaryKeychain.keychainFile;
+      cleanupSigningKeychain = temporaryKeychain.cleanup;
     }
+
+    const signingIdentity = resolveDeveloperIdApplicationIdentity(
+      appPaths[0],
+      process.env,
+      '[after-all-artifact-build]',
+      { keychainFile: signingKeychainFile }
+    );
+
+    for (const dmgPath of dmgPaths) {
+      let submissionId = '';
+
+      try {
+        const codesignArgs = ['--force', '--sign', signingIdentity, '--timestamp'];
+        if (signingKeychainFile) {
+          codesignArgs.push('--keychain', signingKeychainFile);
+        }
+        codesignArgs.push(dmgPath);
+
+        run('codesign', codesignArgs);
+        run('codesign', ['--verify', '--verbose=1', dmgPath]);
+
+        const submission = runJson('xcrun', [
+          'notarytool',
+          'submit',
+          dmgPath,
+          '--output-format',
+          'json',
+          ...authArgs,
+        ], {}, '[after-all-artifact-build]');
+
+        submissionId = resolveSubmissionId(submission);
+        if (!submissionId) {
+          throw new Error(`[after-all-artifact-build] Apple notarization response did not include a submission id for ${dmgPath}`);
+        }
+
+        console.log(`[after-all-artifact-build] DMG notary submission created for ${dmgPath}: ${submissionId}`);
+        await pollNotarization(
+          submissionId,
+          authArgs,
+          timeoutMs,
+          intervalMs,
+          '[after-all-artifact-build]'
+        );
+
+        run('xcrun', ['notarytool', 'log', submissionId, ...authArgs]);
+        run('xcrun', ['stapler', 'staple', '-v', dmgPath]);
+        run('xcrun', ['stapler', 'validate', dmgPath]);
+        run('spctl', ['-a', '-vv', '-t', 'open', '--context', 'context:primary-signature', dmgPath]);
+      } catch (error) {
+        if (submissionId) {
+          try {
+            run('xcrun', ['notarytool', 'log', submissionId, ...authArgs]);
+          } catch (logError) {
+            console.warn(`[after-all-artifact-build] Failed to fetch notary log for ${submissionId}: ${logError.message}`);
+          }
+        }
+        throw error;
+      }
+    }
+  } finally {
+    cleanupSigningKeychain?.();
   }
 
   return [];

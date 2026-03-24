@@ -192,7 +192,8 @@ export class AppUpdater extends EventEmitter {
     }
 
     if (process.platform === 'win32') {
-      return runtimeArch === 'arm64' ? 'LawClaw-win-arm64.exe' : 'LawClaw-win-x64.exe';
+      // Windows preview/release artifacts now publish x64 installers only.
+      return 'LawClaw-win-x64.exe';
     }
 
     return null;

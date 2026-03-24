@@ -316,7 +316,7 @@ jobs:
             retry_cmd 3 pnpm exec electron-builder --config electron-builder.nosign.yml --mac --x64 --arm64 --publish never
           fi
 
-      - name: Build Windows packages (x64 + arm64)
+      - name: Build Windows packages (x64)
         if: matrix.platform == 'win'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -348,7 +348,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm run bundle:preset-artifacts:offline
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Invoke-WithRetry { pnpm exec electron-builder --win --x64 --arm64 --publish never }
+          Invoke-WithRetry { pnpm exec electron-builder --win --x64 --publish never }
 
       - name: Validate artifact file names include release tag version
         shell: bash
@@ -620,9 +620,7 @@ jobs:
           require_pattern "*-mac-x64.zip" "macOS Intel updater zip"
           require_pattern "*-mac-arm64.zip.blockmap" "macOS Apple Silicon blockmap"
           require_pattern "*-mac-x64.zip.blockmap" "macOS Intel blockmap"
-          require_pattern "*-win-arm64.exe" "Windows ARM64 installer"
           require_pattern "*-win-x64.exe" "Windows x64 installer"
-          require_pattern "*-win-arm64.exe.blockmap" "Windows ARM64 blockmap"
           require_pattern "*-win-x64.exe.blockmap" "Windows x64 blockmap"
 
           if [[ "${RELEASE_CHANNEL}" == "beta" ]]; then
@@ -726,8 +724,6 @@ jobs:
               return "LawClaw-mac-arm64.dmg"
             if name.endswith("-mac-x64.dmg"):
               return "LawClaw-mac-x64.dmg"
-            if name.endswith("-win-arm64.exe"):
-              return "LawClaw-win-arm64.exe"
             if name.endswith("-win-x64.exe"):
               return "LawClaw-win-x64.exe"
             return None
@@ -742,7 +738,6 @@ jobs:
           required_aliases = [
             "LawClaw-mac-arm64.dmg",
             "LawClaw-mac-x64.dmg",
-            "LawClaw-win-arm64.exe",
             "LawClaw-win-x64.exe",
           ]
           missing_aliases = [name for name in required_aliases if name not in alias_sources]
@@ -875,7 +870,6 @@ jobs:
             echo
             echo "### Windows"
             echo "- 安装包 (x64): \`LawClaw-*-win-x64.exe\`"
-            echo "- 安装包 (ARM64): \`LawClaw-*-win-arm64.exe\`"
             echo
             echo "## 安装提示"
             echo

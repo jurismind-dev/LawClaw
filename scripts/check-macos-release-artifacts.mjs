@@ -49,7 +49,7 @@ if (dmgPaths.length === 0) {
 }
 
 for (const dmgPath of dmgPaths) {
-  run('codesign', ['--verify', '--verbose=2', dmgPath]);
+  run('codesign', ['--verify', '--verbose=1', dmgPath]);
   run('spctl', ['-a', '-vv', '-t', 'open', '--context', 'context:primary-signature', dmgPath]);
   run('xcrun', ['stapler', 'validate', dmgPath]);
 }

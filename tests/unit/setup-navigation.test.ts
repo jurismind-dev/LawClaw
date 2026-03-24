@@ -48,5 +48,7 @@ describe('setup navigation and install flow', () => {
 
     expect(source).toContain("const setupDefaultSyncPolicy = selectedProvider === 'jurismind' ? 'always' : 'if-empty';");
     expect(source).toContain('syncPolicy: setupDefaultSyncPolicy');
+    expect(source).toContain("t('settings:aiProviders.jurismind.loginAndBind')");
+    expect(source).toContain("t('settings:aiProviders.jurismind.binding')");
   });
 });

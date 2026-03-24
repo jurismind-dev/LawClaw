@@ -37,6 +37,12 @@
             "save": "保存",
             "validate": "検証"
         },
+        "jurismind": {
+            "autoFillHint": "ブラウザで SSO ログインを開き、ログイン成功後に返された token_key を自動入力します。",
+            "loginAndBind": "ログインして自動入力",
+            "binding": "ログイン中...",
+            "boundOpenId": "連携済み open_id: {{openId}}"
+        },
         "card": {
             "default": "デフォルト",
             "configured": "構成済み",

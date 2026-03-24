@@ -16,19 +16,12 @@ export interface JurismindProviderBindingResult {
 
 interface SsoAuthContext {
   openId: string;
-  bearerToken: string | null;
-  cookieHeader: string | null;
+  token: JurismindTokenRecord | null;
 }
 
 interface JurismindTokenRecord {
   tokenKey: string;
   tokenId: number | null;
-}
-
-function normalizePath(path: string, fallback: string): string {
-  const candidate = String(path || '').trim();
-  if (!candidate) return fallback;
-  return candidate.startsWith('/') ? candidate : `/${candidate}`;
 }
 
 function getResponseMessage(payload: unknown, status?: number): string {
@@ -49,66 +42,6 @@ function getResponseMessage(payload: unknown, status?: number): string {
     || data?.error
     || (typeof status === 'number' ? `HTTP ${status}` : 'request failed')
   );
-}
-
-function extractBusinessError(payload: unknown): string | null {
-  const queue: unknown[] = [payload];
-  const visited = new Set<object>();
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || typeof current !== 'object') continue;
-    if (visited.has(current)) continue;
-    visited.add(current);
-
-    const data = current as Record<string, unknown>;
-    const success = data.success;
-    const code = data.code;
-    const message = String(data.detail || data.message || data.msg || data.error || '').trim();
-
-    if (success === false) {
-      return message || '业务返回 success=false';
-    }
-    if (typeof code === 'number' && code !== 0 && code !== 200) {
-      return message || `业务返回异常 code=${code}`;
-    }
-    if (typeof code === 'string' && code && code !== '0' && code !== '200') {
-      return message || `业务返回异常 code=${code}`;
-    }
-
-    for (const value of Object.values(data)) {
-      if (value && typeof value === 'object') {
-        queue.push(value);
-      }
-    }
-  }
-
-  return null;
-}
-
-function extractBoundFlag(payload: unknown): boolean | null {
-  const queue: unknown[] = [payload];
-  const visited = new Set<object>();
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || typeof current !== 'object') continue;
-    if (visited.has(current)) continue;
-    visited.add(current);
-
-    const data = current as Record<string, unknown>;
-    if (typeof data.bound === 'boolean') {
-      return data.bound;
-    }
-
-    for (const value of Object.values(data)) {
-      if (value && typeof value === 'object') {
-        queue.push(value);
-      }
-    }
-  }
-
-  return null;
 }
 
 function extractOpenIdFromAnyLevel(payload: unknown): string {
@@ -139,79 +72,6 @@ function extractOpenIdFromAnyLevel(payload: unknown): string {
 
 function extractOpenId(payload: unknown): string {
   return extractOpenIdFromAnyLevel(payload);
-}
-
-function extractSsoToken(payload: unknown): string | null {
-  const tokenFieldNames = new Set([
-    'token',
-    'accesstoken',
-    'access_token',
-    'satoken',
-    'sa_token',
-    'sso_token',
-    'ssotoken',
-    'tokenvalue',
-    'token_value',
-    'logintoken',
-    'login_token',
-  ]);
-
-  const queue: unknown[] = [payload];
-  const visited = new Set<object>();
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || typeof current !== 'object') continue;
-    if (visited.has(current)) continue;
-    visited.add(current);
-
-    const data = current as Record<string, unknown>;
-    for (const [key, value] of Object.entries(data)) {
-      const normalizedKey = key.toLowerCase();
-      if (tokenFieldNames.has(normalizedKey)) {
-        const token = String(value || '').trim();
-        if (token && token.length >= 8 && !/\s/.test(token)) {
-          return token;
-        }
-      }
-      if (value && typeof value === 'object') {
-        queue.push(value);
-      }
-    }
-  }
-
-  return null;
-}
-
-function normalizeBearerToken(token: string): string {
-  const raw = String(token || '').trim();
-  if (!raw) return '';
-  if (/^Bearer\s+/i.test(raw)) {
-    return raw.replace(/^Bearer\s+/i, 'Bearer ').trim();
-  }
-  return `Bearer ${raw}`;
-}
-
-function extractCookieHeader(response: Response): string | null {
-  const headers = response.headers as Headers & { getSetCookie?: () => string[] };
-  const rawSetCookies =
-    typeof headers.getSetCookie === 'function'
-      ? headers.getSetCookie()
-      : (response.headers.get('set-cookie') ? [String(response.headers.get('set-cookie'))] : []);
-
-  if (!rawSetCookies.length) return null;
-
-  const cookiePairs: string[] = [];
-  for (const setCookie of rawSetCookies) {
-    const pair = String(setCookie || '')
-      .split(';')[0]
-      ?.trim();
-    if (pair && pair.includes('=')) {
-      cookiePairs.push(pair);
-    }
-  }
-
-  return cookiePairs.length > 0 ? cookiePairs.join('; ') : null;
 }
 
 export function normalizeJurismindProviderToken(token: string): string {
@@ -332,10 +192,6 @@ export function extractTokenFromPayload(
   return null;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export async function validateJurismindReusableToken(
   tokenKey: string
 ): Promise<{ valid: boolean; authInvalid: boolean; error?: string }> {
@@ -428,7 +284,7 @@ async function resolveUsableJurismindToken(
 
   if (options.allowUnverified && !validation.authInvalid) {
     logger.warn(
-      `[JurismindProvider] ${sourceLabel} token_key 校验未通过，但接受绑定接口返回值: ${validation.error || 'unknown'}`
+      `[JurismindProvider] ${sourceLabel} token_key 校验未通过，但接受当前返回值: ${validation.error || 'unknown'}`
     );
     return {
       token: normalizedToken,
@@ -440,7 +296,7 @@ async function resolveUsableJurismindToken(
 
   if (validation.authInvalid) {
     logger.warn(
-      `[JurismindProvider] ${sourceLabel} token_key 校验失败，准备重新绑定: ${validation.error || 'Invalid API key'}`
+      `[JurismindProvider] ${sourceLabel} token_key 校验失败: ${validation.error || 'Invalid API key'}`
     );
     return {
       token: null,
@@ -450,7 +306,7 @@ async function resolveUsableJurismindToken(
   }
 
   logger.warn(
-    `[JurismindProvider] ${sourceLabel} token_key 无法确认可用，继续尝试重新绑定: ${validation.error || 'unknown'}`
+    `[JurismindProvider] ${sourceLabel} token_key 无法确认可用: ${validation.error || 'unknown'}`
   );
   return {
     token: null,
@@ -587,144 +443,15 @@ async function checkSsoTicket(
     throw new Error(`SSO 校验成功但未返回 open_id: ${getResponseMessage(body)}`);
   }
 
-  const bearerTokenFromBody = extractSsoToken(body);
-  const bearerTokenFromHeader = String(response.headers.get('authorization') || '').trim();
-  const bearerToken = bearerTokenFromBody || bearerTokenFromHeader || null;
-  const cookieHeader = extractCookieHeader(response);
-
-  if (!bearerToken && !cookieHeader) {
-    logger.warn('[JurismindProvider] checkTicket 未返回可复用的 Bearer/Cookie，将尝试回退模式');
+  const token = extractTokenFromPayload(body);
+  if (!token?.tokenKey) {
+    logger.warn('[JurismindProvider] checkTicket 未返回 token_key');
   }
 
   return {
     openId,
-    bearerToken,
-    cookieHeader,
+    token,
   };
-}
-
-function buildCreditsHeaders(
-  config: JurismindProviderBindingConfig,
-  auth: Pick<SsoAuthContext, 'bearerToken' | 'cookieHeader'>
-): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (auth.bearerToken) {
-    headers.Authorization = normalizeBearerToken(auth.bearerToken);
-  }
-  if (auth.cookieHeader) {
-    headers.Cookie = auth.cookieHeader;
-  }
-  if (!auth.bearerToken && !auth.cookieHeader && config.creditsApiKey) {
-    logger.warn('[JurismindProvider] 未提取到用户 SSO 凭证，回退使用 X-API-Key');
-    headers['X-API-Key'] = config.creditsApiKey;
-  }
-  return headers;
-}
-
-function buildTokenQueryPath(template: string, openId: string): string {
-  const encoded = encodeURIComponent(openId);
-  if (template.includes('{open_id}')) {
-    return template.replace(/\{open_id\}/g, encoded);
-  }
-  const normalized = template.replace(/\/+$/, '');
-  return `${normalized}/${encoded}/token`;
-}
-
-async function queryBoundToken(
-  openId: string,
-  config: JurismindProviderBindingConfig,
-  auth: Pick<SsoAuthContext, 'bearerToken' | 'cookieHeader'>
-): Promise<{ tokenKey: string; tokenId: number | null } | null> {
-  const path = normalizePath(
-    buildTokenQueryPath(config.creditsTokenQueryPathTemplate, openId),
-    `/api/v2/newapi/${encodeURIComponent(openId)}/token`
-  );
-  const url = `${config.creditsBaseUrl}${path}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      ...buildCreditsHeaders(config, auth),
-    },
-  });
-  const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      return null;
-    }
-    throw new Error(`查询 token 失败 (${response.status}): ${getResponseMessage(body, response.status)}`);
-  }
-
-  const businessError = extractBusinessError(body);
-  if (businessError) {
-    throw new Error(`查询 token 失败: ${businessError}`);
-  }
-
-  const token = extractTokenFromPayload(body);
-  if (token?.tokenKey) {
-    return token;
-  }
-
-  const bound = extractBoundFlag(body);
-  if (bound === false) {
-    return null;
-  }
-
-  return null;
-}
-
-async function bindTokenByOpenId(
-  openId: string,
-  config: JurismindProviderBindingConfig,
-  auth: Pick<SsoAuthContext, 'bearerToken' | 'cookieHeader'>
-): Promise<{ token: { tokenKey: string; tokenId: number | null } | null; message: string }> {
-  const url = `${config.creditsBaseUrl}${config.creditsBindPath}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...buildCreditsHeaders(config, auth),
-    },
-    body: JSON.stringify({ open_id: openId }),
-  });
-  const body = await response.json().catch(() => null);
-  const parsed = extractTokenFromPayload(body);
-  const responseMessage = getResponseMessage(body, response.status);
-
-  if (parsed?.tokenKey) {
-    return { token: parsed, message: responseMessage };
-  }
-
-  if (!response.ok) {
-    throw new Error(`绑定 token 失败 (${response.status}): ${getResponseMessage(body, response.status)}`);
-  }
-
-  const businessError = extractBusinessError(body);
-  if (businessError) {
-    throw new Error(`绑定 token 失败: ${businessError}`);
-  }
-
-  return { token: null, message: responseMessage };
-}
-
-async function queryBoundTokenWithRetry(
-  openId: string,
-  config: JurismindProviderBindingConfig,
-  auth: Pick<SsoAuthContext, 'bearerToken' | 'cookieHeader'>,
-  retryTimes = 20,
-  intervalMs = 1000
-): Promise<{ tokenKey: string; tokenId: number | null } | null> {
-  for (let i = 0; i < retryTimes; i++) {
-    const token = await queryBoundToken(openId, config, auth);
-    if (token?.tokenKey) {
-      return token;
-    }
-    if (i < retryTimes - 1) {
-      await delay(intervalMs);
-    }
-  }
-  return null;
 }
 
 export async function bindJurismindProviderToken(): Promise<JurismindProviderBindingResult> {
@@ -737,89 +464,25 @@ export async function bindJurismindProviderToken(): Promise<JurismindProviderBin
   const auth = await checkSsoTicket(ticket, config);
   const openId = auth.openId;
   logger.info(`[JurismindProvider] SSO 登录成功 open_id=${openId}`);
-  let lastInvalidTokenError: string | null = null;
-
-  const existing = await queryBoundToken(openId, config, auth);
-  const validatedExisting = await resolveUsableJurismindToken(existing, '复用已绑定');
-  if (validatedExisting.token?.tokenKey) {
-    logger.info('[JurismindProvider] 复用已绑定 token_key');
-    return {
-      openId,
-      tokenKey: validatedExisting.token.tokenKey,
-      tokenId: validatedExisting.token.tokenId,
-    };
-  }
-  if (validatedExisting.invalidAuth) {
-    lastInvalidTokenError = validatedExisting.validationError || lastInvalidTokenError;
-  }
-
-  const bindResult = await bindTokenByOpenId(openId, config, auth);
-  const validatedBindToken = await resolveUsableJurismindToken(bindResult.token, '新绑定返回', {
+  const validatedToken = await resolveUsableJurismindToken(auth.token, 'SSO 返回', {
     allowUnverified: true,
   });
-  if (validatedBindToken.token?.tokenKey) {
-    logger.info('[JurismindProvider] 绑定新 token_key 成功');
+  if (validatedToken.token?.tokenKey) {
+    logger.info('[JurismindProvider] 已使用 SSO 返回的 token_key');
     return {
       openId,
-      tokenKey: validatedBindToken.token.tokenKey,
-      tokenId: validatedBindToken.token.tokenId,
+      tokenKey: validatedToken.token.tokenKey,
+      tokenId: validatedToken.token.tokenId,
     };
   }
-  if (validatedBindToken.invalidAuth) {
-    lastInvalidTokenError = validatedBindToken.validationError || lastInvalidTokenError;
+
+  if (validatedToken.invalidAuth) {
+    throw new Error(
+      `SSO 登录成功，但返回的 token_key 不可用: ${validatedToken.validationError || 'Invalid API key'}`
+    );
   }
 
-  logger.warn(`[JurismindProvider] 绑定接口未直接返回 token_key，开始轮询查询: ${bindResult.message}`);
-  const fallback = await queryBoundTokenWithRetry(openId, config, auth, 6, 600);
-  const validatedFallback = await resolveUsableJurismindToken(fallback, '轮询查询', {
-    allowUnverified: true,
-  });
-  if (validatedFallback.token?.tokenKey) {
-    return {
-      openId,
-      tokenKey: validatedFallback.token.tokenKey,
-      tokenId: validatedFallback.token.tokenId,
-    };
-  }
-  if (validatedFallback.invalidAuth) {
-    lastInvalidTokenError = validatedFallback.validationError || lastInvalidTokenError;
-  }
-
-  // 某些服务在首次 bind 只返回“绑定成功”，再次 bind 可能返回“用户已绑定token: sk-xxx”
-  logger.warn('[JurismindProvider] 首次绑定后仍未拿到 token_key，尝试再次调用 bind 兜底');
-  const secondBind = await bindTokenByOpenId(openId, config, auth);
-  const validatedSecondBind = await resolveUsableJurismindToken(secondBind.token, '二次绑定返回', {
-    allowUnverified: true,
-  });
-  if (validatedSecondBind.token?.tokenKey) {
-    return {
-      openId,
-      tokenKey: validatedSecondBind.token.tokenKey,
-      tokenId: validatedSecondBind.token.tokenId,
-    };
-  }
-  if (validatedSecondBind.invalidAuth) {
-    lastInvalidTokenError = validatedSecondBind.validationError || lastInvalidTokenError;
-  }
-
-  const fallbackAfterSecondBind = await queryBoundTokenWithRetry(openId, config, auth, 8, 1200);
-  const validatedFallbackAfterSecondBind = await resolveUsableJurismindToken(
-    fallbackAfterSecondBind,
-    '二次绑定后轮询查询',
-    { allowUnverified: true }
+  throw new Error(
+    `SSO 登录成功，但未返回可用的 token_key${validatedToken.validationError ? `: ${validatedToken.validationError}` : ''}`
   );
-  if (validatedFallbackAfterSecondBind.token?.tokenKey) {
-    return {
-      openId,
-      tokenKey: validatedFallbackAfterSecondBind.token.tokenKey,
-      tokenId: validatedFallbackAfterSecondBind.token.tokenId,
-    };
-  }
-  if (validatedFallbackAfterSecondBind.invalidAuth) {
-    lastInvalidTokenError =
-      validatedFallbackAfterSecondBind.validationError || lastInvalidTokenError;
-  }
-
-  const invalidDetail = lastInvalidTokenError ? `；最后校验结果: ${lastInvalidTokenError}` : '';
-  throw new Error(`未获取到可用 token_key，请检查积分服务绑定接口返回: ${bindResult.message}${invalidDetail}`);
 }

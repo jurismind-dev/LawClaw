@@ -75,7 +75,7 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
   }
 
   for (const appPath of appPaths) {
-    run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath]);
+    run('codesign', ['--verify', '--deep', '--strict', '--verbose=1', appPath]);
     run('spctl', ['-a', '-vv', '-t', 'execute', appPath]);
     run('xcrun', ['stapler', 'validate', appPath]);
   }
@@ -100,8 +100,8 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
     let submissionId = '';
 
     try {
-      run('codesign', ['--force', '--sign', signingIdentity, '--timestamp', '--verbose=2', dmgPath]);
-      run('codesign', ['--verify', '--verbose=2', dmgPath]);
+      run('codesign', ['--force', '--sign', signingIdentity, '--timestamp', dmgPath]);
+      run('codesign', ['--verify', '--verbose=1', dmgPath]);
 
       const submission = runJson('xcrun', [
         'notarytool',

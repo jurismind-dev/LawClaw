@@ -1317,8 +1317,25 @@ function ProviderContent({
           )}
 
           {isJurismind && (
-            <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
-              {t('provider.jurismindBrowserAuth')}
+            <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground space-y-3">
+              <p>{t('provider.jurismindBrowserAuth')}</p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  void handleBindJurismindToken();
+                }}
+                disabled={validating}
+              >
+                {validating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {t('settings:aiProviders.jurismind.binding')}
+                  </>
+                ) : (
+                  t('settings:aiProviders.jurismind.loginAndBind')
+                )}
+              </Button>
             </div>
           )}
 

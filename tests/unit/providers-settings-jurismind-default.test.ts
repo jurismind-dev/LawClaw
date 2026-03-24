@@ -13,5 +13,10 @@ describe('providers settings jurismind activation', () => {
     expect(source).toContain("if (type === 'jurismind' || shouldAutoSelectLawClawProvider('settings'))");
     expect(source).toContain("if (provider.type === 'jurismind') {");
     expect(source).toContain('await setDefaultProvider(provider.id);');
+    expect(source).toContain('onBindJurismindToken={bindJurismindToken}');
+    expect(source).toContain("const isJurismind = provider.type === 'jurismind';");
+    expect(source).toContain('void runJurismindBinding();');
+    expect(source).toContain('readOnly={isJurismind}');
+    expect(source).toContain("t('aiProviders.jurismind.autoFillHint')");
   });
 });

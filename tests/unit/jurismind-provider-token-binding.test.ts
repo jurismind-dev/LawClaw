@@ -39,7 +39,7 @@ describe('jurismind provider token binding', () => {
     vi.restoreAllMocks();
   });
 
-  it('normalizes bare jurismind tokens with sk- prefix', async () => {
+  it('adds sk- when missing and preserves an existing sk- prefixed token_key', async () => {
     const { normalizeJurismindProviderToken } = await import(
       '@electron/utils/jurismind-provider-token-binding'
     );
@@ -50,9 +50,15 @@ describe('jurismind provider token binding', () => {
     expect(normalizeJurismindProviderToken('Bearer 4jqxaK9QL7haFr0PuGAtF64kofLxAY6j3m7D69DQG1G94Id3')).toBe(
       'sk-4jqxaK9QL7haFr0PuGAtF64kofLxAY6j3m7D69DQG1G94Id3'
     );
+    expect(normalizeJurismindProviderToken('sk-4jqxaK9QL7haFr0PuGAtF64kofLxAY6j3m7D69DQG1G94Id3')).toBe(
+      'sk-4jqxaK9QL7haFr0PuGAtF64kofLxAY6j3m7D69DQG1G94Id3'
+    );
+    expect(normalizeJurismindProviderToken('Bearer sk-4jqxaK9QL7haFr0PuGAtF64kofLxAY6j3m7D69DQG1G94Id3')).toBe(
+      'sk-4jqxaK9QL7haFr0PuGAtF64kofLxAY6j3m7D69DQG1G94Id3'
+    );
   });
 
-  it('extracts a token from bind messages and adds sk- prefix', async () => {
+  it('extracts a token from bind messages and auto-adds sk- when missing', async () => {
     const { extractTokenFromPayload } = await import(
       '@electron/utils/jurismind-provider-token-binding'
     );
@@ -110,7 +116,7 @@ describe('jurismind provider token binding', () => {
     });
   });
 
-  it('adds sk- prefix before jurismind validation probe', async () => {
+  it('uses a normalized sk- prefixed token_key during jurismind validation probe', async () => {
     const { validateJurismindReusableToken } = await import(
       '@electron/utils/jurismind-provider-token-binding'
     );
@@ -139,14 +145,16 @@ describe('jurismind provider token binding', () => {
     });
   });
 
-  it('validates an existing bound token before reuse and validates fresh bind results too', () => {
+  it('uses the token_key returned by SSO directly instead of querying new-api bind endpoints', () => {
     const source = readBindingSource();
 
-    expect(source).toContain("resolveUsableJurismindToken(existing, '复用已绑定')");
-    expect(source).toContain("resolveUsableJurismindToken(bindResult.token, '新绑定返回', {");
+    expect(source).toContain("const token = extractTokenFromPayload(body);");
+    expect(source).toContain("resolveUsableJurismindToken(auth.token, 'SSO 返回', {");
     expect(source).toContain('allowUnverified: true');
-    expect(source).toContain('token_key 校验失败，准备重新绑定');
-    expect(source).toContain('token_key 无法确认可用，继续尝试重新绑定');
-    expect(source).toContain('token_key 校验未通过，但接受绑定接口返回值');
+    expect(source).toContain('SSO 登录成功，但返回的 token_key 不可用');
+    expect(source).toContain('SSO 登录成功，但未返回可用的 token_key');
+    expect(source).not.toContain('queryBoundToken(');
+    expect(source).not.toContain('bindTokenByOpenId(');
+    expect(source).not.toContain('queryBoundTokenWithRetry(');
   });
 });

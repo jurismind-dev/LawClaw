@@ -38,7 +38,7 @@
             "validate": "Validate"
         },
         "jurismind": {
-            "autoFillHint": "LawClaw will open browser SSO login, then bind by open_id and auto-fill token_key.",
+            "autoFillHint": "LawClaw will open browser SSO login and auto-fill the returned token_key.",
             "loginAndBind": "Login & Auto Bind",
             "binding": "Binding...",
             "boundOpenId": "Bound open_id: {{openId}}"

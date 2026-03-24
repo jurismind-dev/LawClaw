@@ -270,9 +270,6 @@ jobs:
         if: matrix.platform == 'mac'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEBUG: electron-builder,electron-builder:*,app-builder-lib,electron-osx-sign,electron-osx-sign*,electron-notarize*
-          CSC_DEBUG: '1'
-          DEBUG_COLORS: '0'
           LAWCLAW_MAC_NOTARY_TIMEOUT_MINUTES: '90'
           LAWCLAW_MAC_NOTARY_POLL_SECONDS: '30'
         run: |
@@ -298,15 +295,7 @@ jobs:
           pnpm exec zx scripts/bundle-openclaw.mjs
           pnpm run bundle:preset-artifacts:offline
 
-          echo "macOS build diagnostics:"
-          echo "  MAC_SIGN_ENABLED=${MAC_SIGN_ENABLED:-unset}"
-          echo "  MAC_SIGN_MODE=${MAC_SIGN_MODE:-unset}"
-          echo "  DEBUG=${DEBUG}"
-          echo "  CSC_DEBUG=${CSC_DEBUG}"
-          echo "  LAWCLAW_MAC_NOTARY_TIMEOUT_MINUTES=${LAWCLAW_MAC_NOTARY_TIMEOUT_MINUTES}"
-          echo "  LAWCLAW_MAC_NOTARY_POLL_SECONDS=${LAWCLAW_MAC_NOTARY_POLL_SECONDS}"
-          xcrun notarytool --version || true
-          security find-identity -v -p codesigning || true
+          echo "macOS build config: sign=${MAC_SIGN_ENABLED:-unset}/${MAC_SIGN_MODE:-unset}"
 
           if [[ "${MAC_SIGN_ENABLED:-false}" == "true" ]]; then
             echo "Mac signing secrets are set (mode=${MAC_SIGN_MODE}). Building signed and notarized artifacts."

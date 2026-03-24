@@ -2184,7 +2184,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
     }
   );
 
-  // Jurismind provider: browser SSO -> open_id -> credits token_key auto bind
+  // Jurismind provider: browser SSO -> open_id + token_key auto fill
   ipcMain.handle('provider:bindJurismindToken', async () => {
     try {
       if (!activeJurismindBindingPromise) {

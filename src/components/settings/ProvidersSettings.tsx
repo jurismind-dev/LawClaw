@@ -162,6 +162,7 @@ export function ProvidersSettings() {
                 setEditingProvider(null);
               }}
               onValidateKey={(key, options) => validateApiKey(provider.id, key, options)}
+              onBindJurismindToken={bindJurismindToken}
             />
           ))}
         </div>
@@ -194,9 +195,8 @@ interface ProviderCardProps {
     key: string,
     options?: { baseUrl?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
+  onBindJurismindToken: () => Promise<{ tokenKey: string; openId: string; tokenId?: number | null }>;
 }
-
-
 
 function ProviderCard({
   provider,
@@ -208,6 +208,7 @@ function ProviderCard({
   onSetDefault,
   onSaveEdits,
   onValidateKey,
+  onBindJurismindToken,
 }: ProviderCardProps) {
   const { t } = useTranslation('settings');
   const [newKey, setNewKey] = useState('');
@@ -216,9 +217,12 @@ function ProviderCard({
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [jurismindBinding, setJurismindBinding] = useState(false);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
   const canEditConfig = Boolean(typeInfo?.showBaseUrl || typeInfo?.showModelId);
+  const isJurismind = provider.type === 'jurismind';
+  const jurismindAutoBindAttemptedRef = React.useRef(false);
 
   useEffect(() => {
     if (isEditing) {
@@ -226,8 +230,37 @@ function ProviderCard({
       setShowKey(false);
       setBaseUrl(provider.baseUrl || '');
       setModelId(provider.model || '');
+      setJurismindBinding(false);
     }
   }, [isEditing, provider.baseUrl, provider.model]);
+
+  const runJurismindBinding = React.useCallback(async () => {
+    setJurismindBinding(true);
+    try {
+      const result = await onBindJurismindToken();
+      setNewKey(result.tokenKey);
+      toast.success(t('aiProviders.toast.jurismindBindSuccess'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(message);
+    } finally {
+      setJurismindBinding(false);
+    }
+  }, [onBindJurismindToken, t]);
+
+  useEffect(() => {
+    if (!isEditing || !isJurismind) {
+      jurismindAutoBindAttemptedRef.current = false;
+      return;
+    }
+
+    if (jurismindAutoBindAttemptedRef.current) {
+      return;
+    }
+
+    jurismindAutoBindAttemptedRef.current = true;
+    void runJurismindBinding();
+  }, [isEditing, isJurismind, runJurismindBinding]);
 
   const handleSaveEdits = async () => {
     setSaving(true);
@@ -235,15 +268,17 @@ function ProviderCard({
       const payload: { newApiKey?: string; updates?: Partial<ProviderConfig> } = {};
 
       if (newKey.trim()) {
-        setValidating(true);
-        const result = await onValidateKey(newKey, {
-          baseUrl: typeInfo?.showBaseUrl ? (baseUrl.trim() || undefined) : undefined,
-        });
-        setValidating(false);
-        if (!result.valid) {
-          toast.error(result.error || t('aiProviders.toast.invalidKey'));
-          setSaving(false);
-          return;
+        if (!isJurismind) {
+          setValidating(true);
+          const result = await onValidateKey(newKey, {
+            baseUrl: typeInfo?.showBaseUrl ? (baseUrl.trim() || undefined) : undefined,
+          });
+          setValidating(false);
+          if (!result.valid) {
+            toast.error(result.error || t('aiProviders.toast.invalidKey'));
+            setSaving(false);
+            return;
+          }
         }
         payload.newApiKey = newKey.trim();
       }
@@ -346,29 +381,59 @@ function ProviderCard({
                 </a>
               </div>
             )}
+            {isJurismind && (
+              <p className="text-xs text-muted-foreground">
+                {t('aiProviders.jurismind.autoFillHint')}
+              </p>
+            )}
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
                   type={showKey ? 'text' : 'password'}
                   placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : (typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.card.editKey'))}
                   value={newKey}
-                  onChange={(e) => setNewKey(e.target.value)}
-                  className="pr-10 h-9 text-sm"
+                  onChange={(e) => {
+                    if (isJurismind) return;
+                    setNewKey(e.target.value);
+                  }}
+                  readOnly={isJurismind}
+                  className={cn('pr-10 h-9 text-sm', isJurismind && 'bg-muted/70')}
                 />
                 <button
                   type="button"
                   onClick={() => setShowKey(!showKey)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  disabled={jurismindBinding}
                 >
                   {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
               </div>
+              {isJurismind && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void runJurismindBinding();
+                  }}
+                  disabled={jurismindBinding || saving}
+                >
+                  {jurismindBinding ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                      {t('aiProviders.jurismind.binding')}
+                    </>
+                  ) : (
+                    newKey.trim() ? t('aiProviders.dialog.rebind') : t('aiProviders.jurismind.loginAndBind')
+                  )}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleSaveEdits}
                 disabled={
                   validating
+                  || jurismindBinding
                   || saving
                   || (
                     !newKey.trim()

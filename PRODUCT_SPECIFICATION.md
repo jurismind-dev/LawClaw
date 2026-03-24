@@ -824,7 +824,7 @@ const { t } = useTranslation('chat');
 | 文件 | 可定制内容 |
 |------|------------|
 | `package.json` | name / description / author |
-| `README.md` / `README.zh-CN.md` | 文案与对外说明 |
+| `README.md` / `README.en.md` | 文案与对外说明 |
 | `src/assets/logo.svg` | 应用 logo |
 | `resources/icons/` | 打包图标资源 |
 | `electron-builder.yml` | 应用标识与打包配置 |

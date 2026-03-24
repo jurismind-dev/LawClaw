@@ -1,20 +1,20 @@
 <p align="center">
-  <img src="src/assets/logo.svg" width="128" height="128" alt="LawClaw Logo" />
+  <img src="src/assets/logo.svg" width="128" height="128" alt="劳有钳 Logo" />
 </p>
 
-<h1 align="center">LawClaw (劳有钳)</h1>
+<h1 align="center">LawClaw（劳有钳）</h1>
 
 <p align="center">
-  <strong>An AI assistant desktop app for legal professionals in China</strong>
+  <strong>中国法律工作者的 AI 助手桌面应用</strong>
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
-  <a href="#why-lawclaw">Why LawClaw</a> •
-  <a href="#getting-started">Getting Started</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#development">Development</a> •
-  <a href="#contributing">Contributing</a>
+  <a href="#功能特性">功能特性</a> •
+  <a href="#为什么选择-lawclaw">为什么选择 LawClaw</a> •
+  <a href="#快速上手">快速上手</a> •
+  <a href="#系统架构">系统架构</a> •
+  <a href="#开发指南">开发指南</a> •
+  <a href="#参与贡献">参与贡献</a>
 </p>
 
 <p align="center">
@@ -29,32 +29,32 @@
 </p>
 
 <p align="center">
-  English | <a href="README.zh-CN.md">简体中文</a>
+  简体中文 | <a href="README.en.md">English</a>
 </p>
 
 ---
 
-## Overview
+## 概述
 
-**LawClaw (劳有钳)** is a locally deployed, open-source AI desktop application deeply customized by the **Jurismind (法义经纬)** team for the legal services vertical. Built on top of the official [OpenClaw](https://github.com/OpenClaw) and [ClawX](https://github.com/ValueCell-ai/ClawX), it provides end-to-end intelligent support for lawyers, in-house counsel, and other legal professionals—from information retrieval to day-to-day productivity assistance.
+**LawClaw（劳有钳）** 是由 **Jurismind（法义经纬）** 团队面向法律服务垂直领域深度定制的本地开源 AI 桌面应用。项目基于官方 [OpenClaw](https://github.com/OpenClaw) 与 [ClawX](https://github.com/ValueCell-ai/ClawX) 构建，为律师、法务等法律专业人士提供从信息检索到辅助办公的全链路智能支持。
 
-**Core Mechanism**: LawClaw is a personal AI agent with long-term memory. Powered by the official [OpenClaw](https://github.com/OpenClaw) runtime and the polished, user-friendly cross-platform desktop experience of [ClawX](https://github.com/ValueCell-ai/ClawX), LawClaw supports fully local deployment: files stay on your machine and do not need to be uploaded to the cloud. It can serve as your “digital steward.” With the same system permissions as the user, it can execute terminal operations, script writing, and tool calls in the background based on natural-language instructions, enabling efficient collaboration across software and devices.
+**核心机制**：LawClaw 是一款具备长期记忆的个人 AI 代理。依托官方 [OpenClaw](https://github.com/OpenClaw) 的运行时能力与 [ClawX](https://github.com/ValueCell-ai/ClawX) 易用、美观的跨平台桌面化体验，LawClaw 支持完全本地化部署，文件保存在本地，无需上传云端，可作为用户的“数字管家”。它被赋予与用户同等的系统权限，可根据自然语言指令在后台自动执行终端操作、脚本编写及工具调用，实现跨软件、跨设备的高效协同。
 
-**Specialized Capabilities**: LawClaw is deeply customized for legal workflows. Through the built-in JurisHub vertical legal community skill repository, it provides a rich set of legal domain skills covering intelligent legal research, complex document analysis, advertising compliance review, contract drafting and revision, contract compliance management, and first-draft opinion writing—meeting a wide range of needs across information retrieval, content generation, and productivity assistance.
+**专属能力**：LawClaw 针对法律工作流进行了深度定制。依托内置的 JurisHub 法律垂直社区技能仓库，提供丰富的法律专属技能（Skills），覆盖智能法律研究、复杂文档分析、广告合规审查、合同起草修改、合同合规管理、意见书初稿起草等场景，满足信息检索、内容生成与辅助办公等多类需求。
 
-**Ready to Use with Official Compute Support**: To help legal professionals avoid tedious parameter configuration, LawClaw offers a low-barrier and flexible compute access model. The easiest option is to register and sign in with a **Jurismind (法义经纬)** account, then use account credits as the token budget required to run the assistant—without complex setup. At the same time, in keeping with an open approach, the app also provides configuration entry points for third-party compute providers, allowing users to choose from supported model vendors and use their own API keys. In addition, under the same account system, the Jurismind team also provides a WebApp that can be accessed and run directly in a mobile browser, so users can communicate with their LawClaw assistant from a phone after signing in.
+**开箱即用与官方算力支持**：为帮助法律工作者告别繁琐的参数配置，LawClaw 提供低门槛且灵活的算力接入方案。最便捷的方式是注册并登录 **Jurismind（法义经纬）** 账户，直接使用账户积分额度作为运行所需 Token 消耗，免去复杂配置；同时，秉承开放原则，软件内部也提供第三方算力配置入口，用户可自由选择受支持的其他大模型供应商，填入自备的 API 密钥即可使用。此外，基于同一账户体系，Jurismind 团队还提供可在手机浏览器直接访问和运行的 WebApp，用户登录账户后，即可在手机上与自己的 LawClaw 助手进行沟通。
 
-**Community Vision**: We embrace the spirit of open source, openness, and co-creation, and we are committed to building an AI ecosystem dedicated to legal professionals. Here, technology and law come together deeply—and we look forward to joining forces with you to help drive change across the industry.
+**社区愿景**：我们秉承开源、开放、共创的精神，致力于构建一个专属于法律工作者的 AI 生态社区。在这里，技术与法律深度融合，期待与你一起汇聚改变行业的力量。
 
-**Developed By**: [Jurismind (法义经纬)](https://jurismind.com)
+**开发团队**：[Jurismind（法义经纬）](https://jurismind.com)
 
-**Built On**: Customized on top of [ClawX](https://github.com/ValueCell-ai/ClawX) and [OpenClaw](https://github.com/openclaw/openclaw)
+**底层基座**：基于 [ClawX](https://github.com/ValueCell-ai/ClawX) 和 [OpenClaw](https://github.com/openclaw/openclaw) 定制
 
-**Disclaimer**: This software service and any AI-generated content are provided for reference only and may contain errors, omissions, or outdated information. LawClaw does not constitute legal advice, legal opinion, or legal services. Users should verify outputs independently and consult qualified legal professionals when necessary.
+**免责声明**：本软件技术服务及其 AI 生成内容仅供参考，可能存在错误、遗漏或时效滞后。LawClaw 提供的服务不构成法律意见、法律建议或法律服务，用户应自行核实，并在必要时咨询专业律师。
 
 ---
 
-## Screenshots
+## 截图预览
 
 <p align="center">
   <img src="resources/screenshot/zh/聊天.png" style="width: 100%; height: auto;">
@@ -82,306 +82,314 @@
 
 ---
 
-## Why LawClaw
+## 为什么选择 LawClaw
 
-**Not just chatting, but executing.**
+**不止于对话，更在于执行（Not just chatting, but executing.）**
 
-Most AI tools on the legal market today still operate at the level of “chatbot assistants” or isolated point solutions. They can provide information, but you remain the final executor—copying, pasting, switching between tools, and manually consolidating the results.
+当前市面上的 AI 法律工具，大多停留在“对话式助理（Chatbot）”或“单点辅助工具”的层面。它们能够提供信息，但你仍然是最终的执行者——需要频繁复制、粘贴、切换软件并整合信息。
 
-LawClaw aims to bridge the gap from “providing suggestions” to “executing tasks autonomously.” It is a true AI Agent that can translate natural-language instructions into executable steps and become a “digital legal assistant” inside your local environment.
+LawClaw 的目标，是实现从“提供建议”到“自主执行”的跨越。它是真正意义上的 AI Agent（智能体），能够将自然语言指令转化为可执行步骤，成为本地环境中的“数字法律助理”。
 
-**From passive Q&A to autonomous task execution**
+**从“被动问答”到“自主任务执行”**
 
-- **Traditional AI**: Relies on back-and-forth prompting. Handling complex tasks—such as drafting work that involves multiple files and information sources—often requires users to break the task down manually, provide repeated prompts, and stitch the results together themselves.
-- **LawClaw**: Task-oriented by design. You provide a natural-language instruction, and it can decompose the task, plan the path, and coordinate different underlying skills to complete an end-to-end workflow from information retrieval and comparison to first-draft generation.
+- **传统 AI**：依赖一问一答的交互。处理复杂任务（如多个文件及信息源的起草整合）时，往往需要人工不断拆解步骤、多次提示并手动拼凑结果。
+- **LawClaw**：以任务为导向。你只需输入自然语言指令，它会自主拆解任务、规划路径，并协同调用不同的底层技能（Skills），实现从信息检索、数据对比到初稿生成的全流程闭环。
 
-**From fixed tools to an evolving skill ecosystem**
+**从“固定工具”到“可进化的技能生态”**
 
-- **Traditional AI**: Features are typically vendor-defined and hard to adapt to the highly customized working styles of different law firms or legal teams.
-- **LawClaw**: Embraces an open ecosystem. You can freely combine or develop dedicated “skills” much like installing apps. Whether it is a specific case research strategy or an internal document archiving standard, LawClaw can be “taught,” continuously improved, and made more aligned with how you work.
+- **传统 AI**：功能多由厂商预设，难以灵活适配不同律所或法务团队高度定制化的工作习惯。
+- **LawClaw**：拥抱开源生态。你可以像安装 App 一样，自由组合或开发专属“技能（Skills）”。无论是特定的案例检索策略，还是律所内部的文档归档标准，LawClaw 都能够被“教会”，持续迭代，越用越懂你。
 
-| Traditional Workflow | LawClaw Intelligent Workflow |
+
+| 传统工作流 | LawClaw 智能工作流 |
 | --- | --- |
-| Legal research: moving back and forth between multiple databases, filtering keywords, reading materials one by one, and summarizing them manually. | Intelligent legal research: with a single instruction, automatically search across platforms, analyze the relationship between statutes and cases, and generate structured summaries and research conclusions. |
-| Contract review: reading clauses one by one, comparing against templates, marking risks manually, and relying on people to manage revisions, audit trails, and archiving. | Contract analysis and management: automatically identify risks, compare version differences, extract key clauses, and complete revisions and archiving through an assisted redlining workflow. |
-| Legal drafting: searching for templates, copying and pasting source materials, repeatedly asking AI for help, and iterating on formatting and wording over multiple rounds. | Legal drafting and revision: quickly generate first drafts of lawyer letters, complaints, legal opinions, and more based on case facts, while standardizing format, refining wording, and supporting ongoing iterative revision. |
-| Advertising compliance: manually checking prohibited phrases and reviewing regulations item by item, which is time-consuming and easy to miss. | Advertising compliance review: quickly scan marketing materials, generate multi-dimensional compliance opinions, standardize output formatting, and archive results to designated folders. |
+| 法律检索：在多个数据库之间来回切换、筛选关键词、逐篇阅读并人工归纳。 | 智能法律研究：一句指令即可自动跨平台检索，关联分析法条与案例，生成结构化摘要与研究结论。 |
+| 合同审查：逐条阅读、比对模板、手动标记风险点，修改、留痕与归档均依赖人工推进。 | 合同分析与管理：自动识别风险、比对版本差异、提取关键条款，并可结合修订模式完成修改与归档。 |
+| 文书起草：查找模板、复制粘贴材料、反复询问 AI，并多轮调整格式与措辞。 | 文书起草与修订：基于案情事实快速生成律师函、起诉状、法律意见书等初稿，统一格式、润色措辞，并支持持续迭代修改。 |
+| 广告合规：人工排查极限词、逐项核对法规，耗时较长且容易遗漏。 | 广告合规审查：快速扫描营销材料，生成多维度合规意见，统一输出格式并归档至指定文件夹。 |
 
-**Pre-tuned OpenClaw**
 
-Compared with the more technical setup flow and longer early-stage tuning process of the official OpenClaw, LawClaw is customized by the [Jurismind (法义经纬)](https://jurismind.com) team for legal work in China. The product includes dozens of skills built around the everyday tasks of Chinese legal professionals, supports one-click installation and ready-to-use operation, and is paired with dedicated tutorials plus the JurisHub vertical legal community skill repository to help users get started, exchange ideas, and continue expanding capabilities more efficiently.
+**预训练的 OpenClaw**
 
----
-
-## Features
-
-LawClaw (劳有钳) is not just a chat box. It is an agent platform purpose-built for the legal industry, powered by a strong core architecture and a continuously growing open-source skill ecosystem.
-
-### Core Platform Architecture
-
-**🎯 A ready-to-use professional workspace**
-
-- Designed for legal professionals, it provides a multi-tab workspace similar to an IDE. From installation to the first consultation, the full process can be completed through a visual interface; provider credentials are currently persisted locally via `electron-store` and synchronized to OpenClaw auth profiles for gateway use, while light / dark themes are supported automatically.
-
-**🧠 Context management and intelligent memory**
-
-- With an extended context window, LawClaw can accurately track complex conversational logic. Even after dozens of in-depth turns, it can still retrieve key prior facts and instructions, helping maintain continuity and accuracy in legal analysis.
-
-**🧩 Open Skill Store and secure ecosystem**
-
-- A built-in skill marketplace lets you expand AI capabilities with one click, much like installing browser extensions. The current UI focuses on JurisHub, surfaces source / official metadata in the installed-skill view, and the default preset installer only syncs the JurisHub official + highlighted skill set so the out-of-box experience stays curated and predictable.
-
-### Officially Curated Legal Skills
-
-The LawClaw team has independently developed and carefully curated a series of high-quality, open-source legal skills that can be used directly and modified as needed. Representative built-in capabilities include, but are not limited to:
-
-**📋 Deep contract review and comparison**
-
-- More than simple keyword matching. The system can intelligently extract key contract clauses, automatically highlight potential compliance risks and logical issues, and provide revision suggestions.
-
-**📚 Automated legal and case research**
-
-- After you input the case facts, the agent proactively plans a research path across authoritative sources, automatically aggregates and analyzes relevant regulations and precedents, and produces case summaries plus legal issue analysis reports.
-
-**📝 Structured legal document generation**
-
-- Based on a fact-based generation logic, LawClaw can invoke built-in templates to draft first versions of lawyer letters, complaints, and legal opinions, while completing basic formatting and logic checks and supporting export to standard documents.
-
-**✨ More official and community skills...**
-
-- Including advertising compliance review, contract translation, contract management, and more practical skills, all of which can be obtained and continuously updated through the LawClaw skill store.
+相较于官方 OpenClaw 更偏技术化的配置流程与较长的前期调优过程，LawClaw 由 [Jurismind（法义经纬）](https://jurismind.com) 团队面向中国法律工作场景进行定制化优化。产品内置几十个围绕中国法律工作者日常任务打造的技能（Skills），支持一键安装、开箱即用；同时配套提供专门教程与 JurisHub 法律垂直社区技能仓库，帮助用户更高效地上手、交流并持续扩展能力。
 
 ---
 
-## Getting Started
+## 功能特性
 
-### System Requirements
+LawClaw（劳有钳）不仅仅是一个对话框，而是一个专为法律行业打造的智能体平台（Agent Platform）。它由强大的核心架构驱动，并拥有一个持续生长的开源技能生态。
 
-- **Operating System**: macOS 11+, Windows 10+, or Linux (Ubuntu 20.04+)
-- **Memory**: 4GB RAM minimum (8GB recommended)
-- **Storage**: 1GB available disk space
+### 核心平台架构
 
-### Installation
+**🎯 开箱即用的专业工作台**
 
-#### Pre-built Releases (Recommended)
+- 面向法律专业人士设计，提供类似 IDE 的多标签页工作台。从安装到第一次咨询，均可通过可视化流程完成；Provider 凭证当前通过本地 `electron-store` 持久化，并同步到 OpenClaw auth profiles 供 Gateway 使用，同时支持浅色 / 深色主题自适应。
 
-Download the latest version for your platform from OSS (China mirror):
-<!--`https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/`-->
+**🧠 上下文管理与智能记忆**
 
-GitHub Releases remains available as a fallback download channel: [Releases](https://github.com/jurismind-dev/LawClaw/releases).
+- 具备超长上下文窗口，能够精准追踪复杂对话逻辑。即使在数十轮深度交互后，AI 仍可回溯此前的关键事实与指令，帮助保持法律分析的连贯性与准确性。
 
-#### Build from Source
+**🧩 技能市场与精选生态**
 
-```bash
-# Clone the repository
-git clone https://github.com/jurismind-dev/LawClaw
-cd LawClaw
+- 内置技能市场，可像安装浏览器插件一样一键扩展 AI 能力。当前 UI 聚焦 JurisHub，并在已安装技能视图中展示来源与官方标识；默认预置安装器仅同步 JurisHub 的官方 + 推荐（highlighted）技能集合，以确保开箱体验保持精选、可控且稳定。
 
-# Initialize the project
-pnpm run init
+### 官方严选法律技能
 
-# Start in development mode
-pnpm dev
-```
+LawClaw 官方团队深度自研并严选了一系列高质量、开源的法律专业技能，支持直接使用并按需修改。内置代表性能力包括（但不限于）：
 
-### First Launch
+**📋 合同深度审查与比对**
 
-When you launch LawClaw (劳有钳) for the first time, the **Setup Wizard** will guide you through the following steps:
+- 不止于简单的关键词匹配。系统能够智能提取合同关键条款，自动高亮潜在合规风险与逻辑漏洞，并给出修改建议。
 
-1. **Language** — Configure your preferred language (`中文 / English / 日本語`)
-2. **Environment Check** — Check the Node.js runtime, OpenClaw package, and gateway status
-3. **AI Providers** — Configure supported model providers (including `Jurismind（法义经纬）`, `Kimi Coding（官方）`, and `GLM - Code Plan（智谱-编程包月）`). `Jurismind（法义经纬）` uses browser-based sign-in authorization, while some providers only require an API key.
-4. **Messaging Platforms (Optional)** — Configure `Jurismind（法义经纬）` and `Feishu / Lark` in the setup wizard. `Jurismind（法义经纬）` provides a pairing and binding entry point, while `Feishu / Lark` uses the official guided setup panel. Additional channel configuration happens later from the main interface’s `Channels` page.
-5. **Base Component Installation** — Install or check `uv`, the managed Python runtime, and the preset skill / plugin installation set. The current default preset sync entry targets the JurisHub official + highlighted skill collection. QQ channel setup and bundled plugin installation are not currently exposed from the Setup Wizard.
-6. **Final Confirmation** — Review configured AI providers, installed components, and gateway status before entering the main interface.
+**📚 自动化法律与类案研究**
+
+- 输入案情后，智能体会主动规划前往权威来源网站的检索路径，自动聚合并分析相关法规与判例，生成案件摘要与法律要点分析报告。
+
+**📝 结构化法律文书生成**
+
+- 基于案情要素（Fact-based）的生成逻辑，智能调用内置模板，起草律师函、起诉状、法律意见书初稿，并完成基础格式与逻辑校验，支持导出标准文档。
+
+**✨ 更多官方严选与社区技能...**
+
+- 包含广告合规审查、合同翻译、合同管理等更多实务技能，均可在 LawClaw 技能商店中一键获取并持续更新。
 
 ---
 
-## Architecture
+## 快速上手
 
-LawClaw uses a **dual-process architecture** that separates the UI layer from AI runtime operations, balancing interaction quality and runtime stability:
+### 系统要求
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        LawClaw Desktop App                     │
-│                                                                 │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │              Electron Main Process                         │  │
-│  │  • Window and application lifecycle management             │  │
-│  │  • Gateway process management and status forwarding        │  │
-│  │  • System integration (tray, menus, external links)       │  │
-│  │  • Auto-update orchestration                              │  │
-│  └────────────────────────────────────────────────────────────┘  │
-│                              │                                  │
-│                              │ IPC                              │
-│                              ▼                                  │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │              React Renderer Process                       │  │
-│  │  • Modern component-based UI (React 19)                  │  │
-│  │  • Zustand state management                              │  │
-│  │  • IPC communication with the main process               │  │
-│  │  • Rich Markdown rendering                               │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-                               │ WebSocket (JSON-RPC)
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      OpenClaw Gateway                          │
-│                                                                 │
-│  • AI agent runtime and orchestration                          │
-│  • Messaging channel management                                │
-│  • Skill / plugin execution environment                        │
-│  • Provider abstraction layer                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+- **操作系统**：macOS 11+、Windows 10+ 或 Linux（Ubuntu 20.04+）
+- **内存**：最低 4GB RAM（推荐 8GB）
+- **存储空间**：1GB 可用磁盘空间
 
-### Design Principles
+### 安装方式
 
-- **Process Isolation**: The AI runtime runs in a separate process, so the UI remains responsive even under heavy computation.
-- **Graceful Recovery**: Built-in reconnection logic with exponential backoff can automatically handle transient failures.
-- **Local Persistence**: Provider configuration and API keys are currently persisted locally via `electron-store` and synchronized to OpenClaw auth profiles, without depending on cloud synchronization or OS keychain integration.
-- **Bundled Runtime Fallback**: Packaged builds inject the bundled runtime bridge and bundled binaries into the child-process environment so Gateway / CLI flows still work when the system runtime is unavailable or inconsistent.
-- **Hot Reload**: Development mode supports immediate UI updates without restarting the gateway.
+#### 预构建版本（推荐）
 
----
-
-## Development
-
-### Prerequisites
-
-- **Node.js**: 22+ (LTS recommended)
-- **Package Manager**: pnpm 10+ (this repository is currently locked to pnpm 10, so pnpm is preferred)
-
-### Project Structure
-
-```
-LawClaw/
-├── electron/              # Electron main process
-│   ├── main/              # Application entry, window management
-│   ├── gateway/           # OpenClaw gateway process management
-│   ├── preload/           # Secure IPC bridge scripts
-│   └── utils/             # Utility modules (storage, auth, runtime bridge, paths)
-├── src/                   # React renderer process
-│   ├── components/        # Reusable UI components
-│   │   ├── channels/      # Channel onboarding panels
-│   │   ├── ui/            # Base components (shadcn/ui)
-│   │   ├── layout/        # Layout components (sidebar, header)
-│   │   └── common/        # Shared components
-│   ├── hooks/             # Shared React hooks
-│   ├── pages/             # Application pages
-│   │   ├── Setup/         # Initial setup wizard
-│   │   ├── Dashboard/     # Home dashboard
-│   │   ├── Chat/          # AI chat interface
-│   │   ├── Channels/      # Channel management
-│   │   ├── Skills/        # Skill browsing and management
-│   │   ├── Cron/          # Scheduled tasks
-│   │   ├── UpgradeInstalling/ # Preset upgrade blocking page
-│   │   └── Settings/      # Configuration panel
-│   ├── stores/            # Zustand state stores
-│   ├── lib/               # Front-end utility library
-│   └── types/             # TypeScript type definitions
-├── resources/             # Static and bundled assets (icons, preset manifests, plugins, runtime bridge, bundled bins, etc.)
-├── scripts/               # Build and utility scripts
-└── tests/                 # Test suites
-```
-
-### Available Commands
-
-```bash
-# Initialization
-pnpm run init             # Install dependencies and download the bundled uv runtime (required for first-time development)
-
-# Development
-pnpm dev                  # Start Vite development mode (including the Electron integrated workflow)
-pnpm dev:setup            # Force development mode into the setup wizard
-
-# Code quality
-pnpm lint                 # Run ESLint and auto-fix issues that can be fixed
-pnpm typecheck            # Run TypeScript type checks
-
-# Testing
-pnpm test                 # Run unit tests
-pnpm test:e2e             # Run Playwright E2E tests
-
-# Preset artifact validation
-pnpm run bundle:preset-artifacts
-pnpm run bundle:preset-artifacts:offline
-
-# Build and package
-pnpm run build:vite       # Build front-end and Electron code only
-pnpm build                # Run a full production build and package the desktop app
-pnpm package              # Package for the current platform
-pnpm package:mac          # Package for macOS
-pnpm package:win          # Package for Windows
-pnpm package:linux        # Package for Linux
-```
-
-### Tech Stack
-
-| Layer | Technology |
-| --- | --- |
-| Runtime | Electron 40+ |
-| UI Framework | React 19 + TypeScript |
-| Styling | Tailwind CSS + shadcn/ui |
-| State Management | Zustand |
-| Build Tooling | Vite + electron-builder |
-| Testing | Vitest + Playwright |
-| Animation | Framer Motion |
-| Icons | Lucide React |
-
----
-
-## Contributing
-
-We welcome community contributions. Whether you are fixing bugs, building new features, improving documentation, or contributing translations, every contribution helps LawClaw continue to improve.
-
-### How to Contribute
-
-1. **Fork** this repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** changes with clear descriptions
-4. **Push** to your branch
-5. **Open** a Pull Request
-
-### Guidelines
-
-- Follow the existing code style (ESLint + Prettier)
-- Write tests for new functionality
-- Update documentation as needed
-- Keep commits atomic and clearly described
-
----
-
-## Acknowledgments
-
-LawClaw (劳有钳) is built on top of the following outstanding open-source projects:
-
-- **[ClawX](https://github.com/ValueCell-ai/ClawX)** – The upstream foundation of this project, developed and maintained by the ValueCell Team
-- **[OpenClaw](https://github.com/OpenClaw)** – The AI agent runtime
-- [Electron](https://www.electronjs.org/) – Cross-platform desktop framework
-- [React](https://react.dev/) – UI component library
-- [shadcn/ui](https://ui.shadcn.com/) – Beautifully designed component library
-- [Zustand](https://github.com/pmndrs/zustand) – Lightweight state management
-
----
-
-## Community
-
-Welcome to join our community to connect with other users, get help, and share your experience.
+推荐从 OSS（国内镜像）下载适用于当前平台的最新版本：
 
 - **windows x64**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-win-x64.exe
 - **Mac x64**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-x64.dmg
 - **Mac arm**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-arm64.dmg
 
+
+GitHub Releases 仍可作为备用下载渠道：[Releases](https://github.com/jurismind-dev/LawClaw/releases)。
+
+#### 从源码构建
+
+```bash
+# 克隆仓库
+git clone https://github.com/jurismind-dev/LawClaw
+cd LawClaw
+
+# 初始化项目
+pnpm run init
+
+# 以开发模式启动
+pnpm dev
+```
+
+### 首次启动
+
+首次启动 LawClaw（劳有钳）时，**设置向导**将引导完成以下步骤：
+
+1. **语言** —— 配置首选语言（中文 / English / 日本語）
+2. **环境检查** —— 检查 Node.js 运行时、OpenClaw 包与网关状态
+3. **AI 供应商** —— 配置受支持的模型供应商（含 `Jurismind（法义经纬）`、`Kimi Coding（官方）`、`GLM - Code Plan（智谱-编程包月）` 等）。其中 `Jurismind（法义经纬）` 通过浏览器登录授权，部分供应商仅需填写 API Key。
+4. **消息平台（可选）** —— 在设置向导中可配置 `Jurismind（法义经纬）` 与 `Feishu / Lark`；其中 `Jurismind（法义经纬）` 提供配对绑定入口，`Feishu / Lark` 使用官方引导面板完成接入，其他频道配置会在进入主界面后通过 `Channels` 页面继续完成。
+5. **基础组件安装** —— 安装或检查 uv、托管 Python 运行时，并执行预设技能 / 插件安装。当前默认预置同步入口指向 JurisHub 的官方 + 推荐技能集合。QQ 频道配置与 bundled 插件安装当前不在 Setup Wizard 中直接暴露。
+6. **完成确认** —— 在进入主界面前查看已配置的 AI 供应商、已安装组件与网关状态。
+
 ---
 
-## License
+## 系统架构
 
-LawClaw is released under the [MIT License](LICENSE). You are free to use, modify, and distribute this software within the scope of the license.
+LawClaw 采用 **双进程架构**，将 UI 层与 AI 运行时操作分离，以兼顾交互体验与运行稳定性：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       LawClaw 桌面应用                          │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │              Electron 主进程                               │  │
+│  │  • 窗口与应用生命周期管理                                  │  │
+│  │  • 网关进程管理与状态转发                                  │  │
+│  │  • 系统集成（托盘、菜单、外链打开）                        │  │
+│  │  • 自动更新编排                                            │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                              │                                  │
+│                              │ IPC                              │
+│                              ▼                                  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │              React 渲染进程                                │  │
+│  │  • 现代组件化 UI（React 19）                               │  │
+│  │  • Zustand 状态管理                                        │  │
+│  │  • 通过 IPC 与主进程通信                                   │  │
+│  │  • Markdown 富文本渲染                                     │  │
+│  └────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+                               │ WebSocket（JSON-RPC）
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     OpenClaw 网关                              │
+│                                                                 │
+│  • AI 智能体运行时与编排                                        │
+│  • 消息频道管理                                                 │
+│  • 技能 / 插件执行环境                                          │
+│  • 供应商抽象层                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 设计原则
+
+- **进程隔离**：AI 运行时在独立进程中运行，即使在高负载计算期间，UI 也能保持响应。
+- **优雅恢复**：内置带指数退避的重连逻辑，能够自动处理瞬时故障。
+- **本地持久化**：Provider 配置与 API Key 当前通过本地 `electron-store` 持久化，并同步到 OpenClaw auth profiles，不依赖云端同步，也未接入操作系统级 Keychain。
+- **Bundled Runtime 兜底**：打包版本会把内置运行时桥接层与 bundled 二进制注入子进程环境，确保在系统运行时缺失或不一致时，Gateway / CLI 相关流程仍可用。
+- **热重载**：开发模式支持即时 UI 更新，无需重启网关。
+
+---
+
+## 开发指南
+
+### 前置要求
+
+- **Node.js**：22+（推荐 LTS 版本）
+- **包管理器**：pnpm 10+（仓库当前锁定 pnpm 10，请优先使用 pnpm）
+
+### 项目结构
+
+```
+LawClaw/
+├── electron/              # Electron 主进程
+│   ├── main/              # 应用入口、窗口管理
+│   ├── gateway/           # OpenClaw 网关进程管理
+│   ├── preload/           # 安全 IPC 桥接脚本
+│   └── utils/             # 工具模块（存储、认证、运行时桥接、路径）
+├── src/                   # React 渲染进程
+│   ├── components/        # 可复用 UI 组件
+│   │   ├── channels/      # 频道接入 / 引导面板
+│   │   ├── ui/            # 基础组件（shadcn/ui）
+│   │   ├── layout/        # 布局组件（侧边栏、顶栏）
+│   │   └── common/        # 公共组件
+│   ├── hooks/             # 共享 React Hooks
+│   ├── pages/             # 应用页面
+│   │   ├── Setup/         # 初始设置向导
+│   │   ├── Dashboard/     # 首页仪表盘
+│   │   ├── Chat/          # AI 聊天界面
+│   │   ├── Channels/      # 频道管理
+│   │   ├── Skills/        # 技能浏览与管理
+│   │   ├── Cron/          # 定时任务
+│   │   ├── UpgradeInstalling/ # 预置升级阻塞页
+│   │   └── Settings/      # 配置面板
+│   ├── stores/            # Zustand 状态仓库
+│   ├── lib/               # 前端工具库
+│   └── types/             # TypeScript 类型定义
+├── resources/             # 静态资源与随包资源（图标、预设安装清单、插件、runtime bridge、bundled bin 等）
+├── scripts/               # 构建与工具脚本
+└── tests/                 # 测试套件
+```
+
+### 常用命令
+
+```bash
+# 初始化
+pnpm run init             # 安装依赖并下载 bundled uv 运行时（首次开发必跑）
+
+# 开发
+pnpm dev                  # 启动 Vite 开发模式（含 Electron 集成开发流程）
+pnpm dev:setup            # 强制进入设置向导的开发模式
+
+# 代码质量
+pnpm lint                 # 运行 ESLint 并自动修复可修复问题
+pnpm typecheck            # TypeScript 类型检查
+
+# 测试
+pnpm test                 # 运行单元测试
+pnpm test:e2e             # 运行 Playwright E2E 测试
+
+# 预置产物校验
+pnpm run bundle:preset-artifacts
+pnpm run bundle:preset-artifacts:offline
+
+# 构建与打包
+pnpm run build:vite       # 仅构建前后端代码
+pnpm build                # 完整生产构建并打包桌面应用
+pnpm package              # 为当前平台打包
+pnpm package:mac          # 为 macOS 打包
+pnpm package:win          # 为 Windows 打包
+pnpm package:linux        # 为 Linux 打包
+```
+
+### 技术栈
+
+| 层级 | 技术 |
+| --- | --- |
+| 运行时 | Electron 40+ |
+| UI 框架 | React 19 + TypeScript |
+| 样式 | Tailwind CSS + shadcn/ui |
+| 状态管理 | Zustand |
+| 构建工具 | Vite + electron-builder |
+| 测试 | Vitest + Playwright |
+| 动画 | Framer Motion |
+| 图标 | Lucide React |
+
+---
+
+## 参与贡献
+
+我们欢迎社区贡献。无论是修复 Bug、开发新功能、改进文档还是参与翻译，每一项贡献都能帮助 LawClaw 持续完善。
+
+### 如何贡献
+
+1. **Fork** 本仓库
+2. **创建** 功能分支（`git checkout -b feature/amazing-feature`）
+3. **提交** 清晰描述的变更
+4. **推送** 到你的分支
+5. **创建** Pull Request
+
+### 贡献规范
+
+- 遵循现有代码风格（ESLint + Prettier）
+- 为新功能编写测试
+- 按需更新文档
+- 保持提交原子化且描述清晰
+
+---
+
+## 致谢
+
+LawClaw（劳有钳）基于以下优秀的开源项目构建：
+
+- **[ClawX](https://github.com/ValueCell-ai/ClawX)** – 本项目的上游基础，由 ValueCell Team 开发维护
+- **[OpenClaw](https://github.com/OpenClaw)** – AI 智能体运行时
+- [Electron](https://www.electronjs.org/) – 跨平台桌面框架
+- [React](https://react.dev/) – UI 组件库
+- [shadcn/ui](https://ui.shadcn.com/) – 精美设计的组件库
+- [Zustand](https://github.com/pmndrs/zustand) – 轻量级状态管理
+
+<!--
+---
+
+## 社区
+
+欢迎加入我们的社区，与其他用户交流、获取帮助，并分享你的使用体验。
+
+| 企业微信 | 飞书群组 | Discord |
+| :---: | :---: | :---: |
+| <img src="src/assets/community/wecom-qr.png" width="150" alt="企业微信二维码" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="飞书二维码" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord 二维码" /> |
+-->
+
+---
+
+## 许可证
+
+LawClaw 基于 [MIT 许可证](LICENSE) 发布。你可以在许可条款范围内自由使用、修改和分发本软件。
 
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by Jurismind (法义经纬)</sub>
+  <sub>由 Jurismind（法义经纬）用 ❤️ 打造</sub>
 </p>

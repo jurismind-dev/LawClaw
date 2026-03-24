@@ -386,6 +386,10 @@ jobs:
       - name: Validate packaged Feishu plugin runtime
         run: node scripts/check-packaged-feishu-plugin-runtime.mjs release
 
+      - name: Validate macOS signed and notarized artifacts
+        if: matrix.platform == 'mac' && env.MAC_SIGN_ENABLED == 'true'
+        run: node scripts/check-macos-release-artifacts.mjs release
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:

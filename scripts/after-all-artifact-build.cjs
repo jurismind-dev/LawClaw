@@ -1,37 +1,45 @@
-const { execFileSync } = require('node:child_process');
 const { readdirSync } = require('node:fs');
 const { join } = require('node:path');
+const {
+  parsePositiveIntEnv,
+  pollNotarization,
+  resolveDeveloperIdApplicationIdentity,
+  resolveSubmissionId,
+  run,
+  runJson,
+} = require('./macos-notary-utils.cjs');
 
-function run(command, args) {
-  console.log(`[after-all-artifact-build] ${command} ${args.join(' ')}`);
-  execFileSync(command, args, {
-    stdio: 'inherit',
-  });
-}
-
-function findAppBundles(rootDir) {
-  const result = [];
+function findMacArtifacts(rootDir) {
+  const appPaths = [];
+  const dmgPaths = [];
   const stack = [{ dir: rootDir, depth: 0 }];
 
   while (stack.length > 0) {
     const current = stack.pop();
     const entries = readdirSync(current.dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (!entry.isDirectory()) {
-        continue;
-      }
       const fullPath = join(current.dir, entry.name);
-      if (entry.name.endsWith('.app')) {
-        result.push(fullPath);
+      if (entry.isDirectory()) {
+        if (entry.name.endsWith('.app')) {
+          appPaths.push(fullPath);
+          continue;
+        }
+        if (current.depth < 3) {
+          stack.push({ dir: fullPath, depth: current.depth + 1 });
+        }
         continue;
       }
-      if (current.depth < 3) {
-        stack.push({ dir: fullPath, depth: current.depth + 1 });
+
+      if (entry.isFile() && entry.name.endsWith('.dmg')) {
+        dmgPaths.push(fullPath);
       }
     }
   }
 
-  return result.sort();
+  return {
+    appPaths: appPaths.sort(),
+    dmgPaths: dmgPaths.sort(),
+  };
 }
 
 module.exports = async function afterAllArtifactBuild(buildResult) {
@@ -40,6 +48,8 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
   }
 
   const {
+    buildNotarytoolAuthArgs,
+    ensureAppleApiKeyPath,
     resolveMacSigningState,
   } = await import('./macos-signing-utils.mjs');
 
@@ -59,12 +69,77 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
     return [];
   }
 
-  const appPaths = findAppBundles(buildResult.outDir);
+  const { appPaths, dmgPaths } = findMacArtifacts(buildResult.outDir);
+  if (appPaths.length === 0) {
+    throw new Error(`[after-all-artifact-build] No .app bundles found under ${buildResult.outDir}`);
+  }
 
   for (const appPath of appPaths) {
     run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath]);
     run('spctl', ['-a', '-vv', '-t', 'execute', appPath]);
     run('xcrun', ['stapler', 'validate', appPath]);
+  }
+
+  if (dmgPaths.length === 0) {
+    throw new Error(`[after-all-artifact-build] No .dmg artifacts found under ${buildResult.outDir}`);
+  }
+
+  let appleApiKeyPath;
+  if (state.mode === 'api-key') {
+    appleApiKeyPath = await ensureAppleApiKeyPath(state.appleApiKey, state.appleApiKeyId);
+  }
+
+  const authArgs = buildNotarytoolAuthArgs(state, appleApiKeyPath);
+  const timeoutMinutes = parsePositiveIntEnv('LAWCLAW_MAC_NOTARY_TIMEOUT_MINUTES', 60);
+  const pollSeconds = parsePositiveIntEnv('LAWCLAW_MAC_NOTARY_POLL_SECONDS', 30);
+  const timeoutMs = timeoutMinutes * 60 * 1000;
+  const intervalMs = pollSeconds * 1000;
+  const signingIdentity = resolveDeveloperIdApplicationIdentity(appPaths[0], process.env, '[after-all-artifact-build]');
+
+  for (const dmgPath of dmgPaths) {
+    let submissionId = '';
+
+    try {
+      run('codesign', ['--force', '--sign', signingIdentity, '--timestamp', '--verbose=2', dmgPath]);
+      run('codesign', ['--verify', '--verbose=2', dmgPath]);
+
+      const submission = runJson('xcrun', [
+        'notarytool',
+        'submit',
+        dmgPath,
+        '--output-format',
+        'json',
+        ...authArgs,
+      ], {}, '[after-all-artifact-build]');
+
+      submissionId = resolveSubmissionId(submission);
+      if (!submissionId) {
+        throw new Error(`[after-all-artifact-build] Apple notarization response did not include a submission id for ${dmgPath}`);
+      }
+
+      console.log(`[after-all-artifact-build] DMG notary submission created for ${dmgPath}: ${submissionId}`);
+      await pollNotarization(
+        submissionId,
+        authArgs,
+        timeoutMs,
+        intervalMs,
+        '[after-all-artifact-build]'
+      );
+
+      run('xcrun', ['notarytool', 'log', submissionId, ...authArgs]);
+      run('xcrun', ['stapler', 'staple', '-v', dmgPath]);
+      run('xcrun', ['stapler', 'validate', dmgPath]);
+      run('spctl', ['-a', '-vv', '-t', 'open', '--context', 'context:primary-signature', dmgPath]);
+    } catch (error) {
+      if (submissionId) {
+        try {
+          run('xcrun', ['notarytool', 'log', submissionId, ...authArgs]);
+        } catch (logError) {
+          console.warn(`[after-all-artifact-build] Failed to fetch notary log for ${submissionId}: ${logError.message}`);
+        }
+      }
+      throw error;
+    }
   }
 
   return [];

@@ -33,6 +33,7 @@ import { logger } from '../utils/logger';
 import { applyBundledRuntimeToEnv, getBundledRuntimePathEntries } from '../utils/bundled-runtime';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
+import { applyBundledNpmToCliEnv } from '../utils/openclaw-cli';
 import {
   loadOrCreateDeviceIdentity,
   signDevicePayload,
@@ -1065,8 +1066,10 @@ export class GatewayManager extends EventEmitter {
     error?: string;
   }> {
     return await new Promise((resolve) => {
+      const commandEnv = applyBundledNpmToCliEnv({ ...process.env });
       const child = spawn(command, args, {
         cwd,
+        env: commandEnv,
         shell: useShell,
       });
 

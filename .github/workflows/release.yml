@@ -383,6 +383,9 @@ jobs:
           console.log(`Validated ${files.length} ${targetPlatform} artifact(s) for version ${releaseVersion}`);
           NODE
 
+      - name: Validate packaged Feishu plugin runtime
+        run: node scripts/check-packaged-feishu-plugin-runtime.mjs release
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -177,6 +177,13 @@ async function repairPreparedPluginInstallDir(
     };
   }
 
+  const nodeModulesDir = join(packageDir, 'node_modules');
+  if (existsSync(nodeModulesDir)) {
+    // The bundled plugin may contain partially tracked dependencies. Remove them
+    // before reinstalling so npm does not keep a broken package tree in place.
+    rmSync(nodeModulesDir, { recursive: true, force: true });
+  }
+
   const depsResult = await runCommand(
     'npm',
     ['install', '--omit=dev', '--omit=peer', '--silent', '--ignore-scripts'],

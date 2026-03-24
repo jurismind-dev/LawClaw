@@ -40,6 +40,9 @@ describe('bundled openclaw CLI wrappers', () => {
     const devSetupScript = readRepoFile('scripts/dev-setup.mjs');
     const openClawCliSource = readRepoFile('electron/utils/openclaw-cli.ts');
     const bundledRuntimeSource = readRepoFile('electron/utils/bundled-runtime.ts');
+    const feishuOnboardingSource = readRepoFile('electron/utils/feishu-onboarding.ts');
+    const ipcHandlersSource = readRepoFile('electron/main/ipc-handlers.ts');
+    const gatewayManagerSource = readRepoFile('electron/gateway/manager.ts');
 
     expect(afterPackScript).toContain("join(appOutDir, 'node_modules', 'npm')");
     expect(afterPackScript).toContain('Bundled npm runtime for Windows');
@@ -57,6 +60,9 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(openClawCliSource).toContain('applyBundledRuntimeToEnv');
     expect(bundledRuntimeSource).toContain('LAWCLAW_BUNDLED_NODE_EXE');
     expect(bundledRuntimeSource).toContain('LAWCLAW_BUNDLED_UV_EXE');
+    expect(feishuOnboardingSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
+    expect(ipcHandlersSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
+    expect(gatewayManagerSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
   });
 
   it('ships runtime-bridge wrappers for node, npm, and managed python', () => {

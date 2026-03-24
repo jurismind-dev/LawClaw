@@ -26,6 +26,7 @@ const {
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
 } = require('./openclaw-bundle-compat.cjs');
+const { prepareBundledFeishuResourcePlugin } = require('./bundled-resource-plugin.cjs');
 
 function getBundledUvPath(resourcesDir, platform) {
   const binName = platform === 'win32' ? 'uv.exe' : 'uv';
@@ -81,6 +82,11 @@ function resolveHostNpmPackageDir() {
   }
 
   return null;
+}
+
+function getHostNpmCliPath() {
+  const npmPackageDir = resolveHostNpmPackageDir();
+  return npmPackageDir ? join(npmPackageDir, 'bin', 'npm-cli.js') : null;
 }
 
 function bundleWindowsNpmRuntime(appOutDir) {
@@ -565,16 +571,29 @@ exports.default = async function afterPack(context) {
 
   mkdirSync(pluginsDestRoot, { recursive: true });
   for (const { pluginId, sourceDir } of resourceBundledPlugins) {
+    const preparedSource = pluginId === 'openclaw-lark'
+      ? prepareBundledFeishuResourcePlugin({
+        sourceDir,
+        npmCliPath: getHostNpmCliPath(),
+      })
+      : null;
+    const effectiveSourceDir = preparedSource ? preparedSource.preparedDir : sourceDir;
     const pluginDestDir = join(pluginsDestRoot, pluginId);
-    console.log(`[after-pack] Bundling resource plugin ${pluginId} -> ${pluginDestDir}`);
-    const ok = copyBundledResourcePlugin(sourceDir, pluginDestDir);
-    if (!ok) continue;
+    try {
+      console.log(`[after-pack] Bundling resource plugin ${pluginId} -> ${pluginDestDir}`);
+      const ok = copyBundledResourcePlugin(effectiveSourceDir, pluginDestDir);
+      if (!ok) continue;
 
-    cleanupUnnecessaryFiles(pluginDestDir);
-    const pluginNM = join(pluginDestDir, 'node_modules');
-    if (existsSync(pluginNM)) {
-      cleanupKoffi(pluginNM, platform, arch);
-      cleanupNativePlatformPackages(pluginNM, platform, arch);
+      cleanupUnnecessaryFiles(pluginDestDir);
+      const pluginNM = join(pluginDestDir, 'node_modules');
+      if (existsSync(pluginNM)) {
+        cleanupKoffi(pluginNM, platform, arch);
+        cleanupNativePlatformPackages(pluginNM, platform, arch);
+      }
+    } finally {
+      if (preparedSource) {
+        rmSync(preparedSource.tempDir, { recursive: true, force: true });
+      }
     }
   }
 

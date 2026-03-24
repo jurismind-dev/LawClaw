@@ -857,8 +857,10 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
     error?: string;
   }> => {
     return await new Promise((resolve) => {
+      const commandEnv = applyBundledNpmToCliEnv({ ...process.env });
       const child = spawn(command, args, {
         cwd,
+        env: commandEnv,
         shell: useShell,
       });
 

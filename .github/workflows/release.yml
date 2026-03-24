@@ -419,9 +419,19 @@ jobs:
             PYTHON_BIN=python
           fi
 
-          "${PYTHON_BIN}" -m pip install --disable-pip-version-check --quiet oss2
+          VENV_DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/oss2-preview-venv-${TARGET_PLATFORM}"
+          rm -rf "${VENV_DIR}"
+          "${PYTHON_BIN}" -m venv "${VENV_DIR}"
 
-          "${PYTHON_BIN}" - <<'PY'
+          if [[ -x "${VENV_DIR}/bin/python" ]]; then
+            VENV_PYTHON="${VENV_DIR}/bin/python"
+          else
+            VENV_PYTHON="${VENV_DIR}/Scripts/python.exe"
+          fi
+
+          "${VENV_PYTHON}" -m pip install --disable-pip-version-check --quiet oss2
+
+          "${VENV_PYTHON}" - <<'PY'
           import os
           from datetime import datetime, timezone
           from pathlib import Path
@@ -638,9 +648,14 @@ jobs:
             exit 1
           fi
 
-          python3 -m pip install --disable-pip-version-check --quiet oss2
+          VENV_DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/oss2-release-venv"
+          rm -rf "${VENV_DIR}"
+          python3 -m venv "${VENV_DIR}"
+          VENV_PYTHON="${VENV_DIR}/bin/python"
 
-          python3 - <<'PY'
+          "${VENV_PYTHON}" -m pip install --disable-pip-version-check --quiet oss2
+
+          "${VENV_PYTHON}" - <<'PY'
           import hashlib
           import os
           from datetime import datetime, timezone

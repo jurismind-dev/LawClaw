@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { parseJsonText } from '@electron/utils/text-encoding';
 
 interface WorkspaceFile {
   agentId: string;
@@ -62,5 +63,24 @@ describe('agent preset resource manifest', () => {
     );
     expect(soulTemplate).not.toContain('LAWCLAW_CAPABILITY_START');
     expect(soulTemplate).not.toContain('LAWCLAW_CAPABILITY_END');
+  });
+
+  it('marks lawclaw-main as the default agent in the config patch template', () => {
+    const manifest = readManifest();
+    expect(manifest.configPatch).toBeTruthy();
+
+    const configPatch = parseJsonText<{
+      agents?: {
+        list?: Array<{ id?: string; default?: boolean }>;
+      };
+    }>(
+      readFileSync(
+        join(process.cwd(), 'resources', 'agent-presets', manifest.templateRoot, manifest.configPatch as string),
+        'utf-8'
+      )
+    );
+
+    const lawclawMain = configPatch.agents?.list?.find((item) => item.id === 'lawclaw-main');
+    expect(lawclawMain?.default).toBe(true);
   });
 });

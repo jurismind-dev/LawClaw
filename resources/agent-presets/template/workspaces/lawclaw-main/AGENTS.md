@@ -173,6 +173,8 @@ You are free to edit `HEARTBEAT.md` with a short checklist or reminders. Keep it
 
 **Tip:** Batch similar periodic checks into `HEARTBEAT.md` instead of creating multiple cron jobs. Use cron for precise schedules and standalone tasks.
 
+**LawClaw note:** This workspace (`lawclaw-main`) is the default agent for LawClaw. One-shot reminders can use cron jobs that target the main session. If the task needs isolation, a separate model, or direct channel delivery, prefer isolated cron jobs instead.
+
 **Things to check (rotate through these, 2-4 times per day):**
 
 - **Emails** - Any urgent unread messages?

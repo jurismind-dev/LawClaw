@@ -12,7 +12,8 @@
                                 {
                                     "id":  "lawclaw-main",
                                     "name":  "LawClaw 涓绘櫤鑳戒綋",
-                                    "workspace":  "~/.openclaw/workspace-lawclaw-main"
+                                    "workspace":  "~/.openclaw/workspace-lawclaw-main",
+                                    "default":  true
                                 }
                             ]
                }

@@ -17,6 +17,7 @@ import {
   runAgentPresetStartupMigration,
   stopAgentPresetMigrationCoordinator,
 } from '@electron/utils/agent-preset-migration';
+import { parseJsonText } from '@electron/utils/text-encoding';
 
 interface FixtureContext {
   rootDir: string;
@@ -39,6 +40,10 @@ function writeText(filePath: string, content: string): void {
 
 function readText(filePath: string): string {
   return readFileSync(filePath, 'utf-8');
+}
+
+function readJson<T>(filePath: string): T {
+  return parseJsonText<T>(readText(filePath));
 }
 
 function createFixture(): FixtureContext {
@@ -459,6 +464,95 @@ describe('agent preset deterministic migration', () => {
       expect(existsSync(join(fixture.openclawDir, `workspace-${id}`))).toBe(true);
     }
     expect(getBackupRunDirs(fixture)).toHaveLength(0);
+  });
+
+  it('makes lawclaw-main the only default agent during migration', async () => {
+    const fixture = createFixture();
+    writePresetVersion(fixture, 1);
+    writeText(
+      join(fixture.openclawDir, 'openclaw.json'),
+      JSON.stringify(
+        {
+          agents: {
+            list: [
+              {
+                id: 'main',
+                name: 'Main Agent',
+                default: true,
+              },
+              {
+                id: 'lawclaw-main',
+                name: 'LawClaw 主智能体',
+              },
+              {
+                id: 'legal-research',
+                name: 'Legal Research',
+                default: true,
+              },
+            ],
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+    });
+
+    const config = readJson<{
+      agents: {
+        list: Array<{ id: string; default?: boolean }>;
+      };
+    }>(join(fixture.openclawDir, 'openclaw.json'));
+
+    const defaults = config.agents.list.filter((item) => item.default).map((item) => item.id);
+    expect(defaults).toEqual(['lawclaw-main']);
+  });
+
+  it('adds lawclaw-main as default when bootstrapping from a main-only config', async () => {
+    const fixture = createFixture();
+    writePresetVersion(fixture, 1);
+    writeText(
+      join(fixture.openclawDir, 'openclaw.json'),
+      JSON.stringify(
+        {
+          agents: {
+            list: [
+              {
+                id: 'main',
+                name: 'Main Agent',
+                default: true,
+              },
+            ],
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    await runAgentPresetStartupMigration({
+      resourcesDir: fixture.resourcesDir,
+      openClawConfigDir: fixture.openclawDir,
+      clawXConfigDir: fixture.lawclawDir,
+    });
+
+    const config = readJson<{
+      agents: {
+        list: Array<{ id: string; default?: boolean; workspace?: string }>;
+      };
+    }>(join(fixture.openclawDir, 'openclaw.json'));
+
+    const lawclawMain = config.agents.list.find((item) => item.id === 'lawclaw-main');
+    expect(lawclawMain?.default).toBe(true);
+    expect(lawclawMain?.workspace).toBe('~/.openclaw/workspace-lawclaw-main');
+
+    const defaults = config.agents.list.filter((item) => item.default).map((item) => item.id);
+    expect(defaults).toEqual(['lawclaw-main']);
   });
 
   it('does not inject a default model into lawclaw-main when model is missing', async () => {

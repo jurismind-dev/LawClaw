@@ -545,6 +545,7 @@ function ensureDedicatedAgentInConfig(config: Record<string, unknown>): {
       id: DEDICATED_AGENT_ID,
       name: 'LawClaw 主智能体',
       workspace: DEDICATED_AGENT_WORKSPACE,
+      default: true,
     });
     changed = true;
   } else {
@@ -555,6 +556,23 @@ function ensureDedicatedAgentInConfig(config: Record<string, unknown>): {
 
     if ('workspaceDir' in dedicatedAgent) {
       delete dedicatedAgent.workspaceDir;
+      changed = true;
+    }
+
+    if (dedicatedAgent.default !== true) {
+      dedicatedAgent.default = true;
+      changed = true;
+    }
+
+  }
+
+  for (const item of currentList) {
+    if (!isRecord(item) || item.id === DEDICATED_AGENT_ID) {
+      continue;
+    }
+
+    if ('default' in item) {
+      delete item.default;
       changed = true;
     }
 

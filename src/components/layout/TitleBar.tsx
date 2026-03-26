@@ -4,31 +4,70 @@
  * Windows/Linux: icon + "LawClaw" on left, minimize/maximize/close on right.
  */
 import { useState, useEffect } from 'react';
-import { Minus, Square, X, Copy } from 'lucide-react';
+import { Minus, Square, X, Copy, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import { brandAssets } from '@/assets/branding';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useProviderStore } from '@/stores/providers';
 import logoSvg from '@/assets/logo.svg';
 
-const isMac = window.electron?.platform === 'darwin';
+const JURISMIND_RECHARGE_URL = 'https://lawclaw.jurismind.com/recharge';
 
 export function TitleBar() {
   const { t } = useTranslation('common');
   const location = useLocation();
+  const isMac = window.electron?.platform === 'darwin';
   const showCoinAccessButton = !location.pathname.startsWith('/setup');
+  const providers = useProviderStore((state) => state.providers);
+  const fetchProviders = useProviderStore((state) => state.fetchProviders);
+  const jurismindProvider = providers.find(
+    (provider) => provider.type === 'jurismind' && provider.hasKey && Boolean(provider.openId)
+  );
+
+  useEffect(() => {
+    if (!showCoinAccessButton) {
+      return;
+    }
+
+    void fetchProviders();
+  }, [fetchProviders, showCoinAccessButton, location.pathname]);
 
   if (isMac) {
     return (
       <div className="drag-region flex h-10 shrink-0 items-center justify-end border-b bg-background px-3">
-        {showCoinAccessButton && <CoinAccessButton label={t('brand.getCoins')} />}
+        {showCoinAccessButton && (
+          <div className="no-drag flex items-center gap-2">
+            <CoinAccessButton label={t('brand.getCoins')} />
+            <ProfileCenterButton
+              label={t('brand.profileCenter')}
+              avatarUrl={jurismindProvider?.avatar}
+              visible={Boolean(jurismindProvider)}
+            />
+          </div>
+        )}
       </div>
     );
   }
 
-  return <WindowsTitleBar showCoinAccessButton={showCoinAccessButton} />;
+  return (
+    <WindowsTitleBar
+      showCoinAccessButton={showCoinAccessButton}
+      jurismindAvatarUrl={jurismindProvider?.avatar}
+      showProfileCenter={Boolean(jurismindProvider)}
+    />
+  );
 }
 
-function WindowsTitleBar({ showCoinAccessButton }: { showCoinAccessButton: boolean }) {
+function WindowsTitleBar({
+  showCoinAccessButton,
+  jurismindAvatarUrl,
+  showProfileCenter,
+}: {
+  showCoinAccessButton: boolean;
+  jurismindAvatarUrl?: string;
+  showProfileCenter: boolean;
+}) {
   const { t } = useTranslation('common');
   const [maximized, setMaximized] = useState(false);
 
@@ -68,6 +107,13 @@ function WindowsTitleBar({ showCoinAccessButton }: { showCoinAccessButton: boole
       {/* Right: Coin entry + Window Controls */}
       <div className="no-drag flex h-full items-center gap-2 pr-1">
         {showCoinAccessButton && <CoinAccessButton label={t('brand.getCoins')} />}
+        {showCoinAccessButton && (
+          <ProfileCenterButton
+            label={t('brand.profileCenter')}
+            avatarUrl={jurismindAvatarUrl}
+            visible={showProfileCenter}
+          />
+        )}
         <button
           onClick={handleMinimize}
           className="flex h-full w-11 items-center justify-center text-muted-foreground hover:bg-accent transition-colors"
@@ -95,21 +141,10 @@ function WindowsTitleBar({ showCoinAccessButton }: { showCoinAccessButton: boole
 }
 
 function CoinAccessButton({ label }: { label: string }) {
-  const handleOpenCoinCenter = () => {
-    const url = 'https://lawclaw.jurismind.com/recharge';
-
-    if (window.electron?.openExternal) {
-      void window.electron.openExternal(url);
-      return;
-    }
-
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
   return (
     <button
       type="button"
-      onClick={handleOpenCoinCenter}
+      onClick={openJurismindCenter}
       className="no-drag inline-flex h-8 items-center gap-2 rounded-full border border-border/70 bg-background/80 px-2.5 text-xs font-medium text-foreground/85 shadow-sm transition-colors hover:bg-accent hover:text-foreground dark:bg-muted/35"
       aria-label={label}
       title={label}
@@ -120,4 +155,53 @@ function CoinAccessButton({ label }: { label: string }) {
       <span className="leading-none">{label}</span>
     </button>
   );
+}
+
+function ProfileCenterButton({
+  label,
+  avatarUrl,
+  visible,
+}: {
+  label: string;
+  avatarUrl?: string;
+  visible: boolean;
+}) {
+  if (!visible) {
+    return null;
+  }
+
+  const normalizedAvatarUrl = avatarUrl?.trim() || '';
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={openJurismindCenter}
+          className="no-drag flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-background/85 shadow-sm transition-colors hover:bg-accent"
+          aria-label={label}
+        >
+          {normalizedAvatarUrl ? (
+            <img src={normalizedAvatarUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground">
+              <UserRound className="h-4 w-4" />
+            </span>
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={10} align="end">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function openJurismindCenter() {
+  if (window.electron?.openExternal) {
+    void window.electron.openExternal(JURISMIND_RECHARGE_URL);
+    return;
+  }
+
+  window.open(JURISMIND_RECHARGE_URL, '_blank', 'noopener,noreferrer');
 }

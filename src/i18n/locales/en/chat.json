@@ -15,6 +15,7 @@
     "toolbar": {
         "newSession": "New session",
         "currentAgent": "Current Target: {{agent}}",
+        "targetLabel": "Current Target",
         "refresh": "Refresh chat",
         "showThinking": "Show thinking",
         "hideThinking": "Hide thinking"

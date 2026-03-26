@@ -315,12 +315,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
   return (
     <div
-      className="bg-background p-4"
+      className="bg-background px-3 pb-4 pt-3"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="max-w-4xl mx-auto">
+      <div className="ml-auto w-full max-w-[64rem]">
         {/* Attachment Previews */}
         {attachments.length > 0 && (
           <div className="flex gap-2 mb-2 flex-wrap">

@@ -2201,6 +2201,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         openId: bound.openId,
         tokenKey: bound.tokenKey,
         tokenId: bound.tokenId,
+        avatar: bound.avatar,
       };
     } catch (error) {
       logger.error('provider:bindJurismindToken failed', error);

@@ -186,7 +186,7 @@ export function FeishuOfficialOnboardingPanel({
                 ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.7)]'
                 : error
                   ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'
-                  : 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]'
+                  : 'bg-primary shadow-[0_0_8px_rgba(220,38,38,0.6)]'
             )}
           />
           {statusLabel}

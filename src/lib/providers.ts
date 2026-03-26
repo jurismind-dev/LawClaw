@@ -30,6 +30,9 @@ export interface ProviderConfig {
   type: ProviderType;
   baseUrl?: string;
   model?: string;
+  openId?: string;
+  tokenId?: number | null;
+  avatar?: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -38,6 +41,13 @@ export interface ProviderConfig {
 export interface ProviderWithKeyInfo extends ProviderConfig {
   hasKey: boolean;
   keyMasked: string | null;
+}
+
+export interface JurismindBindingResult {
+  tokenKey: string;
+  openId: string;
+  tokenId?: number | null;
+  avatar?: string;
 }
 
 export interface ProviderTypeInfo {

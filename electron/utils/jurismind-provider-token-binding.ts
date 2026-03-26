@@ -12,11 +12,13 @@ export interface JurismindProviderBindingResult {
   openId: string;
   tokenKey: string;
   tokenId: number | null;
+  avatar?: string;
 }
 
 interface SsoAuthContext {
   openId: string;
   token: JurismindTokenRecord | null;
+  avatar?: string;
 }
 
 interface JurismindTokenRecord {
@@ -72,6 +74,54 @@ function extractOpenIdFromAnyLevel(payload: unknown): string {
 
 function extractOpenId(payload: unknown): string {
   return extractOpenIdFromAnyLevel(payload);
+}
+
+function normalizeAvatarUrl(value: unknown): string {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('//')) {
+    return `https:${trimmed}`;
+  }
+  return trimmed;
+}
+
+function extractAvatarFromAnyLevel(payload: unknown): string {
+  const queue: unknown[] = [payload];
+  const visited = new Set<object>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    const data = current as Record<string, unknown>;
+    const avatar = normalizeAvatarUrl(
+      data.avatar
+      ?? data.avatar_url
+      ?? data.avatarUrl
+      ?? data.headimgurl
+      ?? data.headImgUrl
+      ?? data.head_img_url
+      ?? data.portrait
+      ?? data.picture
+    );
+    if (avatar) {
+      return avatar;
+    }
+
+    for (const value of Object.values(data)) {
+      if (value && typeof value === 'object') {
+        queue.push(value);
+      }
+    }
+  }
+
+  return '';
+}
+
+function extractAvatar(payload: unknown): string {
+  return extractAvatarFromAnyLevel(payload);
 }
 
 export function normalizeJurismindProviderToken(token: string): string {
@@ -442,6 +492,7 @@ async function checkSsoTicket(
   if (!openId) {
     throw new Error(`SSO 校验成功但未返回 open_id: ${getResponseMessage(body)}`);
   }
+  const avatar = extractAvatar(body);
 
   const token = extractTokenFromPayload(body);
   if (!token?.tokenKey) {
@@ -450,6 +501,7 @@ async function checkSsoTicket(
 
   return {
     openId,
+    avatar: avatar || undefined,
     token,
   };
 }
@@ -473,6 +525,7 @@ export async function bindJurismindProviderToken(): Promise<JurismindProviderBin
       openId,
       tokenKey: validatedToken.token.tokenKey,
       tokenId: validatedToken.token.tokenId,
+      avatar: auth.avatar,
     };
   }
 

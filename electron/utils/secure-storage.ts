@@ -50,6 +50,9 @@ export interface ProviderConfig {
     | 'custom';
   baseUrl?: string;
   model?: string;
+  openId?: string;
+  tokenId?: number | null;
+  avatar?: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;

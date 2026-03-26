@@ -15,6 +15,7 @@
     "toolbar": {
         "newSession": "新しいセッション",
         "currentAgent": "現在の対話対象: {{agent}}",
+        "targetLabel": "現在の対話対象",
         "refresh": "チャットを更新",
         "showThinking": "思考を表示",
         "hideThinking": "思考を非表示"

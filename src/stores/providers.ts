@@ -3,7 +3,11 @@
  * Manages AI provider configurations
  */
 import { create } from 'zustand';
-import type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
+import type {
+  JurismindBindingResult,
+  ProviderConfig,
+  ProviderWithKeyInfo,
+} from '@/lib/providers';
 
 // Re-export types for consumers that imported from here
 export type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
@@ -32,7 +36,7 @@ interface ProviderState {
     apiKey: string,
     options?: { baseUrl?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
-  bindJurismindToken: () => Promise<{ tokenKey: string; openId: string; tokenId?: number | null }>;
+  bindJurismindToken: () => Promise<JurismindBindingResult>;
   getApiKey: (providerId: string) => Promise<string | null>;
 }
 
@@ -46,11 +50,11 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     set({ loading: true, error: null });
     
     try {
-      const providers = await window.electron.ipcRenderer.invoke('provider:list') as ProviderWithKeyInfo[];
+      const providerList = await window.electron.ipcRenderer.invoke('provider:list') as ProviderWithKeyInfo[] | null;
       const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
       
       set({ 
-        providers, 
+        providers: Array.isArray(providerList) ? providerList : [], 
         defaultProviderId: defaultId,
         loading: false 
       });
@@ -214,6 +218,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       tokenKey?: string;
       openId?: string;
       tokenId?: number | null;
+      avatar?: string;
     };
 
     if (!result?.success || !result?.tokenKey) {
@@ -224,6 +229,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       tokenKey: String(result.tokenKey),
       openId: String(result.openId || ''),
       tokenId: result.tokenId ?? null,
+      avatar: typeof result.avatar === 'string' ? result.avatar : undefined,
     };
   },
   

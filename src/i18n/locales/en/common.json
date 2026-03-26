@@ -54,6 +54,7 @@
         "warning": "Gateway is not running."
     },
     "brand": {
-        "getCoins": "Get Claw Coins"
+        "getCoins": "Get Claw Coins",
+        "profileCenter": "Profile Center"
     }
 }

@@ -63,13 +63,26 @@ describe('sidebar clawx alignment', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByAltText('LawClaw avatar')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'common:sidebar.newChat' })).toBeInTheDocument();
-    expect(screen.getByText('chat:historyBuckets.older')).toBeInTheDocument();
+    expect(screen.getByText('劳有钳')).toBeInTheDocument();
+    const newChatButton = screen.getByRole('button', { name: 'common:sidebar.newChat' });
+    const historyBucket = screen.getByText('chat:historyBuckets.older');
+    const channelsLink = screen.getByRole('link', { name: 'sidebar.channels' });
+
+    expect(newChatButton).toBeInTheDocument();
+    expect(historyBucket).toBeInTheDocument();
     expect(screen.getByText('Draft memo')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Delete session' }).length).toBeGreaterThan(0);
+    expect(newChatButton.compareDocumentPosition(historyBucket) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(historyBucket.compareDocumentPosition(channelsLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     const links = screen.getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual([
+      'sidebar.channels',
+      'sidebar.skills',
+      'sidebar.cronTasks',
+      'sidebar.dashboard',
+      'common:sidebar.settings',
+    ]);
     expect(links.at(-1)).toHaveTextContent('common:sidebar.settings');
   });
 

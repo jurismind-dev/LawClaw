@@ -82,8 +82,8 @@ export const ChatMessage = memo(function ChatMessage({
       {/* Content */}
       <div
         className={cn(
-          'flex flex-col w-full min-w-0 max-w-[80%] space-y-2',
-          isUser ? 'items-end' : 'items-start',
+          'flex flex-col w-full min-w-0 space-y-2',
+          isUser ? 'items-end max-w-[78%] lg:max-w-[70%]' : 'items-start max-w-[84%] lg:max-w-[72%]',
         )}
       >
         {isStreaming && !isUser && streamingTools.length > 0 && (
@@ -370,7 +370,12 @@ function MessageBubble({
               },
               a({ href, children }) {
                 return (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline dark:text-blue-400"
+                  >
                     {children}
                   </a>
                 );

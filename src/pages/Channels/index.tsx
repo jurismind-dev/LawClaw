@@ -1166,7 +1166,7 @@ function AddChannelDialog({
             <div className="space-y-4">
               {/* Existing config hint */}
               {isExistingConfig && (
-                <div className="bg-blue-500/10 text-blue-600 dark:text-blue-400 p-3 rounded-lg text-sm flex items-center gap-2">
+                <div className="bg-primary/10 text-primary p-3 rounded-lg text-sm flex items-center gap-2">
                   <CheckCircle className="h-4 w-4 shrink-0" />
                   <span>{t('dialog.existingHint')}</span>
                 </div>

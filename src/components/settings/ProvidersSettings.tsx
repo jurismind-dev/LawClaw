@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useProviderStore, type ProviderConfig, type ProviderWithKeyInfo } from '@/stores/providers';
 import {
+  type JurismindBindingResult,
   PROVIDER_TYPE_INFO,
   type ProviderType,
   getProviderIconUrl,
@@ -64,7 +65,7 @@ export function ProvidersSettings() {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string }
+    options?: Pick<ProviderConfig, 'baseUrl' | 'model' | 'openId' | 'tokenId' | 'avatar'>
   ) => {
     // Only custom supports multiple instances.
     // Built-in providers remain singleton by type.
@@ -77,6 +78,9 @@ export function ProvidersSettings() {
           name,
           baseUrl: options?.baseUrl,
           model: options?.model,
+          openId: options?.openId,
+          tokenId: options?.tokenId,
+          avatar: options?.avatar,
           enabled: true,
         },
         apiKey.trim() || undefined
@@ -195,7 +199,7 @@ interface ProviderCardProps {
     key: string,
     options?: { baseUrl?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
-  onBindJurismindToken: () => Promise<{ tokenKey: string; openId: string; tokenId?: number | null }>;
+  onBindJurismindToken: () => Promise<JurismindBindingResult>;
 }
 
 function ProviderCard({
@@ -218,6 +222,10 @@ function ProviderCard({
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [jurismindBinding, setJurismindBinding] = useState(false);
+  const [jurismindProfile, setJurismindProfile] = useState<Pick<
+    ProviderConfig,
+    'openId' | 'tokenId' | 'avatar'
+  > | null>(null);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
   const canEditConfig = Boolean(typeInfo?.showBaseUrl || typeInfo?.showModelId);
@@ -231,6 +239,7 @@ function ProviderCard({
       setBaseUrl(provider.baseUrl || '');
       setModelId(provider.model || '');
       setJurismindBinding(false);
+      setJurismindProfile(null);
     }
   }, [isEditing, provider.baseUrl, provider.model]);
 
@@ -239,6 +248,11 @@ function ProviderCard({
     try {
       const result = await onBindJurismindToken();
       setNewKey(result.tokenKey);
+      setJurismindProfile({
+        openId: result.openId,
+        tokenId: result.tokenId ?? null,
+        avatar: result.avatar?.trim() || undefined,
+      });
       toast.success(t('aiProviders.toast.jurismindBindSuccess'));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -281,6 +295,24 @@ function ProviderCard({
           }
         }
         payload.newApiKey = newKey.trim();
+      }
+
+      if (isJurismind && jurismindProfile) {
+        const updates: Partial<ProviderConfig> = payload.updates || {};
+        const nextAvatar = jurismindProfile.avatar?.trim() || undefined;
+        const currentAvatar = provider.avatar?.trim() || undefined;
+        if (jurismindProfile.openId && jurismindProfile.openId !== provider.openId) {
+          updates.openId = jurismindProfile.openId;
+        }
+        if ((jurismindProfile.tokenId ?? null) !== (provider.tokenId ?? null)) {
+          updates.tokenId = jurismindProfile.tokenId ?? null;
+        }
+        if (nextAvatar !== currentAvatar) {
+          updates.avatar = nextAvatar;
+        }
+        if (Object.keys(updates).length > 0) {
+          payload.updates = updates;
+        }
       }
 
       if (canEditConfig) {
@@ -374,7 +406,7 @@ function ProviderCard({
                   href={typeInfo.apiKeyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400"
                   tabIndex={-1}
                 >
                   {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
@@ -517,14 +549,14 @@ interface AddProviderDialogProps {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string }
+    options?: Pick<ProviderConfig, 'baseUrl' | 'model' | 'openId' | 'tokenId' | 'avatar'>
   ) => Promise<void>;
   onValidateKey: (
     type: string,
     apiKey: string,
     options?: { baseUrl?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
-  onBindJurismindToken: () => Promise<{ tokenKey: string; openId: string; tokenId?: number | null }>;
+  onBindJurismindToken: () => Promise<JurismindBindingResult>;
 }
 
 function AddProviderDialog({
@@ -544,6 +576,10 @@ function AddProviderDialog({
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [jurismindBinding, setJurismindBinding] = useState(false);
+  const [jurismindProfile, setJurismindProfile] = useState<Pick<
+    ProviderConfig,
+    'openId' | 'tokenId' | 'avatar'
+  > | null>(null);
 
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
@@ -656,6 +692,11 @@ function AddProviderDialog({
       flushSync(() => {
         setApiKey(result.tokenKey);
       });
+      setJurismindProfile({
+        openId: result.openId,
+        tokenId: result.tokenId ?? null,
+        avatar: result.avatar?.trim() || undefined,
+      });
       toast.success(t('aiProviders.toast.jurismindBindSuccess'));
     } catch (error) {
       if (!mountedRef.current) return;
@@ -733,6 +774,9 @@ function AddProviderDialog({
         {
           baseUrl: typeInfo?.showBaseUrl ? (baseUrl.trim() || undefined) : undefined,
           model: typeInfo?.showModelId ? (modelId.trim() || undefined) : undefined,
+          openId: isJurismind ? (jurismindProfile?.openId || undefined) : undefined,
+          tokenId: isJurismind ? (jurismindProfile?.tokenId ?? null) : undefined,
+          avatar: isJurismind ? (jurismindProfile?.avatar?.trim() || undefined) : undefined,
         }
       );
     } catch {
@@ -763,6 +807,7 @@ function AddProviderDialog({
                     setBaseUrl(type.defaultBaseUrl || '');
                     setModelId(type.defaultModelId || '');
                     setApiKey('');
+                    setJurismindProfile(null);
                     setValidationError(null);
                     setJurismindBinding(false);
                     if (type.id === 'jurismind') {
@@ -797,6 +842,7 @@ function AddProviderDialog({
                         setBaseUrl('');
                         setModelId('');
                         setApiKey('');
+                        setJurismindProfile(null);
                         setJurismindBinding(false);
                       }}
                     className="text-sm text-muted-foreground hover:text-foreground"
@@ -810,7 +856,7 @@ function AddProviderDialog({
                           void handleBindJurismindToken();
                         }
                       }}
-                      className="ml-3 text-sm text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
+                      className="ml-3 text-sm text-blue-600 hover:underline disabled:pointer-events-none disabled:opacity-50 dark:text-blue-400"
                       disabled={jurismindBinding}
                     >
                       {jurismindBinding ? t('aiProviders.dialog.binding') : t('aiProviders.dialog.rebind')}
@@ -863,7 +909,7 @@ function AddProviderDialog({
                         href={typeInfo.apiKeyUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400"
                         tabIndex={-1}
                       >
                         {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
@@ -931,14 +977,14 @@ function AddProviderDialog({
               {/* Device OAuth Trigger — only shown when in OAuth mode */}
               {useOAuthFlow && (
                 <div className="space-y-4 pt-2">
-                  <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
-                    <p className="text-sm text-blue-200 mb-3 block">
+                  <div className="rounded-lg border border-primary/20 bg-primary/10 p-4 text-center">
+                    <p className="text-sm text-primary mb-3 block">
                       {t('aiProviders.oauth.loginPrompt')}
                     </p>
                     <Button
                       onClick={handleStartOAuth}
                       disabled={oauthFlowing}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                      className="w-full"
                     >
                       {oauthFlowing ? (
                         <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('aiProviders.oauth.waiting')}</>

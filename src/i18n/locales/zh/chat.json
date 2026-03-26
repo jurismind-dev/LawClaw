@@ -15,6 +15,7 @@
     "toolbar": {
         "newSession": "新会话",
         "currentAgent": "当前对话对象：{{agent}}",
+        "targetLabel": "当前对话对象",
         "refresh": "刷新聊天",
         "showThinking": "显示思考过程",
         "hideThinking": "隐藏思考过程"

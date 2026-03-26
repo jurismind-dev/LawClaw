@@ -54,6 +54,7 @@
         "warning": "ゲートウェイが停止中です。"
     },
     "brand": {
-        "getCoins": "クローコインを獲得"
+        "getCoins": "クローコインを獲得",
+        "profileCenter": "プロフィールセンター"
     }
 }

@@ -54,6 +54,7 @@
         "warning": "网关未运行。"
     },
     "brand": {
-        "getCoins": "获取钳币"
+        "getCoins": "获取钳币",
+        "profileCenter": "个人中心"
     }
 }

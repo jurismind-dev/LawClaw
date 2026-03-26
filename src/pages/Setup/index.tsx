@@ -101,7 +101,13 @@ const steps: SetupStep[] = [
   },
 ];
 
-import { SETUP_PROVIDERS, type ProviderTypeInfo, getProviderIconUrl, shouldInvertInDark } from '@/lib/providers';
+import {
+  SETUP_PROVIDERS,
+  type JurismindBindingResult,
+  type ProviderTypeInfo,
+  getProviderIconUrl,
+  shouldInvertInDark,
+} from '@/lib/providers';
 import clawxIcon from '@/assets/logo.svg';
 
 // Use the shared provider registry for setup providers
@@ -939,7 +945,10 @@ function ProviderContent({
   const isJurismind = selectedProvider === 'jurismind';
 
   const saveProviderConfig = useCallback(
-    async (providerApiKey?: string) => {
+    async (
+      providerApiKey?: string,
+      jurismindProfile?: Pick<JurismindBindingResult, 'openId' | 'tokenId' | 'avatar'>
+    ) => {
       if (!selectedProvider) {
         throw new Error('Provider not selected');
       }
@@ -963,6 +972,9 @@ function ProviderContent({
           type: selectedProvider,
           baseUrl: effectiveBaseUrl,
           model: effectiveModelId,
+          openId: selectedProvider === 'jurismind' ? (jurismindProfile?.openId || undefined) : undefined,
+          tokenId: selectedProvider === 'jurismind' ? (jurismindProfile?.tokenId ?? null) : undefined,
+          avatar: selectedProvider === 'jurismind' ? (jurismindProfile?.avatar?.trim() || undefined) : undefined,
           enabled: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -1014,6 +1026,9 @@ function ProviderContent({
         success?: boolean;
         error?: string;
         tokenKey?: string;
+        openId?: string;
+        tokenId?: number | null;
+        avatar?: string;
       };
 
       if (!result?.success || !result?.tokenKey) {
@@ -1021,7 +1036,11 @@ function ProviderContent({
       }
 
       onApiKeyChange(String(result.tokenKey));
-      await saveProviderConfig(String(result.tokenKey));
+      await saveProviderConfig(String(result.tokenKey), {
+        openId: String(result.openId || ''),
+        tokenId: result.tokenId ?? null,
+        avatar: typeof result.avatar === 'string' ? result.avatar : undefined,
+      });
       toast.success(t('provider.valid'));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1342,14 +1361,14 @@ function ProviderContent({
           {/* Device OAuth Trigger */}
           {useOAuthFlow && (
             <div className="space-y-4 pt-2">
-              <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
-                <p className="text-sm text-blue-200 mb-3 block">
+              <div className="rounded-lg border border-primary/20 bg-primary/10 p-4 text-center">
+                <p className="text-sm text-primary mb-3 block">
                   This provider requires signing in via your browser.
                 </p>
                 <Button
                   onClick={handleStartOAuth}
                   disabled={oauthFlowing}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  className="w-full"
                 >
                   {oauthFlowing ? (
                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Waiting...</>
@@ -2009,7 +2028,7 @@ function SetupChannelContent() {
                     // ignore
                   }
                 }}
-                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                className="flex items-center gap-1 text-xs text-blue-400 transition-colors hover:text-blue-300"
               >
                 <BookOpen className="h-3 w-3" />
                 {t('channel.viewDocs')}

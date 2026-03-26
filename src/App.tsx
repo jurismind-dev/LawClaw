@@ -72,7 +72,7 @@ class ErrorBoundary extends Component<
             style={{
               marginTop: '16px',
               padding: '8px 16px',
-              background: '#3b82f6',
+              background: '#DC2626',
               color: 'white',
               border: 'none',
               borderRadius: '6px',

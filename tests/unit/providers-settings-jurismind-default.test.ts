@@ -18,5 +18,10 @@ describe('providers settings jurismind activation', () => {
     expect(source).toContain('void runJurismindBinding();');
     expect(source).toContain('readOnly={isJurismind}');
     expect(source).toContain("t('aiProviders.jurismind.autoFillHint')");
+    expect(source).toContain('openId: options?.openId,');
+    expect(source).toContain('tokenId: options?.tokenId,');
+    expect(source).toContain('avatar: options?.avatar,');
+    expect(source).toContain("openId: isJurismind ? (jurismindProfile?.openId || undefined) : undefined,");
+    expect(source).toContain("avatar: isJurismind ? (jurismindProfile?.avatar?.trim() || undefined) : undefined,");
   });
 });

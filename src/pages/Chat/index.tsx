@@ -87,13 +87,15 @@ export function Chat() {
 
   return (
     <div className="-m-6 flex flex-col" style={{ height: 'calc(100vh - 2.5rem)' }}>
-      <div className="flex shrink-0 items-center justify-end px-4 py-2">
-        <ChatToolbar />
+      <div className="shrink-0 px-3 pt-3">
+        <div className="flex justify-end">
+          <ChatToolbar />
+        </div>
       </div>
 
       {migrationStatus?.state === 'warning' && isCurrentWarningVisible && (
-        <div className="px-4 pb-2">
-          <div className="relative mx-auto max-w-4xl rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 pr-11 text-sm text-yellow-700 dark:text-yellow-300">
+        <div className="px-3 pb-2">
+          <div className="relative ml-auto w-full max-w-[64rem] rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 pr-11 text-sm text-yellow-700 dark:text-yellow-300">
             <button
               type="button"
               aria-label="关闭预设升级冲突提醒"
@@ -108,8 +110,8 @@ export function Chat() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto max-w-4xl space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 py-4">
+        <div className="ml-auto w-full max-w-[64rem] space-y-4">
           {loading && !sending ? (
             <div className="flex h-full items-center justify-center py-20">
               <LoadingSpinner size="lg" />
@@ -158,8 +160,8 @@ export function Chat() {
       </div>
 
       {error && (
-        <div className="border-t border-destructive/20 bg-destructive/10 px-4 py-2">
-          <div className="mx-auto flex max-w-4xl items-center justify-between">
+        <div className="border-t border-destructive/20 bg-destructive/10 px-3 py-2">
+          <div className="ml-auto flex w-full max-w-[64rem] items-center justify-between">
             <p className="flex items-center gap-2 text-sm text-destructive">
               <AlertCircle className="h-4 w-4" />
               {error}

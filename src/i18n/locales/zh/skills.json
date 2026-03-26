@@ -6,9 +6,11 @@
   "gatewayWarning": "网关未运行。没有活跃的网关，无法加载技能。",
   "tabs": {
     "installed": "已安装",
+    "installedWithCount": "已安装 ({{count}})",
     "marketplace": "市场",
     "clawhub": "ClawHub",
-    "jurismindhub": "JurisHub"
+    "jurismindhub": "JurisHub",
+    "jurismindhubWithCount": "JurisHub ({{count}})"
   },
   "filter": {
     "all": "全部 ({{count}})",

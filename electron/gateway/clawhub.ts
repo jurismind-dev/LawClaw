@@ -96,6 +96,24 @@ type JurismindConvexResponse<T> = {
     message?: string;
 };
 
+type LocalSkillOriginMetadata = {
+    registry?: string;
+    slug?: string;
+    installedVersion?: string;
+};
+
+type LocalSkillPackageMetadata = {
+    slug?: string;
+    version?: string;
+};
+
+type LocalInstalledSkill = {
+    slug: string;
+    version: string;
+    installSource: SkillInstallSource;
+    directory: string;
+};
+
 function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
@@ -154,8 +172,20 @@ export class ClawHubService {
         return line.replace(this.ansiRegex, '').trim();
     }
 
-    private readInstallSource(slug: string): SkillInstallSource {
-        const skillDir = path.join(this.workDir, 'skills', slug);
+    private readJsonFile<T>(filePath: string): T | null {
+        try {
+            if (!fs.existsSync(filePath)) {
+                return null;
+            }
+
+            return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
+        } catch (error) {
+            console.warn(`Failed to parse JSON file: ${filePath}`, error);
+            return null;
+        }
+    }
+
+    private readSkillOriginMetadata(skillDir: string): LocalSkillOriginMetadata | null {
         const candidates = [
             path.join(skillDir, '.clawhub', 'origin.json'),
             path.join(skillDir, '.clawhub', 'origin'),
@@ -163,20 +193,98 @@ export class ClawHubService {
         ];
 
         for (const candidate of candidates) {
-            try {
-                if (!fs.existsSync(candidate)) {
-                    continue;
-                }
-
-                const content = fs.readFileSync(candidate, 'utf8');
-                const parsed = JSON.parse(content) as { registry?: string };
-                return detectInstallSourceFromRegistry(parsed.registry);
-            } catch (error) {
-                console.warn(`Failed to parse skill origin metadata: ${candidate}`, error);
+            const parsed = this.readJsonFile<LocalSkillOriginMetadata>(candidate);
+            if (parsed) {
+                return parsed;
             }
         }
 
+        return null;
+    }
+
+    private readSkillPackageMetadata(skillDir: string): LocalSkillPackageMetadata | null {
+        return this.readJsonFile<LocalSkillPackageMetadata>(path.join(skillDir, '_meta.json'));
+    }
+
+    private readInstallSourceForDir(skillDir: string): SkillInstallSource {
+        const parsed = this.readSkillOriginMetadata(skillDir);
+        if (parsed?.registry) {
+            return detectInstallSourceFromRegistry(parsed.registry);
+        }
+
         return 'unknown';
+    }
+
+    private readInstallSource(slug: string): SkillInstallSource {
+        const skillDir = path.join(this.workDir, 'skills', slug);
+        return this.readInstallSourceForDir(skillDir);
+    }
+
+    private listSkillDirectories(): string[] {
+        const skillsDir = path.join(this.workDir, 'skills');
+        if (!fs.existsSync(skillsDir)) {
+            return [];
+        }
+
+        return fs
+            .readdirSync(skillsDir, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => path.join(skillsDir, entry.name));
+    }
+
+    private extractVersionFromDirName(dirName: string, slug?: string): string | undefined {
+        if (!slug || !dirName.startsWith(`${slug}-`)) {
+            return undefined;
+        }
+
+        const candidate = dirName.slice(slug.length + 1).trim();
+        if (!candidate) {
+            return undefined;
+        }
+
+        return /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(candidate) ? candidate : undefined;
+    }
+
+    private parseLocalInstalledSkill(skillDir: string): LocalInstalledSkill | null {
+        const dirName = path.basename(skillDir);
+        const origin = this.readSkillOriginMetadata(skillDir);
+        const pkgMeta = this.readSkillPackageMetadata(skillDir);
+        const slug = pkgMeta?.slug || origin?.slug || dirName;
+
+        const hasDocs =
+            fs.existsSync(path.join(skillDir, 'SKILL.md')) ||
+            fs.existsSync(path.join(skillDir, 'skill.md')) ||
+            fs.existsSync(path.join(skillDir, 'README.md')) ||
+            fs.existsSync(path.join(skillDir, 'readme.md'));
+
+        if (!slug || (!pkgMeta && !origin && !hasDocs)) {
+            return null;
+        }
+
+        const version =
+            pkgMeta?.version ||
+            origin?.installedVersion ||
+            this.extractVersionFromDirName(dirName, slug) ||
+            'unknown';
+
+        return {
+            slug,
+            version,
+            installSource: this.readInstallSourceForDir(skillDir),
+            directory: skillDir,
+        };
+    }
+
+    private listInstalledFromLocalDirs(): LocalInstalledSkill[] {
+        return this.listSkillDirectories()
+            .map((skillDir) => this.parseLocalInstalledSkill(skillDir))
+            .filter((skill): skill is LocalInstalledSkill => skill !== null);
+    }
+
+    private findLocalSkillDirsBySlug(slug: string): string[] {
+        return this.listInstalledFromLocalDirs()
+            .filter((skill) => skill.slug === slug)
+            .map((skill) => skill.directory);
     }
 
     /**
@@ -537,8 +645,17 @@ export class ClawHubService {
         const fsPromises = fs.promises;
 
         // 1. Delete the skill directory
-        const skillDir = path.join(this.workDir, 'skills', params.slug);
-        if (fs.existsSync(skillDir)) {
+        const candidateSkillDirs = Array.from(
+            new Set([
+                path.join(this.workDir, 'skills', params.slug),
+                ...this.findLocalSkillDirsBySlug(params.slug),
+            ])
+        );
+
+        for (const skillDir of candidateSkillDirs) {
+            if (!fs.existsSync(skillDir)) {
+                continue;
+            }
             console.log(`Deleting skill directory: ${skillDir}`);
             await fsPromises.rm(skillDir, { recursive: true, force: true });
         }
@@ -564,24 +681,49 @@ export class ClawHubService {
      */
     async listInstalled(): Promise<Array<{ slug: string; version: string; installSource: SkillInstallSource }>> {
         try {
+            const installedBySlug = new Map<string, {
+                slug: string;
+                version: string;
+                installSource: SkillInstallSource;
+            }>();
             const output = await this.runCommand(['list']);
-            if (!output || output.includes('No installed skills')) {
-                return [];
-            }
+            if (output && !output.includes('No installed skills')) {
+                const lines = output.split('\n').filter(l => l.trim());
+                lines.forEach((line) => {
+                    const cleanLine = this.stripAnsi(line);
+                    const match = cleanLine.match(/^(\S+)\s+v?(\d+\.\S+)/);
+                    if (!match) {
+                        return;
+                    }
 
-            const lines = output.split('\n').filter(l => l.trim());
-            return lines.map(line => {
-                const cleanLine = this.stripAnsi(line);
-                const match = cleanLine.match(/^(\S+)\s+v?(\d+\.\S+)/);
-                if (match) {
-                    return {
+                    installedBySlug.set(match[1], {
                         slug: match[1],
                         version: match[2],
                         installSource: this.readInstallSource(match[1]),
-                    };
+                    });
+                });
+            }
+
+            this.listInstalledFromLocalDirs().forEach((skill) => {
+                const existing = installedBySlug.get(skill.slug);
+                if (!existing) {
+                    installedBySlug.set(skill.slug, {
+                        slug: skill.slug,
+                        version: skill.version,
+                        installSource: skill.installSource,
+                    });
+                    return;
                 }
-                return null;
-            }).filter((s): s is { slug: string; version: string; installSource: SkillInstallSource } => s !== null);
+
+                if ((existing.version === 'unknown' || !existing.version) && skill.version !== 'unknown') {
+                    existing.version = skill.version;
+                }
+                if (existing.installSource === 'unknown' && skill.installSource !== 'unknown') {
+                    existing.installSource = skill.installSource;
+                }
+            });
+
+            return Array.from(installedBySlug.values());
         } catch (error) {
             console.error('ClawHub list error:', error);
             return [];
@@ -595,6 +737,7 @@ export class ClawHubService {
         const homeDir = app.getPath('home');
         const candidateDirs = Array.from(new Set([
             path.join(this.workDir, 'skills', slug),
+            ...this.findLocalSkillDirsBySlug(slug),
             path.join(homeDir, '.agents', 'skills', slug),
             path.join(homeDir, '.codex', 'skills', slug),
         ]));

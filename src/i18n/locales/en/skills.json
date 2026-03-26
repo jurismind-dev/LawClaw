@@ -6,9 +6,11 @@
   "gatewayWarning": "Gateway is not running. Skills cannot be loaded without an active Gateway.",
   "tabs": {
     "installed": "Installed",
+    "installedWithCount": "Installed ({{count}})",
     "marketplace": "Marketplace",
     "clawhub": "ClawHub",
-    "jurismindhub": "JurisHub"
+    "jurismindhub": "JurisHub",
+    "jurismindhubWithCount": "JurisHub ({{count}})"
   },
   "filter": {
     "all": "All ({{count}})",

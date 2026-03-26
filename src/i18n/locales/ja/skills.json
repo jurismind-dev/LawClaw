@@ -6,9 +6,11 @@
   "gatewayWarning": "ゲートウェイが稼働していません。アクティブなゲートウェイがないとスキルを読み込めません。",
   "tabs": {
     "installed": "インストール済み",
+    "installedWithCount": "インストール済み ({{count}})",
     "marketplace": "マーケットプレイス",
     "clawhub": "ClawHub",
-    "jurismindhub": "JurisHub"
+    "jurismindhub": "JurisHub",
+    "jurismindhubWithCount": "JurisHub ({{count}})"
   },
   "filter": {
     "all": "すべて ({{count}})",

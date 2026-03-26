@@ -45,6 +45,7 @@ import {
   sortJurisHubSkills,
   type JurisHubSortMode,
 } from '@/pages/Skills/jurishub-market';
+import { isVisibleInstalledSkill } from '@/pages/Skills/installed-visibility';
 import { shouldAutoRefreshMarketplaceOnClear } from '@/pages/Skills/marketplace-query';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -410,14 +411,29 @@ function MarketplaceSkillCard({
             <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
               📦
             </div>
-            <div>
-              <CardTitle className="text-base group-hover:text-primary transition-colors flex items-center gap-2">
-                <span>{skill.name}</span>
-                {skill.isOfficial && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
-                    {t('jurismindhub.officialBadge')}
-                  </Badge>
-                )}
+            <div className="min-w-0">
+              <CardTitle className="text-base group-hover:text-primary transition-colors">
+                <div className="flex items-start gap-2">
+                  <span className="min-w-0 flex-1 leading-5">{skill.name}</span>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {skill.isOfficial && (
+                      <Badge
+                        variant="secondary"
+                        className="h-auto shrink-0 whitespace-nowrap px-1.5 py-0.5 text-[10px] leading-none"
+                      >
+                        {t('jurismindhub.officialBadge')}
+                      </Badge>
+                    )}
+                    {isInstalled && (
+                      <Badge
+                        variant="success"
+                        className="h-auto shrink-0 whitespace-nowrap px-1.5 py-0.5 text-[10px] leading-none"
+                      >
+                        {t('tabs.installed')}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
               </CardTitle>
               <CardDescription className="text-xs flex items-center gap-2">
                 {skill.version && <span>v{skill.version}</span>}
@@ -567,7 +583,6 @@ export function Skills() {
   const [jurisHubPage, setJurisHubPage] = useState(1);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | SkillsMarket>('all');
-  const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | SkillsMarket>('all');
   const previousMarketplaceQueriesRef = useRef<Record<SkillsMarket, string>>({
     clawhub: '',
     jurismindhub: '',
@@ -604,46 +619,26 @@ export function Skills() {
     }
   }, [fetchSkills, isGatewayRunning]);
 
-  const visibleSkills = skills.filter(
-    (skill) => skill.isBundled || skill.installSource === 'jurismindhub'
-  );
+  const visibleSkills = skills.filter(isVisibleInstalledSkill);
+  const jurismindhubInstalledCount = visibleSkills.filter(
+    (skill) => skill.installSource === 'jurismindhub'
+  ).length;
 
   // Filter skills
   const filteredSkills = visibleSkills
     .filter((skill) => {
-      const matchesSearch =
+      return (
         skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        skill.description.toLowerCase().includes(searchQuery.toLowerCase());
-
-      let matchesSource = true;
-      if (selectedSource === 'built-in') {
-        matchesSource = !!skill.isBundled;
-      } else if (selectedSource === 'clawhub') {
-        matchesSource = !skill.isBundled && skill.installSource === 'clawhub';
-      } else if (selectedSource === 'jurismindhub') {
-        matchesSource = !skill.isBundled && skill.installSource === 'jurismindhub';
-      }
-
-      return matchesSearch && matchesSource;
+        skill.description.toLowerCase().includes(searchQuery.toLowerCase())
+      );
     })
     .sort((a, b) => {
       // Enabled skills first
       if (a.enabled && !b.enabled) return -1;
       if (!a.enabled && b.enabled) return 1;
-      // Then core/bundled
-      if (a.isCore && !b.isCore) return -1;
-      if (!a.isCore && b.isCore) return 1;
       // Finally alphabetical
       return a.name.localeCompare(b.name);
     });
-
-  const sourceStats = {
-    all: visibleSkills.length,
-    builtIn: visibleSkills.filter((skill) => skill.isBundled).length,
-    jurismindhub: visibleSkills.filter(
-      (skill) => !skill.isBundled && skill.installSource === 'jurismindhub'
-    ).length,
-  };
 
   // Handle toggle
   const handleToggle = useCallback(async (skillId: string, enable: boolean) => {
@@ -1028,11 +1023,11 @@ export function Skills() {
         <TabsList>
           <TabsTrigger value="all" className="gap-2">
             <Puzzle className="h-4 w-4" />
-            {t('tabs.installed')}
+            {t('tabs.installedWithCount', { count: visibleSkills.length })}
           </TabsTrigger>
           <TabsTrigger value="jurismindhub" className="gap-2">
             <img src={jurisHubLogo} alt="" aria-hidden className="h-4 w-4 rounded-[2px]" />
-            {t('tabs.jurismindhub')}
+            {t('tabs.jurismindhubWithCount', { count: jurismindhubInstalledCount })}
           </TabsTrigger>
           {/* <TabsTrigger value="bundles" className="gap-2">
             <Package className="h-4 w-4" />
@@ -1041,7 +1036,7 @@ export function Skills() {
         </TabsList>
 
         <TabsContent value="all" className="space-y-6 mt-6">
-          {/* Search and Filter */}
+          {/* Search */}
           <div className="flex gap-4 flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -1051,34 +1046,6 @@ export function Skills() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
               />
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                variant={selectedSource === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedSource('all')}
-              >
-                {t('filter.all', { count: sourceStats.all })}
-              </Button>
-              <Button
-                variant={selectedSource === 'built-in' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedSource('built-in')}
-                className="gap-2"
-              >
-                <Puzzle className="h-3 w-3" />
-                {t('filter.builtIn', { count: sourceStats.builtIn })}
-              </Button>
-              <Button
-                variant={selectedSource === 'jurismindhub' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedSource('jurismindhub')}
-                className="gap-2"
-              >
-                <img src={jurisHubLogo} alt="" aria-hidden className="h-3 w-3 rounded-[2px]" />
-                {t('filter.jurismindhub', { count: sourceStats.jurismindhub })}
-              </Button>
             </div>
           </div>
 
@@ -1125,10 +1092,13 @@ export function Skills() {
                         <div>
                           <CardTitle className="text-base flex items-center gap-2">
                             {skill.name}
-                            {skill.isCore ? (
-                              <Lock className="h-3 w-3 text-muted-foreground" />
-                            ) : skill.isBundled ? (
-                              <Puzzle className="h-3 w-3 text-blue-500/70" />
+                            {skill.installSource === 'jurismindhub' ? (
+                              <img
+                                src={jurisHubLogo}
+                                alt=""
+                                aria-hidden
+                                className="h-3 w-3 rounded-[2px]"
+                              />
                             ) : (
                               <Globe className="h-3 w-3 text-purple-500/70" />
                             )}
@@ -1136,30 +1106,27 @@ export function Skills() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {!skill.isBundled && !skill.isCore && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const sourceMarket: SkillsMarket =
-                                skill.installSource === 'jurismindhub' ? 'jurismindhub' : 'clawhub';
-                              handleUninstall(sourceMarket, skill.id);
-                            }}
-                            asChild
-                          >
-                            <motion.button whileTap={{ scale: 0.9 }}>
-                              <Trash2 className="h-4 w-4" />
-                            </motion.button>
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const sourceMarket: SkillsMarket =
+                              skill.installSource === 'jurismindhub' ? 'jurismindhub' : 'clawhub';
+                            handleUninstall(sourceMarket, skill.id);
+                          }}
+                          asChild
+                        >
+                          <motion.button whileTap={{ scale: 0.9 }}>
+                            <Trash2 className="h-4 w-4" />
+                          </motion.button>
+                        </Button>
                         <Switch
                           checked={skill.enabled}
                           onCheckedChange={(checked) => {
                             handleToggle(skill.id, checked);
                           }}
-                          disabled={skill.isCore}
                           onClick={(e) => e.stopPropagation()}
                         />
                       </div>

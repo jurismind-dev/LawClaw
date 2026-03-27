@@ -5,9 +5,10 @@
  * the toolbar keeps quick refresh and thinking controls.
  */
 import { useEffect, useRef } from 'react';
-import { AlertCircle, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
+import { AlertCircle, ExternalLink, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
 import { BotAvatar } from '@/components/common/BotAvatar';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -17,6 +18,7 @@ import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
 import { useTranslation } from 'react-i18next';
 import { useAgentPresetMigrationStore } from '@/stores/agent-preset-migration';
+import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
 
 export function Chat() {
   const { t } = useTranslation('chat');
@@ -41,6 +43,14 @@ export function Chat() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const handleOpenGatewaySlowStartGuide = async () => {
+    try {
+      await window.electron.ipcRenderer.invoke('shell:openExternal', GATEWAY_SLOW_START_GUIDE_URL);
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     if (!isGatewayRunning) return;
     return () => {
@@ -58,6 +68,13 @@ export function Chat() {
         <AlertCircle className="mb-4 h-12 w-12 text-yellow-500" />
         <h2 className="mb-2 text-xl font-semibold">{t('gatewayNotRunning')}</h2>
         <p className="max-w-md text-muted-foreground">{t('gatewayRequired')}</p>
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <p className="text-sm text-muted-foreground">{t('gatewaySlowStartHelp.title')}</p>
+          <Button variant="outline" onClick={handleOpenGatewaySlowStartGuide}>
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {t('gatewaySlowStartHelp.action')}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -86,16 +103,16 @@ export function Chat() {
     hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
   return (
-    <div className="-m-6 flex flex-col" style={{ height: 'calc(100vh - 2.5rem)' }}>
+    <div className="-m-6 flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-3 pt-3">
-        <div className="flex justify-end">
+        <div className="flex w-full justify-end">
           <ChatToolbar />
         </div>
       </div>
 
       {migrationStatus?.state === 'warning' && isCurrentWarningVisible && (
         <div className="px-3 pb-2">
-          <div className="relative ml-auto w-full max-w-[64rem] rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 pr-11 text-sm text-yellow-700 dark:text-yellow-300">
+          <div className="relative w-full rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 pr-11 text-sm text-yellow-700 dark:text-yellow-300">
             <button
               type="button"
               aria-label="关闭预设升级冲突提醒"
@@ -111,7 +128,7 @@ export function Chat() {
       )}
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
-        <div className="ml-auto w-full max-w-[64rem] space-y-4">
+        <div className="w-full space-y-4">
           {loading && !sending ? (
             <div className="flex h-full items-center justify-center py-20">
               <LoadingSpinner size="lg" />
@@ -161,7 +178,7 @@ export function Chat() {
 
       {error && (
         <div className="border-t border-destructive/20 bg-destructive/10 px-3 py-2">
-          <div className="ml-auto flex w-full max-w-[64rem] items-center justify-between">
+          <div className="flex w-full items-center justify-between">
             <p className="flex items-center gap-2 text-sm text-destructive">
               <AlertCircle className="h-4 w-4" />
               {error}

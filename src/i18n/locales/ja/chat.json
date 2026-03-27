@@ -1,6 +1,10 @@
 {
     "gatewayNotRunning": "ゲートウェイが停止中",
     "gatewayRequired": "チャットを使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
+    "gatewaySlowStartHelp": {
+        "title": "ゲートウェイの起動が遅いですか？",
+        "action": "ドキュメントを見る"
+    },
     "welcome": {
         "title": "LawClaw チャット",
         "subtitle": "AI アシスタントの準備ができました。下の入力欄から会話を始めましょう。",

@@ -47,6 +47,8 @@
             "default": "Default",
             "configured": "Configured",
             "noKey": "No API key set",
+            "apply": "Apply",
+            "applied": "Applied",
             "setDefault": "Set as default",
             "editKey": "Edit API key",
             "delete": "Delete provider"

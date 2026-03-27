@@ -13,7 +13,6 @@ import {
   Check,
   X,
   Loader2,
-  Star,
   Key,
   ExternalLink,
   Copy,
@@ -512,21 +511,14 @@ function ProviderCard({
             </div>
             <div className="flex gap-0.5 shrink-0 ml-2">
               <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
+                variant={isDefault ? 'secondary' : 'outline'}
+                size="sm"
+                className="h-7 px-2 text-xs"
                 onClick={isDefault ? undefined : onSetDefault}
-                title={isDefault ? t('aiProviders.card.default') : t('aiProviders.card.setDefault')}
+                title={isDefault ? t('aiProviders.card.applied') : t('aiProviders.card.apply')}
                 disabled={isDefault}
               >
-                <Star
-                  className={cn(
-                    'h-3.5 w-3.5 transition-colors',
-                    isDefault
-                      ? 'fill-yellow-400 text-yellow-400'
-                      : 'text-muted-foreground'
-                  )}
-                />
+                {isDefault ? t('aiProviders.card.applied') : t('aiProviders.card.apply')}
               </Button>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit} title={t('aiProviders.card.editKey')}>
                 <Edit className="h-3.5 w-3.5" />

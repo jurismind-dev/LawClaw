@@ -36,11 +36,11 @@ const DEFAULT_PROFILE_CONFIGS: Record<string, Partial<JurismindProviderBindingCo
   },
   production: {
     ssoLoginUrl: 'https://sso-v2.jurismind.com',
-    ssoApiBaseUrl: 'http://api-v2.jurismind.com',
+    ssoApiBaseUrl: 'https://api-v2.jurismind.com',
   },
   prod: {
     ssoLoginUrl: 'https://sso-v2.jurismind.com',
-    ssoApiBaseUrl: 'http://api-v2.jurismind.com',
+    ssoApiBaseUrl: 'https://api-v2.jurismind.com',
   },
 };
 

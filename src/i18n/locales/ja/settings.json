@@ -47,6 +47,8 @@
             "default": "デフォルト",
             "configured": "構成済み",
             "noKey": "API キー未設定",
+            "apply": "適用",
+            "applied": "適用済み",
             "setDefault": "デフォルトに設定",
             "editKey": "API キーを編集",
             "delete": "プロバイダーを削除"

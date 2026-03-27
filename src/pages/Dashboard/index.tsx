@@ -22,6 +22,7 @@ import { useChannelsStore } from '@/stores/channels';
 import { useSkillsStore } from '@/stores/skills';
 import { useSettingsStore } from '@/stores/settings';
 import { StatusBadge } from '@/components/common/StatusBadge';
+import { isVisibleInstalledSkill } from '@/pages/Skills/installed-visibility';
 import { useTranslation } from 'react-i18next';
 
 export function Dashboard() {
@@ -44,7 +45,8 @@ export function Dashboard() {
 
   // Calculate statistics safely
   const connectedChannels = Array.isArray(channels) ? channels.filter((c) => c.status === 'connected').length : 0;
-  const enabledSkills = Array.isArray(skills) ? skills.filter((s) => s.enabled).length : 0;
+  const visibleSkills = Array.isArray(skills) ? skills.filter(isVisibleInstalledSkill) : [];
+  const enabledSkills = visibleSkills.filter((skill) => skill.enabled).length;
 
   // Update uptime periodically
   useEffect(() => {
@@ -127,7 +129,7 @@ export function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{enabledSkills}</div>
             <p className="text-xs text-muted-foreground">
-              {t('enabledOf', { enabled: enabledSkills, total: skills.length })}
+              {t('enabledOf', { enabled: enabledSkills, total: visibleSkills.length })}
             </p>
           </CardContent>
         </Card>
@@ -245,7 +247,7 @@ export function Dashboard() {
             <CardTitle className="text-lg">{t('activeSkills')}</CardTitle>
           </CardHeader>
           <CardContent>
-            {skills.filter((s) => s.enabled).length === 0 ? (
+            {enabledSkills === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Puzzle className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p>{t('noSkills')}</p>
@@ -255,7 +257,7 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {skills
+                {visibleSkills
                   .filter((s) => s.enabled)
                   .slice(0, 12)
                   .map((skill) => (
@@ -264,9 +266,9 @@ export function Dashboard() {
                       {skill.name}
                     </Badge>
                   ))}
-                {skills.filter((s) => s.enabled).length > 12 && (
+                {enabledSkills > 12 && (
                   <Badge variant="outline">
-                    {t('more', { count: skills.filter((s) => s.enabled).length - 12 })}
+                    {t('more', { count: enabledSkills - 12 })}
                   </Badge>
                 )}
               </div>

@@ -105,7 +105,7 @@ describe('title bar coin access visibility', () => {
 
     fireEvent.click(profileButton);
     expect(window.electron.openExternal).toHaveBeenCalledWith(
-      'https://lawclaw.jurismind.com/recharge'
+      'https://lawclaw.jurismind.com/profile'
     );
   });
 

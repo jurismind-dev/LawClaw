@@ -13,6 +13,7 @@ import { useProviderStore } from '@/stores/providers';
 import logoSvg from '@/assets/logo.svg';
 
 const JURISMIND_RECHARGE_URL = 'https://lawclaw.jurismind.com/recharge';
+const JURISMIND_PROFILE_URL = 'https://lawclaw.jurismind.com/profile';
 
 export function TitleBar() {
   const { t } = useTranslation('common');
@@ -177,7 +178,7 @@ function ProfileCenterButton({
       <TooltipTrigger asChild>
         <button
           type="button"
-          onClick={openJurismindCenter}
+          onClick={openJurismindProfile}
           className="no-drag flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-background/85 shadow-sm transition-colors hover:bg-accent"
           aria-label={label}
         >
@@ -204,4 +205,13 @@ function openJurismindCenter() {
   }
 
   window.open(JURISMIND_RECHARGE_URL, '_blank', 'noopener,noreferrer');
+}
+
+function openJurismindProfile() {
+  if (window.electron?.openExternal) {
+    void window.electron.openExternal(JURISMIND_PROFILE_URL);
+    return;
+  }
+
+  window.open(JURISMIND_PROFILE_URL, '_blank', 'noopener,noreferrer');
 }

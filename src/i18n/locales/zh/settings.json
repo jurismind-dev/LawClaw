@@ -47,6 +47,8 @@
             "default": "默认",
             "configured": "已配置",
             "noKey": "未设置 API 密钥",
+            "apply": "应用",
+            "applied": "已应用",
             "setDefault": "设为默认",
             "editKey": "编辑 API 密钥",
             "delete": "删除提供商"

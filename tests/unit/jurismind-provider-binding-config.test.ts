@@ -25,10 +25,10 @@ describe('jurismind provider binding config', () => {
     const bundledConfig = readBundledBindingConfig();
 
     expect(source).toContain("ssoLoginUrl: 'https://sso-v2.jurismind.com'");
-    expect(source).toContain("ssoApiBaseUrl: 'http://api-v2.jurismind.com'");
+    expect(source).toContain("ssoApiBaseUrl: 'https://api-v2.jurismind.com'");
     expect(bundledConfig.profiles?.production).toEqual({
       ssoLoginUrl: 'https://sso-v2.jurismind.com',
-      ssoApiBaseUrl: 'http://api-v2.jurismind.com',
+      ssoApiBaseUrl: 'https://api-v2.jurismind.com',
     });
   });
 });

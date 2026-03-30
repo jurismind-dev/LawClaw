@@ -1,1062 +1,300 @@
-# 劳有钳 (LawClaw) 产品规格说明书（实现现状版）
-
-> 本文档用于记录 LawClaw 当前版本的**实际实现状态**，作为开发、测试和产品沟通的基线文档。
-
-**产品名称**：劳有钳 (LawClaw)  
-**开发团队**：法义经纬 (Jurismind)  
-**基于项目**：ValueCell Team 上游实现
-**应用版本**：0.1.16
-**OpenClaw 运行时基线**：`openclaw@2026.3.13`
-**最后更新**：2026-03-20
-
----
-
-> **文档说明**：本规格为“实现快照”，仅描述当前代码中已实现能力；未实现内容会标注为“即将支持”或“需二次开发”，不代表路线图承诺。
-
----
-
-## 目录
-
-1. [产品概述](#1-产品概述)
-2. [技术架构](#2-技术架构)
-3. [页面架构总览](#3-页面架构总览)
-4. [页面详细说明](#4-页面详细说明)
-5. [组件库说明](#5-组件库说明)
-6. [状态管理](#6-状态管理)
-7. [国际化支持](#7-国际化支持)
-8. [定制化指南](#8-定制化指南)
-
----
-
-## 1. 产品概述
-
-### 1.1 产品定位
-
-LawClaw 是基于 Electron + OpenClaw Gateway 的桌面 AI 助手应用，当前版本重点提供：
-
-- 首次启动图形化引导（Setup Wizard）
-- OpenClaw 运行时检查、Gateway 启动与日志查看
-- AI Provider 配置、校验、OAuth/Jurismind 绑定与默认切换
-- 多频道接入配置，覆盖 token 流程、Jurismind 绑定流程、Feishu / Lark 官方插件扫码引导；代码层仍保留 WhatsApp QR 连接逻辑
-- Chat 对话、流式输出、工具调用状态、附件发送与会话收敛
-- Skills 浏览、启停、安装、卸载、配置，以及 JurisHub 技能市场接入
-- 预置安装清单（preset installs）与升级补装阻塞页
-- 专用 Agent 预设模板迁移与工作区快照升级
-- Cron 定时任务管理
-- 设置、更新与开发者工具入口
-
-当前 LawClaw 的专用 Agent 预设迁移已改为**应用启动阶段执行的确定性升级流程**，不再依赖交互式冲突确认。
-
-> 说明：法律场景专属能力（如法律模板中心、专用法律工具页）目前**未内置**，属于“需二次开发”范围。
-
-### 1.2 目标用户
-
-- 希望使用桌面化 AI 工作流的个人与团队用户
-- 需要统一管理 Provider、Channel、Skill、Cron 的进阶用户
-- 需要本地运行 OpenClaw Gateway 并进行可视化操作的开发与测试用户
-- 需要在 LawClaw 专用 Agent 与既有 OpenClaw 环境之间做兼容隔离的使用者
-
-### 1.3 当前版本核心价值
-
-- **本地桌面体验**：无需命令行即可完成核心配置、安装和日常使用
-- **专用 Agent 隔离**：LawClaw 通过 `lawclaw-main` 与独立工作区承载专用运行时约束
-- **升级行为可控**：预置安装与 Agent 模板升级均可观测，模板升级采用快照比较、覆盖前备份与冲突跳过策略
-- **会话与路由收敛**：LawClaw UI 默认只操作 `agent:lawclaw-main:*` 会话，并仅托管 LawClaw 管理过的频道路由
-- **技能生态接入**：已接入 JurisHub 市场，内置预置技能安装与来源识别
-
----
-
-## 2. 技术架构
-
-### 2.1 双进程架构
-
-```text
-Electron Desktop App
-├─ Main Process
-│  ├─ 应用生命周期与窗口管理
-│  ├─ Provider 启动迁移
-│  ├─ Agent 预设模板启动迁移（先于 Gateway 自动启动）
-│  ├─ Gateway 进程管理与 IPC 路由
-│  ├─ Update 流程编排
-│  ├─ PresetInstaller（预置 Skills / Plugins 安装状态机）
-│  └─ 本地配置/密钥持久化（electron-store + OpenClaw 配置文件）
-└─ Renderer Process (React)
-   ├─ 页面与组件渲染
-   ├─ Zustand 状态管理
-   ├─ i18n 多语言资源
-   └─ 与 Main Process 通过 IPC 通信
-
-OpenClaw Gateway
-├─ chat / sessions / skills / cron RPC
-└─ 频道状态与事件上报
-```
-
-> 安全口径（现状）：Provider API Key 当前存储于本地 `electron-store`，并同步写入 `~/.openclaw/agents/<agentId>/agent/auth-profiles.json` 供 Gateway 使用；当前主流程涉及 `main` 与 `lawclaw-main` 两套 auth profile。当前未接入操作系统级密钥管理服务。
-
-### 2.2 技术栈
-
-| 层级 | 技术（当前实现） |
-|------|------------------|
-| 运行时 | Electron `^40.6.0` |
-| OpenClaw 基线 | `openclaw@2026.3.13` |
-| UI 框架 | React `^19.2.4` + TypeScript `^5.9.3` |
-| 路由 | `react-router-dom@^7.13.0`（`HashRouter`） |
-| 样式系统 | Tailwind CSS `^3.4.19` + shadcn/ui |
-| 状态管理 | Zustand `^5.0.11` |
-| 动画 | Framer Motion `^12.34.2` |
-| 图标 | Lucide React `^0.563.0` |
-| 国际化 | i18next `^25.8.11` + react-i18next `^16.5.4` |
-| 构建 | Vite `^7.3.1` + electron-builder `^26.8.1` |
-| 市场/安装 | clawhub `^0.5.0` |
-| 测试 | Vitest + Testing Library + jsdom（另有 Playwright e2e 脚本） |
-
-### 2.3 LawClaw 与既有 OpenClaw 的兼容策略与影响边界
-
-**状态：已实施**
-
-LawClaw 当前通过“专用 Agent 定向写入 + 应用层强制约束 + 启动期迁移”与既有 OpenClaw 环境共存。主要行为如下：
-
-- 启动时会先执行 Provider 启动迁移，再执行 Agent 预设模板启动迁移，最后进入 Gateway 自动启动流程
-- 启动迁移会强制保证 `lawclaw-main` 存在，并将其 `workspace` 固定为 `~/.openclaw/workspace-lawclaw-main`
-- Agent 预设模板迁移当前只有 `bootstrap`、`upgrade`、`noop` 三种模式：
-  - `bootstrap`：当前本地尚无快照时，直接写入模板并建立当前快照
-  - `upgrade`：有旧快照且目标哈希变化时，按旧快照/新快照/用户当前文件做确定性比较
-  - `noop`：当前快照哈希与目标哈希一致且未强制刷新时，不执行模板覆盖
-- 模板升级使用 `~/.LawClaw/agent-presets/` 下的 `v_current`、`v_update`、`backups` 作为当前快照、目标快照与备份目录
-- 升级时的确定性策略为：
-  - 若本地文件仍等于旧模板，则自动覆盖为新模板
-  - 若本地文件已被用户修改，则跳过该文件并进入 `warning` 状态
-  - 若文件将在升级时被覆盖，则会先做目录级备份再写入新模板
-- 不再走 LLM merge、冲突决策按钮、任务队列、聊天输入锁定或“立即重试”交互
-- Setup 页在 provider 保存成功或 generic OAuth 成功后，会显式调用 `provider:setDefault`；Settings 页保存/绑定成功后仅保存配置，不自动抢占当前默认 provider
-- `provider:setDefault` 只维护 `lawclaw-main` 的模型主值，不主动覆盖 OpenClaw 全局 `agents.defaults.model`
-- 当前默认 LawClaw provider 被删除，或其最后一个有效凭据消失时，主进程会按“最近更新时间优先”自动补位到其他可用 provider；仅当 `lawclaw-main.model.primary` 仍是系统受管值时才同步补位
-- Provider 相关运行时写入并不只局限于 `lawclaw-main`：
-  - provider registry 会写入全局 `~/.openclaw/openclaw.json`
-  - API key / OAuth token 会同步到 `main` 与 `lawclaw-main` 的 auth profile
-  - custom/ollama 还会涉及 OpenClaw runtime provider 配置写入
-- 打包态会通过 `bundled-runtime` 将 `resources/runtime-bridge` 与 `resources/bin/<platform-arch>` 注入 PATH，并向 Gateway / OpenClaw CLI 注入 bundled Node、uv、npm、npx 路径环境变量，作为系统运行时不可用时的兜底 bridge
-- Windows 兼容层会为 Gateway 相关进程注入 UTF-8 Python 环境变量；`openclaw.json` / channel config / skill config 等 JSON 文件在 Windows 下会规范为 UTF-8 BOM，而 `auth-profiles.json` 会保持 BOM-free，以兼容上游直接 `JSON.parse` 的读取方式
-- 当 Jurismind provider 可用时，主进程会同步 Jurismind Responses API 支撑的 `doubao` 原生 web search 配置到 `openclaw.json` 的 `tools.web.search`
-- IPC 层会话键规范化：`gateway:rpc` 与 `chat:sendWithMedia` 收到非 `agent:lawclaw-main:*` 的 `sessionKey` 时，会统一回落到 `agent:lawclaw-main:main`
-- `sessions.list` 在应用层仅回传 `agent:lawclaw-main:*`；历史非 LawClaw 会话仍保留在网关存储中，但在 UI 隐藏
-- 仅对“通过 LawClaw UI 成功保存”的频道写入 `lawclawManagedChannels`，并为这些频道维护唯一的 `lawclaw-main` binding
-- Gateway 启动参数默认不附带 `--dev`，仅保留 `--allow-unconfigured`，以避免会话漂移到 `agent:dev:*`
-
-兼容性边界：
-
-- `lawclaw-main` 工作区会执行强一致修正；`agents.defaults` 与其他 Agent 结构默认保持原状
-- 预设模板升级采用“增量修正 + 冲突跳过”，而非整目录强制重写
-- 被 LawClaw 托管的频道在删除配置时会移除自身写入的 binding，但不会恢复旧 binding
-- 非 LawClaw 历史会话只做隐藏，不做数据删除
-
----
-
-## 3. 页面架构总览
-
-### 3.1 页面路由
-
-应用使用 `HashRouter`。逻辑路由如下：
-
-- `/setup/*` → 初始设置向导
-- `/upgrade-installing` → 升级预置组件安装页（阻塞页）
-- `/` → Chat（主对话页）
-- `/dashboard` → Dashboard
-- `/channels` → Channels
-- `/skills` → Skills
-- `/cron` → Cron
-- `/settings/*` → Settings
-
-补充行为：
-
-- 应用启动阶段会先执行专用 Agent 预设模板迁移，再进入 Gateway 自动启动
-- 当 `setupComplete=false` 时，应用会自动跳转到 `/setup`
-- 当 `setupComplete=true` 且 `presetInstall:getStatus.pending=true` 时，应用会自动跳转到 `/upgrade-installing`
-- 主进程支持 `--force-setup` 或 `FORCE_SETUP=true` 强制进入 setup
-
-### 3.2 页面层级关系
-
-```text
-App
-├─ /setup/* -> Setup
-│  ├─ Welcome
-│  ├─ Runtime
-│  ├─ Provider
-│  ├─ Channel (optional)
-│  ├─ Installing
-│  └─ Complete
-├─ /upgrade-installing -> UpgradeInstalling
-└─ MainLayout
-   ├─ TitleBar
-   ├─ Sidebar
-   └─ Content
-      ├─ /
-      ├─ /dashboard
-      ├─ /channels
-      ├─ /skills
-      ├─ /cron
-      └─ /settings/*
-```
-
----
-
-## 4. 页面详细说明
-
-### 4.1 Setup（初始设置向导）
-
-**文件位置**：`src/pages/Setup/index.tsx`
-
-Setup 当前保留 6 步流程：Welcome → Runtime → Provider → Channel → Installing → Complete。
-
-#### 4.1.1 Welcome（欢迎页）
-
-- 展示品牌信息与功能简介
-- 使用 `SUPPORTED_LANGUAGES` 渲染语言切换入口
-- 当前前端资源包含 `en / zh / ja`
-
-#### 4.1.2 Runtime（环境检查）
-
-- Node.js：前端固定标记为可用
-- OpenClaw：通过 `openclaw:status` 检查 package、built、version 与路径
-- Gateway：读取 store 状态，支持手动启动
-- 支持查看最近日志与打开日志目录
-
-#### 4.1.3 Provider（AI 供应商配置）
-
-- Setup 使用统一 Provider 元数据驱动 UI，当前支持 15 种 provider 类型：
-  - `jurismind`
-  - `moonshot_code_plan`
-  - `glm_code_plan`
-  - `anthropic`
-  - `openai`
-  - `google`
-  - `openrouter`
-  - `ark`
-  - `moonshot`
-  - `siliconflow`
-  - `minimax-portal`
-  - `minimax-portal-cn`
-  - `qwen-portal`
-  - `ollama`
-  - `custom`
-- 按 provider 类型动态显示 API Key、Base URL、Model ID 等字段
-- 支持 `provider:validateKey` 实时校验
-- API Key 流程保存时执行 `provider:save`，随后由 Setup 页面显式调用 `provider:setDefault`
-- generic OAuth 成功后，Setup 页面也会显式调用 `provider:setDefault`
-- Jurismind 提供商支持浏览器绑定/SSO 流程并自动回填 token_key
-- Provider 步骤不再提供“跳过设置”全局出口；完成 Provider 后必须继续进入 Installing，以确保预置组件安装链路执行
-- 上述“保存后设为默认”为 Setup 专属行为；Settings 页保存成功后不会自动切换当前 LawClaw provider
-
-#### 4.1.4 Channel（频道连接，可选）
-
-- 该步骤可跳过，不阻塞 setup 完成
-- Setup 主展示频道来自 `getPrimaryChannels().filter((type) => type !== 'qqbot')`，当前为：
-  - `jurismind`
-  - `feishu`
-- `jurismind` 在 channel metadata 中仍为 `comingSoon=true`，但 Setup 对其使用独立的绑定提示面板与二维码/链接流程
-- `feishu` 在 Setup 中走 `FeishuOfficialOnboardingPanel`，支持安装/复用内置官方插件、扫码创建机器人，以及手动绑定已有 `App ID / App Secret`
-- 当前 Setup 主展示列表不再暴露 `qqbot`；WhatsApp QR 与 `qqbot` 配置链路虽在代码层保留，但不在该步骤主展示列表中开放
-
-#### 4.1.5 Installing（组件安装）
-
-- 该步骤按“环境准备 + 预置清单安装”执行：
-  1. 调用 `uv:install-all`，完成 bundled uv 校验与托管 Python 安装
-  2. 调用 `presetInstall:getStatus` 读取预置安装清单并渲染安装项
-  3. 调用 `presetInstall:run({ phase: 'setup' })` 执行预置项安装
-- 预置安装步骤与用户选择的 Provider 类型无关；只要完成 Setup 主流程进入 Installing，就会执行内置 manifest 中的 skill/plugin 安装
-- Setup 的 Installing 步骤当前不提供“跳过安装”入口；失败时仅允许重试，避免绕过内置 skill 安装
-- 安装进度来自主进程事件 `presetInstall:progress`
-- 当前默认预置清单包含 1 个远程市场 skill 入口：`jurismindhub-official-highlighted`
-  - `installMode=market`
-  - `market=jurismindhub`
-  - `selection=official-highlighted`
-  - `targetVersion=latest`
-- 安装时会先从 JurisHub 拉取当前“官方 + 推荐（highlighted）”技能集合，再逐项执行安装；因此最终安装技能数量由远端市场集合决定，不再固定为单个本地 skill 包
-- 对预置 skill，安装后会写入：
-  - `~/.openclaw/skills/<skillId>/.clawhub/origin.json`
-  - `~/.openclaw/.clawhub/lock.json`
-
-#### 4.1.6 Complete（完成确认）
-
-- 显示选中的 Provider
-- 显示 Installing 步骤记录的组件列表
-- 显示当前 Gateway 状态
-- 点击完成后写入 `setupComplete=true` 并进入主页面
-
-#### 4.1.7 Setup 后续升级拦截策略
-
-- Setup 完成后，App 启动时会调用 `presetInstall:getStatus`
-- 若 `pending=true`，则从任意业务路由重定向到 `/upgrade-installing`
-- `presetInstall:statusChanged` 事件会实时触发前端路由纠偏：
-  - 待安装：保持在升级安装页
-  - 已完成或已跳过：退出升级安装页并回到 `/`
-
-> 说明：`/upgrade-installing` 处理的是**预置安装清单**升级，不等同于专用 Agent 工作区模板迁移。后者发生在应用启动阶段，由 `agent-preset-migration` 机制单独处理。
-
----
-
-### 4.2 Dashboard（仪表盘）
-
-**文件位置**：`src/pages/Dashboard/index.tsx`
-
-#### 4.2.1 状态卡片
-
-- Gateway 状态（`state / port / pid`）
-- Channels 连接统计
-- Skills 启用统计
-- Gateway 运行时长（uptime）
-
-#### 4.2.2 快捷操作
-
-- 跳转 Channels
-- 跳转 Skills
-- 跳转 Chat（`/`）
-- 跳转 Settings
-- 开发者控制台入口（仅 `devModeUnlocked=true` 时显示）
-
-#### 4.2.3 已连接频道列表
-
-- 列出最多 5 个频道
-- 显示频道名称、类型、状态
-
-#### 4.2.4 已启用技能标签
-
-- 展示已启用技能标签（最多 12 个）
-- 超出数量显示 `+N`
-
----
-
-### 4.3 Chat（AI 对话界面）
-
-**文件位置**：`src/pages/Chat/index.tsx`
-
-**子组件**：
-
-- `ChatToolbar.tsx`
-- `ChatMessage.tsx`
-- `ChatInput.tsx`
-- `message-utils.ts`
-
-#### 4.3.1 消息与流式区域
-
-- 历史消息加载：`sessions.list` + `chat.history`
-- 流式显示：支持 `text / thinking / tool_use / tool_result / image`
-- 工具执行状态条：运行中、完成、错误、耗时、摘要
-- 支持切换“显示/隐藏思考过程”
-
-#### 4.3.2 输入与发送
-
-- 多行输入：Enter 发送、Shift+Enter 换行
-- 发送中按钮切换为 Stop（可中止 `chat.abort`）
-- Gateway 未运行时，页面展示阻断提示；迁移 warning 不会阻塞输入框
-
-#### 4.3.3 附件能力（已实现）
-
-- 支持三种入口：
-  - 文件选择器
-  - 粘贴文件（clipboard）
-  - 拖拽文件（drag & drop）
-- 附件先经 `file:stage` / `file:stageBuffer` 暂存到本地目录，再发送
-- 图片可预览，非图片显示文件卡片
-
-#### 4.3.4 `chat:sendWithMedia` 媒体发送策略
-
-- 图像文件走“双通道”：
-  - 作为 base64 `attachments` 发送，供视觉模型直接消费
-  - 同时在消息文本中追加 `[media attached: ...]` 路径引用
-- 非图像文件以路径引用形式附加在消息文本中
-
-#### 4.3.5 会话锁定与迁移 warning（已实施）
-
-- 默认会话固定为 `agent:lawclaw-main:main`
-- 新会话键固定为 `agent:lawclaw-main:session-<timestamp>`
-- `loadSessions` 与 `switchSession` 仅接受 `agent:lawclaw-main:*`；非 LawClaw key 会回落默认会话
-- `gateway:rpc(sessions.list)` 仅返回 LawClaw 会话；包含 `sessionKey` 的 RPC 参数会在 IPC 层自动归一化
-- 当专用 Agent 预设模板升级进入 `warning` 状态且当前 warning 对该 `targetHash` 尚未被忽略时，Chat 顶部显示简化 warning banner
-- warning banner 只显示简要说明，不暴露 `skippedTargets`、`v_current`、`v_update` 等工程细节
-- 关闭 warning 后，会将 `targetHash` 写入本地 `localStorage`（键名：`lawclaw.agentPresetMigration.dismissedWarningTargetHash`）；相同目标哈希不重复弹出，新目标哈希会重新显示
-- 当前已移除“保留用户设定”“优先新预设”“本次跳过”“立即重试”等交互按钮
-
----
-
-### 4.4 Channels（频道管理）
-
-**文件位置**：`src/pages/Channels/index.tsx`
-
-#### 4.4.1 统计卡片
-
-- 总频道数
-- 已连接数
-- 未连接数
-
-#### 4.4.2 已配置频道列表
-
-- 卡片展示频道图标、名称、类型、状态、错误
-- 支持删除频道配置
-
-#### 4.4.3 主展示频道类型
-
-主展示列表来自 `getPrimaryChannels()`，当前为：
+# LawClaw（劳有钳）产品规格说明书
+
+> 对外发布版，基于当前仓库实现整理。本文只描述 **当前已实现能力、当前交付边界与当前发布口径**，不构成未发布功能承诺。
+
+## 1. 基本信息
+
+| 项目 | 内容 |
+| --- | --- |
+| 产品名称 | LawClaw（劳有钳） |
+| 产品形态 | 本地优先 AI Agent 桌面应用 |
+| 面向用户 | 律师、法务、合规团队、法律运营与法律科技团队 |
+| 开发团队 | Jurismind（法义经纬） |
+| 当前版本口径 | 跟随 Git tag / Release tag，不在文档中写死 |
+| OpenClaw 运行时口径 | 以 `package.json` 中声明的 `openclaw` 依赖版本为准 |
+| 开源协议 | MIT |
+| 主要平台 | macOS 11+、Windows 10+、Linux（推荐 Ubuntu 20.04+） |
+| 界面语言 | 中文、English、日本語 |
+| 发布渠道 | GitHub Releases、OSS 镜像、源码构建 |
+| 最后整理 | 2026-03-30 |
+
+## 2. 产品定位
+
+LawClaw 是一款围绕中国法律服务场景定制的桌面 AI Agent 产品。它基于 OpenClaw 运行时与桌面化 UI 架构构建，目标不是提供“单轮问答式聊天框”，而是提供一个可执行、可扩展、可持续演进的法律工作台。
+
+与普通 AI 工具相比，LawClaw 当前版本的核心差异在于：
+
+- **本地优先**：桌面端直接管理模型接入、技能、频道和任务调度，工作区保留在本机环境。
+- **工作流导向**：从 Provider 配置、技能安装到对话执行与频道接入，都通过统一界面完成。
+- **法律垂直生态**：当前产品集成 JurisHub 技能市场，并围绕中国法律实务场景组织开箱能力。
+- **面向部署而非 Demo**：具备 Setup Wizard、预置安装、更新链路、专用 Agent 工作区和运行时兜底机制。
+
+## 3. 目标用户与主打场景
+
+### 3.1 目标用户
+
+- 需要桌面化 AI 工作流的个人律师与律师团队
+- 需要本地化、可控部署体验的企业法务与合规团队
+- 需要统一管理 Provider、Channels、Skills、Cron 的高级用户
+- 需要在 OpenClaw 生态上交付垂直行业产品的技术团队
+
+### 3.2 主打场景
+
+| 场景 | 当前版本可提供的能力 |
+| --- | --- |
+| 法律研究 | 通过对话、技能与工具调用组合，完成信息检索、整理与结构化输出 |
+| 合同审查 | 结合模型与技能流程，进行版本对比、条款抽取、风险提示与修改辅助 |
+| 法律文书起草 | 在持续会话中迭代律师函、起诉状、法律意见书等初稿 |
+| 广告与内容合规 | 借助技能生态接入合规审查类工作流 |
+| 消息渠道助手 | 把助手连接到 Jurismind、飞书、微信等常见入口，并统一管理连接状态 |
+| 自动化执行 | 使用 Cron 定时任务与预置能力，把重复性工作交给 Agent 持续执行 |
+
+## 4. 核心价值主张
+
+| 传统痛点 | LawClaw 当前解法 |
+| --- | --- |
+| 模型配置复杂、上手门槛高 | 用 Setup Wizard 收敛运行时检查、Provider 设置与预置组件安装 |
+| AI 工具只会“回答”，不会“协同执行” | 通过 OpenClaw Gateway、技能和频道接入，形成持续执行型桌面 Agent |
+| 法律场景能力分散，缺少垂直入口 | 通过 JurisHub 市场和精选预置能力，聚焦法律工作流扩展 |
+| 多模型、多渠道、多任务分散管理 | 在同一应用内管理 Provider、Skills、Channels、Cron 与更新 |
+| 既有 OpenClaw 环境与新产品容易互相污染 | 当前版本通过 `lawclaw-main` 专用 Agent 和工作区进行隔离 |
+
+## 5. 当前已交付功能范围
+
+### 5.1 主界面模块
+
+| 模块 | 当前状态 | 说明 |
+| --- | --- | --- |
+| Setup Wizard | 已上线 | 引导完成语言选择、环境检查、Provider 设置、频道接入与预置安装 |
+| Chat | 已上线 | 支持会话列表、流式输出、附件发送、工具调用状态与会话收敛 |
+| Dashboard | 已上线 | 提供网关、Provider、频道与任务等概览信息 |
+| Channels | 已上线 | 管理频道配置、状态查看、删除与重连 |
+| Skills | 已上线 | 浏览 JurisHub 市场、安装/启停/卸载/配置技能 |
+| Cron | 已上线 | 创建、查看和管理定时任务 |
+| Settings | 已上线 | Provider、更新、语言、外链与开发者入口等设置 |
+| Upgrade Installing | 已上线 | 预置安装未完成时的阻塞升级页，防止半安装态进入主界面 |
+
+### 5.2 Provider 接入能力
+
+当前前端元数据已支持 **15 类 Provider**：
 
 - `jurismind`
-- `feishu`
-- `qqbot`
+- `moonshot_code_plan`
+- `glm_code_plan`
+- `anthropic`
+- `openai`
+- `google`
+- `openrouter`
+- `ark`
+- `moonshot`
+- `siliconflow`
+- `minimax-portal`
+- `minimax-portal-cn`
+- `qwen-portal`
+- `ollama`
+- `custom`
 
-补充说明：
+当前版本能力特点：
 
-- Channels 页面仅在 QQ 插件可用时显示 `qqbot` 主卡片
-- `jurismind` 主卡片走独立绑定提示流程，而不是普通 token/QR 配置对话框
-- `CHANNEL_META` 仍完整定义了 `whatsapp / dingtalk / telegram / discord / signal / imessage / matrix / line / msteams / googlechat / mattermost` 等类型，用于元数据扩展与后续接入
+- 支持 API Key、OAuth、OAuth + API Key 混合、Base URL、自定义 Model ID 等不同接入模式
+- Setup 向导在保存成功后会显式设置默认 Provider
+- Settings 页支持后续维护 Provider，但不会自动抢占当前默认 Provider
+- 当默认 Provider 被删除或失效时，主进程会按可用性与最近更新时间执行自动补位
 
-#### 4.4.4 添加频道与连接流程
+### 5.3 频道接入能力
 
-- 当前“添加频道”对话框实际来源于 `displayedChannelTypes.filter((type) => type !== 'jurismind')`，因此当前 UI 暴露的新增入口为：
-  - `feishu`
-  - `qqbot`（仅当 QQ 插件已安装）
-- Jurismind：
-  - 展示专用提示面板
-  - 支持二维码/链接展示、复制链接、刷新、重新绑定、清除绑定
-- Feishu / Lark：
-  - 通过 `FeishuOfficialOnboardingPanel` 走官方插件引导
-  - 支持复用内置 `openclaw-lark@2026.3.17` 官方插件，或按需在线安装到本地
-  - 支持扫码创建机器人与手动绑定已有应用
-  - 成功后自动写入默认频道配置并重启 Gateway
-- Token 类型频道（当前主入口主要为 `qqbot`）：
-  - 输入配置字段
-  - 调用 `channel:validateCredentials` 校验
-  - 保存 `channel:saveConfig`
-  - 保存后由主进程落盘配置并重启 Gateway
-- WhatsApp：
-  - 页面代码与 IPC 仍保留 `channel:requestWhatsAppQr` / `channel:whatsapp-*` QR 流程
-  - 但当前 Channels 页面“添加频道”入口未直接暴露该类型，属于已实现底层链路、未作为主展示入口开放的状态
+当前产品主流程优先展示的频道入口为：
 
-#### 4.4.5 LawClaw 管理频道绑定策略（已实施）
+- `Jurismind`
+- `Feishu / Lark`
+- `微信（openclaw-weixin）`
 
-- `channel:saveConfig` 成功后，会将标准化 `channelType` 记录到 `lawclawManagedChannels`
-- 对托管频道写入路由时，会先清理该频道已有 binding，再写入唯一规则：`agentId=lawclaw-main` + `match.accountId='*'`
-- `channel:deleteConfig` 删除托管频道时，会同步移除其 `lawclaw-main` 绑定并从管理集合中剔除
-- 未被 LawClaw UI 托管的频道不会被自动改写
+同时，代码层已保留并维护更多频道元数据与配置能力，包括：
 
----
+- `DingTalk`
+- `Telegram`
+- `Discord`
+- `WhatsApp`
+- `Signal`
+- `iMessage`
+- `Matrix`
+- `LINE`
+- `Microsoft Teams`
+- `Google Chat`
+- `Mattermost`
 
-### 4.5 Skills（技能管理）
+当前边界说明：
 
-**文件位置**：`src/pages/Skills/index.tsx`
+- Setup Wizard 主要面向常见入口，不会在首启流程中完全暴露所有频道能力
+- `Jurismind` 在通用频道元数据中仍保留 `comingSoon` 标记，但应用中为其提供了专门的绑定与扫码流程
+- 部分频道能力目前更适合作为扩展集成或二次开发能力，不建议在宣发中表述为“全部开箱即用”
 
-#### 4.5.1 标签页
+### 5.4 技能生态与 JurisHub
 
-- `已安装`
-- `JurisHub`
+当前版本已完成以下能力交付：
 
-> 备注：Bundles 页签目前仍是注释状态，未启用。底层 store 保留了 `clawhub / jurismindhub` 双市场抽象，但当前 UI 主标签页只直接暴露 JurisHub。
+- 集成 JurisHub 市场搜索、安装、卸载、README 打开与详情跳转
+- 已安装技能列表中显示来源信息与官方标识
+- 支持技能启停、配置与本地状态同步
+- 预置安装器当前仅同步 JurisHub 的 `official + highlighted` 技能集合
 
-#### 4.5.2 已安装技能
+这意味着 LawClaw 现在已经具备“法律垂直技能商店 + 精选开箱包”的产品基础，而不是仅仅依赖单一固定功能集。
 
-- 搜索与来源筛选：
-  - `all`
-  - `built-in`
-  - `jurismindhub`
-- 支持启用/禁用
-- 非 core 且非 built-in 的技能支持卸载
-- 可打开本地 skills 目录
-- 卡片会区分 core、bundled 与市场安装来源
+### 5.5 定时任务与自动化
 
-#### 4.5.3 技能详情对话框
+当前版本提供独立的 `Cron` 页面，用于：
 
-- 信息页：描述、版本、作者、来源
-- 配置页：
-  - API Key
-  - Environment Variables（可增删键值）
-- 保存通过 `skill:updateConfig` 写入，再刷新技能列表
+- 查看任务列表
+- 创建与管理定时任务
+- 将技能、对话与 Agent 行为纳入持续执行流程
 
-#### 4.5.4 JurisHub 市场
+这部分能力是 LawClaw 从“桌面 AI 助手”向“可持续运行的 Agent 工作台”演进的重要组成部分。
 
-- 当前主市场页使用 JurisHub 查询与安装流程
-- 支持安装 / 卸载
-- 安装后会尝试自动刷新技能列表
-- JurisHub 市场页支持：
-  - 排序：`createdAt / stars / downloads`
-  - 分页
-  - 官方标识（`officialBadge`）
-- 已安装技能仍会根据 `.clawhub/origin.json` registry 识别 `clawhub / jurismindhub / unknown` 来源
+## 6. 当前用户流程
 
----
+### 6.1 首次启动流程
 
-### 4.6 Cron（定时任务）
+当前版本的 Setup Wizard 会依次引导用户完成：
 
-**文件位置**：`src/pages/Cron/index.tsx`
+1. 选择界面语言（中文 / English / 日本語）
+2. 检查 OpenClaw 包、Gateway 状态与本地运行时
+3. 配置 AI Provider，并在向导内完成默认 Provider 设置
+4. 选择并接入常用频道入口
+5. 安装或校验 `uv`、托管 Python 与预置技能组件
+6. 在进入主界面前确认 Provider、组件与网关状态
 
-#### 4.6.1 统计卡片
+### 6.2 Setup 后续拦截策略
 
-- 总任务数
-- 活跃任务数
-- 暂停任务数
-- 最近失败任务数
+- 当 `setupComplete=false` 时，应用会自动跳转到 `/setup`
+- 当 `setupComplete=true` 且 `presetInstall:getStatus.pending=true` 时，应用会自动跳转到 `/upgrade-installing`
+- 升级安装页支持重试与“跳过当前版本”，避免用户在半安装态直接进入主界面
 
-#### 4.6.2 任务卡片
+## 7. 架构与运行时策略
 
-- 显示任务名、计划描述、启用状态
-- 显示消息预览、目标频道、上次执行、下次执行
-- 支持操作：立即执行、编辑、删除、启停切换
+### 7.1 双进程桌面架构
 
-#### 4.6.3 创建/编辑任务对话框
-
-- 字段：任务名、消息、计划、目标频道、启用开关
-- 计划支持预设与自定义 cron 表达式
-- 兼容 Gateway `CronSchedule` 对象解析展示
-- 选中 Discord 时要求填写额外 `channelId`
-
----
-
-### 4.7 Settings（系统设置）
-
-**文件位置**：`src/pages/Settings/index.tsx`
-
-#### 4.7.1 外观设置
-
-- 主题：`light / dark / system`
-- 语言按钮使用 `SUPPORTED_LANGUAGES` 渲染为 `en / zh / ja`
-
-#### 4.7.2 AI 供应商设置（`ProvidersSettings`）
-
-- Provider 列表管理（新增、删除、设默认）
-- 编辑 API Key / Base URL / Model ID（按类型）
-- 提交前可执行 API Key 校验
-- Jurismind 提供商支持浏览器 SSO 回填 `token_key`；主进程会先校验旧 token 是否可复用，必要时再重新绑定，并在接口未直接返回时轮询查询结果
-- Jurismind 绑定成功后在 Settings 页仅保存配置；只有显式点击“设为默认”时才调用 `provider:setDefault`
-- 仅 `custom` 允许创建多个实例；其余 provider 类型默认单实例
-- 删除当前默认 provider，或删除/清空其最后一个有效 API Key 时，主进程会按最近更新时间自动补位到其他可用 provider；仅当 `lawclaw-main.model.primary` 仍是系统受管值时才同步补位
-
-#### 4.7.3 Gateway 设置
-
-- 状态、端口、重启
-- 应用日志查看与打开目录
-- 预设迁移产物目录快捷入口（`agentPresetMigration:getArtifactsDir`）
-- 开机自动启动 Gateway 开关
-
-> 当前该产物目录主要用于查看专用 Agent 模板迁移产生的快照与备份，而不是处理交互式冲突任务队列。
-
-#### 4.7.4 更新设置（`UpdateSettings`）
-
-- 检查、下载、安装更新
-- 下载进度、当前版本与版本说明展示
-- 设置页当前额外提供“自动检查更新”“自动下载更新”两个开关
-- 自动下载开启后，下载完成进入自动安装倒计时，并支持取消倒计时
-- `updateChannel` 仍通过 `settings` / `update` store 与 IPC 生效，但当前 Settings UI 未单独暴露切换控件
-- 当当前构建使用外部安装器（如未签名 macOS DMG）时，更新流转为 `manualInstall` 分支，界面展示“打开安装器 / 重新打开”而非应用内静默安装
-
-#### 4.7.5 高级设置
-
-- 开发者模式开关（`devModeUnlocked`）
-
-#### 4.7.6 开发者设置（仅开发者模式）
-
-- 打开 Gateway 控制台 URL
-- 加载并复制 Gateway token
-- 查看并复制 OpenClaw CLI 命令
-- macOS 非开发环境支持安装 `openclaw` 命令
-
-#### 4.7.7 关于
-
-- 应用信息、当前版本
-- 文档与 GitHub 链接
-
----
-
-### 4.8 UpgradeInstalling（升级预置组件安装页）
-
-**文件位置**：`src/pages/UpgradeInstalling/index.tsx`
-
-#### 4.8.1 触发条件
-
-- `setupComplete=true` 且 `presetInstall:getStatus.pending=true`
-- 典型场景：
-  - 首次 setup 完成后，预置清单发生版本变化
-  - 上一次预置安装失败（`blockedReason=last-failed`）
-  - 启用 `FORCE_PRESET_SYNC=true` 触发强制重跑
-
-#### 4.8.2 页面行为
-
-- 进入页面后自动执行 `presetInstall:run({ phase: 'upgrade' })`
-- 通过 `presetInstall:progress` 渲染逐项进度与状态
-- 提供两类人工操作：
-  - 重试：`presetInstall:retry({ phase: 'upgrade' })`
-  - 跳过当前版本：`presetInstall:skipCurrent`
-- 成功或跳过后退出阻塞页并返回 `/`
-
----
-
-## 5. 组件库说明
-
-### 5.1 UI 基础组件（`src/components/ui/`）
-
-| 组件 | 文件 |
-|------|------|
-| Badge | `badge.tsx` |
-| Button | `button.tsx` |
-| Card | `card.tsx` |
-| Input | `input.tsx` |
-| Label | `label.tsx` |
-| Progress | `progress.tsx` |
-| Select | `select.tsx` |
-| Separator | `separator.tsx` |
-| Switch | `switch.tsx` |
-| Tabs | `tabs.tsx` |
-| Textarea | `textarea.tsx` |
-| Tooltip | `tooltip.tsx` |
-
-### 5.2 布局组件（`src/components/layout/`）
-
-| 组件 | 文件 | 用途 |
-|------|------|------|
-| MainLayout | `MainLayout.tsx` | 主体布局容器 |
-| Sidebar | `Sidebar.tsx` | 左侧导航 |
-| TitleBar | `TitleBar.tsx` | 自定义标题栏 |
-
-### 5.3 通用组件（`src/components/common/`）
-
-| 组件 | 文件 | 用途 |
-|------|------|------|
-| ErrorBoundary | `ErrorBoundary.tsx` | 错误边界 |
-| LoadingSpinner | `LoadingSpinner.tsx` | 加载动画 |
-| StatusBadge | `StatusBadge.tsx` | 状态标签 |
-
-### 5.4 设置相关组件（`src/components/settings/`）
-
-| 组件 | 文件 | 用途 |
-|------|------|------|
-| ProvidersSettings | `ProvidersSettings.tsx` | Provider 管理 |
-| UpdateSettings | `UpdateSettings.tsx` | 更新状态与操作 |
-
----
-
-## 6. 状态管理
-
-### 6.1 Zustand Stores（`src/stores/`）
-
-| Store | 文件 | 主要职责 |
-|-------|------|----------|
-| chat | `chat.ts` | 对话消息、流式状态、会话、附件映射 |
-| channels | `channels.ts` | 频道状态、配置拉取、删除与连接辅助 |
-| cron | `cron.ts` | 定时任务 CRUD 与触发 |
-| gateway | `gateway.ts` | Gateway 状态、RPC、事件转发 |
-| agentPresetMigration | `agent-preset-migration.ts` | 预设迁移状态同步、warning 可见性与按 `targetHash` 的本地忽略记录 |
-| providers | `providers.ts` | Provider 列表、密钥、默认项、校验 |
-| settings | `settings.ts` | 主题、语言、启动/更新/开发者开关、setup 状态 |
-| skills | `skills.ts` | 技能列表、安装来源、市场搜索、安装/卸载、启停 |
-| update | `update.ts` | 更新状态、下载进度、倒计时 |
-
-### 6.2 关键状态说明
-
-#### gateway store（核心字段）
-
-```typescript
-interface GatewayStatus {
-  state: 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
-  port: number;
-  pid?: number | null;
-  error?: string | null;
-  connectedAt?: number | null;
-}
-```
-
-#### settings store（当前定义）
-
-```typescript
-interface SettingsState {
-  theme: 'light' | 'dark' | 'system';
-  language: string;
-  startMinimized: boolean;
-  launchAtStartup: boolean;
-  gatewayAutoStart: boolean;
-  gatewayPort: number;
-  updateChannel: 'stable' | 'beta' | 'dev';
-  autoCheckUpdate: boolean;
-  autoDownloadUpdate: boolean;
-  sidebarCollapsed: boolean;
-  devModeUnlocked: boolean;
-  setupComplete: boolean;
-}
-```
-
-> 说明：i18n 资源当前包含 `en / zh / ja`，但 `settings` store 的 `normalizeLanguage()` 目前只会将 `zh*` 归一为 `zh`，其他值归一为 `en`。
-
-#### update store（当前定义）
-
-```typescript
-interface UpdateState {
-  status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
-  currentVersion: string;
-  updateInfo: UpdateInfo | null;
-  progress: ProgressInfo | null;
-  error: string | null;
-  manualInstall: boolean;
-  isInitialized: boolean;
-  autoInstallCountdown: number | null;
-}
-```
-
-- `manualInstall=true` 表示当前平台/构建不能走应用内静默安装，而是需要用户手动打开外部安装器
-- `autoInstallCountdown` 仅在下载完成且当前构建支持应用内安装时生效
-
-#### agent preset migration 状态（当前定义）
-
-```typescript
-type AgentPresetMigrationState = 'idle' | 'running' | 'warning' | 'failed';
-
-interface AgentPresetMigrationStatus {
-  state: AgentPresetMigrationState;
-  reason?: 'PARTIAL_UPDATE' | 'APPLY_FAILED';
-  message?: string;
-  targetHash?: string;
-  updatedFiles?: number;
-  createdFiles?: number;
-  skippedFiles?: number;
-  skippedTargets?: string[];
-  updatedAt: string;
-}
-```
-
-#### 主进程 AppSettings（LawClaw 扩展字段）
-
-```typescript
-interface AppSettings {
-  // ...省略已有字段
-  lawclawManagedChannels: string[];
-}
-```
-
-- 含义：记录“通过 LawClaw UI 成功保存过配置”的频道类型集合（标准化小写）
-- 用途：仅对该集合中的频道执行 `lawclaw-main` 路由绑定维护，避免影响用户未托管频道
-
-#### 预置安装状态（主进程 + IPC）
-
-```typescript
-interface PresetInstallStatusResult {
-  pending: boolean;
-  running: boolean;
-  forceSync: boolean;
-  manifestHash: string;
-  presetVersion: string;
-  blockedReason?: 'needs-run' | 'last-failed';
-  plannedItems: Array<{ id: string; kind: 'skill' | 'plugin'; targetVersion: string }>;
-}
-```
-
-- 状态来源：`electron/utils/preset-installer.ts` + `electron/utils/preset-install-state.ts`
-- 前端消费点：
-  - Setup 安装页（phase=`setup`）
-  - UpgradeInstalling 升级阻塞页（phase=`upgrade`）
-- 事件通道：`presetInstall:progress`、`presetInstall:statusChanged`
-
----
-
-## 7. 国际化支持
-
-### 7.1 当前语言资源与行为
-
-- 资源包已接入：
-  - English（`en`）
-  - 中文（`zh`）
-  - 日本語（`ja`）
-- Setup 与 Settings 均使用 `SUPPORTED_LANGUAGES` 渲染 `en / zh / ja` 切换入口
-- 当前设置持久化逻辑中，`ja` 尚未与资源层完全对齐；`settings` store 对语言值的归一化结果目前只稳定落在 `en / zh`
-
-### 7.2 i18n 资源结构
+当前实现采用三层结构：
 
 ```text
-src/i18n/
-├─ index.ts
-└─ locales/
-   ├─ en/
-   │  ├─ common.json
-   │  ├─ setup.json
-   │  ├─ upgrade.json
-   │  ├─ dashboard.json
-   │  ├─ chat.json
-   │  ├─ channels.json
-   │  ├─ skills.json
-   │  ├─ cron.json
-   │  └─ settings.json
-   ├─ zh/
-   │  ├─ common.json
-   │  ├─ setup.json
-   │  ├─ upgrade.json
-   │  ├─ dashboard.json
-   │  ├─ chat.json
-   │  ├─ channels.json
-   │  ├─ skills.json
-   │  ├─ cron.json
-   │  └─ settings.json
-   └─ ja/
-      ├─ common.json
-      ├─ setup.json
-      ├─ upgrade.json
-      ├─ dashboard.json
-      ├─ chat.json
-      ├─ channels.json
-      ├─ skills.json
-      ├─ cron.json
-      └─ settings.json
+LawClaw Desktop App
+├─ Electron Main Process
+│  ├─ 窗口生命周期 / 系统托盘 / 自动更新
+│  ├─ Gateway 进程管理
+│  ├─ Provider 启动迁移
+│  ├─ Agent 预设模板迁移
+│  └─ 本地配置持久化
+├─ React Renderer Process
+│  ├─ Setup / Chat / Dashboard / Channels / Skills / Cron / Settings
+│  └─ Zustand + i18n + IPC
+└─ OpenClaw Gateway
+   ├─ 会话与消息流
+   ├─ Skills / Channels / Cron
+   └─ 模型调用与 Agent 编排
 ```
 
-### 7.3 使用方式
+### 7.2 专用 Agent 策略
 
-```tsx
-import { useTranslation } from 'react-i18next';
+LawClaw 当前通过 `lawclaw-main` 专用 Agent 与独立工作区运行，核心目的包括：
 
-const { t } = useTranslation('chat');
-// 示例：t('welcome.title')
-```
+- 与既有 OpenClaw 环境隔离
+- 让 UI 只聚焦 LawClaw 自己管理的会话
+- 在升级、迁移、预置安装和默认模型维护上保持产品一致性
 
----
+当前主行为包括：
 
-## 8. 定制化指南
+- `lawclaw-main` 工作区固定在 `~/.openclaw/workspace-lawclaw-main`
+- UI 默认只展示并操作 `agent:lawclaw-main:*` 会话
+- 启动时执行 Provider 迁移与 Agent 预设模板迁移
+- 预设模板升级采用“自动覆盖未修改文件 + 跳过用户已修改文件 + 覆盖前备份”的策略
 
-> 本章仅说明当前版本可直接改动点与需二次开发点。
+### 7.3 Runtime 兜底策略
 
-### 8.1 品牌定制
+打包版本会注入 bundled Node、uv、npm、npx 与 runtime bridge，用于系统运行时缺失或不一致时的兜底。
 
-#### 8.1.1 需要修改的文件
+需要明确的对外口径：
 
-**状态：已支持**
+- bundled runtime 是 **兼容与兜底方案**
+- 如果用户已有可用系统 Node / Python / uv 环境，LawClaw 不应被表述为必须替代用户系统运行时
 
-| 文件 | 可定制内容 |
-|------|------------|
-| `package.json` | name / description / author |
-| `README.md` / `README.en.md` | 文案与对外说明 |
-| `src/assets/logo.svg` | 应用 logo |
-| `resources/icons/` | 打包图标资源 |
-| `electron-builder.yml` | 应用标识与打包配置 |
-| `src/components/layout/TitleBar.tsx` | Windows/Linux 标题栏文案与图标 |
+## 8. 安全、隐私与数据处理
 
-#### 8.1.2 应用标题和图标
+### 8.1 当前安全口径
 
-**状态：已支持**
+- LawClaw 是本地优先桌面应用，文件与工作区默认保留在本机环境
+- Provider 配置和 API Key 当前通过本地 `electron-store` 持久化
+- 为兼容 Gateway 使用，凭据会同步写入 OpenClaw 的 auth profile
 
-- 窗口标题栏文案可在 `TitleBar` 组件中调整
-- 打包图标由 `resources/icons/` 与 `electron-builder.yml` 管理
+相关路径包括：
 
-### 8.2 功能定制
+- `~/.LawClaw/`
+- `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`
 
-#### 8.2.1 添加法律专用功能页/模块
+### 8.2 当前限制
 
-**状态：需二次开发（未内置）**
+当前版本 **尚未接入操作系统级 Keychain / Credential Manager**。因此，对外材料中应避免将当前实现表述为“系统级密钥托管”。
 
-建议方式：
+### 8.3 法律与内容免责声明
 
-1. 在 `src/pages/` 新增业务页面（如 `LegalTools`）
-2. 在 `src/App.tsx` 与 `Sidebar.tsx` 注册路由与导航
-3. 根据需求接入 Gateway RPC 或本地服务
+LawClaw 提供的软件能力与 AI 生成内容仅供参考，不构成法律意见、法律建议或正式法律服务。用户仍需结合具体事实自行核实，并在必要时咨询专业律师。
 
-#### 8.2.2 修改系统提示词/业务策略
+## 9. 安装、分发与发布能力
 
-**状态：需二次开发（未内置）**
+### 9.1 当前发布方式
 
-- 当前代码未提供“法律专用系统提示词管理页”
-- 需在 Gateway / OpenClaw 配置层实现并接入设置页面
+仓库当前已经具备以下分发能力：
 
-### 8.3 界面定制
+- GitHub Releases
+- 阿里云 OSS 镜像
+- 本地源码构建
 
-#### 8.3.1 主题与视觉变量
+### 9.2 打包能力
 
-**状态：已支持**
+根据当前 `electron-builder.yml`：
 
-- 通过全局样式与主题变量调整视觉风格
-- 可配合 `settings.theme` 提供多主题策略
+- **macOS**：支持 `dmg` 与 `zip`，覆盖 `x64 + arm64`
+- **Windows**：支持 `nsis`，当前目标为 `x64`
+- **Linux**：支持 `AppImage / deb / rpm`
 
-#### 8.3.2 侧边栏导航调整
+### 9.3 当前 CI / Release 实现状态
 
-**状态：已支持**
+- `check.yml` 当前执行 `lint`、`typecheck`、`brand:scan`、`test` 与 `build:vite` 等检查
+- `release.yml` 当前正式构建矩阵覆盖 `macOS` 与 `Windows`
+- 发布流程会把正式产物上传到 GitHub Releases，并同步上传到 OSS
+- Linux 打包脚本与配置已存在，适合本地构建与后续纳入正式发布矩阵
 
-- `src/components/layout/Sidebar.tsx` 中可调整导航项顺序、名称、图标与可见性
+## 10. 当前边界与不宜过度承诺的点
 
-### 8.4 技能与插件预置定制
+以下内容在对外沟通时需要保持准确：
 
-#### 8.4.1 预置安装清单（manifest）
+- 当前版本已具备法律场景工作的基础产品能力，但 **并未内置完整的法律模板中心或专门的法律工具专区页面**
+- 并非所有代码层存在的频道元数据都适合作为“当前主推开箱能力”对外宣传
+- 预置安装器当前聚焦 JurisHub 官方与精选集合，而非任意来源全量同步
+- UI 会话层当前以 `lawclaw-main` 为核心，不面向任意 OpenClaw Agent 混合管理
+- Linux 已有构建配置，但当前正式 GitHub Release 工作流主要构建 macOS 与 Windows
 
-**状态：已支持**
+## 11. 仓库结构概览
 
-- 安装项由 `resources/preset-installs/manifest.json` 定义，支持 `skill` 与 `plugin` 两类，以及 `dir / tgz / market` 三种安装模式
-- `dir / tgz` 模式需提供 `artifactPath` 与 `sha256`
-- `market` 模式当前仅允许 `kind=skill` 且 `market=jurismindhub`；若配置 `selection`，当前仅支持 `official-highlighted`
-- 构建阶段会对默认 market 入口执行远端校验，确保只打入 JurisHub 当前“官方 + 推荐”技能集合
-- Setup 与 Upgrade 复用同一份 preset install manifest；是否触发安装由 manifest hash 与本地状态共同决定
-- 当前仓库默认清单为 1 个远程市场入口：`jurismindhub-official-highlighted`，安装时会展开为 JurisHub 当前官方 + 推荐技能集合，而非固定单个本地 skill 包
+| 路径 | 职责 |
+| --- | --- |
+| `src/` | React 渲染进程与页面、组件、stores、i18n |
+| `electron/main/` | Electron 主进程、窗口管理、IPC、更新、菜单、托盘 |
+| `electron/gateway/` | OpenClaw Gateway 通信与市场服务 |
+| `electron/utils/` | Provider、路径、运行时、迁移、存储等工具模块 |
+| `tests/` | Vitest 单测与测试初始化 |
+| `scripts/` | 构建、资源整理、brand scan、runtime 下载与打包脚本 |
+| `resources/` | 图标、截图、运行时桥接、预置清单与随包资源 |
 
-#### 8.4.2 升级安装阻塞页策略
+## 12. 对外传播建议口径
 
-**状态：已支持**
+如果需要把 LawClaw 作为公开仓库或对外产品进行介绍，推荐强调以下三点：
 
-- 当 `presetInstall:getStatus.pending=true` 时，Setup 完成后的用户会被重定向至 `/upgrade-installing`
-- 页面支持重试（`presetInstall:retry`）与跳过当前版本（`presetInstall:skipCurrent`）
-- 若需关闭阻塞策略，可在应用层修改 `resolvePresetInstallRedirectPath()`（`src/lib/preset-install-guard.ts`）
+1. **本地优先的法律 AI Agent 桌面工作台**
+2. **集成 JurisHub 法律技能生态的可扩展产品**
+3. **具备 Setup Wizard、Provider、Channels、Skills、Cron、更新链路的可部署版本**
 
-#### 8.4.3 技能市场集成
+同时建议避免以下表述：
 
-**状态：已支持（JurisHub） / 其他私有市场需二次开发**
-
-- 当前 UI 已接入 JurisHub 搜索、排序、分页与安装流程
-- 底层 store 仍保留 `clawhub / jurismindhub` 双来源识别与卸载路径
-- 若需扩展到 JurisHub 之外的私有市场，需二次开发市场 API 与鉴权流程
-
-### 8.5 专用 Agent 预设模板定制
-
-**状态：已支持**
-
-当前专用 Agent 模板清单位于 `resources/agent-presets/manifest.json`，其核心约束为：
-
-- `schemaVersion` 当前为 `2`
-- `templateRoot` 当前为 `template`
-- `configPatch` 当前为 `openclaw.patch.json`
-- `workspaceFiles` 当前只包含 8 个受管 Markdown 模板文件：
-  - `SOUL.md`
-  - `AGENTS.md`
-  - `IDENTITY.md`
-  - `TOOLS.md`
-  - `BOOTSTRAP.md`
-  - `USER.md`
-  - `BOOT.md`
-  - `HEARTBEAT.md`
-
-当前实现要点：
-
-- `workspaceFiles[]` 已不再包含额外的冲突策略字段
-- 当前受管模板中已**不包含**旧版升级技能模板文件
-- 升级比较基于 `v_current` 与 `v_update` 快照做确定性文件比较，不做 capability block 追加合并
-- 若需扩展受管模板文件，应同步更新：
-  - `resources/agent-presets/manifest.json`
-  - `resources/agent-presets/template/`
-  - 与迁移逻辑相关的测试
-
-#### 8.5.1 模板升级行为
-
-**状态：已实施**
-
-- 对与旧模板一致的本地文件，升级时可自动覆盖
-- 对已被用户修改的本地文件，升级时会跳过并进入 `warning`
-- 对将被覆盖的工作区文件，会先备份到 `~/.LawClaw/agent-presets/backups/`
-- 快照目录位于：
-  - `~/.LawClaw/agent-presets/v_current`
-  - `~/.LawClaw/agent-presets/v_update`
-
-### 8.6 QQBot 打包策略
-
-**状态：已实施**
-
-- 当前 Setup 流程不会直接触发 bundled `qqbot` 插件安装
-- `pnpm package*` 流程会在打包前处理 QQBot 相关产物
-- QQ 频道当前不在 preset install manifest 内作为预置插件项；bundled 安装能力已保留，但当前未由 Setup Wizard 直接驱动
-
----
-
-## 附录
-
-### A. 文件目录结构（核心）
-
-```text
-LawClaw/
-├─ electron/
-│  ├─ main/
-│  │  ├─ index.ts
-│  │  ├─ ipc-handlers.ts
-│  │  ├─ menu.ts
-│  │  ├─ tray.ts
-│  │  └─ updater.ts
-│  ├─ gateway/
-│  │  ├─ manager.ts
-│  │  ├─ protocol.ts
-│  │  ├─ clawhub.ts
-│  │  └─ market-source.ts
-│  ├─ preload/
-│  └─ utils/
-│     ├─ agent-preset-migration.ts
-│     ├─ bundled-runtime.ts
-│     ├─ channel-config.ts
-│     ├─ feishu-official-plugin.ts
-│     ├─ jurismind-provider-token-binding.ts
-│     ├─ openclaw-auth.ts
-│     ├─ openclaw-cli.ts
-│     ├─ preset-install-state.ts
-│     ├─ preset-installer.ts
-│     ├─ provider-migration.ts
-│     ├─ skill-config.ts
-│     └─ text-encoding.ts
-├─ src/
-│  ├─ components/
-│  │  ├─ channels/
-│  │  ├─ ui/
-│  │  ├─ layout/
-│  │  ├─ common/
-│  │  └─ settings/
-│  ├─ hooks/
-│  ├─ pages/
-│  │  ├─ Setup/
-│  │  ├─ Dashboard/
-│  │  ├─ Chat/
-│  │  ├─ Channels/
-│  │  ├─ Skills/
-│  │  ├─ Cron/
-│  │  ├─ UpgradeInstalling/
-│  │  └─ Settings/
-│  ├─ stores/
-│  │  ├─ agent-preset-migration.ts
-│  │  ├─ chat.ts
-│  │  ├─ channels.ts
-│  │  ├─ cron.ts
-│  │  ├─ gateway.ts
-│  │  ├─ providers.ts
-│  │  ├─ settings.ts
-│  │  ├─ skills.ts
-│  │  └─ update.ts
-│  ├─ lib/
-│  ├─ types/
-│  └─ i18n/
-├─ resources/
-│  ├─ agent-presets/
-│  ├─ bin/
-│  ├─ cli/
-│  ├─ config/
-│  ├─ context/
-│  ├─ icons/
-│  ├─ plugins/
-│  ├─ preset-installs/
-│  └─ runtime-bridge/
-├─ scripts/
-└─ tests/
-```
-
-### B. 开发命令
-
-```bash
-# 初始化（依赖 + bundled uv）
-pnpm run init
-
-# 开发
-pnpm dev
-
-# 代码质量
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm run brand:scan
-
-# 预置产物校验
-pnpm run bundle:preset-artifacts
-pnpm run bundle:preset-artifacts:offline
-
-# 构建与打包
-pnpm run build:vite
-pnpm build
-pnpm package:win
-pnpm package:mac
-pnpm package:linux
-```
-
-### C. 相关链接
-
-- 上游仓库信息见项目内部参考资料与历史提交记录
-- [Electron 文档](https://www.electronjs.org/docs)
-- [React 文档](https://react.dev/)
-- [shadcn/ui](https://ui.shadcn.com/)
-- [Zustand](https://github.com/pmndrs/zustand)
+- “已覆盖全部法律工作流”
+- “所有频道均已成熟商用”
+- “当前已实现系统级密钥托管”
+- “LawClaw 只能依赖 bundled runtime 运行”

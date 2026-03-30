@@ -21,6 +21,9 @@
   <img src="https://img.shields.io/badge/platform-MacOS%20%7C%20Windows%20%7C%20Linux-blue?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/electron-40+-47848F?logo=electron&style=flat-square" alt="Electron" />
   <img src="https://img.shields.io/badge/react-19-61DAFB?logo=react&style=flat-square" alt="React" />
+  <a href="https://lawhub.jurismind.com" target="_blank">
+    <img src="https://img.shields.io/badge/LawHub-lawhub.jurismind.com-0F766E?style=flat-square" alt="LawHub" />
+  </a>
   <a href="https://discord.com/invite/84Kex3GGAh" target="_blank">
     <img src="https://img.shields.io/discord/1399603591471435907?logo=discord&label=community&style=flat-square" alt="chat on Discord" />
   </a>

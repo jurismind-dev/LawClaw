@@ -24,9 +24,6 @@
   <a href="https://lawhub.jurismind.com" target="_blank">
     <img src="https://img.shields.io/badge/LawHub-lawhub.jurismind.com-0F766E?style=flat-square" alt="LawHub" />
   </a>
-  <a href="https://discord.com/invite/84Kex3GGAh" target="_blank">
-    <img src="https://img.shields.io/discord/1399603591471435907?logo=discord&label=community&style=flat-square" alt="chat on Discord" />
-  </a>
   <img src="https://img.shields.io/github/downloads/jurismind-dev/LawClaw/total?label=downloads&style=flat-square&color=%23027DEB" alt="Downloads" />
   <img src="https://img.shields.io/github/license/jurismind-dev/LawClaw?style=flat-square" alt="License" />
 </p>

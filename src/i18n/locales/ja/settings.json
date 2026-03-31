@@ -151,7 +151,8 @@
         "title": "バージョン情報",
         "appName": "LawClaw",
         "tagline": "グラフィカル AI アシスタント",
-        "basedOn": "OpenClaw ベース",
+        "basedOn": "{{project}}（<license>MIT ライセンス</license>）をベースに二次開発",
+        "disclaimer": "本ソフトウェアは「現状有姿」で提供され、明示または黙示の保証はありません。使用に伴うリスクは利用者が負担します。",
         "version": "バージョン {{version}}",
         "docs": "公式サイト",
         "github": "GitHub"

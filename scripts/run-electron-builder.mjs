@@ -1,13 +1,53 @@
 #!/usr/bin/env node
 
+import { mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   applyEnvEntries,
   buildMacSigningEnvEntries,
   resolveMacBuilderMode,
 } from './macos-signing-utils.mjs';
+
+const MAC_DMG_LOCALIZED_LICENSE_FILES = [
+  join(process.cwd(), 'resources', 'license_en.txt'),
+  join(process.cwd(), 'resources', 'license_zh_CN.txt'),
+];
+
+async function withTemporarilyHiddenMacDmgLicenses(run) {
+  if (process.platform !== 'darwin') {
+    return run();
+  }
+
+  const stashRoot = join(process.cwd(), '.tmp', 'mac-dmg-license-stash');
+  await mkdir(stashRoot, { recursive: true });
+  const stashDir = await mkdtemp(join(stashRoot, 'run-'));
+  const movedFiles = [];
+
+  try {
+    for (const filePath of MAC_DMG_LOCALIZED_LICENSE_FILES) {
+      const stashPath = join(stashDir, basename(filePath));
+
+      try {
+        await rename(filePath, stashPath);
+        movedFiles.push({ filePath, stashPath });
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    return run();
+  } finally {
+    for (const { filePath, stashPath } of movedFiles.reverse()) {
+      await rename(stashPath, filePath);
+    }
+    await rm(stashDir, { recursive: true, force: true });
+  }
+}
 
 const forwardedArgs = process.argv.slice(2);
 const { useSignedConfig, state } =
@@ -52,10 +92,12 @@ const childEnv =
       )
     : { ...process.env };
 
-const result = spawnSync(electronBuilderBin, args, {
-  env: childEnv,
-  stdio: 'inherit',
-});
+const result = await withTemporarilyHiddenMacDmgLicenses(() =>
+  spawnSync(electronBuilderBin, args, {
+    env: childEnv,
+    stdio: 'inherit',
+  })
+);
 
 if (result.error) {
   throw result.error;

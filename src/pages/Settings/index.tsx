@@ -2,7 +2,7 @@
  * Settings Page
  * Application configuration
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import {
   Sun,
   Moon,
@@ -28,14 +28,20 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
+
 type ControlUiInfo = {
   url: string;
   token: string;
   port: number;
 };
+
+const LAWCLAW_DOCS_URL = 'https://jurismind.com';
+const LAWCLAW_GITHUB_URL = 'https://github.com/jurismind-dev/LawClaw';
+const LAWCLAW_MIT_LICENSE_URL =
+  'https://github.com/jurismind-dev/LawClaw?tab=License-1-ov-file#readme';
 
 export function Settings() {
   const { t } = useTranslation('settings');
@@ -100,6 +106,11 @@ export function Settings() {
     } catch {
       // ignore
     }
+  };
+
+  const handleExternalLinkClick = (event: MouseEvent<HTMLAnchorElement>, url: string) => {
+    event.preventDefault();
+    void window.electron.openExternal(url);
   };
 
   // Open developer console
@@ -549,20 +560,38 @@ export function Settings() {
           <p>
             <strong>{t('about.appName')}</strong> - {t('about.tagline')}
           </p>
-          <p className="whitespace-pre-line">{t('about.basedOn')}</p>
+          <p className="whitespace-pre-line">
+            <Trans
+              ns="settings"
+              i18nKey="about.basedOn"
+              values={{ project: 'openclaw - Clawx' }}
+              components={{
+                license: (
+                  <a
+                    href={LAWCLAW_MIT_LICENSE_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
+                    onClick={(event) => handleExternalLinkClick(event, LAWCLAW_MIT_LICENSE_URL)}
+                  />
+                ),
+              }}
+            />
+          </p>
+          <p className="whitespace-pre-line">{t('about.disclaimer')}</p>
           <p>{t('about.version', { version: currentVersion })}</p>
           <div className="flex gap-4 pt-2">
             <Button
               variant="link"
               className="h-auto p-0"
-              onClick={() => window.electron.openExternal('https://jurismind.com')}
+              onClick={() => window.electron.openExternal(LAWCLAW_DOCS_URL)}
             >
               {t('about.docs')}
             </Button>
             <Button
               variant="link"
               className="h-auto p-0"
-              onClick={() => window.electron.openExternal('https://github.com/jurismind-dev/LawClaw')}
+              onClick={() => window.electron.openExternal(LAWCLAW_GITHUB_URL)}
             >
               {t('about.github')}
             </Button>

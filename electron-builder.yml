@@ -146,7 +146,6 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: 劳有钳
   uninstallDisplayName: 劳有钳 (LawClaw)
-  license: LICENSE
   include: scripts/installer.nsh
   installerIcon: resources/icons/icon.ico
   uninstallerIcon: resources/icons/icon.ico

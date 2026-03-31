@@ -29,4 +29,10 @@ describe('ChatInput', () => {
 
     expect(screen.getByPlaceholderText('网关未连接...')).toBeInTheDocument();
   });
+
+  it('shows the AI-generated notice below the composer', () => {
+    render(<ChatInput onSend={() => {}} />);
+
+    expect(screen.getByText('本地化运行，内容由AI生成，请仔细甄别')).toBeInTheDocument();
+  });
 });

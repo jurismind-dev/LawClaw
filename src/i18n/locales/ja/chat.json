@@ -15,6 +15,7 @@
     },
     "inputPlaceholder": "契約書や案件資料をワークスペースに取り込むと、すぐに処理を開始できます。",
     "inputDisabledPlaceholder": "ゲートウェイ未接続...",
+    "assistantNotice": "この内容はAIにより生成されています。十分にご確認ください。",
     "noLogs": "（ログはまだありません）",
     "toolbar": {
         "newSession": "新しいセッション",

@@ -15,6 +15,7 @@
     },
     "inputPlaceholder": "将合同或案件材料导入工作区，即可开始处理",
     "inputDisabledPlaceholder": "网关未连接...",
+    "assistantNotice": "本地化运行，内容由AI生成，请仔细甄别",
     "noLogs": "（暂无日志）",
     "toolbar": {
         "newSession": "新会话",

@@ -571,7 +571,7 @@ export function Settings() {
                     href={LAWCLAW_MIT_LICENSE_URL}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
+                    className="text-blue-600 underline underline-offset-4 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                     onClick={(event) => handleExternalLinkClick(event, LAWCLAW_MIT_LICENSE_URL)}
                   />
                 ),

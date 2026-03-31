@@ -503,6 +503,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
             </Button>
           </div>
         </div>
+        <p className="mt-2 text-center text-xs text-muted-foreground">
+          {t('assistantNotice')}
+        </p>
       </div>
     </div>
   );

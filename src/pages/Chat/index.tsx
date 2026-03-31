@@ -103,8 +103,8 @@ export function Chat() {
     hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
   return (
-    <div className="-m-6 flex h-full min-h-0 flex-col">
-      <div className="shrink-0 px-3 pt-3">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 px-3 pb-1 pt-2">
         <div className="flex w-full justify-end">
           <ChatToolbar />
         </div>
@@ -127,7 +127,7 @@ export function Chat() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-3 py-4">
+      <div className="flex-1 overflow-y-auto px-3 py-2">
         <div className="w-full space-y-4">
           {loading && !sending ? (
             <div className="flex h-full items-center justify-center py-20">

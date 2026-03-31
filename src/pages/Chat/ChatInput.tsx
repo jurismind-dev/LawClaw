@@ -368,7 +368,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
   return (
     <div
-      className="bg-background px-3 pb-4 pt-3"
+      className="bg-background px-3 pb-1 pt-2"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -503,7 +503,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
             </Button>
           </div>
         </div>
-        <p className="mt-2 text-center text-xs text-muted-foreground">
+        <p className="mt-0.5 text-center text-[11px] leading-4 text-muted-foreground">
           {t('assistantNotice')}
         </p>
       </div>

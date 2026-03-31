@@ -35,6 +35,16 @@
             "crossPlatform": "\u8de8\u5e73\u53f0\u652f\u6301"
         }
     },
+    "legalNotice": {
+        "title": "\u6b22\u8fce\u4f7f\u7528\u52b3\u6709\u94b3LawClaw\uff01",
+        "prefix": "\u5728\u4f7f\u7528\u524d\uff0c\u8bf7\u60a8\u4ed4\u7ec6\u9605\u8bfb",
+        "serviceAgreement": "\u300a\u7528\u6237\u534f\u8bae\u300b",
+        "connector": "\u548c",
+        "privacyPolicy": "\u300a\u9690\u79c1\u653f\u7b56\u300b",
+        "suffix": "\uff0c\u5e76\u8fdb\u884c\u786e\u8ba4\u3002",
+        "reject": "\u62d2\u7edd",
+        "accept": "\u6211\u5df2\u9605\u8bfb\u5e76\u540c\u610f"
+    },
     "runtime": {
         "title": "\u68c0\u67e5\u73af\u5883",
         "viewLogs": "\u67e5\u770b\u65e5\u5fd7",

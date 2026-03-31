@@ -8,6 +8,7 @@ import type { ErrorInfo, ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import i18n from './i18n';
 import { MainLayout } from './components/layout/MainLayout';
+import { SetupLegalNoticeModal } from '@/components/common/SetupLegalNoticeModal';
 import { RiskNoticeModal } from '@/components/common/RiskNoticeModal';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Dashboard } from './pages/Dashboard';
@@ -30,6 +31,11 @@ import {
   isRiskNoticePlatform,
   shouldShowRiskNotice,
 } from '@/lib/risk-notice';
+import {
+  SETUP_LEGAL_NOTICE_SETTING_KEY,
+  SETUP_LEGAL_NOTICE_VERSION,
+  shouldShowSetupLegalNotice,
+} from '@/lib/setup-legal-notice';
 
 
 /**
@@ -107,6 +113,8 @@ function getInitialRiskNoticeReadyState(): boolean {
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [showSetupLegalNotice, setShowSetupLegalNotice] = useState(false);
+  const [setupLegalNoticeReady, setSetupLegalNoticeReady] = useState(false);
   const [showRiskNotice, setShowRiskNotice] = useState(false);
   const [riskNoticeReady, setRiskNoticeReady] = useState(getInitialRiskNoticeReadyState);
   const theme = useSettingsStore((state) => state.theme);
@@ -276,6 +284,48 @@ function App() {
   useEffect(() => {
     let cancelled = false;
 
+    const loadSetupLegalNoticeState = async () => {
+      if (setupComplete) {
+        if (!cancelled) {
+          setShowSetupLegalNotice(false);
+          setSetupLegalNoticeReady(true);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setSetupLegalNoticeReady(false);
+      }
+
+      try {
+        const acceptedVersion = await window.electron.ipcRenderer.invoke(
+          'settings:get',
+          SETUP_LEGAL_NOTICE_SETTING_KEY,
+        ) as string | null | undefined;
+
+        if (!cancelled) {
+          setShowSetupLegalNotice(shouldShowSetupLegalNotice(setupComplete, acceptedVersion));
+          setSetupLegalNoticeReady(true);
+        }
+      } catch (error) {
+        console.error('Failed to read setup legal notice state from settings:', error);
+        if (!cancelled) {
+          setShowSetupLegalNotice(true);
+          setSetupLegalNoticeReady(true);
+        }
+      }
+    };
+
+    void loadSetupLegalNoticeState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setupComplete]);
+
+  useEffect(() => {
+    let cancelled = false;
+
     const loadRiskNoticeState = async () => {
       const platform = window.electron.platform;
       if (!isRiskNoticePlatform(platform)) {
@@ -331,6 +381,23 @@ function App() {
     };
   }, []);
 
+  const handleSetupLegalNoticeAccept = () => {
+    void window.electron.ipcRenderer
+      .invoke('settings:set', SETUP_LEGAL_NOTICE_SETTING_KEY, SETUP_LEGAL_NOTICE_VERSION)
+      .catch((error) => {
+        console.error('Failed to persist setup legal notice acceptance:', error);
+      })
+      .finally(() => {
+        setShowSetupLegalNotice(false);
+      });
+  };
+
+  const handleSetupLegalNoticeReject = () => {
+    void window.electron.ipcRenderer.invoke('app:quit').catch((error) => {
+      console.error('Failed to quit after setup legal notice rejection:', error);
+    });
+  };
+
   const handleRiskNoticeAccept = () => {
     void window.electron.ipcRenderer
       .invoke('settings:set', 'riskNoticeAcceptedVersion', RISK_NOTICE_VERSION)
@@ -351,7 +418,7 @@ function App() {
   return (
     <ErrorBoundary>
       <TooltipProvider delayDuration={300}>
-        {!riskNoticeReady ? null : (
+        {!setupLegalNoticeReady || !riskNoticeReady ? null : (
           <>
         <Routes>
           {/* Setup wizard (shown on first launch) */}
@@ -377,12 +444,17 @@ function App() {
           closeButton
           style={{ zIndex: 99999 }}
         />
-        {showRiskNotice && (
+        {showSetupLegalNotice ? (
+          <SetupLegalNoticeModal
+            onAccept={handleSetupLegalNoticeAccept}
+            onReject={handleSetupLegalNoticeReject}
+          />
+        ) : showRiskNotice ? (
           <RiskNoticeModal
             onAccept={handleRiskNoticeAccept}
             onReject={handleRiskNoticeReject}
           />
-        )}
+        ) : null}
           </>
         )}
       </TooltipProvider>

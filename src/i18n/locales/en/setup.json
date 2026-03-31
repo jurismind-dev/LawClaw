@@ -35,6 +35,16 @@
             "crossPlatform": "Cross-platform support"
         }
     },
+    "legalNotice": {
+        "title": "Welcome to LawClaw!",
+        "prefix": "Before use, please read the ",
+        "serviceAgreement": "Service Agreement",
+        "connector": " and ",
+        "privacyPolicy": "Privacy Policy",
+        "suffix": " carefully and confirm your acceptance.",
+        "reject": "Reject",
+        "accept": "I have read and agree"
+    },
     "runtime": {
         "title": "Checking Environment",
         "viewLogs": "View Logs",

@@ -40,6 +40,7 @@ export interface AppSettings {
   // UI State
   sidebarCollapsed: boolean;
   devModeUnlocked: boolean;
+  setupLegalNoticeAcceptedVersion: string;
   riskNoticeAcceptedVersion: string;
   
   // Presets
@@ -73,6 +74,7 @@ const defaults: AppSettings = {
   // UI State
   sidebarCollapsed: false,
   devModeUnlocked: false,
+  setupLegalNoticeAcceptedVersion: '',
   riskNoticeAcceptedVersion: '',
   
   // Presets

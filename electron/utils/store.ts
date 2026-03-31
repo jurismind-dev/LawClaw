@@ -40,6 +40,7 @@ export interface AppSettings {
   // UI State
   sidebarCollapsed: boolean;
   devModeUnlocked: boolean;
+  riskNoticeAcceptedVersion: string;
   
   // Presets
   selectedBundles: string[];
@@ -72,6 +73,7 @@ const defaults: AppSettings = {
   // UI State
   sidebarCollapsed: false,
   devModeUnlocked: false,
+  riskNoticeAcceptedVersion: '',
   
   // Presets
   selectedBundles: ['productivity', 'developer'],

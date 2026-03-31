@@ -7,30 +7,23 @@ import { RefreshCw, Brain, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useChatStore } from '@/stores/chat';
+import { useAgentsStore } from '@/stores/agents';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 
 export function ChatToolbar() {
-  const sessions = useChatStore((s) => s.sessions);
-  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const currentAgentId = useChatStore((s) => s.currentAgentId);
   const refresh = useChatStore((s) => s.refresh);
   const loading = useChatStore((s) => s.loading);
   const showThinking = useChatStore((s) => s.showThinking);
   const toggleThinking = useChatStore((s) => s.toggleThinking);
+  const agents = useAgentsStore((s) => s.agents);
   const { t } = useTranslation('chat');
 
   const currentTargetName = useMemo(() => {
-    const currentSession = sessions.find((session) => session.key === currentSessionKey);
-    if (currentSession?.displayName && currentSession.displayName !== currentSessionKey) {
-      return currentSession.displayName;
-    }
-    if (currentSessionKey.startsWith('agent:lawclaw-main:') || currentSessionKey.startsWith('agent:main:')) {
-      return 'LawClaw';
-    }
-
-    const parts = currentSessionKey.split(':');
-    return parts[1] || 'LawClaw';
-  }, [currentSessionKey, sessions]);
+    return (agents ?? []).find((agent) => agent.id === currentAgentId)?.name
+      ?? (currentAgentId === 'lawclaw-main' ? 'LawClaw' : currentAgentId || 'LawClaw');
+  }, [agents, currentAgentId]);
 
   return (
     <div className="inline-flex items-center gap-2 rounded-2xl border border-border/70 bg-background/90 p-1.5 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.45)] backdrop-blur-sm">

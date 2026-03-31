@@ -3,14 +3,16 @@
  * Handles routing and global providers
  */
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Component, useEffect } from 'react';
+import { Component, useEffect, useState } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import i18n from './i18n';
 import { MainLayout } from './components/layout/MainLayout';
+import { RiskNoticeModal } from '@/components/common/RiskNoticeModal';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Dashboard } from './pages/Dashboard';
 import { Chat } from './pages/Chat';
+import { Agents } from './pages/Agents';
 import { Channels } from './pages/Channels';
 import { Skills } from './pages/Skills';
 import { Cron } from './pages/Cron';
@@ -22,6 +24,12 @@ import { useGatewayStore } from './stores/gateway';
 import { useAgentPresetMigrationStore } from './stores/agent-preset-migration';
 import type { PresetInstallStatusResult } from '@/types/preset-install';
 import { resolvePresetInstallRedirectPath } from './lib/preset-install-guard';
+import {
+  RISK_NOTICE_STORAGE_KEY,
+  RISK_NOTICE_VERSION,
+  isRiskNoticePlatform,
+  shouldShowRiskNotice,
+} from '@/lib/risk-notice';
 
 
 /**
@@ -88,9 +96,19 @@ class ErrorBoundary extends Component<
   }
 }
 
+function getInitialRiskNoticeReadyState(): boolean {
+  try {
+    return !isRiskNoticePlatform(window.electron.platform);
+  } catch {
+    return true;
+  }
+}
+
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [showRiskNotice, setShowRiskNotice] = useState(false);
+  const [riskNoticeReady, setRiskNoticeReady] = useState(getInitialRiskNoticeReadyState);
   const theme = useSettingsStore((state) => state.theme);
   const language = useSettingsStore((state) => state.language);
   const setupComplete = useSettingsStore((state) => state.setupComplete);
@@ -255,9 +273,86 @@ function App() {
     }
   }, [theme]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRiskNoticeState = async () => {
+      const platform = window.electron.platform;
+      if (!isRiskNoticePlatform(platform)) {
+        if (!cancelled) {
+          setShowRiskNotice(false);
+          setRiskNoticeReady(true);
+        }
+        return;
+      }
+
+      try {
+        const persistedAcceptedVersion = await window.electron.ipcRenderer.invoke(
+          'settings:get',
+          'riskNoticeAcceptedVersion',
+        ) as string | null | undefined;
+
+        let acceptedVersion = persistedAcceptedVersion;
+
+        try {
+          const legacyAcceptedVersion = window.localStorage.getItem(RISK_NOTICE_STORAGE_KEY);
+          if (!acceptedVersion && legacyAcceptedVersion) {
+            acceptedVersion = legacyAcceptedVersion;
+            await window.electron.ipcRenderer.invoke(
+              'settings:set',
+              'riskNoticeAcceptedVersion',
+              legacyAcceptedVersion,
+            );
+          }
+          if (legacyAcceptedVersion) {
+            window.localStorage.removeItem(RISK_NOTICE_STORAGE_KEY);
+          }
+        } catch (migrationError) {
+          console.error('Failed to migrate legacy risk notice state:', migrationError);
+        }
+
+        if (!cancelled) {
+          setShowRiskNotice(shouldShowRiskNotice(platform, acceptedVersion));
+          setRiskNoticeReady(true);
+        }
+      } catch (error) {
+        console.error('Failed to read risk notice state from settings:', error);
+        if (!cancelled) {
+          setShowRiskNotice(true);
+          setRiskNoticeReady(true);
+        }
+      }
+    };
+
+    void loadRiskNoticeState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleRiskNoticeAccept = () => {
+    void window.electron.ipcRenderer
+      .invoke('settings:set', 'riskNoticeAcceptedVersion', RISK_NOTICE_VERSION)
+      .catch((error) => {
+        console.error('Failed to persist risk notice acceptance:', error);
+      })
+      .finally(() => {
+        setShowRiskNotice(false);
+      });
+  };
+
+  const handleRiskNoticeReject = () => {
+    void window.electron.ipcRenderer.invoke('app:quit').catch((error) => {
+      console.error('Failed to quit after risk notice rejection:', error);
+    });
+  };
+
   return (
     <ErrorBoundary>
       <TooltipProvider delayDuration={300}>
+        {!riskNoticeReady ? null : (
+          <>
         <Routes>
           {/* Setup wizard (shown on first launch) */}
           <Route path="/setup/*" element={<Setup />} />
@@ -267,6 +362,7 @@ function App() {
           <Route element={<MainLayout />}>
             <Route path="/" element={<Chat />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/agents" element={<Agents />} />
             <Route path="/channels" element={<Channels />} />
             <Route path="/skills" element={<Skills />} />
             <Route path="/cron" element={<Cron />} />
@@ -281,6 +377,14 @@ function App() {
           closeButton
           style={{ zIndex: 99999 }}
         />
+        {showRiskNotice && (
+          <RiskNoticeModal
+            onAccept={handleRiskNoticeAccept}
+            onReject={handleRiskNoticeReject}
+          />
+        )}
+          </>
+        )}
       </TooltipProvider>
     </ErrorBoundary>
   );

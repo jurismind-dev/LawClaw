@@ -24,6 +24,15 @@
         "showThinking": "显示思考过程",
         "hideThinking": "隐藏思考过程"
     },
+    "composer": {
+        "attachFiles": "添加文件",
+        "pickAgent": "选择 Agent",
+        "agentPickerTitle": "发送到 {{currentAgent}} 以外的 Agent",
+        "clearTarget": "清除目标 Agent",
+        "targetChip": "发送给 {{agent}}",
+        "send": "发送",
+        "stop": "停止"
+    },
     "historyBuckets": {
         "today": "今天",
         "yesterday": "昨天",

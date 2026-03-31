@@ -7,6 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
+import { useAgentsStore } from '@/stores/agents';
 
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
@@ -31,12 +32,42 @@ describe('sidebar clawx alignment', () => {
       lastError: null,
     });
 
+    useAgentsStore.setState({
+      agents: [
+        {
+          id: 'lawclaw-main',
+          name: 'LawClaw',
+          isDefault: true,
+          modelDisplay: 'Not configured',
+          modelRef: null,
+          overrideModelRef: null,
+          inheritedModel: false,
+          workspace: '~/.openclaw/workspace-lawclaw-main',
+          agentDir: '~/.openclaw/agents/lawclaw-main/agent',
+          mainSessionKey: 'agent:lawclaw-main:main',
+          channelTypes: [],
+        },
+      ],
+      defaultAgentId: 'lawclaw-main',
+      defaultModelRef: null,
+      configuredChannelTypes: [],
+      loading: false,
+      error: null,
+      fetchAgents: vi.fn().mockResolvedValue(undefined),
+      createAgent: vi.fn().mockResolvedValue(undefined),
+      updateAgent: vi.fn().mockResolvedValue(undefined),
+      updateAgentModel: vi.fn().mockResolvedValue(undefined),
+      deleteAgent: vi.fn().mockResolvedValue(undefined),
+      clearError: vi.fn(),
+    });
+
     useChatStore.setState({
       sessions: [
         { key: 'agent:lawclaw-main:main' },
         { key: 'agent:lawclaw-main:session-1' },
       ],
       currentSessionKey: 'agent:lawclaw-main:session-1',
+      currentAgentId: 'lawclaw-main',
       sessionLabels: {
         'agent:lawclaw-main:session-1': 'Draft memo',
       },
@@ -77,6 +108,7 @@ describe('sidebar clawx alignment', () => {
 
     const links = screen.getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual([
+      'sidebar.agents',
       'sidebar.channels',
       'sidebar.skills',
       'sidebar.cronTasks',
@@ -95,5 +127,6 @@ describe('sidebar clawx alignment', () => {
 
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.getByText('toolbar.currentAgent')).toBeInTheDocument();
+    expect(screen.getByText('LawClaw')).toBeInTheDocument();
   });
 });

@@ -32,7 +32,13 @@ import {
 } from '../utils/paths';
 import { applyBundledNpmToCliEnv, getNodeExecForCli, getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { parseJsonText, stringifyJsonText, stripUtf8Bom } from '../utils/text-encoding';
-import { getSetting, setSetting } from '../utils/store';
+import {
+  getAllSettings,
+  getSetting,
+  resetSettings,
+  setSetting,
+  type AppSettings,
+} from '../utils/store';
 import {
   clearJurismindWebSearchConfig,
   saveProviderKeyToOpenClaw,
@@ -94,6 +100,14 @@ import {
   isProviderAvailableForLawClaw,
   pickFallbackLawClawProvider,
 } from '../utils/lawclaw-provider-selection';
+import {
+  createAgent,
+  deleteAgentConfig,
+  listAgentsSnapshot,
+  removeAgentWorkspaceDirectory,
+  updateAgentModel,
+  updateAgentName,
+} from '../utils/agent-config';
 
 const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
 
@@ -182,6 +196,9 @@ export function registerIpcHandlers(
   // Provider handlers
   registerProviderHandlers(gatewayManager);
 
+  // Agent handlers
+  registerAgentHandlers(gatewayManager);
+
   // Shell handlers
   registerShellHandlers();
 
@@ -190,6 +207,9 @@ export function registerIpcHandlers(
 
   // App handlers
   registerAppHandlers();
+
+  // Settings handlers
+  registerSettingsHandlers();
 
   // UV handlers
   registerUvHandlers();
@@ -229,6 +249,66 @@ export function registerIpcHandlers(
 
   // Agent preset migration handlers
   registerAgentPresetMigrationHandlers(mainWindow);
+}
+
+function registerAgentHandlers(gatewayManager: GatewayManager): void {
+  ipcMain.handle('agents:list', async () => {
+    try {
+      return { success: true, ...(await listAgentsSnapshot()) };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('agents:create', async (_, payload?: { name?: string; inheritWorkspace?: boolean }) => {
+    try {
+      const snapshot = await createAgent(String(payload?.name || ''), {
+        inheritWorkspace: payload?.inheritWorkspace === true,
+      });
+      gatewayManager.debouncedRestart();
+      return { success: true, ...snapshot };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('agents:updateName', async (_, payload?: { agentId?: string; name?: string }) => {
+    try {
+      const agentId = String(payload?.agentId || '').trim();
+      const name = String(payload?.name || '');
+      const snapshot = await updateAgentName(agentId, name);
+      gatewayManager.debouncedRestart();
+      return { success: true, ...snapshot };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('agents:updateModel', async (_, payload?: { agentId?: string; modelRef?: string | null }) => {
+    try {
+      const agentId = String(payload?.agentId || '').trim();
+      const modelRef = typeof payload?.modelRef === 'string' ? payload.modelRef : null;
+      const snapshot = await updateAgentModel(agentId, modelRef);
+      gatewayManager.debouncedRestart();
+      return { success: true, ...snapshot };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('agents:delete', async (_, payload?: { agentId?: string }) => {
+    try {
+      const agentId = String(payload?.agentId || '').trim();
+      const { snapshot, removedEntry } = await deleteAgentConfig(agentId);
+      await gatewayManager.restart();
+      await removeAgentWorkspaceDirectory(removedEntry).catch((error) => {
+        logger.warn('Failed to remove agent workspace directory after agent deletion', error);
+      });
+      return { success: true, ...snapshot };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
 }
 
 /**
@@ -2442,6 +2522,32 @@ function registerDialogHandlers(): void {
   ipcMain.handle('dialog:message', async (_, options: Electron.MessageBoxOptions) => {
     const result = await dialog.showMessageBox(options);
     return result;
+  });
+}
+
+/**
+ * Settings-related IPC handlers
+ */
+function registerSettingsHandlers(): void {
+  ipcMain.handle('settings:get', async (_, key: keyof AppSettings) => {
+    return await getSetting(key);
+  });
+
+  ipcMain.handle(
+    'settings:set',
+    async (_, key: keyof AppSettings, value: AppSettings[keyof AppSettings]) => {
+      await setSetting(key, value as never);
+      return { success: true };
+    }
+  );
+
+  ipcMain.handle('settings:getAll', async () => {
+    return await getAllSettings();
+  });
+
+  ipcMain.handle('settings:reset', async () => {
+    await resetSettings();
+    return { success: true };
   });
 }
 

@@ -2,10 +2,11 @@
  * Sidebar Component
  * Synced from the latest ClawX session-sidebar structure, adapted for LawClaw branding/routes.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home,
+  Bot,
   Puzzle,
   Clock,
   Settings as SettingsIcon,
@@ -19,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
 import { useChatStore, type ChatSession } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
+import { useAgentsStore } from '@/stores/agents';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useTranslation } from 'react-i18next';
@@ -92,9 +94,6 @@ function getSessionBucket(activityMs: number, nowMs: number): SessionBucketKey {
 const INITIAL_NOW_MS = Date.now();
 
 function getAgentLabelFromSession(session: ChatSession): string {
-  if (session.key.startsWith('agent:lawclaw-main:')) return 'LawClaw';
-  if (session.key.startsWith('agent:main:')) return 'LawClaw';
-
   const parts = session.key.split(':');
   return parts[1] || 'LawClaw';
 }
@@ -115,6 +114,8 @@ export function Sidebar() {
 
   const gatewayStatus = useGatewayStore((state) => state.status);
   const isGatewayRunning = gatewayStatus.state === 'running';
+  const agents = useAgentsStore((state) => state.agents);
+  const fetchAgents = useAgentsStore((state) => state.fetchAgents);
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
@@ -144,8 +145,17 @@ export function Sidebar() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    void fetchAgents();
+  }, [fetchAgents]);
+
   const getSessionLabel = (key: string, displayName?: string, label?: string) =>
     sessionLabels[key] ?? label ?? displayName ?? key;
+
+  const agentNameById = useMemo(
+    () => Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent.name])),
+    [agents],
+  );
 
   const sessionBuckets: Array<{ key: SessionBucketKey; label: string; sessions: ChatSession[] }> = [
     { key: 'today', label: t('chat:historyBuckets.today'), sessions: [] },
@@ -168,6 +178,7 @@ export function Sidebar() {
   }
 
   const navItems = [
+    { to: '/agents', icon: <Bot className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.agents') },
     { to: '/channels', icon: <Radio className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.channels') },
     { to: '/skills', icon: <Puzzle className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.skills') },
     { to: '/cron', icon: <Clock className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.cronTasks') },
@@ -247,7 +258,8 @@ export function Sidebar() {
                     {bucket.label}
                   </div>
                   {bucket.sessions.map((session) => {
-                    const agentLabel = getAgentLabelFromSession(session);
+                    const agentId = getAgentLabelFromSession(session);
+                    const agentLabel = agentNameById[agentId] || (agentId === 'lawclaw-main' ? 'LawClaw' : agentId);
                     const label = getSessionLabel(session.key, session.displayName, session.label);
 
                     return (

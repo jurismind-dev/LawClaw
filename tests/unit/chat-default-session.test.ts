@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatStore } from '@/stores/chat';
 
 const DEDICATED_SESSION_KEY = 'agent:lawclaw-main:main';
+const SECONDARY_AGENT_SESSION_KEY = 'agent:contract-review:main';
 
 describe('chat store default session binding', () => {
   beforeEach(() => {
     useChatStore.setState({
       sessions: [],
       currentSessionKey: 'agent:main:main',
+      currentAgentId: 'lawclaw-main',
       hasAppliedStartupDefault: false,
       messages: [],
       streamingText: '',
@@ -27,7 +29,7 @@ describe('chat store default session binding', () => {
         return {
           success: true,
           result: {
-            sessions: [{ key: 'agent:main:main' }, { key: DEDICATED_SESSION_KEY }],
+            sessions: [{ key: SECONDARY_AGENT_SESSION_KEY }, { key: DEDICATED_SESSION_KEY }],
           },
         };
       }
@@ -51,7 +53,7 @@ describe('chat store default session binding', () => {
         return {
           success: true,
           result: {
-            sessions: [{ key: 'agent:main:main' }, { key: DEDICATED_SESSION_KEY }],
+            sessions: [{ key: SECONDARY_AGENT_SESSION_KEY }, { key: DEDICATED_SESSION_KEY }],
           },
         };
       }
@@ -65,13 +67,13 @@ describe('chat store default session binding', () => {
     });
 
     await useChatStore.getState().loadSessions();
-    useChatStore.getState().switchSession('agent:main:main');
+    useChatStore.getState().switchSession(SECONDARY_AGENT_SESSION_KEY);
     await useChatStore.getState().loadSessions();
 
-    expect(useChatStore.getState().currentSessionKey).toBe(DEDICATED_SESSION_KEY);
+    expect(useChatStore.getState().currentSessionKey).toBe(SECONDARY_AGENT_SESSION_KEY);
   });
 
-  it('filters internal migration sessions from list', async () => {
+  it('filters internal migration sessions from list while preserving other agent sessions', async () => {
     vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
       if (method === 'sessions.list') {
         return {
@@ -80,7 +82,7 @@ describe('chat store default session binding', () => {
             sessions: [
               { key: 'agent:lawclaw-main:__internal_migration__:task-1' },
               { key: 'agent:lawclaw-main:lawclaw-upgrade-migration' },
-              { key: 'agent:main:main' },
+              { key: SECONDARY_AGENT_SESSION_KEY },
               { key: DEDICATED_SESSION_KEY },
             ],
           },
@@ -98,7 +100,7 @@ describe('chat store default session binding', () => {
     await useChatStore.getState().loadSessions();
 
     const sessionKeys = useChatStore.getState().sessions.map((session) => session.key);
-    expect(sessionKeys).toEqual([DEDICATED_SESSION_KEY]);
+    expect(sessionKeys).toEqual([SECONDARY_AGENT_SESSION_KEY, DEDICATED_SESSION_KEY]);
     expect(sessionKeys).not.toContain('agent:lawclaw-main:__internal_migration__:task-1');
     expect(sessionKeys).not.toContain('agent:lawclaw-main:lawclaw-upgrade-migration');
   });
@@ -109,7 +111,7 @@ describe('chat store default session binding', () => {
         return {
           success: true,
           result: {
-            sessions: [{ key: 'agent:main:main' }],
+            sessions: [{ key: SECONDARY_AGENT_SESSION_KEY }],
           },
         };
       }
@@ -125,7 +127,10 @@ describe('chat store default session binding', () => {
     await useChatStore.getState().loadSessions();
 
     expect(useChatStore.getState().currentSessionKey).toBe(DEDICATED_SESSION_KEY);
-    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([DEDICATED_SESSION_KEY]);
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([
+      SECONDARY_AGENT_SESSION_KEY,
+      DEDICATED_SESSION_KEY,
+    ]);
   });
 
   it('falls back to dedicated default when current session is internal migration session', async () => {
@@ -141,7 +146,7 @@ describe('chat store default session binding', () => {
           result: {
             sessions: [
               { key: 'agent:lawclaw-main:__internal_migration__:task-abc' },
-              { key: 'agent:main:main' },
+              { key: SECONDARY_AGENT_SESSION_KEY },
               { key: DEDICATED_SESSION_KEY },
             ],
           },

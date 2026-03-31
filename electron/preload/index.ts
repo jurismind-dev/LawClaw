@@ -90,6 +90,12 @@ const electronAPI = {
         'provider:bindJurismindToken',
         'provider:requestOAuth',
         'provider:cancelOAuth',
+        // Agents
+        'agents:list',
+        'agents:create',
+        'agents:updateName',
+        'agents:updateModel',
+        'agents:delete',
         // Cron
         'cron:list',
         'cron:create',

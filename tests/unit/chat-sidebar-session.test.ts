@@ -12,6 +12,7 @@ describe('chat sidebar session state', () => {
         { key: DRAFT_SESSION_KEY, displayName: DRAFT_SESSION_KEY },
       ],
       currentSessionKey: DRAFT_SESSION_KEY,
+      currentAgentId: 'lawclaw-main',
       hasAppliedStartupDefault: true,
       sessionLabels: { [DRAFT_SESSION_KEY]: 'Draft memo' },
       sessionLastActivity: { [DRAFT_SESSION_KEY]: 1_000 },
@@ -92,6 +93,27 @@ describe('chat sidebar session state', () => {
     const state = useChatStore.getState();
     expect(state.sessionLabels[DRAFT_SESSION_KEY]).toBe('Need a litigation risk memo for this deal');
     expect(state.sessionLastActivity[DRAFT_SESSION_KEY]).toBe(20_000);
+  });
+
+  it('newSession keeps the active agent prefix when chatting on another agent', () => {
+    useChatStore.setState({
+      sessions: [{ key: 'agent:contract-review:main', displayName: 'agent:contract-review:main' }],
+      currentSessionKey: 'agent:contract-review:main',
+      currentAgentId: 'contract-review',
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+    vi.spyOn(Date, 'now').mockReturnValue(3_000);
+
+    useChatStore.getState().newSession();
+
+    const state = useChatStore.getState();
+    expect(state.currentSessionKey).toBe('agent:contract-review:session-3000');
+    expect(state.currentAgentId).toBe('contract-review');
+    expect(state.sessions.map((session) => session.key)).toEqual([
+      'agent:contract-review:main',
+      'agent:contract-review:session-3000',
+    ]);
   });
 
   it('deleteSession removes the session locally after the main-process soft delete', async () => {

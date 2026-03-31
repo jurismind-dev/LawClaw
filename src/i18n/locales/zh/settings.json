@@ -152,7 +152,7 @@
         "title": "关于",
         "appName": "LawClaw",
         "tagline": "图形化 AI 助手",
-        "basedOn": "基于 OpenClaw",
+        "basedOn": "本产品基于 [openclaw - Clawx] (MIT 协议) 二次开发\n本软件按“原样”提供，不提供任何明示或默示担保。使用风险由用户自行承担。",
         "version": "版本 {{version}}",
         "docs": "官网",
         "github": "GitHub"

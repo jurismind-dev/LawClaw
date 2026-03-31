@@ -24,6 +24,15 @@
         "showThinking": "Show thinking",
         "hideThinking": "Hide thinking"
     },
+    "composer": {
+        "attachFiles": "Attach files",
+        "pickAgent": "Pick agent",
+        "agentPickerTitle": "Send to an agent other than {{currentAgent}}",
+        "clearTarget": "Clear target agent",
+        "targetChip": "Send to {{agent}}",
+        "send": "Send",
+        "stop": "Stop"
+    },
     "historyBuckets": {
         "today": "Today",
         "yesterday": "Yesterday",

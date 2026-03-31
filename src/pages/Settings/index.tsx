@@ -549,7 +549,7 @@ export function Settings() {
           <p>
             <strong>{t('about.appName')}</strong> - {t('about.tagline')}
           </p>
-          <p>{t('about.basedOn')}</p>
+          <p className="whitespace-pre-line">{t('about.basedOn')}</p>
           <p>{t('about.version', { version: currentVersion })}</p>
           <div className="flex gap-4 pt-2">
             <Button

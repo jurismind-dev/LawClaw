@@ -6,10 +6,13 @@
  * Files are staged to disk via IPC — only lightweight path references
  * are sent with the message (no base64 over WebSocket).
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Send, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2, AtSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
+import { useAgentsStore } from '@/stores/agents';
+import { useChatStore } from '@/stores/chat';
 import { useTranslation } from 'react-i18next';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -26,7 +29,7 @@ export interface FileAttachment {
 }
 
 interface ChatInputProps {
-  onSend: (text: string, attachments?: FileAttachment[]) => void;
+  onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
@@ -80,8 +83,26 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
+  const agents = useAgentsStore((state) => state.agents);
+  const currentAgentId = useChatStore((state) => state.currentAgentId);
+  const currentAgentName = useMemo(
+    () => (agents ?? []).find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,
+    [agents, currentAgentId],
+  );
+  const mentionableAgents = useMemo(
+    () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
+    [agents, currentAgentId],
+  );
+  const selectedTarget = useMemo(
+    () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
+    [agents, targetAgentId],
+  );
+  const showAgentPicker = mentionableAgents.length > 0;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -90,6 +111,32 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
     }
   }, [input]);
+
+  useEffect(() => {
+    if (!targetAgentId) return;
+    if (targetAgentId === currentAgentId) {
+      setTargetAgentId(null);
+      setPickerOpen(false);
+      return;
+    }
+    if (!(agents ?? []).some((agent) => agent.id === targetAgentId)) {
+      setTargetAgentId(null);
+      setPickerOpen(false);
+    }
+  }, [agents, currentAgentId, targetAgentId]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [pickerOpen]);
 
   // ── File staging via native dialog ─────────────────────────────
 
@@ -243,8 +290,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    onSend(textToSend, attachmentsToSend);
-  }, [input, attachments, canSend, onSend]);
+    onSend(textToSend, attachmentsToSend, targetAgentId);
+    setTargetAgentId(null);
+    setPickerOpen(false);
+  }, [attachments, canSend, input, onSend, targetAgentId]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -253,6 +302,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (e.key === 'Backspace' && !input && targetAgentId) {
+        setTargetAgentId(null);
+        return;
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         const nativeEvent = e.nativeEvent as KeyboardEvent;
         if (isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
@@ -262,7 +315,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         handleSend();
       }
     },
-    [handleSend],
+    [handleSend, input, targetAgentId],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
@@ -335,56 +388,120 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         )}
 
         {/* Input Row */}
-        <div className={`flex items-end gap-2 ${dragOver ? 'ring-2 ring-primary rounded-lg' : ''}`}>
+        <div className={cn('rounded-[28px] border bg-background p-1.5 shadow-sm transition-all', dragOver ? 'ring-2 ring-primary' : 'border-border')}>
+          {selectedTarget && (
+            <div className="px-2.5 pb-1 pt-2">
+              <button
+                type="button"
+                onClick={() => setTargetAgentId(null)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[13px] font-medium text-foreground transition-colors hover:bg-primary/10"
+                title={t('composer.clearTarget')}
+              >
+                <span>{t('composer.targetChip', { agent: selectedTarget.name })}</span>
+                <X className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </div>
+          )}
 
-          {/* Attach Button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 h-[44px] w-[44px]"
-            onClick={pickFiles}
-            disabled={disabled || sending}
-            title="Attach files"
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
+          <div className="flex items-end gap-2">
 
-          {/* Textarea */}
-          <div className="flex-1 relative">
-            <Textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onCompositionStart={() => {
-                isComposingRef.current = true;
-              }}
-              onCompositionEnd={() => {
-                isComposingRef.current = false;
-              }}
-              onPaste={handlePaste}
-              placeholder={disabled ? t('inputDisabledPlaceholder') : t('inputPlaceholder')}
-              disabled={disabled}
-              className="min-h-[44px] max-h-[200px] resize-none pr-4"
-              rows={1}
-            />
-          </div>
+            {/* Attach Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0 h-[44px] w-[44px] rounded-full"
+              onClick={pickFiles}
+              disabled={disabled || sending}
+              title={t('composer.attachFiles')}
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
 
-          {/* Send Button */}
-          <Button
-            onClick={sending ? handleStop : handleSend}
-            disabled={sending ? !canStop : !canSend}
-            size="icon"
-            className="shrink-0 h-[44px] w-[44px]"
-            variant={sending ? 'destructive' : 'default'}
-            title={sending ? 'Stop' : 'Send'}
-          >
-            {sending ? (
-              <Square className="h-4 w-4" />
-            ) : (
-              <Send className="h-4 w-4" />
+            {showAgentPicker && (
+              <div ref={pickerRef} className="relative shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'h-[44px] w-[44px] rounded-full',
+                    (pickerOpen || selectedTarget) && 'bg-primary/10 text-primary hover:bg-primary/20',
+                  )}
+                  onClick={() => setPickerOpen((open) => !open)}
+                  disabled={disabled || sending}
+                  title={t('composer.pickAgent')}
+                >
+                  <AtSign className="h-4 w-4" />
+                </Button>
+                {pickerOpen && (
+                  <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-card">
+                    <div className="px-3 py-2 text-[11px] font-medium text-muted-foreground/80">
+                      {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      {mentionableAgents.map((agent) => (
+                        <button
+                          key={agent.id}
+                          type="button"
+                          onClick={() => {
+                            setTargetAgentId(agent.id);
+                            setPickerOpen(false);
+                            textareaRef.current?.focus();
+                          }}
+                          className={cn(
+                            'flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors hover:bg-muted',
+                            agent.id === targetAgentId && 'bg-muted'
+                          )}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-foreground">{agent.name}</div>
+                            <div className="truncate font-mono text-xs text-muted-foreground">{agent.id}</div>
+                          </div>
+                          {agent.id === targetAgentId && <span className="text-xs text-primary">•</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
-          </Button>
+
+            {/* Textarea */}
+            <div className="relative flex-1">
+              <Textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                }}
+                onCompositionEnd={() => {
+                  isComposingRef.current = false;
+                }}
+                onPaste={handlePaste}
+                placeholder={disabled ? t('inputDisabledPlaceholder') : t('inputPlaceholder')}
+                disabled={disabled}
+                className="min-h-[44px] max-h-[200px] resize-none border-0 bg-transparent pr-4 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                rows={1}
+              />
+            </div>
+
+            {/* Send Button */}
+            <Button
+              onClick={sending ? handleStop : handleSend}
+              disabled={sending ? !canStop : !canSend}
+              size="icon"
+              className="shrink-0 h-[44px] w-[44px] rounded-full"
+              variant={sending ? 'destructive' : 'default'}
+              title={sending ? t('composer.stop') : t('composer.send')}
+            >
+              {sending ? (
+                <Square className="h-4 w-4" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

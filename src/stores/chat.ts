@@ -4,6 +4,7 @@
  * Communicates with OpenClaw Gateway via gateway:rpc IPC.
  */
 import { create } from 'zustand';
+import { useAgentsStore } from './agents';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -85,6 +86,7 @@ interface ChatState {
   // Sessions
   sessions: ChatSession[];
   currentSessionKey: string;
+  currentAgentId: string;
   hasAppliedStartupDefault: boolean;
   sessionLabels: Record<string, string>;
   sessionLastActivity: Record<string, number>;
@@ -100,7 +102,11 @@ interface ChatState {
   deleteSession: (key: string) => Promise<void>;
   cleanupEmptySession: () => void;
   loadHistory: (quiet?: boolean) => Promise<void>;
-  sendMessage: (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => Promise<void>;
+  sendMessage: (
+    text: string,
+    attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+    targetAgentId?: string | null,
+  ) => Promise<void>;
   abortRun: () => Promise<void>;
   handleChatEvent: (event: Record<string, unknown>) => void;
   toggleThinking: () => void;
@@ -141,9 +147,36 @@ function clearHistoryPoll(): void {
 
 const DEFAULT_CANONICAL_PREFIX = 'agent:lawclaw-main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
-const DEFAULT_CANONICAL_SESSION_PREFIX = `${DEFAULT_CANONICAL_PREFIX}:`;
 const INTERNAL_MIGRATION_SESSION_PREFIX = `${DEFAULT_CANONICAL_PREFIX}:__internal_migration__:`;
 const LEGACY_MIGRATION_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:lawclaw-upgrade-migration`;
+
+function normalizeAgentId(value: string | undefined | null): string {
+  return (value ?? '').trim().toLowerCase() || 'lawclaw-main';
+}
+
+function getAgentIdFromSessionKey(sessionKey: string): string {
+  if (!sessionKey.startsWith('agent:')) return 'lawclaw-main';
+  const [, agentId] = sessionKey.split(':');
+  return normalizeAgentId(agentId);
+}
+
+function buildFallbackMainSessionKey(agentId: string): string {
+  return `agent:${normalizeAgentId(agentId)}:main`;
+}
+
+function resolveMainSessionKeyForAgent(agentId: string | undefined | null): string | null {
+  if (!agentId) return null;
+  const normalizedAgentId = normalizeAgentId(agentId);
+  const summary = useAgentsStore.getState().agents.find((agent) => agent.id === normalizedAgentId);
+  return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
+}
+
+function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession[] {
+  if (sessions.some((session) => session.key === sessionKey)) {
+    return sessions;
+  }
+  return [...sessions, { key: sessionKey, displayName: sessionKey }];
+}
 
 // ── Local image cache ─────────────────────────────────────────
 // The Gateway doesn't store image attachments in session content blocks,
@@ -948,6 +981,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sessions: [],
   currentSessionKey: DEFAULT_SESSION_KEY,
+  currentAgentId: 'lawclaw-main',
   hasAppliedStartupDefault: false,
   sessionLabels: {},
   sessionLastActivity: {},
@@ -975,11 +1009,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
           model: s.model ? String(s.model) : undefined,
         })).filter((s: ChatSession) => s.key);
-        const visibleSessions = sessions.filter(
-          (session) =>
-            session.key.startsWith(DEFAULT_CANONICAL_SESSION_PREFIX) &&
-            !isInternalMigrationSessionKey(session.key)
-        );
+        const visibleSessions = sessions.filter((session) => !isInternalMigrationSessionKey(session.key));
 
         const canonicalBySuffix = new Map<string, string>();
         for (const session of visibleSessions) {
@@ -1009,9 +1039,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (isInternalMigrationSessionKey(nextSessionKey)) {
           nextSessionKey = DEFAULT_SESSION_KEY;
         }
-        if (!nextSessionKey.startsWith(DEFAULT_CANONICAL_SESSION_PREFIX)) {
-          nextSessionKey = DEFAULT_SESSION_KEY;
-        }
         if (!nextSessionKey.startsWith('agent:')) {
           const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
           if (canonicalMatch) {
@@ -1037,6 +1064,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({
           sessions: sessionsWithCurrent,
           currentSessionKey: nextSessionKey,
+          currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
           hasAppliedStartupDefault: true,
         });
 
@@ -1107,11 +1135,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages.length === 0 &&
       !sessionLastActivity[currentSessionKey] &&
       !sessionLabels[currentSessionKey];
-    const nextSessionKey = key.startsWith(DEFAULT_CANONICAL_SESSION_PREFIX)
+    const nextSessionKey = key.startsWith('agent:')
       ? key
       : DEFAULT_SESSION_KEY;
     set((state) => ({
       currentSessionKey: nextSessionKey,
+      currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
       messages: [],
       streamingText: '',
       streamingMessage: null,
@@ -1167,6 +1196,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         lastUserMessageAt: null,
         pendingToolImages: [],
         currentSessionKey: nextSession?.key ?? DEFAULT_SESSION_KEY,
+        currentAgentId: getAgentIdFromSessionKey(nextSession?.key ?? DEFAULT_SESSION_KEY),
       }));
       if (nextSession) {
         get().loadHistory();
@@ -1190,10 +1220,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages.length === 0 &&
       !sessionLastActivity[currentSessionKey] &&
       !sessionLabels[currentSessionKey];
-    const newKey = `${DEFAULT_CANONICAL_PREFIX}:session-${Date.now()}`;
+    const nextPrefix = currentSessionKey.startsWith('agent:')
+      ? currentSessionKey.split(':').slice(0, 2).join(':')
+      : DEFAULT_CANONICAL_PREFIX;
+    const newKey = `${nextPrefix}:session-${Date.now()}`;
     const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
     set((s) => ({
       currentSessionKey: newKey,
+      currentAgentId: getAgentIdFromSessionKey(newKey),
       sessions: [
         ...(leavingEmptySession
           ? s.sessions.filter((session) => session.key !== currentSessionKey)
@@ -1371,11 +1405,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Send message ──
 
-  sendMessage: async (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => {
+  sendMessage: async (
+    text: string,
+    attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+    targetAgentId?: string | null,
+  ) => {
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
 
-    const { currentSessionKey } = get();
+    const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
+    if (targetSessionKey !== get().currentSessionKey) {
+      const current = get();
+      const leavingEmpty = !current.currentSessionKey.endsWith(':main')
+        && current.messages.length === 0
+        && !current.sessionLastActivity[current.currentSessionKey]
+        && !current.sessionLabels[current.currentSessionKey];
+      set((state) => ({
+        currentSessionKey: targetSessionKey,
+        currentAgentId: getAgentIdFromSessionKey(targetSessionKey),
+        sessions: ensureSessionEntry(
+          leavingEmpty
+            ? state.sessions.filter((session) => session.key !== current.currentSessionKey)
+            : state.sessions,
+          targetSessionKey,
+        ),
+        sessionLabels: leavingEmpty
+          ? clearSessionEntryFromMap(state.sessionLabels, current.currentSessionKey)
+          : state.sessionLabels,
+        sessionLastActivity: leavingEmpty
+          ? clearSessionEntryFromMap(state.sessionLastActivity, current.currentSessionKey)
+          : state.sessionLastActivity,
+        messages: [],
+        streamingText: '',
+        streamingMessage: null,
+        streamingTools: [],
+        activeRunId: null,
+        error: null,
+        pendingFinal: false,
+        lastUserMessageAt: null,
+        pendingToolImages: [],
+      }));
+      await get().loadHistory(true);
+    }
+
+    const currentSessionKey = targetSessionKey;
 
     // Add user message optimistically (with local file metadata for UI display)
     const nowMs = Date.now();

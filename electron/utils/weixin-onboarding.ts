@@ -12,7 +12,11 @@ import {
 import { logger } from './logger';
 import { applyOpenClawConfigEnvFallbacks } from './openclaw-config-env';
 import { applyBundledNpmToCliEnv, getNodeExecForCli } from './openclaw-cli';
-import { detectPluginInstallationState, isAlreadyInstalledErrorMessage } from './openclaw-plugin-install';
+import {
+  detectPluginInstallationState,
+  isAlreadyInstalledErrorMessage,
+  removeInstalledPluginDir,
+} from './openclaw-plugin-install';
 import { ensureDir, getOpenClawConfigDir, getOpenClawStatus } from './paths';
 import { renderQrPngBase64 } from './qr-code';
 import { stripUtf8Bom } from './text-encoding';
@@ -361,13 +365,10 @@ class WeixinOnboardingManager extends EventEmitter {
             `检测到微信插件版本 ${currentInstalledVersion || 'unknown'} 与内置 OpenClaw ${getOpenClawStatus().version || '当前版本'} 不兼容，正在切换到 ${WEIXIN_PLUGIN_VERSION}...`,
         });
 
-        const uninstallResult = await this.runOpenClawCli(['plugins', 'uninstall', WEIXIN_CHANNEL_ID]);
-        if (!uninstallResult.success) {
-          const uninstallDetails = [uninstallResult.error, uninstallResult.stderr, uninstallResult.stdout]
-            .filter(Boolean)
-            .join('\n');
-          throw new Error(uninstallDetails || '卸载不兼容的微信插件失败');
-        }
+        await this.removeExistingPluginInstallDir({
+          reason: `微信插件版本 ${currentInstalledVersion || 'unknown'} 不兼容`,
+          failureMessage: '卸载不兼容的微信插件失败',
+        });
       }
 
       let installResult = await this.runOpenClawCli(['plugins', 'install', WEIXIN_PLUGIN_NPM_SPEC]);
@@ -388,13 +389,10 @@ class WeixinOnboardingManager extends EventEmitter {
             lastMessage: `微信插件目录已存在，正在重装兼容版本 ${WEIXIN_PLUGIN_VERSION}...`,
           });
 
-          const uninstallResult = await this.runOpenClawCli(['plugins', 'uninstall', WEIXIN_CHANNEL_ID]);
-          if (!uninstallResult.success) {
-            const uninstallDetails = [uninstallResult.error, uninstallResult.stderr, uninstallResult.stdout]
-              .filter(Boolean)
-              .join('\n');
-            throw new Error(uninstallDetails || '卸载已存在的微信插件失败');
-          }
+          await this.removeExistingPluginInstallDir({
+            reason: '微信插件安装目录已存在',
+            failureMessage: '卸载已存在的微信插件失败',
+          });
 
           installResult = await this.runOpenClawCli(['plugins', 'install', WEIXIN_PLUGIN_NPM_SPEC]);
         }
@@ -423,6 +421,35 @@ class WeixinOnboardingManager extends EventEmitter {
       if (this.pluginInstallPromise === installPromise) {
         this.pluginInstallPromise = null;
       }
+    }
+  }
+
+  private async removeExistingPluginInstallDir(options: {
+    reason: string;
+    failureMessage: string;
+  }): Promise<void> {
+    const uninstallResult = await this.runOpenClawCli(['plugins', 'uninstall', WEIXIN_CHANNEL_ID]);
+    if (!uninstallResult.success) {
+      const uninstallDetails = [uninstallResult.error, uninstallResult.stderr, uninstallResult.stdout]
+        .filter(Boolean)
+        .join('\n');
+      logger.warn('[WeixinOnboarding] OpenClaw CLI uninstall failed, falling back to direct plugin directory cleanup', {
+        reason: options.reason,
+        details: uninstallDetails,
+      });
+    }
+
+    const removedInstallDir = removeInstalledPluginDir(join(getOpenClawConfigDir(), 'extensions'), WEIXIN_CHANNEL_ID);
+    await this.refreshStatus();
+
+    if (await isWeixinPluginInstalledDirPresent()) {
+      throw new Error(options.failureMessage);
+    }
+
+    if (removedInstallDir) {
+      logger.info('[WeixinOnboarding] Removed stale Weixin plugin directory', {
+        reason: options.reason,
+      });
     }
   }
 

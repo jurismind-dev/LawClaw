@@ -6,6 +6,7 @@ import {
   detectPluginInstallationState,
   finalizeBundledPluginConfigAfterInstall,
   isAlreadyInstalledErrorMessage,
+  removeInstalledPluginDir,
   sanitizePluginPackageManifestForLocalInstall,
 } from '../../electron/utils/openclaw-plugin-install';
 
@@ -123,6 +124,37 @@ describe('openclaw plugin manifest sanitizer', () => {
     expect(result.changed).toBe(true);
     expect(saved.dependencies).toEqual({});
     expect(saved.devDependencies).toMatchObject({ typescript: '^5.9.3' });
+  });
+});
+
+describe('openclaw plugin install directory cleanup', () => {
+  let tempConfigDir = '';
+
+  beforeEach(() => {
+    tempConfigDir = mkdtempSync(join(tmpdir(), 'clawx-plugin-install-dir-'));
+  });
+
+  afterEach(() => {
+    if (tempConfigDir) {
+      rmSync(tempConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  it('removes an existing installed plugin directory', () => {
+    const pluginDir = join(tempConfigDir, 'openclaw-weixin');
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, 'package.json'), '{"name":"openclaw-weixin"}\n', 'utf-8');
+
+    const removed = removeInstalledPluginDir(tempConfigDir, 'openclaw-weixin');
+
+    expect(removed).toBe(true);
+    expect(() => readFileSync(join(pluginDir, 'package.json'), 'utf-8')).toThrow();
+  });
+
+  it('returns false when the installed plugin directory does not exist', () => {
+    const removed = removeInstalledPluginDir(tempConfigDir, 'openclaw-weixin');
+
+    expect(removed).toBe(false);
   });
 });
 

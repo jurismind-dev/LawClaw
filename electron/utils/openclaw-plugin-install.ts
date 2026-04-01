@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
 
@@ -105,6 +105,16 @@ export function isAlreadyInstalledErrorMessage(message?: string): boolean {
     return false;
   }
   return ALREADY_INSTALLED_REGEX.test(message);
+}
+
+export function removeInstalledPluginDir(extensionsDir: string, pluginId: string): boolean {
+  const installDir = join(extensionsDir, pluginId);
+  if (!existsSync(installDir)) {
+    return false;
+  }
+
+  rmSync(installDir, { recursive: true, force: true });
+  return true;
 }
 
 export function finalizeBundledPluginConfigAfterInstall(

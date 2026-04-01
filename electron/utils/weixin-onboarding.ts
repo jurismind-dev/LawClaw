@@ -354,11 +354,11 @@ class WeixinOnboardingManager extends EventEmitter {
 
     const installPromise = (async () => {
       const currentInstalledVersion = await getInstalledWeixinPluginVersion();
-      if (currentInstalledVersion && currentInstalledVersion !== WEIXIN_PLUGIN_VERSION) {
+      if (this.status.pluginInstalled && (!currentInstalledVersion || currentInstalledVersion !== WEIXIN_PLUGIN_VERSION)) {
         this.setStatus({
           phase: 'installing',
           lastMessage:
-            `检测到微信插件版本 ${currentInstalledVersion} 与内置 OpenClaw ${getOpenClawStatus().version || '当前版本'} 不兼容，正在切换到 ${WEIXIN_PLUGIN_VERSION}...`,
+            `检测到微信插件版本 ${currentInstalledVersion || 'unknown'} 与内置 OpenClaw ${getOpenClawStatus().version || '当前版本'} 不兼容，正在切换到 ${WEIXIN_PLUGIN_VERSION}...`,
         });
 
         const uninstallResult = await this.runOpenClawCli(['plugins', 'uninstall', WEIXIN_CHANNEL_ID]);
@@ -370,14 +370,41 @@ class WeixinOnboardingManager extends EventEmitter {
         }
       }
 
-      const installResult = await this.runOpenClawCli(['plugins', 'install', WEIXIN_PLUGIN_NPM_SPEC]);
+      let installResult = await this.runOpenClawCli(['plugins', 'install', WEIXIN_PLUGIN_NPM_SPEC]);
+      if (!installResult.success) {
+        const initialDetails = [installResult.error, installResult.stderr, installResult.stdout]
+          .filter(Boolean)
+          .join('\n');
+
+        if (isAlreadyInstalledErrorMessage(initialDetails)) {
+          await this.refreshStatus();
+          const existingVersion = await getInstalledWeixinPluginVersion();
+          if (existingVersion === WEIXIN_PLUGIN_VERSION) {
+            return;
+          }
+
+          this.setStatus({
+            phase: 'installing',
+            lastMessage: `微信插件目录已存在，正在重装兼容版本 ${WEIXIN_PLUGIN_VERSION}...`,
+          });
+
+          const uninstallResult = await this.runOpenClawCli(['plugins', 'uninstall', WEIXIN_CHANNEL_ID]);
+          if (!uninstallResult.success) {
+            const uninstallDetails = [uninstallResult.error, uninstallResult.stderr, uninstallResult.stdout]
+              .filter(Boolean)
+              .join('\n');
+            throw new Error(uninstallDetails || '卸载已存在的微信插件失败');
+          }
+
+          installResult = await this.runOpenClawCli(['plugins', 'install', WEIXIN_PLUGIN_NPM_SPEC]);
+        }
+      }
+
       if (!installResult.success) {
         const details = [installResult.error, installResult.stderr, installResult.stdout]
           .filter(Boolean)
           .join('\n');
-        if (!isAlreadyInstalledErrorMessage(details)) {
-          throw new Error(details || '安装微信插件失败');
-        }
+        throw new Error(details || '安装微信插件失败');
       }
 
       await this.refreshStatus();

@@ -71,6 +71,14 @@ describe('openclaw plugin already-installed error matcher', () => {
     expect(isAlreadyInstalledErrorMessage('Plugin WEATHER-BOT is ALREADY INSTALLED')).toBe(true);
   });
 
+  it('matches plugin already exists errors from the OpenClaw CLI', () => {
+    expect(
+      isAlreadyInstalledErrorMessage(
+        'plugin already exists: C:\\Users\\demo\\.openclaw\\extensions\\openclaw-weixin (delete it first)'
+      )
+    ).toBe(true);
+  });
+
   it('does not match unrelated error messages', () => {
     expect(isAlreadyInstalledErrorMessage('network timeout while downloading package')).toBe(false);
   });

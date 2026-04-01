@@ -4,7 +4,7 @@ import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
 
 type JsonObject = Record<string, unknown>;
 
-const ALREADY_INSTALLED_REGEX = /already\s+installed/i;
+const ALREADY_INSTALLED_REGEX = /(?:already\s+installed|already\s+exists|delete\s+it\s+first)/i;
 const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
 
 export type PluginInstallSource = 'extensions' | 'plugins.installs' | 'plugins.load.paths';

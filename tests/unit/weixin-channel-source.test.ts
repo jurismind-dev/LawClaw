@@ -17,6 +17,16 @@ describe('weixin channel integration', () => {
     expect(setupSource).toContain('<WeixinOnboardingPanel');
   });
 
+  it('pins the Weixin plugin to the legacy-compatible version for the bundled OpenClaw host', () => {
+    const stateSource = readSource('electron/utils/weixin-channel-state.ts');
+    const onboardingSource = readSource('electron/utils/weixin-onboarding.ts');
+
+    expect(stateSource).toContain("export const WEIXIN_PLUGIN_VERSION = '1.0.3'");
+    expect(stateSource).toContain('`@tencent-weixin/openclaw-weixin@${WEIXIN_PLUGIN_VERSION}`');
+    expect(onboardingSource).toContain('installedVersion === WEIXIN_PLUGIN_VERSION');
+    expect(onboardingSource).toContain("['plugins', 'uninstall', WEIXIN_CHANNEL_ID]");
+  });
+
   it('deletes channels by their real type and account id instead of splitting hyphenated ids', () => {
     const storeSource = readSource('src/stores/channels.ts');
 

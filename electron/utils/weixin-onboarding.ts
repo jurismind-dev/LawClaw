@@ -23,6 +23,8 @@ import {
   WEIXIN_DEFAULT_BOT_TYPE,
   WEIXIN_DEFAULT_CDN_BASE_URL,
   WEIXIN_PLUGIN_NPM_SPEC,
+  WEIXIN_PLUGIN_VERSION,
+  getInstalledWeixinPluginVersion,
   getPrimaryWeixinAccountId,
   hasStoredWeixinCredentials,
   isWeixinPluginInstalledDirPresent,
@@ -336,19 +338,38 @@ class WeixinOnboardingManager extends EventEmitter {
 
   private async ensurePluginInstalled(): Promise<void> {
     await this.refreshStatus();
-    if (this.status.pluginInstalled) {
+    const installedVersion = await getInstalledWeixinPluginVersion();
+    if (this.status.pluginInstalled && installedVersion === WEIXIN_PLUGIN_VERSION) {
       return;
     }
 
     if (this.pluginInstallPromise) {
       await this.pluginInstallPromise;
       await this.refreshStatus();
-      if (this.status.pluginInstalled) {
+      const resolvedInstalledVersion = await getInstalledWeixinPluginVersion();
+      if (this.status.pluginInstalled && resolvedInstalledVersion === WEIXIN_PLUGIN_VERSION) {
         return;
       }
     }
 
     const installPromise = (async () => {
+      const currentInstalledVersion = await getInstalledWeixinPluginVersion();
+      if (currentInstalledVersion && currentInstalledVersion !== WEIXIN_PLUGIN_VERSION) {
+        this.setStatus({
+          phase: 'installing',
+          lastMessage:
+            `检测到微信插件版本 ${currentInstalledVersion} 与内置 OpenClaw ${getOpenClawStatus().version || '当前版本'} 不兼容，正在切换到 ${WEIXIN_PLUGIN_VERSION}...`,
+        });
+
+        const uninstallResult = await this.runOpenClawCli(['plugins', 'uninstall', WEIXIN_CHANNEL_ID]);
+        if (!uninstallResult.success) {
+          const uninstallDetails = [uninstallResult.error, uninstallResult.stderr, uninstallResult.stdout]
+            .filter(Boolean)
+            .join('\n');
+          throw new Error(uninstallDetails || '卸载不兼容的微信插件失败');
+        }
+      }
+
       const installResult = await this.runOpenClawCli(['plugins', 'install', WEIXIN_PLUGIN_NPM_SPEC]);
       if (!installResult.success) {
         const details = [installResult.error, installResult.stderr, installResult.stdout]
@@ -360,6 +381,12 @@ class WeixinOnboardingManager extends EventEmitter {
       }
 
       await this.refreshStatus();
+      const resolvedInstalledVersion = await getInstalledWeixinPluginVersion();
+      if (resolvedInstalledVersion !== WEIXIN_PLUGIN_VERSION) {
+        throw new Error(
+          `微信插件版本校验失败：期望 ${WEIXIN_PLUGIN_VERSION}，实际 ${resolvedInstalledVersion || 'unknown'}`
+        );
+      }
     })();
 
     this.pluginInstallPromise = installPromise;

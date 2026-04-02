@@ -40,6 +40,8 @@ type ControlUiInfo = {
 
 const LAWCLAW_DOCS_URL = 'https://jurismind.com';
 const LAWCLAW_GITHUB_URL = 'https://github.com/jurismind-dev/LawClaw';
+const LAWCLAW_PRIVACY_POLICY_URL = 'https://files.jurismind.com/PrivacyPolicy.pdf';
+const LAWCLAW_SERVICE_AGREEMENT_URL = 'https://files.jurismind.com/ServiceAgreement.pdf';
 const LAWCLAW_MIT_LICENSE_URL =
   'https://github.com/jurismind-dev/LawClaw?tab=License-1-ov-file#readme';
 
@@ -580,7 +582,7 @@ export function Settings() {
           </p>
           <p className="whitespace-pre-line">{t('about.disclaimer')}</p>
           <p>{t('about.version', { version: currentVersion })}</p>
-          <div className="flex gap-4 pt-2">
+          <div className="flex flex-wrap gap-4 pt-2">
             <Button
               variant="link"
               className="h-auto p-0"
@@ -594,6 +596,20 @@ export function Settings() {
               onClick={() => window.electron.openExternal(LAWCLAW_GITHUB_URL)}
             >
               {t('about.github')}
+            </Button>
+            <Button
+              variant="link"
+              className="h-auto p-0"
+              onClick={() => window.electron.openExternal(LAWCLAW_SERVICE_AGREEMENT_URL)}
+            >
+              {t('about.serviceAgreement')}
+            </Button>
+            <Button
+              variant="link"
+              className="h-auto p-0"
+              onClick={() => window.electron.openExternal(LAWCLAW_PRIVACY_POLICY_URL)}
+            >
+              {t('about.privacyPolicy')}
             </Button>
           </div>
         </CardContent>

@@ -25,22 +25,9 @@ import zhCron from './locales/zh/cron.json';
 import zhSetup from './locales/zh/setup.json';
 import zhUpgrade from './locales/zh/upgrade.json';
 
-// JA
-import jaCommon from './locales/ja/common.json';
-import jaSettings from './locales/ja/settings.json';
-import jaDashboard from './locales/ja/dashboard.json';
-import jaChat from './locales/ja/chat.json';
-import jaChannels from './locales/ja/channels.json';
-import jaAgents from './locales/ja/agents.json';
-import jaSkills from './locales/ja/skills.json';
-import jaCron from './locales/ja/cron.json';
-import jaSetup from './locales/ja/setup.json';
-import jaUpgrade from './locales/ja/upgrade.json';
-
 export const SUPPORTED_LANGUAGES = [
-    { code: 'en', label: 'English' },
     { code: 'zh', label: '中文' },
-    { code: 'ja', label: '日本語' },
+    { code: 'en', label: 'English' },
 ] as const;
 
 export type LanguageCode = (typeof SUPPORTED_LANGUAGES)[number]['code'];
@@ -69,18 +56,6 @@ const resources = {
         cron: zhCron,
         setup: zhSetup,
         upgrade: zhUpgrade,
-    },
-    ja: {
-        common: jaCommon,
-        settings: jaSettings,
-        dashboard: jaDashboard,
-        chat: jaChat,
-        channels: jaChannels,
-        agents: jaAgents,
-        skills: jaSkills,
-        cron: jaCron,
-        setup: jaSetup,
-        upgrade: jaUpgrade,
     },
 };
 

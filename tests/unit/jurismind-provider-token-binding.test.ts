@@ -157,4 +157,18 @@ describe('jurismind provider token binding', () => {
     expect(source).not.toContain('bindTokenByOpenId(');
     expect(source).not.toContain('queryBoundTokenWithRetry(');
   });
+
+  it('renders callback pages with manual return guidance instead of auto-switch messaging', () => {
+    const source = readBindingSource();
+
+    expect(source).toContain("title: '授权登录成功'");
+    expect(source).toContain("join(process.resourcesPath, 'resources', 'sso-logo.png')");
+    expect(source).toContain("join(__dirname, '../../resources/sso-logo.png')");
+    expect(source).toContain('class="brand-logo"');
+    expect(source).toContain("summaryLines: [");
+    expect(source).toContain('您已成功通过 Jurismind 账号验证。');
+    expect(source).toContain("statusText: ''");
+    expect(source).not.toContain('登录结果已同步回 LawClaw 桌面端，请手动返回应用查看绑定结果。');
+    expect(source).not.toContain('当前不会自动跳转，请手动切回 LawClaw 桌面端');
+  });
 });

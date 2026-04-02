@@ -156,6 +156,8 @@
         "disclaimer": "本软件按“原样”提供，不提供任何明示或默示担保。使用风险由用户自行承担。",
         "version": "版本 {{version}}",
         "docs": "官网",
-        "github": "GitHub"
+        "github": "GitHub",
+        "serviceAgreement": "用户协议",
+        "privacyPolicy": "隐私政策"
     }
 }

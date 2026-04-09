@@ -68,6 +68,18 @@ function Get-ManagedPythonVenvExe {
   return Join-Path (Get-ManagedPythonVenvRoot) 'Scripts\python.exe'
 }
 
+function Get-ManagedPythonReadyMarker {
+  return Join-Path (Get-ManagedPythonVenvRoot) '.lawclaw-managed-python-ready.json'
+}
+
+function Set-ManagedPythonReadyMarker {
+  try {
+    Set-Content -LiteralPath (Get-ManagedPythonReadyMarker) -Value '{"version":"3.12"}' -Encoding utf8
+  } catch {
+    # best-effort cache marker
+  }
+}
+
 function Test-ManagedPythonDependencies {
   param(
     [Parameter(Mandatory = $true)]
@@ -90,28 +102,40 @@ if (-not (Test-Path -LiteralPath $uvExe)) {
   exit 1
 }
 
-$basePythonExe = Find-ManagedPythonPath -UvExe $uvExe
-if (-not $basePythonExe) {
-  & $uvExe python install 3.12
-  if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+$pythonExe = Get-ManagedPythonVenvExe
+$readyMarker = Get-ManagedPythonReadyMarker
+if ((Test-Path -LiteralPath $pythonExe) -and (Test-Path -LiteralPath $readyMarker)) {
+  & $pythonExe @PythonArgs
+  exit $LASTEXITCODE
+}
+
+if ((Test-Path -LiteralPath $pythonExe) -and (Test-ManagedPythonDependencies -PythonExe $pythonExe -Quiet)) {
+  Set-ManagedPythonReadyMarker
+  & $pythonExe @PythonArgs
+  exit $LASTEXITCODE
+}
+
+if (-not (Test-Path -LiteralPath $pythonExe)) {
+  $basePythonExe = Find-ManagedPythonPath -UvExe $uvExe
+  if (-not $basePythonExe) {
+    & $uvExe python install 3.12
+    if ($LASTEXITCODE -ne 0) {
+      exit $LASTEXITCODE
+    }
+
+    $basePythonExe = Find-ManagedPythonPath -UvExe $uvExe
   }
 
-  $basePythonExe = Find-ManagedPythonPath -UvExe $uvExe
-}
+  if (-not $basePythonExe) {
+    [Console]::Error.WriteLine('Managed Python 3.12 is not available through bundled uv.')
+    exit 1
+  }
 
-if (-not $basePythonExe) {
-  [Console]::Error.WriteLine('Managed Python 3.12 is not available through bundled uv.')
-  exit 1
-}
+  if (-not (Test-Path -LiteralPath $basePythonExe)) {
+    [Console]::Error.WriteLine("Managed Python executable not found: $basePythonExe")
+    exit 1
+  }
 
-if (-not (Test-Path -LiteralPath $basePythonExe)) {
-  [Console]::Error.WriteLine("Managed Python executable not found: $basePythonExe")
-  exit 1
-}
-
-$pythonExe = Get-ManagedPythonVenvExe
-if (-not (Test-Path -LiteralPath $pythonExe)) {
   & $uvExe venv --no-project --clear --python $basePythonExe (Get-ManagedPythonVenvRoot)
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
@@ -134,5 +158,6 @@ if (-not (Test-ManagedPythonDependencies -PythonExe $pythonExe -Quiet)) {
   }
 }
 
+Set-ManagedPythonReadyMarker
 & $pythonExe @PythonArgs
 exit $LASTEXITCODE

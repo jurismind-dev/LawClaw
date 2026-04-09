@@ -9,6 +9,8 @@ const childProcessMocks = vi.hoisted(() => ({
 
 const fsMocks = vi.hoisted(() => ({
   existsSync: vi.fn(() => true),
+  rmSync: vi.fn(),
+  writeFileSync: vi.fn(),
 }));
 
 const electronMocks = vi.hoisted(() => ({
@@ -45,8 +47,12 @@ vi.mock('child_process', () => ({
 
 vi.mock('fs', () => ({
   existsSync: fsMocks.existsSync,
+  rmSync: fsMocks.rmSync,
+  writeFileSync: fsMocks.writeFileSync,
   default: {
     existsSync: fsMocks.existsSync,
+    rmSync: fsMocks.rmSync,
+    writeFileSync: fsMocks.writeFileSync,
   },
 }));
 

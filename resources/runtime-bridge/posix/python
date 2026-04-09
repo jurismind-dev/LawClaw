@@ -5,6 +5,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 RESOURCES_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 VENV_DIR="$HOME/.LawClaw/support/managed-python/3.12/$(uname | tr '[:upper:]' '[:lower:]')"
 VENV_PYTHON_EXE="$VENV_DIR/bin/python"
+READY_MARKER="$VENV_DIR/.lawclaw-managed-python-ready.json"
 PYTHON_CHECK_SCRIPT='import importlib
 modules = ["docx", "openpyxl", "lxml", "defusedxml"]
 missing = []
@@ -27,6 +28,17 @@ fi
 if [ ! -x "$UV_EXE" ]; then
   echo "Bundled uv runtime not found: $UV_EXE" >&2
   exit 1
+fi
+
+if [ -x "$VENV_PYTHON_EXE" ] && [ -f "$READY_MARKER" ]; then
+  exec "$VENV_PYTHON_EXE" "$@"
+fi
+
+if [ -x "$VENV_PYTHON_EXE" ] && "$VENV_PYTHON_EXE" -c "$PYTHON_CHECK_SCRIPT" >/dev/null 2>&1; then
+  if [ ! -f "$READY_MARKER" ]; then
+    printf '{"version":"3.12"}\n' >"$READY_MARKER" 2>/dev/null || true
+  fi
+  exec "$VENV_PYTHON_EXE" "$@"
 fi
 
 BASE_PYTHON_EXE="$("$UV_EXE" python find 3.12 --managed-python 2>/dev/null || true)"
@@ -54,4 +66,5 @@ if ! "$VENV_PYTHON_EXE" -c "$PYTHON_CHECK_SCRIPT" >/dev/null 2>&1; then
   "$VENV_PYTHON_EXE" -c "$PYTHON_CHECK_SCRIPT"
 fi
 
+printf '{"version":"3.12"}\n' >"$READY_MARKER" 2>/dev/null || true
 exec "$VENV_PYTHON_EXE" "$@"

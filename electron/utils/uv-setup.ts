@@ -1,12 +1,13 @@
 import { app } from 'electron';
 import { execSync, spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { getUvMirrorEnv } from './uv-env';
 import { logger } from './logger';
 import { getClawXConfigDir, needsWinShell, quoteForCmd } from './paths';
 
 const MANAGED_PYTHON_VERSION = '3.12';
+const MANAGED_PYTHON_READY_MARKER = '.lawclaw-managed-python-ready.json';
 const MANAGED_PYTHON_BASE_PACKAGES = ['python-docx', 'openpyxl', 'lxml', 'defusedxml'];
 const MANAGED_PYTHON_WINDOWS_PACKAGES = ['pywin32'];
 const MANAGED_PYTHON_BASE_IMPORTS = ['docx', 'openpyxl', 'lxml', 'defusedxml'];
@@ -48,6 +49,35 @@ function getManagedPythonVenvExecutable(platform = process.platform): string {
   return platform === 'win32'
     ? join(venvDir, 'Scripts', 'python.exe')
     : join(venvDir, 'bin', 'python');
+}
+
+function getManagedPythonReadyMarkerPath(platform = process.platform): string {
+  return join(getManagedPythonVenvDir(platform), MANAGED_PYTHON_READY_MARKER);
+}
+
+function clearManagedPythonReadyMarker(platform = process.platform): void {
+  try {
+    rmSync(getManagedPythonReadyMarkerPath(platform), { force: true });
+  } catch (error) {
+    logger.debug('Failed to clear managed Python ready marker:', error);
+  }
+}
+
+function writeManagedPythonReadyMarker(platform = process.platform): void {
+  try {
+    const payload = JSON.stringify(
+      {
+        version: MANAGED_PYTHON_VERSION,
+        platform,
+        packages: getManagedPythonPackages(platform),
+      },
+      null,
+      2
+    );
+    writeFileSync(getManagedPythonReadyMarkerPath(platform), `${payload}\n`, 'utf-8');
+  } catch (error) {
+    logger.debug('Failed to write managed Python ready marker:', error);
+  }
 }
 
 /**
@@ -331,11 +361,14 @@ export async function isPythonReady(): Promise<boolean> {
     await findManagedPythonPath(uvBin, { ...process.env });
     const venvPythonExe = getManagedPythonVenvExecutable();
     if (!existsSync(venvPythonExe)) {
+      clearManagedPythonReadyMarker();
       return false;
     }
     await verifyManagedPythonDependencies(venvPythonExe);
+    writeManagedPythonReadyMarker();
     return true;
   } catch (error) {
+    clearManagedPythonReadyMarker();
     logger.info('Managed Python readiness check failed:', error);
     return false;
   }
@@ -520,11 +553,14 @@ export async function setupManagedPython(): Promise<void> {
   const { bin: uvBin, source } = resolveUvBin();
   const uvEnv = await getUvMirrorEnv();
   const packages = getManagedPythonPackages();
+  const platform = process.platform;
 
   logger.info(
     `Setting up managed Python ${MANAGED_PYTHON_VERSION} ` +
       `(uv=${uvBin}, source=${source}, arch=${process.arch}, packages=${packages.join(', ')})`
   );
+
+  clearManagedPythonReadyMarker(platform);
 
   await runWithMirrorRetry(
     uvEnv,
@@ -547,6 +583,7 @@ export async function setupManagedPython(): Promise<void> {
   );
 
   await verifyManagedPythonDependencies(venvPythonExe);
+  writeManagedPythonReadyMarker(platform);
   logger.info(
     `Managed Python ${MANAGED_PYTHON_VERSION} runtime ready ` +
       `(base=${basePythonExe}, venv=${venvPythonExe})`

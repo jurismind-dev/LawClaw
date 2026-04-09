@@ -134,6 +134,8 @@ Skills provide your tools. When you need one, check its `SKILL.md`. Keep local n
 
 - LawClaw ships a private runtime bridge for `node`, `npm`, `npx`, `uv`, and managed `python`.
 - Skills and OpenClaw may use the user's system Python / Node when available or when the user explicitly wants that behavior.
+- When LawClaw starts the process, prefer `uv run python ...` and `uv pip install ...` over probing bare `python` / `python3` / `pip`.
+- Treat bare `python` as a compatibility fallback for older skills, not the default discovery path.
 - Use the bundled runtime bridge as a fallback inside LawClaw-started processes such as the Gateway, skills, and installer flows when the system runtime is missing or unsuitable.
 - Do not describe the bundled runtime as the only valid option. It is the compatibility fallback, not a forced replacement for the user's own toolchain.
 

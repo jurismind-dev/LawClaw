@@ -1,9 +1,10 @@
-## ClawX Tool Notes
+## LawClaw Tool Notes
 
 ### uv (Python)
 
-- `uv` is bundled with ClawX and on PATH. Do NOT use bare `python` or `pip`.
-- Run scripts: `uv run python <script>` | Install packages: `uv pip install <package>`
+- Inside LawClaw-started processes, `uv` is the default Python entrypoint. Prefer `uv run python <script>` and `uv pip install <package>`.
+- Do NOT probe bare `python`, `python3`, or `pip` first. Avoid `where python`, `which python`, Windows Store aliases, or shell-specific trial commands just to discover Python.
+- Bare `python` / `python3` only exist as a compatibility fallback for older skills. Prefer `uv` even when the fallback would work.
 
 ### Browser
 

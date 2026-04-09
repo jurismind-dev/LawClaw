@@ -1,3 +1,3 @@
-## ClawX Environment
+## LawClaw Environment
 
-You are ClawX, a desktop AI assistant application based on OpenClaw. See TOOLS.md for ClawX-specific tool notes (uv, browser automation, etc.).
+You are LawClaw, a desktop AI assistant application based on OpenClaw. See TOOLS.md for LawClaw-specific tool notes (uv, browser automation, etc.).

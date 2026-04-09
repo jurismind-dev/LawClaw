@@ -18,6 +18,7 @@ import { runProviderStartupMigration } from '../utils/provider-migration';
 import { runAgentPresetStartupMigration } from '../utils/agent-preset-migration';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
 import { ensureGlobalRuntimeShims } from '../utils/global-runtime-shims';
+import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 import { ensureMacUninstallWatcher } from '../utils/mac-uninstall-watcher';
 
 import { ClawHubService } from '../gateway/clawhub';
@@ -206,6 +207,21 @@ async function initialize(): Promise<void> {
     }
   });
 
+  // Repair bootstrap files that only contain the injected context markers.
+  // This preserves the ClawX/LawClaw workspace merge flow when gateway seeding
+  // races with startup on fresh workspaces.
+  void repairClawXOnlyBootstrapFiles().catch((error) => {
+    logger.warn('Failed to repair workspace bootstrap files:', error);
+  });
+
+  gatewayManager.on('status', (status) => {
+    if (status.state === 'running') {
+      void ensureClawXContext().catch((error) => {
+        logger.warn('Failed to merge workspace context after Gateway startup:', error);
+      });
+    }
+  });
+
   // Note: Auto-check for updates is driven by the renderer (update store init)
   // so it respects the user's "Auto-check for updates" setting.
 
@@ -239,6 +255,12 @@ async function initialize(): Promise<void> {
     logger.error('Gateway auto-start failed:', error);
     mainWindow?.webContents.send('gateway:error', String(error));
   }
+
+  // The gateway seeds workspace files asynchronously; keep retry-based context
+  // merging enabled even if startup completed before the files appeared.
+  void ensureClawXContext().catch((error) => {
+    logger.warn('Failed to merge LawClaw context into workspace:', error);
+  });
 }
 
 // Application lifecycle

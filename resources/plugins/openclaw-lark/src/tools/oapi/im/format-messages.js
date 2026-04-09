@@ -10,11 +10,14 @@
  *
  * 所有 API 调用均通过 UAT（用户身份）进行。
  */
-import { larkLogger } from '../../../core/lark-logger';
-import { convertMessageContent, buildConvertContextFromItem, extractMentionOpenId, } from '../../../messaging/converters/content-converter';
-import { getUATUserName, setUATUserNames, batchResolveUserNamesAsUser } from './user-name-uat';
-import { millisStringToDateTime } from './time-utils';
-const log = larkLogger('oapi/im/format-messages');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.formatMessageItem = formatMessageItem;
+exports.formatMessageList = formatMessageList;
+const lark_logger_1 = require("../../../core/lark-logger.js");
+const content_converter_1 = require("../../../messaging/converters/content-converter.js");
+const user_name_uat_1 = require("./user-name-uat.js");
+const time_utils_1 = require("./time-utils.js");
+const log = (0, lark_logger_1.larkLogger)('oapi/im/format-messages');
 // ---------------------------------------------------------------------------
 // UAT callbacks for merge_forward expansion
 // ---------------------------------------------------------------------------
@@ -41,7 +44,7 @@ function createUATFetchSubMessages(client) {
  * 使用 convertMessageContent 将 body.content 转为 AI 可读文本，
  * 并过滤掉 AI 不需要的字段（upper_message_id、tenant_key 等）。
  */
-export async function formatMessageItem(item, accountId, nameResolver, ctxOverrides) {
+async function formatMessageItem(item, accountId, nameResolver, ctxOverrides) {
     const messageId = item.message_id ?? '';
     const msgType = item.msg_type ?? 'unknown';
     // 使用 converter 处理消息内容
@@ -50,10 +53,10 @@ export async function formatMessageItem(item, accountId, nameResolver, ctxOverri
         const rawContent = item.body?.content ?? '';
         if (rawContent) {
             const ctx = {
-                ...buildConvertContextFromItem(item, messageId, accountId),
+                ...(0, content_converter_1.buildConvertContextFromItem)(item, messageId, accountId),
                 ...ctxOverrides,
             };
-            const result = await convertMessageContent(rawContent, msgType, ctx);
+            const result = await (0, content_converter_1.convertMessageContent)(rawContent, msgType, ctx);
             content = result.content;
         }
     }
@@ -84,12 +87,12 @@ export async function formatMessageItem(item, accountId, nameResolver, ctxOverri
     if (item.mentions && item.mentions.length > 0) {
         mentions = item.mentions.map((m) => ({
             key: m.key ?? '',
-            id: extractMentionOpenId(m.id),
+            id: (0, content_converter_1.extractMentionOpenId)(m.id),
             name: m.name ?? '',
         }));
     }
     // 转换 create_time（飞书 API 返回毫秒时间戳字符串 → ISO 8601 +08:00）
-    const createTime = item.create_time ? millisStringToDateTime(item.create_time) : '';
+    const createTime = item.create_time ? (0, time_utils_1.millisStringToDateTime)(item.create_time) : '';
     const formatted = {
         message_id: messageId,
         msg_type: msgType,
@@ -121,21 +124,21 @@ export async function formatMessageItem(item, accountId, nameResolver, ctxOverri
  * 这样 formatMessageItem 中的 sender.name 和 converter 的
  * resolveUserName 都能从 UAT 缓存中读到名字。
  */
-export async function formatMessageList(items, account, log, client) {
+async function formatMessageList(items, account, log, client) {
     const accountId = account.accountId;
-    const nameResolver = (openId) => getUATUserName(accountId, openId);
+    const nameResolver = (openId) => (0, user_name_uat_1.getUATUserName)(accountId, openId);
     // 1. 把 mention 自带的名字写入 UAT 缓存（免费信息）
     const mentionNames = new Map();
     for (const item of items) {
         for (const m of item.mentions ?? []) {
-            const openId = extractMentionOpenId(m.id);
+            const openId = (0, content_converter_1.extractMentionOpenId)(m.id);
             if (openId && m.name) {
                 mentionNames.set(openId, m.name);
             }
         }
     }
     if (mentionNames.size > 0) {
-        setUATUserNames(accountId, mentionNames);
+        (0, user_name_uat_1.setUATUserNames)(accountId, mentionNames);
     }
     // 2. 收集所有 user 类型 sender 的 open_id
     const senderIds = [
@@ -145,14 +148,14 @@ export async function formatMessageList(items, account, log, client) {
     ];
     // 3. 批量解析 UAT 缓存中缺失的名字
     if (senderIds.length > 0) {
-        const missing = senderIds.filter((id) => getUATUserName(accountId, id) === undefined);
+        const missing = senderIds.filter((id) => (0, user_name_uat_1.getUATUserName)(accountId, id) === undefined);
         if (missing.length > 0) {
-            await batchResolveUserNamesAsUser({ client, openIds: missing, log });
+            await (0, user_name_uat_1.batchResolveUserNamesAsUser)({ client, openIds: missing, log });
         }
     }
     // 4. 构建 merge_forward 展开所需的回调
     const uatBatchResolve = async (openIds) => {
-        await batchResolveUserNamesAsUser({ client, openIds, log });
+        await (0, user_name_uat_1.batchResolveUserNamesAsUser)({ client, openIds, log });
     };
     const ctxOverrides = {
         account,

@@ -11,7 +11,7 @@
  */
 import type { LarkAccount } from '../../../core/types';
 import type { ToolClient } from '../../../core/tool-client';
-import type { ApiMessageItem } from '../../../messaging/converters/types';
+import type { ApiMessageItem, ConvertContext } from '../../../messaging/converters/types';
 export interface FormattedMessage {
     message_id: string;
     msg_type: string;
@@ -39,7 +39,7 @@ export interface FormattedMessage {
  * 使用 convertMessageContent 将 body.content 转为 AI 可读文本，
  * 并过滤掉 AI 不需要的字段（upper_message_id、tenant_key 等）。
  */
-export declare function formatMessageItem(item: ApiMessageItem, accountId: string, nameResolver: (openId: string) => string | undefined, ctxOverrides?: Partial<import('../../../messaging/converters/types.js').ConvertContext>): Promise<FormattedMessage>;
+export declare function formatMessageItem(item: ApiMessageItem, accountId: string, nameResolver: (openId: string) => string | undefined, ctxOverrides?: Partial<ConvertContext>): Promise<FormattedMessage>;
 /**
  * 批量格式化消息列表（UAT 路径）。
  *

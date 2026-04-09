@@ -16,4 +16,4 @@
  *   - download:    GET    /open-apis/drive/v1/files/:file_token/download
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerFeishuDriveFileTool(api: OpenClawPluginApi): void;
+export declare function registerFeishuDriveFileTool(api: OpenClawPluginApi): boolean;

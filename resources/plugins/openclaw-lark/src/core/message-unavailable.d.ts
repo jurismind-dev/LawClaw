@@ -8,7 +8,7 @@
  * 1) 当命中飞书终止错误码（230011/231003）时，按 message_id 标记不可用；
  * 2) 后续针对该 message_id 的 API 调用直接短路，避免持续报错刷屏。
  */
-import { LARK_ERROR } from './auth-errors';
+import type { LARK_ERROR } from './auth-errors';
 export type TerminalMessageApiCode = typeof LARK_ERROR.MESSAGE_RECALLED | typeof LARK_ERROR.MESSAGE_DELETED;
 export interface MessageUnavailableState {
     apiCode: TerminalMessageApiCode;

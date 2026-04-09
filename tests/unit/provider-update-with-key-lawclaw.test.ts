@@ -95,6 +95,8 @@ vi.mock('@electron/utils/store', () => ({
 }));
 
 vi.mock('@electron/utils/channel-config', () => ({
+  readOpenClawConfig: vi.fn(async () => ({})),
+  writeOpenClawConfig: vi.fn(async () => undefined),
   saveChannelConfig: vi.fn(async () => undefined),
   getChannelConfig: vi.fn(async () => ({})),
   getChannelFormValues: vi.fn(async () => ({})),
@@ -103,6 +105,7 @@ vi.mock('@electron/utils/channel-config', () => ({
   setChannelEnabled: vi.fn(async () => undefined),
   validateChannelConfig: vi.fn(async () => ({ valid: true })),
   validateChannelCredentials: vi.fn(async () => ({ valid: true })),
+  upsertLawClawChannelBinding: vi.fn(async () => false),
   enforceLawClawChannelBinding: vi.fn(async () => false),
   clearLawClawChannelBinding: vi.fn(async () => false),
 }));
@@ -162,6 +165,7 @@ vi.mock('@electron/utils/openclaw-plugin-install', () => ({
   detectPluginInstallationState: vi.fn(() => ({ installed: false })),
   clearPluginChannelConfigBackup: vi.fn(),
   isAlreadyInstalledErrorMessage: vi.fn(() => false),
+  removeInstalledPluginDir: vi.fn(),
   readPluginChannelConfigBackup: vi.fn(() => undefined),
   restorePluginChannelConfigAfterInstall: vi.fn((config: Record<string, unknown>) => config),
   savePluginChannelConfigBackup: vi.fn(),

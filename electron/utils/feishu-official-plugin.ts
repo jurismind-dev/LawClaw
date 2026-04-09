@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 export const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
 export const FEISHU_OFFICIAL_PLUGIN_PACKAGE = '@larksuite/openclaw-lark';
-export const FEISHU_OFFICIAL_PLUGIN_VERSION = '2026.3.17';
+export const FEISHU_OFFICIAL_PLUGIN_VERSION = '2026.4.7';
 export const FEISHU_OFFICIAL_PLUGIN_NPM_SPEC =
   `${FEISHU_OFFICIAL_PLUGIN_PACKAGE}@${FEISHU_OFFICIAL_PLUGIN_VERSION}`;
 

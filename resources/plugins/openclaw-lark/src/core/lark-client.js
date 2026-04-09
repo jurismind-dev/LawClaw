@@ -14,27 +14,64 @@
  *   - `LarkClient.fromCredentials(credentials)` — ephemeral instance (not cached)
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import * as Lark from '@larksuiteoapi/node-sdk';
-import { getLarkAccount } from './accounts';
-import { clearUserNameCache } from '../messaging/inbound/user-name-cache';
-import { clearChatInfoCache } from './chat-info-cache';
-import { getUserAgent } from './version';
-import { larkLogger } from './lark-logger';
-const log = larkLogger('core/lark-client');
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LarkClient = void 0;
+exports.getResolvedConfig = getResolvedConfig;
+const Lark = __importStar(require("@larksuiteoapi/node-sdk"));
+const user_name_cache_store_1 = require("../messaging/inbound/user-name-cache-store.js");
+const accounts_1 = require("./accounts.js");
+const chat_info_cache_1 = require("./chat-info-cache.js");
+const lark_logger_1 = require("./lark-logger.js");
+const runtime_store_1 = require("./runtime-store.js");
+const version_1 = require("./version.js");
+const log = (0, lark_logger_1.larkLogger)('core/lark-client');
 // ---------------------------------------------------------------------------
 // 注入 User-Agent 到所有飞书 SDK 请求
 // ---------------------------------------------------------------------------
 const GLOBAL_LARK_USER_AGENT_KEY = 'LARK_USER_AGENT';
 function installGlobalUserAgent() {
     // node-sdk 内置拦截器最终会读取 global.LARK_USER_AGENT 并覆盖 User-Agent
-    globalThis[GLOBAL_LARK_USER_AGENT_KEY] = getUserAgent();
+    globalThis[GLOBAL_LARK_USER_AGENT_KEY] = (0, version_1.getUserAgent)();
 }
 installGlobalUserAgent();
 Lark.defaultHttpInstance.interceptors.request.handlers = [];
 // 使用 interceptors 在所有 HTTP 请求中注入 User-Agent header
 Lark.defaultHttpInstance.interceptors.request.use((req) => {
     if (req.headers) {
-        req.headers['User-Agent'] = getUserAgent();
+        req.headers['User-Agent'] = (0, version_1.getUserAgent)();
     }
     return req;
 }, undefined, { synchronous: true });
@@ -54,7 +91,39 @@ function resolveBrand(brand) {
 // ---------------------------------------------------------------------------
 /** Instance cache keyed by accountId. */
 const cache = new Map();
-export class LarkClient {
+/**
+ * Compare two SecretRef-shaped objects by their identity fields.
+ * Key-order independent, unlike JSON.stringify.
+ */
+function secretRefsEqual(a, b) {
+    return a.source === b.source && a.provider === b.provider && a.id === b.id;
+}
+/**
+ * Compare two credential values that may be strings or SecretRef objects.
+ *
+ * - Both strings: direct `===`.
+ * - Both SecretRef objects: compare `source`, `provider`, `id` explicitly.
+ * - Mixed (string vs SecretRef): treat as equal — the platform resolves the
+ *   SecretRef at startup (producing the cached string) but `loadConfig()`
+ *   returns the raw object on subsequent calls.  Detecting SecretRef identity
+ *   changes is not useful here because the platform does not re-resolve
+ *   feishu secrets on reload, so a new SecretRef would be equally unusable.
+ */
+function credentialsEqual(a, b) {
+    if (a === b)
+        return true;
+    if (typeof a === 'string' && typeof b === 'string')
+        return false;
+    if (a && b && typeof a === 'object' && typeof b === 'object') {
+        return secretRefsEqual(a, b);
+    }
+    // Mixed types: keep the cached instance that holds the working string.
+    if ((typeof a === 'string' && b && typeof b === 'object') || (typeof b === 'string' && a && typeof a === 'object')) {
+        return true;
+    }
+    return false;
+}
+class LarkClient {
     account;
     _sdk = null;
     _wsClient = null;
@@ -65,18 +134,13 @@ export class LarkClient {
     /** Attached message deduplicator — disposed together with the client. */
     messageDedup = null;
     // ---- Plugin runtime (singleton) ------------------------------------------
-    static _runtime = null;
     /** Persist the runtime instance for later retrieval (activate 阶段调用一次). */
     static setRuntime(runtime) {
-        LarkClient._runtime = runtime;
+        (0, runtime_store_1.setLarkRuntime)(runtime);
     }
     /** Retrieve the stored runtime instance. Throws if not yet initialised. */
     static get runtime() {
-        if (!LarkClient._runtime) {
-            throw new Error('Feishu plugin runtime has not been initialised. ' +
-                'Ensure LarkClient.setRuntime() is called during plugin activation.');
-        }
-        return LarkClient._runtime;
+        return (0, runtime_store_1.getLarkRuntime)();
     }
     // ---- Global config (singleton) -------------------------------------------
     //
@@ -104,7 +168,7 @@ export class LarkClient {
     // ---- Static factory / cache ------------------------------------------------
     /** Resolve account from config and return a cached `LarkClient`. */
     static fromCfg(cfg, accountId) {
-        return LarkClient.fromAccount(getLarkAccount(cfg, accountId));
+        return LarkClient.fromAccount((0, accounts_1.getLarkAccount)(cfg, accountId));
     }
     /**
      * Get (or create) a cached `LarkClient` for the given account.
@@ -112,7 +176,9 @@ export class LarkClient {
      */
     static fromAccount(account) {
         const existing = cache.get(account.accountId);
-        if (existing && existing.account.appId === account.appId && existing.account.appSecret === account.appSecret) {
+        if (existing &&
+            existing.account.appId === account.appId &&
+            credentialsEqual(existing.account.appSecret, account.appSecret)) {
             return existing;
         }
         // Credentials changed — tear down the stale instance before replacing it.
@@ -150,17 +216,17 @@ export class LarkClient {
      * With `accountId` — dispose that single instance.
      * Without — dispose every cached instance and clear the cache.
      */
-    static clearCache(accountId) {
+    static async clearCache(accountId) {
         if (accountId !== undefined) {
             cache.get(accountId)?.dispose();
-            clearUserNameCache(accountId);
-            clearChatInfoCache(accountId);
+            (0, user_name_cache_store_1.clearUserNameCache)(accountId);
+            (0, chat_info_cache_1.clearChatInfoCache)(accountId);
         }
         else {
             for (const inst of cache.values())
                 inst.dispose();
-            clearUserNameCache();
-            clearChatInfoCache();
+            (0, user_name_cache_store_1.clearUserNameCache)();
+            (0, chat_info_cache_1.clearChatInfoCache)();
         }
     }
     // ---- SDK client (lazy) -----------------------------------------------------
@@ -179,7 +245,7 @@ export class LarkClient {
     }
     // ---- Bot identity ----------------------------------------------------------
     /**
-     * Probe bot identity via the `bot/v3/info` API.
+     * Probe bot identity via the `bot/v1/openclaw_bot/ping` API.
      * Results are cached on the instance for subsequent access via
      * `botOpenId` / `botName`.
      */
@@ -192,10 +258,11 @@ export class LarkClient {
             return { ok: false, error: 'missing credentials (appId, appSecret)' };
         }
         try {
+            const needBotInfo = opts?.needBotInfo ?? true;
             const res = await this.sdk.request({
-                method: 'GET',
-                url: '/open-apis/bot/v3/info',
-                data: {},
+                method: 'POST',
+                url: '/open-apis/bot/v1/openclaw_bot/ping',
+                data: { needBotInfo },
             });
             if (res.code !== 0) {
                 const result = {
@@ -207,9 +274,9 @@ export class LarkClient {
                 this._lastProbeAt = Date.now();
                 return result;
             }
-            const bot = res.bot || res.data?.bot;
-            this._botOpenId = bot?.open_id;
-            this._botName = bot?.bot_name;
+            const botInfo = res.data?.pingBotInfo;
+            this._botOpenId = botInfo?.botID;
+            this._botName = botInfo?.botName;
             const result = {
                 ok: true,
                 appId: this.account.appId,
@@ -293,7 +360,7 @@ export class LarkClient {
     }
     /** Whether a WebSocket client is currently active. */
     get wsConnected() {
-        return this._wsClient !== null;
+        return this._wsClient != null;
     }
     /** Disconnect WebSocket but keep instance in cache. */
     disconnect() {
@@ -350,5 +417,49 @@ export class LarkClient {
                 reject(err);
             }
         });
+    }
+}
+exports.LarkClient = LarkClient;
+// Inject LarkClient reference into chat-info-cache to break the circular
+// dependency (chat-info-cache needs LarkClient.fromCfg but lark-client
+// imports clearChatInfoCache from chat-info-cache).
+(0, chat_info_cache_1.injectLarkClient)(LarkClient);
+// ---------------------------------------------------------------------------
+// Config resolution helper
+// ---------------------------------------------------------------------------
+/**
+ * Returns the best available config for account resolution.
+ *
+ * Priority: live config (has `channels.feishu`) > fallback (has
+ * `channels.feishu`) > live config (last resort).
+ *
+ * The `config` object captured in tool-registration closures may be stale
+ * after a hot-reload, so we prefer the live config from
+ * `LarkClient.runtime.config.loadConfig()`.  However, `loadConfig()` may
+ * return `{}` when the runtime config snapshot has been cleared (e.g. in
+ * isolated cron sessions), so we fall back to the closure-captured config
+ * when the live result lacks Feishu credentials.
+ *
+ * @param fallback - Config to use when the runtime is not yet initialised
+ *   or when `loadConfig()` returns an incomplete config.
+ */
+function getResolvedConfig(fallback) {
+    try {
+        const live = LarkClient.runtime.config.loadConfig();
+        // loadConfig() may return {} (empty config) when runtimeConfigSnapshot
+        // has been cleared (e.g. after writeConfigFile, secrets teardown, or
+        // concurrent cron race conditions in isolated sessions).  In that case
+        // the closure-captured fallback still holds a valid resolved config.
+        if (live?.channels?.feishu)
+            return live;
+        if (fallback?.channels?.feishu) {
+            log.debug(`loadConfig() returned config without channels.feishu, using fallback`);
+            return fallback;
+        }
+        return live;
+    }
+    catch {
+        // runtime not yet initialised — fall back to passed config
+        return fallback;
     }
 }

@@ -13,12 +13,11 @@
  * - dispatch-builders.ts — pure payload/body/envelope construction
  * - dispatch-commands.ts — system command & permission notification
  */
-import type { RuntimeEnv, HistoryEntry } from 'openclaw/plugin-sdk';
+import type { ClawdbotConfig, RuntimeEnv } from 'openclaw/plugin-sdk';
+import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
 import type { MessageContext } from '../types';
-import type { LarkAccount } from '../../core/types';
-import type { FeishuGroupConfig } from '../../core/types';
+import type { FeishuGroupConfig, LarkAccount } from '../../core/types';
 import type { PermissionError } from './permission';
-import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
 export declare function dispatchToAgent(params: {
     ctx: MessageContext;
     permissionError?: PermissionError;

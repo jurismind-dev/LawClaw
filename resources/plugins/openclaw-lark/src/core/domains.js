@@ -8,22 +8,27 @@
  * All runtime code that needs to construct platform URLs should use these
  * helpers instead of hardcoding domain strings.
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.openPlatformDomain = openPlatformDomain;
+exports.applinkDomain = applinkDomain;
+exports.wwwDomain = wwwDomain;
+exports.mcpDomain = mcpDomain;
 // ---------------------------------------------------------------------------
 // Domain helpers
 // ---------------------------------------------------------------------------
 /** 开放平台域名 (API & 权限管理页面) */
-export function openPlatformDomain(brand) {
+function openPlatformDomain(brand) {
     return brand === 'lark' ? 'https://open.larksuite.com' : 'https://open.feishu.cn';
 }
 /** Applink 域名 */
-export function applinkDomain(brand) {
+function applinkDomain(brand) {
     return brand === 'lark' ? 'https://applink.larksuite.com' : 'https://applink.feishu.cn';
 }
 /** 主站域名 (文档、表格等用户可见链接) */
-export function wwwDomain(brand) {
+function wwwDomain(brand) {
     return brand === 'lark' ? 'https://www.larksuite.com' : 'https://www.feishu.cn';
 }
 /** MCP 服务域名 */
-export function mcpDomain(brand) {
+function mcpDomain(brand) {
     return brand === 'lark' ? 'https://mcp.larksuite.com' : 'https://mcp.feishu.cn';
 }

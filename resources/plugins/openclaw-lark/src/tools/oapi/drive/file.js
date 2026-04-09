@@ -17,53 +17,88 @@
  *   - download:    GET    /open-apis/drive/v1/files/:file_token/download
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum, } from '../helpers';
-import * as fs from 'fs/promises';
-import * as path from 'path';
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerFeishuDriveFileTool = registerFeishuDriveFileTool;
+const fs = __importStar(require("node:fs/promises"));
+const path = __importStar(require("node:path"));
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
 // 分片上传配置
 const SMALL_FILE_THRESHOLD = 15 * 1024 * 1024; // 15MB，小于此大小使用一次上传
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const FeishuDriveFileSchema = Type.Union([
+const FeishuDriveFileSchema = typebox_1.Type.Union([
     // LIST FILES
-    Type.Object({
-        action: Type.Literal('list'),
-        folder_token: Type.Optional(Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('list'),
+        folder_token: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '文件夹 token（可选）。不填写或填空字符串时，获取用户云空间根目录下的清单（注意：根目录模式不支持分页和返回快捷方式）',
         })),
-        page_size: Type.Optional(Type.Integer({
+        page_size: typebox_1.Type.Optional(typebox_1.Type.Integer({
             description: '分页大小（默认 200，最大 200）',
             minimum: 1,
             maximum: 200,
         })),
-        page_token: Type.Optional(Type.String({
+        page_token: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '分页标记。首次请求无需填写',
         })),
-        order_by: Type.Optional(StringEnum(['EditedTime', 'CreatedTime'], {
+        order_by: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['EditedTime', 'CreatedTime'], {
             description: '排序方式：EditedTime（编辑时间）、CreatedTime（创建时间）',
         })),
-        direction: Type.Optional(StringEnum(['ASC', 'DESC'], {
+        direction: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['ASC', 'DESC'], {
             description: '排序方向：ASC（升序）、DESC（降序）',
         })),
     }),
     // GET META
-    Type.Object({
-        action: Type.Literal('get_meta'),
-        request_docs: Type.Array(Type.Object({
-            doc_token: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('get_meta'),
+        request_docs: typebox_1.Type.Array(typebox_1.Type.Object({
+            doc_token: typebox_1.Type.String({
                 description: '文档 token（从浏览器 URL 中获取，如 spreadsheet_token、doc_token 等）',
             }),
-            doc_type: Type.Union([
-                Type.Literal('doc'),
-                Type.Literal('sheet'),
-                Type.Literal('file'),
-                Type.Literal('bitable'),
-                Type.Literal('docx'),
-                Type.Literal('folder'),
-                Type.Literal('mindnote'),
-                Type.Literal('slides'),
+            doc_type: typebox_1.Type.Union([
+                typebox_1.Type.Literal('doc'),
+                typebox_1.Type.Literal('sheet'),
+                typebox_1.Type.Literal('file'),
+                typebox_1.Type.Literal('bitable'),
+                typebox_1.Type.Literal('docx'),
+                typebox_1.Type.Literal('folder'),
+                typebox_1.Type.Literal('mindnote'),
+                typebox_1.Type.Literal('slides'),
             ], {
                 description: '文档类型：doc、sheet、file、bitable、docx、folder、mindnote、slides',
             }),
@@ -74,100 +109,100 @@ const FeishuDriveFileSchema = Type.Union([
         }),
     }),
     // COPY FILE
-    Type.Object({
-        action: Type.Literal('copy'),
-        file_token: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('copy'),
+        file_token: typebox_1.Type.String({
             description: '文件 token（必填）',
         }),
-        name: Type.String({
+        name: typebox_1.Type.String({
             description: '目标文件名（必填）',
         }),
-        type: Type.Union([
-            Type.Literal('doc'),
-            Type.Literal('sheet'),
-            Type.Literal('file'),
-            Type.Literal('bitable'),
-            Type.Literal('docx'),
-            Type.Literal('folder'),
-            Type.Literal('mindnote'),
-            Type.Literal('slides'),
+        type: typebox_1.Type.Union([
+            typebox_1.Type.Literal('doc'),
+            typebox_1.Type.Literal('sheet'),
+            typebox_1.Type.Literal('file'),
+            typebox_1.Type.Literal('bitable'),
+            typebox_1.Type.Literal('docx'),
+            typebox_1.Type.Literal('folder'),
+            typebox_1.Type.Literal('mindnote'),
+            typebox_1.Type.Literal('slides'),
         ], {
             description: '文档类型（必填）',
         }),
-        folder_token: Type.Optional(Type.String({
+        folder_token: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '目标文件夹 token。不传则复制到「我的空间」根目录',
         })),
-        parent_node: Type.Optional(Type.String({
+        parent_node: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '【folder_token 的别名】目标文件夹 token（为兼容性保留，建议使用 folder_token）',
         })),
     }),
     // MOVE FILE
-    Type.Object({
-        action: Type.Literal('move'),
-        file_token: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('move'),
+        file_token: typebox_1.Type.String({
             description: '文件 token（必填）',
         }),
-        type: Type.Union([
-            Type.Literal('doc'),
-            Type.Literal('sheet'),
-            Type.Literal('file'),
-            Type.Literal('bitable'),
-            Type.Literal('docx'),
-            Type.Literal('folder'),
-            Type.Literal('mindnote'),
-            Type.Literal('slides'),
+        type: typebox_1.Type.Union([
+            typebox_1.Type.Literal('doc'),
+            typebox_1.Type.Literal('sheet'),
+            typebox_1.Type.Literal('file'),
+            typebox_1.Type.Literal('bitable'),
+            typebox_1.Type.Literal('docx'),
+            typebox_1.Type.Literal('folder'),
+            typebox_1.Type.Literal('mindnote'),
+            typebox_1.Type.Literal('slides'),
         ], {
             description: '文档类型（必填）',
         }),
-        folder_token: Type.String({
+        folder_token: typebox_1.Type.String({
             description: '目标文件夹 token（必填）',
         }),
     }),
     // DELETE FILE
-    Type.Object({
-        action: Type.Literal('delete'),
-        file_token: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('delete'),
+        file_token: typebox_1.Type.String({
             description: '文件 token（必填）',
         }),
-        type: Type.Union([
-            Type.Literal('doc'),
-            Type.Literal('sheet'),
-            Type.Literal('file'),
-            Type.Literal('bitable'),
-            Type.Literal('docx'),
-            Type.Literal('folder'),
-            Type.Literal('mindnote'),
-            Type.Literal('slides'),
+        type: typebox_1.Type.Union([
+            typebox_1.Type.Literal('doc'),
+            typebox_1.Type.Literal('sheet'),
+            typebox_1.Type.Literal('file'),
+            typebox_1.Type.Literal('bitable'),
+            typebox_1.Type.Literal('docx'),
+            typebox_1.Type.Literal('folder'),
+            typebox_1.Type.Literal('mindnote'),
+            typebox_1.Type.Literal('slides'),
         ], {
             description: '文档类型（必填）',
         }),
     }),
     // UPLOAD FILE
-    Type.Object({
-        action: Type.Literal('upload'),
-        parent_node: Type.Optional(Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('upload'),
+        parent_node: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '父节点 token（可选）。explorer 类型填文件夹 token，bitable 类型填 app_token。不填写或填空字符串时，上传到云空间根目录',
         })),
-        file_path: Type.Optional(Type.String({
+        file_path: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '本地文件路径（与 file_content_base64 二选一）。优先使用此参数，会自动读取文件内容、计算大小、提取文件名。',
         })),
-        file_content_base64: Type.Optional(Type.String({
+        file_content_base64: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '文件内容的 Base64 编码（与 file_path 二选一）。当不提供 file_path 时使用。',
         })),
-        file_name: Type.Optional(Type.String({
+        file_name: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '文件名（可选）。如果提供了 file_path，会自动从路径中提取文件名；如果使用 file_content_base64，则必须提供此参数。',
         })),
-        size: Type.Optional(Type.Integer({
+        size: typebox_1.Type.Optional(typebox_1.Type.Integer({
             description: '文件大小（字节，可选）。如果提供了 file_path，会自动计算；如果使用 file_content_base64，则必须提供此参数。',
         })),
     }),
     // DOWNLOAD FILE
-    Type.Object({
-        action: Type.Literal('download'),
-        file_token: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('download'),
+        file_token: typebox_1.Type.String({
             description: '文件 token（必填）',
         }),
-        output_path: Type.Optional(Type.String({
+        output_path: typebox_1.Type.Optional(typebox_1.Type.String({
             description: "本地保存的完整文件路径（可选）。必须包含文件名和扩展名，例如 '/tmp/file.pdf'。如果不提供，则返回 Base64 编码的文件内容。",
         })),
     }),
@@ -175,12 +210,12 @@ const FeishuDriveFileSchema = Type.Union([
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerFeishuDriveFileTool(api) {
+function registerFeishuDriveFileTool(api) {
     if (!api.config)
-        return;
+        return false;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_drive_file');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_drive_file');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_drive_file',
         label: 'Feishu Drive Files',
         description: '【以用户身份】飞书云空间文件管理工具。当用户要求查看云空间(云盘)中的文件列表、获取文件信息、复制/移动/删除文件、上传/下载文件时使用。消息中的文件读写**禁止**使用该工具!' +
@@ -215,10 +250,10 @@ export function registerFeishuDriveFileTool(api) {
                                 direction: p.direction,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`list: returned ${res.data?.files?.length ?? 0} files`);
                         const data = res.data;
-                        return json({
+                        return (0, helpers_1.json)({
                             files: data?.files,
                             has_more: data?.has_more,
                             page_token: data?.next_page_token,
@@ -229,7 +264,7 @@ export function registerFeishuDriveFileTool(api) {
                     // -----------------------------------------------------------------
                     case 'get_meta': {
                         if (!p.request_docs || !Array.isArray(p.request_docs) || p.request_docs.length === 0) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: "request_docs must be a non-empty array. Correct format: {action: 'get_meta', request_docs: [{doc_token: '...', doc_type: 'sheet'}]}",
                             });
                         }
@@ -239,9 +274,9 @@ export function registerFeishuDriveFileTool(api) {
                                 request_docs: p.request_docs,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`get_meta: returned ${res.data?.metas?.length ?? 0} metas`);
-                        return json({
+                        return (0, helpers_1.json)({
                             metas: res.data?.metas ?? [],
                         });
                     }
@@ -260,10 +295,10 @@ export function registerFeishuDriveFileTool(api) {
                                 folder_token: targetFolderToken,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         const data = res.data;
                         log.info(`copy: new file_token=${data?.file?.token ?? 'unknown'}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             file: data?.file,
                         });
                     }
@@ -279,12 +314,12 @@ export function registerFeishuDriveFileTool(api) {
                                 folder_token: p.folder_token,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         const data = res.data;
-                        log.info(`move: task_id=${data?.task_id}`);
-                        return json({
+                        log.info(`move: success${data?.task_id ? `, task_id=${data.task_id}` : ''}`);
+                        return (0, helpers_1.json)({
                             success: true,
-                            task_id: data?.task_id,
+                            ...(data?.task_id ? { task_id: data.task_id } : {}),
                             file_token: p.file_token,
                             target_folder_token: p.folder_token,
                         });
@@ -300,12 +335,12 @@ export function registerFeishuDriveFileTool(api) {
                                 type: p.type,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         const data = res.data;
-                        log.info(`delete: task_id=${data?.task_id}`);
-                        return json({
+                        log.info(`delete: success${data?.task_id ? `, task_id=${data.task_id}` : ''}`);
+                        return (0, helpers_1.json)({
                             success: true,
-                            task_id: data?.task_id,
+                            ...(data?.task_id ? { task_id: data.task_id } : {}),
                             file_token: p.file_token,
                         });
                     }
@@ -329,7 +364,7 @@ export function registerFeishuDriveFileTool(api) {
                                 log.info(`upload: file_name=${fileName}, size=${fileSize}, parent=${p.parent_node || '(root)'}`);
                             }
                             catch (err) {
-                                return json({
+                                return (0, helpers_1.json)({
                                     error: `failed to read local file: ${err instanceof Error ? err.message : String(err)}`,
                                 });
                             }
@@ -337,7 +372,7 @@ export function registerFeishuDriveFileTool(api) {
                         else if (p.file_content_base64) {
                             // 使用 base64 内容
                             if (!p.file_name || !p.size) {
-                                return json({
+                                return (0, helpers_1.json)({
                                     error: 'file_name and size are required when using file_content_base64',
                                 });
                             }
@@ -348,7 +383,7 @@ export function registerFeishuDriveFileTool(api) {
                             fileSize = p.size;
                         }
                         else {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: 'either file_path or file_content_base64 is required',
                             });
                         }
@@ -365,9 +400,9 @@ export function registerFeishuDriveFileTool(api) {
                                     file: fileBuffer,
                                 },
                             }, opts), { as: 'user' });
-                            assertLarkOk(res);
+                            (0, helpers_1.assertLarkOk)(res);
                             log.info(`upload: file_token=${res.data?.file_token}`);
-                            return json({
+                            return (0, helpers_1.json)({
                                 file_token: res.data?.file_token,
                                 file_name: fileName,
                                 size: fileSize,
@@ -388,9 +423,9 @@ export function registerFeishuDriveFileTool(api) {
                             }, opts), { as: 'user' });
                             log.info(`upload: prepareRes = ${JSON.stringify(prepareRes)}`);
                             if (!prepareRes) {
-                                return json({ error: 'pre-upload failed: empty response' });
+                                return (0, helpers_1.json)({ error: 'pre-upload failed: empty response' });
                             }
-                            assertLarkOk(prepareRes);
+                            (0, helpers_1.assertLarkOk)(prepareRes);
                             const { upload_id, block_size, block_num } = prepareRes.data;
                             log.info(`upload: got upload_id=${upload_id}, block_num=${block_num}, block_size=${block_size}`);
                             // 2. 上传分片
@@ -418,9 +453,9 @@ export function registerFeishuDriveFileTool(api) {
                                     block_num,
                                 },
                             }, opts), { as: 'user' });
-                            assertLarkOk(finishRes);
+                            (0, helpers_1.assertLarkOk)(finishRes);
                             log.info(`upload: file_token=${finishRes.data?.file_token}`);
-                            return json({
+                            return (0, helpers_1.json)({
                                 file_token: finishRes.data?.file_token,
                                 file_name: fileName,
                                 size: fileSize,
@@ -454,13 +489,13 @@ export function registerFeishuDriveFileTool(api) {
                                 // 写入文件
                                 await fs.writeFile(p.output_path, fileBuffer);
                                 log.info(`download: saved to ${p.output_path}`);
-                                return json({
+                                return (0, helpers_1.json)({
                                     saved_path: p.output_path,
                                     size: fileBuffer.length,
                                 });
                             }
                             catch (err) {
-                                return json({
+                                return (0, helpers_1.json)({
                                     error: `failed to save file: ${err instanceof Error ? err.message : String(err)}`,
                                 });
                             }
@@ -468,7 +503,7 @@ export function registerFeishuDriveFileTool(api) {
                         else {
                             // 没有提供 output_path，返回 base64
                             const base64Content = fileBuffer.toString('base64');
-                            return json({
+                            return (0, helpers_1.json)({
                                 file_content_base64: base64Content,
                                 size: fileBuffer.length,
                             });
@@ -477,7 +512,7 @@ export function registerFeishuDriveFileTool(api) {
                 }
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_drive_file' });

@@ -8,12 +8,15 @@
  * 从 tool-client.ts 提取，提供不依赖 SDK 的直接 API 调用能力。
  * 用于 SDK 未覆盖的 API 或需要精细控制请求的场景。
  */
-import { feishuFetch } from './feishu-fetch';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveDomainUrl = resolveDomainUrl;
+exports.rawLarkRequest = rawLarkRequest;
+const feishu_fetch_1 = require("./feishu-fetch.js");
 // ---------------------------------------------------------------------------
 // Domain URL resolution
 // ---------------------------------------------------------------------------
 /** 将 LarkBrand 映射为 API base URL。 */
-export function resolveDomainUrl(brand) {
+function resolveDomainUrl(brand) {
     const map = {
         feishu: 'https://open.feishu.cn',
         lark: 'https://open.larksuite.com',
@@ -25,7 +28,7 @@ export function resolveDomainUrl(brand) {
  *
  * 飞书 API 统一错误模式：返回 JSON 中 `code !== 0` 表示失败。
  */
-export async function rawLarkRequest(options) {
+async function rawLarkRequest(options) {
     const baseUrl = resolveDomainUrl(options.brand);
     const url = new URL(options.path, baseUrl);
     if (options.query) {
@@ -43,7 +46,7 @@ export async function rawLarkRequest(options) {
     if (options.headers) {
         Object.assign(headers, options.headers);
     }
-    const resp = await feishuFetch(url.toString(), {
+    const resp = await (0, feishu_fetch_1.feishuFetch)(url.toString(), {
         method: options.method ?? 'GET',
         headers,
         ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),

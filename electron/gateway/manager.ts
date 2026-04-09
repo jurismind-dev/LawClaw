@@ -23,6 +23,7 @@ import { getSetting } from '../utils/store';
 import { getAllProviders, getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
 import {
+  migrateLegacyOpenClawWebToolConfig,
   syncBrowserConfigToOpenClaw,
   syncGatewayTokenToConfig,
   syncJurismindWebSearchConfig,
@@ -42,6 +43,7 @@ import {
   type DeviceIdentity,
 } from '../utils/device-identity';
 import { repairInstalledFeishuOfficialPluginIfNeeded } from '../utils/feishu-official-plugin-installer';
+import { repairInstalledWeixinPluginIfNeeded } from '../utils/weixin-onboarding';
 import { selectGatewayRuntime } from './runtime-selection';
 
 /**
@@ -777,6 +779,21 @@ export class GatewayManager extends EventEmitter {
     } catch (err) {
       logger.warn('Unexpected error while repairing installed Feishu official plugin before Gateway start:', err);
     }
+
+    try {
+      const repairResult = await repairInstalledWeixinPluginIfNeeded();
+      if (repairResult.repaired) {
+        logger.info(
+          `Repaired installed Weixin plugin before Gateway start (${repairResult.pluginDir})`
+        );
+      } else if (repairResult.reason === 'failed') {
+        logger.warn(
+          `Failed to repair installed Weixin plugin before Gateway start (${repairResult.pluginDir}): ${repairResult.error}${repairResult.details ? `\n${repairResult.details}` : ''}`
+        );
+      }
+    } catch (err) {
+      logger.warn('Unexpected error while repairing installed Weixin plugin before Gateway start:', err);
+    }
     
     let command: string;
     let args: string[];
@@ -874,6 +891,12 @@ export class GatewayManager extends EventEmitter {
     });
     if (fallbackCount > 0) {
       logger.debug(`Injected ${fallbackCount} provider env placeholder(s) for Gateway startup`);
+    }
+
+    try {
+      migrateLegacyOpenClawWebToolConfig();
+    } catch (err) {
+      logger.warn('Failed to migrate legacy web-tool config in openclaw.json:', err);
     }
 
     try {

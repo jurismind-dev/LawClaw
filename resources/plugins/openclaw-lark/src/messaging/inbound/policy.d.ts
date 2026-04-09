@@ -7,7 +7,8 @@
  * Provides allowlist matching, group configuration lookup, tool policy
  * extraction, and group access checks.
  */
-import type { ChannelGroupContext, GroupToolPolicyConfig } from 'openclaw/plugin-sdk';
+import type { ChannelGroupContext } from 'openclaw/plugin-sdk/channel-contract';
+import type { GroupToolPolicyConfig } from 'openclaw/plugin-sdk/channel-policy';
 import type { FeishuConfig, FeishuGroupConfig } from '../../core/types';
 export interface FeishuAllowlistMatch {
     allowed: boolean;

@@ -20,6 +20,21 @@ describe('provider backend registry', () => {
     expect(getProviderConfig('moonshot_code_plan')).toBeUndefined();
   });
 
+  it('maps legacy qwen-portal ids to qwen runtime metadata', () => {
+    expect(getCanonicalProviderId('qwen-portal')).toBe('qwen');
+    expect(getProviderAliasIds('qwen')).toEqual(expect.arrayContaining(['qwen', 'qwen-portal']));
+    expect(getProviderAliasIds('qwen-portal')).toEqual(
+      expect.arrayContaining(['qwen', 'qwen-portal'])
+    );
+    expect(getProviderEnvVar('qwen-portal')).toBe('QWEN_API_KEY');
+    expect(getProviderDefaultModel('qwen-portal')).toBe('qwen/qwen3.5-plus');
+    expect(getProviderConfig('qwen-portal')).toMatchObject({
+      baseUrl: 'https://coding-intl.dashscope.aliyuncs.com/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'QWEN_API_KEY',
+    });
+  });
+
   it('keeps jurismind and glm code plan metadata intact', () => {
     expect(getProviderEnvVar('glm_code_plan')).toBe('GLM_CODE_PLAN_API_KEY');
     expect(getProviderDefaultModel('glm_code_plan')).toBeTruthy();

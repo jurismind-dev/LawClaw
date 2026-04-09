@@ -9,9 +9,15 @@
  * structures (message bodies, envelope payloads, inbound context) but
  * never perform I/O, send messages, or mutate external state.
  */
-import { buildPendingHistoryContextFromMap } from 'openclaw/plugin-sdk';
-import { nonBotMentions } from './mention';
-import { threadScopedKey } from '../../channel/chat-queue';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.buildMentionAnnotation = buildMentionAnnotation;
+exports.buildMessageBody = buildMessageBody;
+exports.buildBodyForAgent = buildBodyForAgent;
+exports.buildInboundPayload = buildInboundPayload;
+exports.buildEnvelopeWithHistory = buildEnvelopeWithHistory;
+const reply_history_1 = require("openclaw/plugin-sdk/reply-history");
+const chat_queue_1 = require("../../channel/chat-queue.js");
+const mention_1 = require("./mention.js");
 // ---------------------------------------------------------------------------
 // Mention annotation
 // ---------------------------------------------------------------------------
@@ -24,8 +30,8 @@ import { threadScopedKey } from '../../channel/chat-queue';
  * InboundHistory, etc.), so we only inject the mention data that the SDK
  * does not natively support.
  */
-export function buildMentionAnnotation(ctx) {
-    const mentions = nonBotMentions(ctx);
+function buildMentionAnnotation(ctx) {
+    const mentions = (0, mention_1.nonBotMentions)(ctx);
     if (mentions.length === 0)
         return undefined;
     const mentionDetails = mentions.map((t) => `${t.name} (open_id: ${t.openId})`).join(', ');
@@ -43,7 +49,7 @@ export function buildMentionAnnotation(ctx) {
  * the body cleaner and avoiding misleading heuristics for non-text
  * message types (merge_forward, interactive cards, etc.).
  */
-export function buildMessageBody(ctx, quotedContent) {
+function buildMessageBody(ctx, quotedContent) {
     let messageBody = ctx.content;
     if (quotedContent) {
         messageBody = `[Replying to: "${quotedContent}"]\n\n${ctx.content}`;
@@ -75,7 +81,7 @@ export function buildMessageBody(ctx, quotedContent) {
  * The SDK's `detectAndLoadPromptImages` will discover image paths from
  * the text and inject them as multimodal content blocks.
  */
-export function buildBodyForAgent(ctx) {
+function buildBodyForAgent(ctx) {
     const mentionAnnotation = buildMentionAnnotation(ctx);
     if (mentionAnnotation) {
         return `${ctx.content}\n\n${mentionAnnotation}`;
@@ -89,7 +95,7 @@ export function buildBodyForAgent(ctx) {
  * Unified call to `finalizeInboundContext`, eliminating the duplicated
  * field-mapping between permission notification and main message paths.
  */
-export function buildInboundPayload(dc, opts) {
+function buildInboundPayload(dc, opts) {
     return dc.core.channel.reply.finalizeInboundContext({
         // extraFields first — fixed fields below always take precedence
         ...opts.extraFields,
@@ -110,7 +116,7 @@ export function buildInboundPayload(dc, opts) {
         MessageSid: opts.messageSid,
         ReplyToBody: opts.replyToBody,
         InboundHistory: opts.inboundHistory,
-        Timestamp: Date.now(),
+        Timestamp: dc.ctx.createTime ?? Date.now(),
         WasMentioned: opts.wasMentioned,
         CommandAuthorized: dc.commandAuthorized,
         OriginatingChannel: 'feishu',
@@ -124,7 +130,7 @@ export function buildInboundPayload(dc, opts) {
  * Format the agent envelope and prepend group chat history if applicable.
  * Returns the combined body and the history key (undefined for DMs).
  */
-export function buildEnvelopeWithHistory(dc, messageBody, chatHistories, historyLimit) {
+function buildEnvelopeWithHistory(dc, messageBody, chatHistories, historyLimit) {
     const body = dc.core.channel.reply.formatAgentEnvelope({
         channel: 'Feishu',
         from: dc.envelopeFrom,
@@ -133,9 +139,9 @@ export function buildEnvelopeWithHistory(dc, messageBody, chatHistories, history
         body: messageBody,
     });
     let combinedBody = body;
-    const historyKey = dc.isGroup ? threadScopedKey(dc.ctx.chatId, dc.isThread ? dc.ctx.threadId : undefined) : undefined;
+    const historyKey = dc.isGroup ? (0, chat_queue_1.threadScopedKey)(dc.ctx.chatId, dc.isThread ? dc.ctx.threadId : undefined) : undefined;
     if (dc.isGroup && historyKey && chatHistories) {
-        combinedBody = buildPendingHistoryContextFromMap({
+        combinedBody = (0, reply_history_1.buildPendingHistoryContextFromMap)({
             historyMap: chatHistories,
             historyKey,
             limit: historyLimit,

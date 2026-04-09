@@ -8,7 +8,14 @@
  * Provides allowlist matching, group configuration lookup, tool policy
  * extraction, and group access checks.
  */
-import { getLarkAccount } from '../../core/accounts';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveFeishuAllowlistMatch = resolveFeishuAllowlistMatch;
+exports.resolveFeishuGroupConfig = resolveFeishuGroupConfig;
+exports.resolveFeishuGroupToolPolicy = resolveFeishuGroupToolPolicy;
+exports.isFeishuGroupAllowed = isFeishuGroupAllowed;
+exports.splitLegacyGroupAllowFrom = splitLegacyGroupAllowFrom;
+exports.resolveGroupSenderPolicyContext = resolveGroupSenderPolicyContext;
+const accounts_1 = require("../../core/accounts.js");
 /**
  * Check whether a sender is permitted by a given allowlist.
  *
@@ -16,7 +23,7 @@ import { getLarkAccount } from '../../core/accounts';
  * A single "*" entry acts as a wildcard that matches everyone.
  * When the allowlist is empty the result is `{ allowed: false }`.
  */
-export function resolveFeishuAllowlistMatch(params) {
+function resolveFeishuAllowlistMatch(params) {
     const allowFrom = params.allowFrom.map((entry) => String(entry).trim().toLowerCase()).filter(Boolean);
     if (allowFrom.length === 0) {
         return { allowed: false };
@@ -46,7 +53,7 @@ export function resolveFeishuAllowlistMatch(params) {
  * Performs a case-insensitive lookup against the keys in `cfg.groups`.
  * Returns `undefined` when no matching group entry is found.
  */
-export function resolveFeishuGroupConfig(params) {
+function resolveFeishuGroupConfig(params) {
     const groups = params.cfg?.groups ?? {};
     const groupId = params.groupId?.trim();
     if (!groupId) {
@@ -74,10 +81,10 @@ export function resolveFeishuGroupConfig(params) {
  *   这里通过 getLarkAccount() 获取当前 account 合并后的配置，
  *   确保每个账号的 groups / tool policy 配置独立生效。
  */
-export function resolveFeishuGroupToolPolicy(params) {
+function resolveFeishuGroupToolPolicy(params) {
     // 使用 getLarkAccount 获取 per-account 合并后的飞书渠道配置，
     // 而非直接读取 cfg.channels.feishu（顶层全局配置）。
-    const account = getLarkAccount(params.cfg, params.accountId ?? undefined);
+    const account = (0, accounts_1.getLarkAccount)(params.cfg, params.accountId ?? undefined);
     const accountFeishuCfg = account.config;
     if (!accountFeishuCfg) {
         return undefined;
@@ -98,7 +105,7 @@ export function resolveFeishuGroupToolPolicy(params) {
  * - `open`     --> always allowed
  * - `allowlist` --> allowed only when the sender matches the allowlist
  */
-export function isFeishuGroupAllowed(params) {
+function isFeishuGroupAllowed(params) {
     const { groupPolicy } = params;
     if (groupPolicy === 'disabled') {
         return false;
@@ -121,7 +128,7 @@ export function isFeishuGroupAllowed(params) {
  * Telegram) is sender IDs.  This function separates the two concerns so
  * both layers can work independently.
  */
-export function splitLegacyGroupAllowFrom(rawGroupAllowFrom) {
+function splitLegacyGroupAllowFrom(rawGroupAllowFrom) {
     const legacyChatIds = [];
     const senderAllowFrom = [];
     for (const entry of rawGroupAllowFrom) {
@@ -149,7 +156,7 @@ export function splitLegacyGroupAllowFrom(rawGroupAllowFrom) {
  * The `senderAllowFrom` is the union of global (non-oc_) entries,
  * per-group entries, and default ("*") entries (when no per-group config).
  */
-export function resolveGroupSenderPolicyContext(params) {
+function resolveGroupSenderPolicyContext(params) {
     const { groupConfig, defaultConfig, accountFeishuCfg, senderGroupAllowFrom } = params;
     const senderPolicy = groupConfig?.groupPolicy ?? defaultConfig?.groupPolicy ?? accountFeishuCfg?.groupPolicy ?? 'open';
     const senderAllowFrom = [

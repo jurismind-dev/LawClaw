@@ -7,11 +7,30 @@
  *
  * 提供所有工具通用的模式，减少重复代码。
  */
-import { getEnabledLarkAccounts, getLarkAccount } from '../core/accounts';
-import { LarkClient } from '../core/lark-client';
-import { getTicket } from '../core/lark-ticket';
-import { createToolClient } from '../core/tool-client';
-import { shouldRegisterTool } from '../core/tools-config';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getResolvedConfig = void 0;
+exports.createClientGetter = createClientGetter;
+exports.getFirstAccount = getFirstAccount;
+exports.createToolContext = createToolContext;
+exports.checkToolRegistration = checkToolRegistration;
+exports.registerTool = registerTool;
+exports.formatToolResult = formatToolResult;
+exports.formatToolError = formatToolError;
+exports.createToolLogger = createToolLogger;
+exports.validateRequiredParams = validateRequiredParams;
+exports.validateEnum = validateEnum;
+const accounts_1 = require("../core/accounts.js");
+const lark_client_1 = require("../core/lark-client.js");
+const lark_ticket_1 = require("../core/lark-ticket.js");
+const tool_client_1 = require("../core/tool-client.js");
+const tools_config_1 = require("../core/tools-config.js");
+// ---------------------------------------------------------------------------
+// 配置解析
+// ---------------------------------------------------------------------------
+// getResolvedConfig is defined in lark-client.ts (core layer) so that both
+// tool-client.ts and this file can use it without a circular dependency.
+var lark_client_2 = require("../core/lark-client.js");
+Object.defineProperty(exports, "getResolvedConfig", { enumerable: true, get: function () { return lark_client_2.getResolvedConfig; } });
 // ---------------------------------------------------------------------------
 // 客户端管理
 // ---------------------------------------------------------------------------
@@ -44,18 +63,20 @@ import { shouldRegisterTool } from '../core/tools-config';
  * }
  * ```
  */
-export function createClientGetter(config, accountIndex = 0) {
+function createClientGetter(config, accountIndex = 0) {
     return () => {
+        // `config` may be stale after a hot-reload; use live config for account resolution.
+        const resolveConfig = (0, lark_client_1.getResolvedConfig)(config);
         // 优先使用 LarkTicket 中的 accountId 进行动态账号解析
-        const ticket = getTicket();
+        const ticket = (0, lark_ticket_1.getTicket)();
         if (ticket?.accountId) {
-            const account = getLarkAccount(config, ticket.accountId);
+            const account = (0, accounts_1.getLarkAccount)(resolveConfig, ticket.accountId);
             if (account.enabled && account.configured) {
-                return LarkClient.fromAccount(account).sdk;
+                return lark_client_1.LarkClient.fromAccount(account).sdk;
             }
         }
         // 回退：使用 accountIndex 指定的账号
-        const accounts = getEnabledLarkAccounts(config);
+        const accounts = (0, accounts_1.getEnabledLarkAccounts)(resolveConfig);
         if (accounts.length === 0) {
             throw new Error('No enabled Feishu accounts configured. ' + 'Please add appId and appSecret in config under channels.feishu');
         }
@@ -63,7 +84,7 @@ export function createClientGetter(config, accountIndex = 0) {
             throw new Error(`Requested account index ${accountIndex} but only ${accounts.length} accounts available`);
         }
         const account = accounts[accountIndex];
-        const larkClient = LarkClient.fromAccount(account);
+        const larkClient = lark_client_1.LarkClient.fromAccount(account);
         return larkClient.sdk;
     };
 }
@@ -82,17 +103,19 @@ export function createClientGetter(config, accountIndex = 0) {
  * const client = LarkClient.fromAccount(account);
  * ```
  */
-export function getFirstAccount(config) {
+function getFirstAccount(config) {
+    // `config` may be stale after a hot-reload; use live config for account resolution.
+    const resolveConfig = (0, lark_client_1.getResolvedConfig)(config);
     // 优先使用 LarkTicket 中的 accountId
-    const ticket = getTicket();
+    const ticket = (0, lark_ticket_1.getTicket)();
     if (ticket?.accountId) {
-        const account = getLarkAccount(config, ticket.accountId);
+        const account = (0, accounts_1.getLarkAccount)(resolveConfig, ticket.accountId);
         if (account.enabled && account.configured) {
             return account;
         }
     }
     // 回退到第一个启用的账号
-    const accounts = getEnabledLarkAccounts(config);
+    const accounts = (0, accounts_1.getEnabledLarkAccounts)(resolveConfig);
     if (accounts.length === 0) {
         throw new Error('No enabled Feishu accounts configured. ' + 'Please add appId and appSecret in config under channels.feishu');
     }
@@ -127,7 +150,7 @@ export function getFirstAccount(config) {
  * }
  * ```
  */
-export function createToolContext(api, toolName, options) {
+function createToolContext(api, toolName, options) {
     if (!api.config) {
         throw new Error('No config available');
     }
@@ -135,7 +158,7 @@ export function createToolContext(api, toolName, options) {
     const accountIndex = options?.accountIndex ?? 0;
     return {
         getClient: createClientGetter(config, accountIndex),
-        toolClient: () => createToolClient(config, accountIndex),
+        toolClient: () => (0, tool_client_1.createToolClient)(config, accountIndex),
         log: createToolLogger(api, toolName),
     };
 }
@@ -163,11 +186,11 @@ export function createToolContext(api, toolName, options) {
  * }
  * ```
  */
-export function checkToolRegistration(api, toolName) {
+function checkToolRegistration(api, toolName) {
     if (!api.config)
         return false;
-    if (!shouldRegisterTool(api.config, toolName)) {
-        api.logger.info?.(`${toolName}: Skipped registration (in deny list)`);
+    if (!(0, tools_config_1.shouldRegisterTool)(api.config, toolName)) {
+        api.logger.debug?.(`${toolName}: Skipped registration (in deny list)`);
         return false;
     }
     return true;
@@ -190,20 +213,21 @@ export function checkToolRegistration(api, toolName) {
  * registerTool(api, { name: 'feishu_my_tool', ... });
  * ```
  */
-export function registerTool(api, tool, opts) {
+function registerTool(api, tool, opts) {
     // 提取工具名称
     const toolName = typeof tool === 'function' ? tool.name : tool.name;
     if (!toolName) {
         // 如果无法提取工具名，直接注册（不拦截）
         api.registerTool(tool, opts);
-        return;
+        return true;
     }
     // 检查是否应该注册
     if (!checkToolRegistration(api, toolName)) {
-        return;
+        return false;
     }
     // 通过检查，调用原始的 registerTool
     api.registerTool(tool, opts);
+    return true;
 }
 // ---------------------------------------------------------------------------
 // 返回值格式化
@@ -224,7 +248,7 @@ export function registerTool(api, tool, opts) {
  * return formatToolResult(data, { indent: 4 });
  * ```
  */
-export function formatToolResult(data, options = {}) {
+function formatToolResult(data, options = {}) {
     const { indent = 2 } = options;
     return {
         content: [
@@ -253,7 +277,7 @@ export function formatToolResult(data, options = {}) {
  * }
  * ```
  */
-export function formatToolError(error, context) {
+function formatToolError(error, context) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     return formatToolResult({
         error: errorMsg,
@@ -282,7 +306,7 @@ export function formatToolError(error, context) {
  * }
  * ```
  */
-export function createToolLogger(api, toolName) {
+function createToolLogger(api, toolName) {
     const prefix = `${toolName}:`;
     return {
         info: (msg) => {
@@ -327,10 +351,10 @@ export function createToolLogger(api, toolName) {
  * }
  * ```
  */
-export function validateRequiredParams(params, requiredFields) {
+function validateRequiredParams(params, requiredFields) {
     const missing = requiredFields.filter((field) => {
         const value = params[field];
-        return value === undefined || value === null || value === '';
+        return value === undefined || value == null || value === '';
     });
     if (missing.length > 0) {
         return {
@@ -354,7 +378,7 @@ export function validateRequiredParams(params, requiredFields) {
  * if (error) return formatToolResult(error);
  * ```
  */
-export function validateEnum(value, allowedValues, fieldName) {
+function validateEnum(value, allowedValues, fieldName) {
     if (!allowedValues.includes(value)) {
         return {
             error: `Invalid value for ${fieldName}: ${value}`,

@@ -13,16 +13,20 @@
  * All HTTP calls use the built-in `fetch` (Node 18+). The Lark SDK is not
  * used here because these OAuth endpoints are outside the SDK's scope.
  */
-import { larkLogger } from './lark-logger';
-const log = larkLogger('core/device-flow');
-import { feishuFetch } from './feishu-fetch';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveOAuthEndpoints = resolveOAuthEndpoints;
+exports.requestDeviceAuthorization = requestDeviceAuthorization;
+exports.pollDeviceToken = pollDeviceToken;
+const lark_logger_1 = require("./lark-logger.js");
+const log = (0, lark_logger_1.larkLogger)('core/device-flow');
+const feishu_fetch_1 = require("./feishu-fetch.js");
 // ---------------------------------------------------------------------------
 // Endpoint resolution
 // ---------------------------------------------------------------------------
 /**
  * Resolve the two OAuth endpoint URLs based on the configured brand.
  */
-export function resolveOAuthEndpoints(brand) {
+function resolveOAuthEndpoints(brand) {
     if (!brand || brand === 'feishu') {
         return {
             deviceAuthorization: 'https://accounts.feishu.cn/oauth/v1/device_authorization',
@@ -63,7 +67,7 @@ export function resolveOAuthEndpoints(brand) {
  * The `offline_access` scope is automatically appended so that the token
  * response includes a refresh_token.
  */
-export async function requestDeviceAuthorization(params) {
+async function requestDeviceAuthorization(params) {
     const { appId, appSecret, brand } = params;
     const endpoints = resolveOAuthEndpoints(brand);
     // Ensure offline_access is always requested.
@@ -76,7 +80,7 @@ export async function requestDeviceAuthorization(params) {
     body.set('client_id', appId);
     body.set('scope', scope);
     log.info(`requesting device authorization (scope="${scope}") url=${endpoints.deviceAuthorization} token_url=${endpoints.token}`);
-    const resp = await feishuFetch(endpoints.deviceAuthorization, {
+    const resp = await (0, feishu_fetch_1.feishuFetch)(endpoints.deviceAuthorization, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -130,7 +134,7 @@ function sleep(ms, signal) {
  *
  * Pass an `AbortSignal` to cancel polling from the outside.
  */
-export async function pollDeviceToken(params) {
+async function pollDeviceToken(params) {
     const MAX_POLL_INTERVAL = 60; // slow_down 最大间隔 60 秒
     const MAX_POLL_ATTEMPTS = 200; // 安全上限（远超设备码有效期）
     const { appId, appSecret, brand, deviceCode, expiresIn, signal } = params;
@@ -146,7 +150,7 @@ export async function pollDeviceToken(params) {
         await sleep(interval * 1000, signal);
         let data;
         try {
-            const resp = await feishuFetch(endpoints.token, {
+            const resp = await (0, feishu_fetch_1.feishuFetch)(endpoints.token, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({

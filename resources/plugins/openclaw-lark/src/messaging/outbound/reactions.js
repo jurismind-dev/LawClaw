@@ -8,7 +8,12 @@
  * Provides functions to add, remove, and list emoji reactions on Feishu
  * messages using the IM Message Reaction API.
  */
-import { LarkClient } from '../../core/lark-client';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.VALID_FEISHU_EMOJI_TYPES = exports.FeishuEmoji = void 0;
+exports.addReactionFeishu = addReactionFeishu;
+exports.removeReactionFeishu = removeReactionFeishu;
+exports.listReactionsFeishu = listReactionsFeishu;
+const lark_client_1 = require("../../core/lark-client.js");
 // ---------------------------------------------------------------------------
 // Feishu emoji constants
 // ---------------------------------------------------------------------------
@@ -20,7 +25,7 @@ import { LarkClient } from '../../core/lark-client';
  * Feishu supports many more emoji types. Any valid emoji type string
  * can be passed directly to the API functions.
  */
-export const FeishuEmoji = {
+exports.FeishuEmoji = {
     THUMBSUP: 'THUMBSUP',
     THUMBSDOWN: 'THUMBSDOWN',
     HEART: 'HEART',
@@ -61,7 +66,7 @@ export const FeishuEmoji = {
  *
  * @see https://go.feishu.cn/s/670vFWbA804
  */
-export const VALID_FEISHU_EMOJI_TYPES = new Set([
+exports.VALID_FEISHU_EMOJI_TYPES = new Set([
     // Gestures / actions
     'OK',
     'THUMBSUP',
@@ -266,9 +271,9 @@ export const VALID_FEISHU_EMOJI_TYPES = new Set([
  * @param params.accountId - Optional account identifier for multi-account setups.
  * @returns An object containing the platform-assigned reaction ID.
  */
-export async function addReactionFeishu(params) {
+async function addReactionFeishu(params) {
     const { cfg, messageId, emojiType, accountId } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     let response;
     try {
         response = await client.im.messageReaction.create({
@@ -286,8 +291,8 @@ export async function addReactionFeishu(params) {
         const e = err;
         const errCode = e.code ?? e.response?.data?.code;
         if (errCode === 231001) {
-            const validTypes = Array.from(VALID_FEISHU_EMOJI_TYPES).join(', ');
-            throw new Error(`Emoji type "${emojiType}" is not a valid Feishu reaction. Valid types: ${validTypes}`);
+            const validTypes = Array.from(exports.VALID_FEISHU_EMOJI_TYPES).join(', ');
+            throw new Error(`Emoji type "${emojiType}" is not a valid Feishu reaction. Valid types: ${validTypes}`, { cause: err });
         }
         throw err;
     }
@@ -312,9 +317,9 @@ export async function addReactionFeishu(params) {
  * @param params.reactionId - The platform-assigned reaction ID to delete.
  * @param params.accountId  - Optional account identifier for multi-account setups.
  */
-export async function removeReactionFeishu(params) {
+async function removeReactionFeishu(params) {
     const { cfg, messageId, reactionId, accountId } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     await client.im.messageReaction.delete({
         path: {
             message_id: messageId,
@@ -338,9 +343,9 @@ export async function removeReactionFeishu(params) {
  * @param params.accountId - Optional account identifier for multi-account setups.
  * @returns An array of reactions matching the criteria.
  */
-export async function listReactionsFeishu(params) {
+async function listReactionsFeishu(params) {
     const { cfg, messageId, emojiType, accountId } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const reactions = [];
     let pageToken;
     let hasMore = true;

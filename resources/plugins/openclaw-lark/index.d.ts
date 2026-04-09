@@ -30,7 +30,7 @@ declare const plugin: {
     id: string;
     name: string;
     description: string;
-    configSchema: import("openclaw/plugin-sdk").OpenClawPluginConfigSchema;
+    configSchema: any;
     register(api: OpenClawPluginApi): void;
 };
 export default plugin;

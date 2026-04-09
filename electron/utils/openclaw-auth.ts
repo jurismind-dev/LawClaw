@@ -17,9 +17,23 @@ import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
+const JURISMIND_WEB_SEARCH_PLUGIN_ID = 'jurismind';
 const JURISMIND_WEB_SEARCH_PROVIDER = 'doubao';
 const LEGACY_JURISMIND_WEB_SEARCH_PROVIDER = 'perplexity';
 const JURISMIND_WEB_SEARCH_MODEL = 'doubao';
+const LEGACY_WEB_SEARCH_PLUGIN_MIGRATIONS = [
+  { searchKey: 'brave', pluginId: 'brave' },
+  { searchKey: 'exa', pluginId: 'exa' },
+  { searchKey: 'firecrawl', pluginId: 'firecrawl', ensureEnabled: true },
+  { searchKey: 'gemini', pluginId: 'google' },
+  { searchKey: 'grok', pluginId: 'xai' },
+  { searchKey: 'kimi', pluginId: 'moonshot' },
+  { searchKey: 'doubao', pluginId: JURISMIND_WEB_SEARCH_PLUGIN_ID },
+  { searchKey: 'minimax', pluginId: 'minimax' },
+  { searchKey: 'perplexity', pluginId: 'perplexity' },
+  { searchKey: 'searxng', pluginId: 'searxng' },
+  { searchKey: 'tavily', pluginId: 'tavily' },
+] as const;
 const OPENCLAW_SAFE_PROVIDER_API_KEY_ENV_MARKERS = new Set([
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
@@ -215,6 +229,74 @@ function writeOpenClawConfig(config: Record<string, unknown>): void {
     mkdirSync(dir, { recursive: true });
   }
   writeFileSync(configPath, stringifyJsonText(config, { trailingNewline: false }), 'utf-8');
+}
+
+function mergePluginOwnedWebToolConfig(
+  config: Record<string, unknown>,
+  target: {
+    pluginId: string;
+    configKey: 'webSearch' | 'webFetch' | 'xSearch';
+    ensureEnabled?: boolean;
+  },
+  legacyValue: unknown
+): boolean {
+  if (!isRecord(legacyValue)) {
+    return false;
+  }
+
+  const plugins = isRecord(config.plugins) ? { ...config.plugins } : {};
+  const entries = isRecord(plugins.entries) ? { ...plugins.entries } : {};
+  const currentEntry = isRecord(entries[target.pluginId])
+    ? { ...(entries[target.pluginId] as Record<string, unknown>) }
+    : {};
+  const currentConfig = isRecord(currentEntry.config)
+    ? { ...(currentEntry.config as Record<string, unknown>) }
+    : {};
+  const currentTargetConfig = isRecord(currentConfig[target.configKey])
+    ? { ...(currentConfig[target.configKey] as Record<string, unknown>) }
+    : {};
+
+  const nextTargetConfig = {
+    ...(legacyValue as Record<string, unknown>),
+    ...currentTargetConfig,
+  };
+  const nextConfig = {
+    ...currentConfig,
+    [target.configKey]: nextTargetConfig,
+  };
+  const nextEntry: Record<string, unknown> = {
+    ...currentEntry,
+    config: nextConfig,
+  };
+
+  if (target.ensureEnabled) {
+    nextEntry.enabled = true;
+  }
+
+  if (JSON.stringify(nextEntry) === JSON.stringify(currentEntry)) {
+    return false;
+  }
+
+  entries[target.pluginId] = nextEntry;
+  plugins.entries = entries;
+  config.plugins = plugins;
+  return true;
+}
+
+function readPluginOwnedWebToolConfig(
+  config: Record<string, unknown>,
+  target: {
+    pluginId: string;
+    configKey: 'webSearch' | 'webFetch' | 'xSearch';
+  }
+): Record<string, unknown> | undefined {
+  const plugins = isRecord(config.plugins) ? config.plugins : {};
+  const entries = isRecord(plugins.entries) ? plugins.entries : {};
+  const entry = isRecord(entries[target.pluginId]) ? entries[target.pluginId] : {};
+  const pluginConfig = isRecord(entry.config) ? entry.config : {};
+  const targetConfig = pluginConfig[target.configKey];
+
+  return isRecord(targetConfig) ? targetConfig : undefined;
 }
 
 function upsertAuthProfile(store: AuthProfilesStore, providerId: string, apiKey: string): void {
@@ -491,6 +573,54 @@ export function cleanupOpenClawProviderEntries(providerIds: string | string[]): 
   if (changed) {
     writeOpenClawConfig(config);
     console.log(`Removed stale OpenClaw provider entries: ${Array.from(allAliases).join(', ')}`);
+  }
+  return changed;
+}
+
+/**
+ * Remove only non-canonical legacy provider entries from ~/.openclaw/openclaw.json.
+ * Example: qwen -> remove qwen-portal, keep qwen.
+ */
+export function cleanupLegacyOpenClawProviderAliases(provider: string): boolean {
+  const canonicalProviderId = getCanonicalProviderId(provider);
+  const legacyAliases = getProviderAliasIds(provider).filter((id) => id !== canonicalProviderId);
+  if (legacyAliases.length === 0) {
+    return false;
+  }
+
+  const config = readOpenClawConfig();
+  const providersChanged = removeModelProviderEntries(config, legacyAliases);
+  const plugins = isRecord(config.plugins) ? { ...config.plugins } : {};
+  const entries = isRecord(plugins.entries) ? { ...plugins.entries } : {};
+  let pluginChanged = false;
+  for (const alias of legacyAliases) {
+    const pluginId = `${alias}-auth`;
+    if (entries[pluginId]) {
+      delete entries[pluginId];
+      pluginChanged = true;
+    }
+  }
+
+  if (pluginChanged) {
+    if (Object.keys(entries).length > 0) {
+      plugins.entries = entries;
+    } else {
+      delete plugins.entries;
+    }
+
+    if (Object.keys(plugins).length > 0) {
+      config.plugins = plugins;
+    } else {
+      delete config.plugins;
+    }
+  }
+
+  const changed = providersChanged || pluginChanged;
+  if (changed) {
+    writeOpenClawConfig(config);
+    console.log(
+      `Removed legacy OpenClaw provider aliases for "${provider}": ${legacyAliases.join(', ')}`
+    );
   }
   return changed;
 }
@@ -962,14 +1092,26 @@ export async function syncProviderConfigToOpenClaw(
   const config = readOpenClawConfig();
   const providersRoot = isRecord(config.models) ? { ...config.models } : {};
   const providers = isRecord(providersRoot.providers) ? { ...providersRoot.providers } : {};
+  const canonicalProviderId = getCanonicalProviderId(provider);
+  const aliasIds = getProviderAliasIds(provider);
 
   if (override.baseUrl && override.api) {
-    const nextModels: Array<Record<string, unknown>> = [];
+    const existingProvider = isRecord(providers[canonicalProviderId])
+      ? { ...(providers[canonicalProviderId] as Record<string, unknown>) }
+      : {};
+    const existingModels = Array.isArray(existingProvider.models)
+      ? (existingProvider.models as Array<Record<string, unknown>>)
+      : [];
+    const nextModels = [...existingModels];
     if (modelId) {
-      nextModels.push({ id: modelId, name: modelId });
+      const hasModel = nextModels.some((entry) => isRecord(entry) && entry.id === modelId);
+      if (!hasModel) {
+        nextModels.push({ id: modelId, name: modelId });
+      }
     }
 
     const nextProvider: Record<string, unknown> = {
+      ...existingProvider,
       baseUrl: override.baseUrl,
       api: override.api,
       models: nextModels,
@@ -982,15 +1124,47 @@ export async function syncProviderConfigToOpenClaw(
       nextProvider.authHeader = override.authHeader;
     }
 
-    providers[provider] = nextProvider;
+    providers[canonicalProviderId] = nextProvider;
+    for (const aliasId of aliasIds) {
+      if (aliasId !== canonicalProviderId && providers[aliasId]) {
+        delete providers[aliasId];
+      }
+    }
     providersRoot.providers = providers;
     config.models = providersRoot;
   }
 
-  if (provider === 'minimax-portal' || provider === 'qwen-portal') {
-    const plugins = isRecord(config.plugins) ? { ...config.plugins } : {};
-    const entries = isRecord(plugins.entries) ? { ...plugins.entries } : {};
-    entries[`${provider}-auth`] = { enabled: true };
+  const plugins = isRecord(config.plugins) ? { ...config.plugins } : {};
+  const entries = isRecord(plugins.entries) ? { ...plugins.entries } : {};
+  const authPluginId =
+    provider === 'minimax-portal' || provider === 'minimax-portal-cn'
+      ? 'minimax-portal-auth'
+      : undefined;
+  let pluginChanged = false;
+
+  for (const aliasId of aliasIds) {
+    const legacyPluginId = `${aliasId}-auth`;
+    if (legacyPluginId !== authPluginId && entries[legacyPluginId]) {
+      delete entries[legacyPluginId];
+      pluginChanged = true;
+    }
+  }
+
+  if (authPluginId) {
+    const currentEntry = isRecord(entries[authPluginId])
+      ? { ...(entries[authPluginId] as Record<string, unknown>) }
+      : {};
+    const nextEntry = {
+      ...currentEntry,
+      enabled: true,
+    };
+    if (JSON.stringify(nextEntry) !== JSON.stringify(currentEntry)) {
+      entries[authPluginId] = nextEntry;
+      pluginChanged = true;
+    }
+  }
+
+  if (pluginChanged) {
     plugins.entries = entries;
     config.plugins = plugins;
   }
@@ -1061,6 +1235,94 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
   writeOpenClawConfig(config);
 }
 
+/**
+ * Migrate legacy web-tool config into the plugin-owned paths used by OpenClaw 2026.4.x.
+ * LawClaw's Jurismind-backed doubao search provider now lives under
+ * plugins.entries.jurismind.config.webSearch like other modern web-search plugins.
+ */
+export function migrateLegacyOpenClawWebToolConfig(): boolean {
+  const config = readOpenClawConfig();
+  const tools = isRecord(config.tools) ? { ...config.tools } : {};
+  const web = isRecord(tools.web) ? { ...tools.web } : {};
+  const search = isRecord(web.search) ? { ...web.search } : {};
+  const fetch = isRecord(web.fetch) ? { ...web.fetch } : {};
+  let changed = false;
+  let searchChanged = false;
+  let fetchChanged = false;
+  let webChanged = false;
+
+  if (mergePluginOwnedWebToolConfig(config, { pluginId: 'xai', configKey: 'xSearch' }, web.x_search)) {
+    changed = true;
+  }
+  if (isRecord(web.x_search)) {
+    delete web.x_search;
+    webChanged = true;
+    changed = true;
+  }
+
+  if (
+    mergePluginOwnedWebToolConfig(
+      config,
+      { pluginId: 'firecrawl', configKey: 'webFetch', ensureEnabled: true },
+      fetch.firecrawl
+    )
+  ) {
+    changed = true;
+  }
+  if (isRecord(fetch.firecrawl)) {
+    delete fetch.firecrawl;
+    fetchChanged = true;
+    changed = true;
+  }
+
+  for (const migration of LEGACY_WEB_SEARCH_PLUGIN_MIGRATIONS) {
+    const legacyProviderConfig = search[migration.searchKey];
+    if (!isRecord(legacyProviderConfig)) {
+      continue;
+    }
+
+    if (
+      migration.searchKey === LEGACY_JURISMIND_WEB_SEARCH_PROVIDER
+      && isManagedJurismindWebSearchConfig(legacyProviderConfig)
+    ) {
+      continue;
+    }
+
+    mergePluginOwnedWebToolConfig(
+      config,
+      {
+        pluginId: migration.pluginId,
+        configKey: 'webSearch',
+        ensureEnabled: migration.ensureEnabled,
+      },
+      legacyProviderConfig
+    );
+
+    delete search[migration.searchKey];
+    searchChanged = true;
+    changed = true;
+  }
+
+  if (!changed) {
+    return false;
+  }
+
+  if (searchChanged) {
+    web.search = search;
+  }
+  if (fetchChanged) {
+    web.fetch = fetch;
+  }
+  if (webChanged || searchChanged || fetchChanged) {
+    tools.web = web;
+    config.tools = tools;
+  }
+
+  writeOpenClawConfig(config);
+  console.log('Migrated legacy web-tool config into plugin-owned OpenClaw paths');
+  return true;
+}
+
 function resolveJurismindWebSearchBaseUrl(): string {
   return getProviderConfig('jurismind')?.baseUrl || 'http://101.132.245.215:3001/v1';
 }
@@ -1092,25 +1354,51 @@ export function syncJurismindWebSearchConfig(apiKey: string): void {
   const tools = isRecord(config.tools) ? { ...config.tools } : {};
   const web = isRecord(tools.web) ? { ...tools.web } : {};
   const search = isRecord(web.search) ? { ...web.search } : {};
-  const transportConfig = isRecord(search[JURISMIND_WEB_SEARCH_PROVIDER])
-    ? { ...(search[JURISMIND_WEB_SEARCH_PROVIDER] as Record<string, unknown>) }
+  const plugins = isRecord(config.plugins) ? { ...config.plugins } : {};
+  const entries = isRecord(plugins.entries) ? { ...plugins.entries } : {};
+  const currentPluginEntry = isRecord(entries[JURISMIND_WEB_SEARCH_PLUGIN_ID])
+    ? { ...(entries[JURISMIND_WEB_SEARCH_PLUGIN_ID] as Record<string, unknown>) }
+    : {};
+  const currentPluginConfig = isRecord(currentPluginEntry.config)
+    ? { ...(currentPluginEntry.config as Record<string, unknown>) }
+    : {};
+  const currentWebSearchConfig = readPluginOwnedWebToolConfig(config, {
+    pluginId: JURISMIND_WEB_SEARCH_PLUGIN_ID,
+    configKey: 'webSearch',
+  });
+  const transportConfig = currentWebSearchConfig
+    ? { ...currentWebSearchConfig }
     : {};
 
   transportConfig.apiKey = trimmedKey;
   transportConfig.baseUrl = resolveJurismindWebSearchBaseUrl();
   transportConfig.model = JURISMIND_WEB_SEARCH_MODEL;
 
+  const nextPluginEntry: Record<string, unknown> = {
+    ...currentPluginEntry,
+    enabled: true,
+    config: {
+      ...currentPluginConfig,
+      webSearch: transportConfig,
+    },
+  };
+
   const legacyTransportConfig = search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
   if (isManagedJurismindWebSearchConfig(legacyTransportConfig)) {
     delete search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
   }
+  if (isRecord(search[JURISMIND_WEB_SEARCH_PROVIDER])) {
+    delete search[JURISMIND_WEB_SEARCH_PROVIDER];
+  }
 
   search.enabled = true;
   search.provider = JURISMIND_WEB_SEARCH_PROVIDER;
-  search[JURISMIND_WEB_SEARCH_PROVIDER] = transportConfig;
   web.search = search;
   tools.web = web;
   config.tools = tools;
+  entries[JURISMIND_WEB_SEARCH_PLUGIN_ID] = nextPluginEntry;
+  plugins.entries = entries;
+  config.plugins = plugins;
 
   writeOpenClawConfig(config);
   console.log('Synced Jurismind-backed Doubao web search config to OpenClaw');
@@ -1126,11 +1414,24 @@ export function clearJurismindWebSearchConfig(): boolean {
   const tools = isRecord(config.tools) ? { ...config.tools } : {};
   const web = isRecord(tools.web) ? { ...tools.web } : {};
   const search = isRecord(web.search) ? { ...web.search } : {};
+  const plugins = isRecord(config.plugins) ? { ...config.plugins } : {};
+  const entries = isRecord(plugins.entries) ? { ...plugins.entries } : {};
+  const currentPluginEntry = isRecord(entries[JURISMIND_WEB_SEARCH_PLUGIN_ID])
+    ? { ...(entries[JURISMIND_WEB_SEARCH_PLUGIN_ID] as Record<string, unknown>) }
+    : {};
+  const currentPluginConfig = isRecord(currentPluginEntry.config)
+    ? { ...(currentPluginEntry.config as Record<string, unknown>) }
+    : {};
+  const currentPluginWebSearchConfig = readPluginOwnedWebToolConfig(config, {
+    pluginId: JURISMIND_WEB_SEARCH_PLUGIN_ID,
+    configKey: 'webSearch',
+  });
   const currentProvider = typeof search.provider === 'string' ? search.provider : '';
   const existingTransportConfig = search[JURISMIND_WEB_SEARCH_PROVIDER];
-  const hasManagedConfig = isManagedJurismindWebSearchConfig(existingTransportConfig);
+  const hasManagedLegacyConfig = isManagedJurismindWebSearchConfig(existingTransportConfig);
+  const hasManagedPluginConfig = isManagedJurismindWebSearchConfig(currentPluginWebSearchConfig);
   const legacyTransportConfig = search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
-  const hasManagedLegacyConfig = isManagedJurismindWebSearchConfig(legacyTransportConfig);
+  const hasManagedPerplexityCompatConfig = isManagedJurismindWebSearchConfig(legacyTransportConfig);
   const hasDifferentConfiguredProvider =
     currentProvider.length > 0
     && currentProvider !== JURISMIND_WEB_SEARCH_PROVIDER
@@ -1138,7 +1439,39 @@ export function clearJurismindWebSearchConfig(): boolean {
 
   let changed = false;
 
-  if (hasManagedConfig) {
+  if (hasManagedPluginConfig) {
+    const nextPluginEntry = { ...currentPluginEntry };
+    const nextPluginConfig = { ...currentPluginConfig };
+    const nextWebSearchConfig = currentPluginWebSearchConfig
+      ? { ...currentPluginWebSearchConfig }
+      : {};
+
+    delete nextWebSearchConfig.apiKey;
+    delete nextWebSearchConfig.baseUrl;
+    delete nextWebSearchConfig.model;
+
+    if (Object.keys(nextWebSearchConfig).length > 0) {
+      nextPluginConfig.webSearch = nextWebSearchConfig;
+    } else {
+      delete nextPluginConfig.webSearch;
+    }
+
+    if (Object.keys(nextPluginConfig).length > 0) {
+      nextPluginEntry.config = nextPluginConfig;
+    } else {
+      delete nextPluginEntry.config;
+    }
+
+    if (Object.keys(nextPluginEntry).length > 0) {
+      entries[JURISMIND_WEB_SEARCH_PLUGIN_ID] = nextPluginEntry;
+    } else {
+      delete entries[JURISMIND_WEB_SEARCH_PLUGIN_ID];
+    }
+
+    changed = true;
+  }
+
+  if (hasManagedLegacyConfig) {
     const nextTransportConfig = isRecord(existingTransportConfig)
       ? { ...existingTransportConfig }
       : {};
@@ -1155,7 +1488,7 @@ export function clearJurismindWebSearchConfig(): boolean {
     changed = true;
   }
 
-  if (hasManagedLegacyConfig) {
+  if (hasManagedPerplexityCompatConfig) {
     const nextLegacyTransportConfig = isRecord(legacyTransportConfig)
       ? { ...legacyTransportConfig }
       : {};
@@ -1172,7 +1505,15 @@ export function clearJurismindWebSearchConfig(): boolean {
     changed = true;
   }
 
-  if (!hasDifferentConfiguredProvider && (hasManagedConfig || hasManagedLegacyConfig || currentProvider.length > 0)) {
+  if (
+    !hasDifferentConfiguredProvider
+    && (
+      hasManagedPluginConfig
+      || hasManagedLegacyConfig
+      || hasManagedPerplexityCompatConfig
+      || currentProvider.length > 0
+    )
+  ) {
     delete search.provider;
     search.enabled = false;
     changed = true;
@@ -1185,6 +1526,16 @@ export function clearJurismindWebSearchConfig(): boolean {
   web.search = search;
   tools.web = web;
   config.tools = tools;
+  if (Object.keys(entries).length > 0) {
+    plugins.entries = entries;
+  } else {
+    delete plugins.entries;
+  }
+  if (Object.keys(plugins).length > 0) {
+    config.plugins = plugins;
+  } else {
+    delete config.plugins;
+  }
   writeOpenClawConfig(config);
   console.log('Cleared Jurismind-backed Doubao web search config from OpenClaw');
   return true;

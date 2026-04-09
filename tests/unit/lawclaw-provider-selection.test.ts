@@ -201,9 +201,9 @@ describe('lawclaw provider selection helpers', () => {
     const mod = await import('@electron/utils/lawclaw-provider-selection');
 
     const available = await mod.isProviderAvailableForLawClaw({
-      id: 'qwen-portal',
-      type: 'qwen-portal',
-      name: 'Qwen',
+      id: 'minimax-portal',
+      type: 'minimax-portal',
+      name: 'MiniMax (Global)',
       enabled: true,
       createdAt: '2026-03-01T00:00:00.000Z',
       updatedAt: '2026-03-01T00:00:00.000Z',
@@ -212,12 +212,12 @@ describe('lawclaw provider selection helpers', () => {
     expect(available).toBe(true);
     expect(openclawAuthMock.getOAuthTokenFromOpenClaw).toHaveBeenNthCalledWith(
       1,
-      'qwen-portal',
+      'minimax-portal',
       'lawclaw-main'
     );
     expect(openclawAuthMock.getOAuthTokenFromOpenClaw).toHaveBeenNthCalledWith(
       2,
-      'qwen-portal',
+      'minimax-portal',
       'main'
     );
   });
@@ -234,7 +234,7 @@ describe('lawclaw provider selection helpers', () => {
       },
       {
         id: 'provider-qwen',
-        type: 'qwen-portal',
+        type: 'qwen',
         name: 'Qwen',
         enabled: true,
         createdAt: '2026-03-01T00:00:00.000Z',
@@ -250,9 +250,8 @@ describe('lawclaw provider selection helpers', () => {
       },
     ]);
     secureStorageMock.getApiKey.mockImplementation(async (providerId: string) =>
-      providerId === 'provider-openai' ? 'sk-live' : null
+      providerId === 'provider-openai' || providerId === 'provider-qwen' ? 'sk-live' : null
     );
-    openclawAuthMock.getOAuthTokenFromOpenClaw.mockResolvedValue('oauth-token');
 
     const mod = await import('@electron/utils/lawclaw-provider-selection');
 

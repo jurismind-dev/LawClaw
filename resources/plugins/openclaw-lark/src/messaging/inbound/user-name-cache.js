@@ -12,116 +12,18 @@
  * - `resolveUserName()` — single-user fallback via `contact.user.get`
  * - `clearUserNameCache()` — teardown hook (called from LarkClient.clearCache)
  */
-import { LarkClient } from '../../core/lark-client';
-import { extractPermissionError } from './permission';
-// ---------------------------------------------------------------------------
-// UserNameCache
-// ---------------------------------------------------------------------------
-const DEFAULT_MAX_SIZE = 500;
-const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
-export class UserNameCache {
-    map = new Map();
-    maxSize;
-    ttlMs;
-    constructor(maxSize = DEFAULT_MAX_SIZE, ttlMs = DEFAULT_TTL_MS) {
-        this.maxSize = maxSize;
-        this.ttlMs = ttlMs;
-    }
-    /** Check whether the cache holds a (possibly empty) entry for this openId. */
-    has(openId) {
-        const entry = this.map.get(openId);
-        if (!entry)
-            return false;
-        if (entry.expireAt <= Date.now()) {
-            this.map.delete(openId);
-            return false;
-        }
-        return true;
-    }
-    /** Get a cached name (refreshes LRU position). Returns `undefined` on miss or expiry. */
-    get(openId) {
-        const entry = this.map.get(openId);
-        if (!entry)
-            return undefined;
-        if (entry.expireAt <= Date.now()) {
-            this.map.delete(openId);
-            return undefined;
-        }
-        // LRU refresh: delete + re-insert to move to end
-        this.map.delete(openId);
-        this.map.set(openId, entry);
-        return entry.name;
-    }
-    /** Write a single entry (evicts oldest if over capacity). */
-    set(openId, name) {
-        this.map.delete(openId); // ensure fresh insertion order
-        this.map.set(openId, { name, expireAt: Date.now() + this.ttlMs });
-        this.evict();
-    }
-    /** Write multiple entries at once. */
-    setMany(entries) {
-        for (const [openId, name] of entries) {
-            this.map.delete(openId);
-            this.map.set(openId, { name, expireAt: Date.now() + this.ttlMs });
-        }
-        this.evict();
-    }
-    /** Return openIds that are NOT present (or expired) in the cache. */
-    filterMissing(openIds) {
-        return openIds.filter((id) => !this.has(id));
-    }
-    /** Bulk read — returns a Map of openId→name for all hits (including empty-string names). */
-    getMany(openIds) {
-        const result = new Map();
-        for (const id of openIds) {
-            if (this.has(id)) {
-                result.set(id, this.get(id) ?? '');
-            }
-        }
-        return result;
-    }
-    /** Clear all entries. */
-    clear() {
-        this.map.clear();
-    }
-    evict() {
-        while (this.map.size > this.maxSize) {
-            // Map iterator yields in insertion order — first key is the oldest
-            const oldest = this.map.keys().next().value;
-            if (oldest !== undefined)
-                this.map.delete(oldest);
-        }
-    }
-}
-// ---------------------------------------------------------------------------
-// Account-scoped singleton registry
-// ---------------------------------------------------------------------------
-const registry = new Map();
-/** Get (or create) the UserNameCache for a given account. */
-export function getUserNameCache(accountId) {
-    let c = registry.get(accountId);
-    if (!c) {
-        c = new UserNameCache();
-        registry.set(accountId, c);
-    }
-    return c;
-}
-/**
- * Clear user-name caches.
- * - With `accountId`: clear that single cache.
- * - Without: clear all caches.
- */
-export function clearUserNameCache(accountId) {
-    if (accountId !== undefined) {
-        registry.get(accountId)?.clear();
-        registry.delete(accountId);
-    }
-    else {
-        for (const c of registry.values())
-            c.clear();
-        registry.clear();
-    }
-}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getUserNameCache = exports.clearUserNameCache = exports.UserNameCache = void 0;
+exports.batchResolveUserNames = batchResolveUserNames;
+exports.createBatchResolveNames = createBatchResolveNames;
+exports.resolveUserName = resolveUserName;
+const lark_client_1 = require("../../core/lark-client.js");
+const user_name_cache_store_1 = require("./user-name-cache-store.js");
+const permission_1 = require("./permission.js");
+var user_name_cache_store_2 = require("./user-name-cache-store.js");
+Object.defineProperty(exports, "UserNameCache", { enumerable: true, get: function () { return user_name_cache_store_2.UserNameCache; } });
+Object.defineProperty(exports, "clearUserNameCache", { enumerable: true, get: function () { return user_name_cache_store_2.clearUserNameCache; } });
+Object.defineProperty(exports, "getUserNameCache", { enumerable: true, get: function () { return user_name_cache_store_2.getUserNameCache; } });
 // ---------------------------------------------------------------------------
 // Batch resolve via contact/v3/users/batch
 // ---------------------------------------------------------------------------
@@ -138,18 +40,18 @@ const BATCH_SIZE = 50;
  *
  * Best-effort: API errors are logged but never thrown.
  */
-export async function batchResolveUserNames(params) {
+async function batchResolveUserNames(params) {
     const { account, openIds, log } = params;
     if (!account.configured || openIds.length === 0) {
         return new Map();
     }
-    const cache = getUserNameCache(account.accountId);
+    const cache = (0, user_name_cache_store_1.getUserNameCache)(account.accountId);
     const result = cache.getMany(openIds);
     // Deduplicate missing IDs
     const missing = [...new Set(cache.filterMissing(openIds))];
     if (missing.length === 0)
         return result;
-    const client = LarkClient.fromAccount(account).sdk;
+    const client = lark_client_1.LarkClient.fromAccount(account).sdk;
     // Split into chunks of BATCH_SIZE and call SDK method
     for (let i = 0; i < missing.length; i += BATCH_SIZE) {
         const chunk = missing.slice(i, i + BATCH_SIZE);
@@ -193,7 +95,7 @@ export async function batchResolveUserNames(params) {
  * The returned function calls `batchResolveUserNames` with the given
  * account and log function, populating the TAT user-name cache.
  */
-export function createBatchResolveNames(account, log) {
+function createBatchResolveNames(account, log) {
     return async (openIds) => {
         await batchResolveUserNames({ account, openIds, log });
     };
@@ -204,15 +106,15 @@ export function createBatchResolveNames(account, log) {
  * Checks the account-scoped cache first, then falls back to the
  * `contact.user.get` API (same as the old `resolveFeishuSenderName`).
  */
-export async function resolveUserName(params) {
+async function resolveUserName(params) {
     const { account, openId, log } = params;
     if (!account.configured || !openId)
         return {};
-    const cache = getUserNameCache(account.accountId);
+    const cache = (0, user_name_cache_store_1.getUserNameCache)(account.accountId);
     if (cache.has(openId))
         return { name: cache.get(openId) ?? '' };
     try {
-        const client = LarkClient.fromAccount(account).sdk;
+        const client = lark_client_1.LarkClient.fromAccount(account).sdk;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res = await client.contact.user.get({
             path: { user_id: openId },
@@ -229,7 +131,7 @@ export async function resolveUserName(params) {
         return { name: name || undefined };
     }
     catch (err) {
-        const permErr = extractPermissionError(err);
+        const permErr = (0, permission_1.extractPermissionError)(err);
         if (permErr) {
             log(`feishu: permission error resolving user name: code=${permErr.code}`);
             // Cache empty name so we don't retry a known-failing openId

@@ -8,14 +8,16 @@
  * Encapsulates the terminateDueToUnavailable / shouldSkipForUnavailable
  * logic previously scattered as closures in reply-dispatcher.ts.
  */
-import { larkLogger } from '../core/lark-logger';
-import { extractLarkApiCode } from '../core/api-error';
-import { getMessageUnavailableState, isMessageUnavailable, isMessageUnavailableError, isTerminalMessageApiCode, markMessageUnavailable, } from '../core/message-unavailable';
-const log = larkLogger('card/unavailable-guard');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UnavailableGuard = void 0;
+const lark_logger_1 = require("../core/lark-logger.js");
+const api_error_1 = require("../core/api-error.js");
+const message_unavailable_1 = require("../core/message-unavailable.js");
+const log = (0, lark_logger_1.larkLogger)('card/unavailable-guard');
 // ---------------------------------------------------------------------------
 // UnavailableGuard
 // ---------------------------------------------------------------------------
-export class UnavailableGuard {
+class UnavailableGuard {
     terminated = false;
     replyToMessageId;
     getCardMessageId;
@@ -37,7 +39,7 @@ export class UnavailableGuard {
             return true;
         if (!this.replyToMessageId)
             return false;
-        if (!isMessageUnavailable(this.replyToMessageId))
+        if (!(0, message_unavailable_1.isMessageUnavailable)(this.replyToMessageId))
             return false;
         return this.terminate(source);
     }
@@ -51,16 +53,16 @@ export class UnavailableGuard {
     terminate(source, err) {
         if (this.terminated)
             return true;
-        const fromError = isMessageUnavailableError(err) ? err : undefined;
+        const fromError = (0, message_unavailable_1.isMessageUnavailableError)(err) ? err : undefined;
         const cardMessageId = this.getCardMessageId();
-        const state = getMessageUnavailableState(this.replyToMessageId) ?? getMessageUnavailableState(cardMessageId ?? undefined);
+        const state = (0, message_unavailable_1.getMessageUnavailableState)(this.replyToMessageId) ?? (0, message_unavailable_1.getMessageUnavailableState)(cardMessageId ?? undefined);
         let apiCode = fromError?.apiCode ?? state?.apiCode;
         if (!apiCode && err) {
-            const detectedCode = extractLarkApiCode(err);
-            if (isTerminalMessageApiCode(detectedCode)) {
+            const detectedCode = (0, api_error_1.extractLarkApiCode)(err);
+            if ((0, message_unavailable_1.isTerminalMessageApiCode)(detectedCode)) {
                 const fallbackMessageId = this.replyToMessageId ?? cardMessageId ?? undefined;
                 if (fallbackMessageId) {
-                    markMessageUnavailable({
+                    (0, message_unavailable_1.markMessageUnavailable)({
                         messageId: fallbackMessageId,
                         apiCode: detectedCode,
                         operation: source,
@@ -82,3 +84,4 @@ export class UnavailableGuard {
         return true;
     }
 }
+exports.UnavailableGuard = UnavailableGuard;

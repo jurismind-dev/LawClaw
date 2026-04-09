@@ -9,6 +9,13 @@ describe('provider canonical mapping', () => {
     );
   });
 
+  it('maps qwen-portal to qwen', () => {
+    expect(getCanonicalProviderId('qwen-portal')).toBe('qwen');
+    expect(getProviderAliasIds('qwen-portal')).toEqual(
+      expect.arrayContaining(['qwen-portal', 'qwen'])
+    );
+  });
+
   it('keeps non-aliased providers unchanged', () => {
     expect(getCanonicalProviderId('jurismind')).toBe('jurismind');
     expect(getCanonicalProviderId('anthropic')).toBe('anthropic');

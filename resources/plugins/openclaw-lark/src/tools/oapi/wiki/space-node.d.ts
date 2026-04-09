@@ -14,4 +14,4 @@
  *   - copy:   POST /open-apis/wiki/v2/spaces/:space_id/nodes/:node_token/copy
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerFeishuWikiSpaceNodeTool(api: OpenClawPluginApi): void;
+export declare function registerFeishuWikiSpaceNodeTool(api: OpenClawPluginApi): boolean;

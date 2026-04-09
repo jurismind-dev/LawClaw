@@ -7,18 +7,47 @@
  *
  * 提供 OAPI 工具特有的功能（如时间转换），并复用通用辅助函数。
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.handleInvokeErrorWithAutoAuth = exports.formatLarkError = exports.assertLarkOk = exports.SHANGHAI_OFFSET_SUFFIX = exports.SHANGHAI_UTC_OFFSET_HOURS = exports.UserScopeInsufficientError = exports.UserAuthRequiredError = exports.AppScopeMissingError = exports.NeedAuthorizationError = exports.createToolClient = exports.ToolClient = exports.registerTool = exports.checkToolRegistration = exports.validateEnum = exports.validateRequiredParams = exports.getFirstAccount = exports.createToolContext = exports.createClientGetter = exports.createToolLogger = exports.formatToolError = exports.formatToolResult = void 0;
+exports.createFeishuClientFromConfig = createFeishuClientFromConfig;
+exports.json = json;
+exports.parseTimeToTimestamp = parseTimeToTimestamp;
+exports.parseTimeToTimestampMs = parseTimeToTimestampMs;
+exports.parseTimeToRFC3339 = parseTimeToRFC3339;
+exports.convertTimeRange = convertTimeRange;
+exports.pad2 = pad2;
+exports.unixTimestampToISO8601 = unixTimestampToISO8601;
+exports.isInvokeError = isInvokeError;
+exports.StringEnum = StringEnum;
 // ---------------------------------------------------------------------------
 // 通用功能（从 tools/helpers.ts 导入）
 // ---------------------------------------------------------------------------
-export { formatToolResult, formatToolError, createToolLogger, createClientGetter, createToolContext, getFirstAccount, validateRequiredParams, validateEnum, checkToolRegistration, registerTool, } from '../helpers';
+var helpers_1 = require("../helpers.js");
+Object.defineProperty(exports, "formatToolResult", { enumerable: true, get: function () { return helpers_1.formatToolResult; } });
+Object.defineProperty(exports, "formatToolError", { enumerable: true, get: function () { return helpers_1.formatToolError; } });
+Object.defineProperty(exports, "createToolLogger", { enumerable: true, get: function () { return helpers_1.createToolLogger; } });
+Object.defineProperty(exports, "createClientGetter", { enumerable: true, get: function () { return helpers_1.createClientGetter; } });
+Object.defineProperty(exports, "createToolContext", { enumerable: true, get: function () { return helpers_1.createToolContext; } });
+Object.defineProperty(exports, "getFirstAccount", { enumerable: true, get: function () { return helpers_1.getFirstAccount; } });
+Object.defineProperty(exports, "validateRequiredParams", { enumerable: true, get: function () { return helpers_1.validateRequiredParams; } });
+Object.defineProperty(exports, "validateEnum", { enumerable: true, get: function () { return helpers_1.validateEnum; } });
+Object.defineProperty(exports, "checkToolRegistration", { enumerable: true, get: function () { return helpers_1.checkToolRegistration; } });
+Object.defineProperty(exports, "registerTool", { enumerable: true, get: function () { return helpers_1.registerTool; } });
 // ---------------------------------------------------------------------------
 // ToolClient（工具层统一客户端）
 // ---------------------------------------------------------------------------
-export { ToolClient, createToolClient, NeedAuthorizationError, AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError, } from '../../core/tool-client';
+var tool_client_1 = require("../../core/tool-client.js");
+Object.defineProperty(exports, "ToolClient", { enumerable: true, get: function () { return tool_client_1.ToolClient; } });
+Object.defineProperty(exports, "createToolClient", { enumerable: true, get: function () { return tool_client_1.createToolClient; } });
+Object.defineProperty(exports, "NeedAuthorizationError", { enumerable: true, get: function () { return tool_client_1.NeedAuthorizationError; } });
+Object.defineProperty(exports, "AppScopeMissingError", { enumerable: true, get: function () { return tool_client_1.AppScopeMissingError; } });
+Object.defineProperty(exports, "UserAuthRequiredError", { enumerable: true, get: function () { return tool_client_1.UserAuthRequiredError; } });
+Object.defineProperty(exports, "UserScopeInsufficientError", { enumerable: true, get: function () { return tool_client_1.UserScopeInsufficientError; } });
 // ---------------------------------------------------------------------------
 // OAPI 专用：客户端便捷创建
 // ---------------------------------------------------------------------------
-import { createClientGetter } from '../helpers';
+const typebox_1 = require("@sinclair/typebox");
+const helpers_2 = require("../helpers.js");
 /**
  * 从配置直接创建飞书客户端（OAPI 工具常用模式）
  *
@@ -42,14 +71,13 @@ import { createClientGetter } from '../helpers';
  * }
  * ```
  */
-export function createFeishuClientFromConfig(config) {
-    const getClient = createClientGetter(config);
+function createFeishuClientFromConfig(config) {
+    const getClient = (0, helpers_2.createClientGetter)(config);
     return getClient();
 }
 // ---------------------------------------------------------------------------
 // OAPI 专用：返回值格式化（简化版）
 // ---------------------------------------------------------------------------
-import { formatToolResult } from '../helpers';
 /**
  * 格式化返回值为 JSON（OAPI 工具常用简化接口）
  *
@@ -64,8 +92,8 @@ import { formatToolResult } from '../helpers';
  * return json({ error: "Invalid parameter" });
  * ```
  */
-export function json(data) {
-    return formatToolResult(data);
+function json(data) {
+    return (0, helpers_2.formatToolResult)(data);
 }
 // ---------------------------------------------------------------------------
 // OAPI 专用：时间转换工具
@@ -91,7 +119,7 @@ export function json(data) {
  * parseTimeToTimestamp("invalid")                    // => null
  * ```
  */
-export function parseTimeToTimestamp(input) {
+function parseTimeToTimestamp(input) {
     try {
         const trimmed = input.trim();
         // 检查是否包含时区信息（Z 或 +/- 偏移）
@@ -145,7 +173,7 @@ export function parseTimeToTimestamp(input) {
  * parseTimeToTimestampMs("invalid")                    // => null
  * ```
  */
-export function parseTimeToTimestampMs(input) {
+function parseTimeToTimestampMs(input) {
     try {
         const trimmed = input.trim();
         // 检查是否包含时区信息（Z 或 +/- 偏移）
@@ -198,7 +226,7 @@ export function parseTimeToTimestampMs(input) {
  * parseTimeToRFC3339("2026-02-25T14:30:00")        // => "2026-02-25T14:30:00+08:00"
  * ```
  */
-export function parseTimeToRFC3339(input) {
+function parseTimeToRFC3339(input) {
     try {
         const trimmed = input.trim();
         // 检查是否包含时区信息（Z 或 +/- 偏移）
@@ -250,7 +278,7 @@ export function parseTimeToRFC3339(input) {
  * // => { start: 1740459000000 }
  * ```
  */
-export function convertTimeRange(timeRange, unit = 's') {
+function convertTimeRange(timeRange, unit = 's') {
     if (!timeRange)
         return undefined;
     const result = {};
@@ -274,9 +302,9 @@ export function convertTimeRange(timeRange, unit = 's') {
 // ---------------------------------------------------------------------------
 // OAPI 专用：Unix 时间戳 → ISO 8601 (上海时区)
 // ---------------------------------------------------------------------------
-export const SHANGHAI_UTC_OFFSET_HOURS = 8;
-export const SHANGHAI_OFFSET_SUFFIX = '+08:00';
-export function pad2(value) {
+exports.SHANGHAI_UTC_OFFSET_HOURS = 8;
+exports.SHANGHAI_OFFSET_SUFFIX = '+08:00';
+function pad2(value) {
     return String(value).padStart(2, '0');
 }
 /**
@@ -287,8 +315,8 @@ export function pad2(value) {
  *
  * @returns e.g. `"2026-02-25T14:30:00+08:00"`, or `null` on invalid input
  */
-export function unixTimestampToISO8601(raw) {
-    if (raw === undefined || raw === null)
+function unixTimestampToISO8601(raw) {
+    if (raw === undefined || raw == null)
         return null;
     const text = typeof raw === 'number' ? String(raw) : String(raw).trim();
     if (!/^-?\d+$/.test(text))
@@ -297,7 +325,7 @@ export function unixTimestampToISO8601(raw) {
     if (!Number.isFinite(num))
         return null;
     const utcMs = Math.abs(num) >= 1e12 ? num : num * 1000;
-    const beijingDate = new Date(utcMs + SHANGHAI_UTC_OFFSET_HOURS * 60 * 60 * 1000);
+    const beijingDate = new Date(utcMs + exports.SHANGHAI_UTC_OFFSET_HOURS * 60 * 60 * 1000);
     if (Number.isNaN(beijingDate.getTime()))
         return null;
     const year = beijingDate.getUTCFullYear();
@@ -306,7 +334,7 @@ export function unixTimestampToISO8601(raw) {
     const hour = pad2(beijingDate.getUTCHours());
     const minute = pad2(beijingDate.getUTCMinutes());
     const second = pad2(beijingDate.getUTCSeconds());
-    return `${year}-${month}-${day}T${hour}:${minute}:${second}${SHANGHAI_OFFSET_SUFFIX}`;
+    return `${year}-${month}-${day}T${hour}:${minute}:${second}${exports.SHANGHAI_OFFSET_SUFFIX}`;
 }
 // ---------------------------------------------------------------------------
 // OAPI 专用：飞书 API 错误处理
@@ -316,11 +344,13 @@ export function unixTimestampToISO8601(raw) {
  *
  * 这些函数专门用于处理飞书 Open API 的响应和错误。
  */
-export { assertLarkOk, formatLarkError } from '../../core/api-error';
+var api_error_1 = require("../../core/api-error.js");
+Object.defineProperty(exports, "assertLarkOk", { enumerable: true, get: function () { return api_error_1.assertLarkOk; } });
+Object.defineProperty(exports, "formatLarkError", { enumerable: true, get: function () { return api_error_1.formatLarkError; } });
 // ---------------------------------------------------------------------------
 // OAPI 专用：invoke() 错误判断
 // ---------------------------------------------------------------------------
-import { AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError } from '../../core/tool-client';
+const tool_client_2 = require("../../core/tool-client.js");
 /**
  * Check whether an error is a structured invoke-level auth/permission error.
  *
@@ -330,19 +360,19 @@ import { AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError
  * For "allow-to-fail" sub-operations, prefer `client.tryInvoke()` over
  * manual `isInvokeError` + throw.
  */
-export function isInvokeError(err) {
-    return (err instanceof UserAuthRequiredError ||
-        err instanceof AppScopeMissingError ||
-        err instanceof UserScopeInsufficientError);
+function isInvokeError(err) {
+    return (err instanceof tool_client_2.UserAuthRequiredError ||
+        err instanceof tool_client_2.AppScopeMissingError ||
+        err instanceof tool_client_2.UserScopeInsufficientError);
 }
 // ---------------------------------------------------------------------------
 // 自动授权：handleInvokeErrorWithAutoAuth
 // ---------------------------------------------------------------------------
-export { handleInvokeErrorWithAutoAuth } from '../auto-auth';
+var auto_auth_1 = require("../auto-auth.js");
+Object.defineProperty(exports, "handleInvokeErrorWithAutoAuth", { enumerable: true, get: function () { return auto_auth_1.handleInvokeErrorWithAutoAuth; } });
 // ---------------------------------------------------------------------------
 // Schema 辅助：LLM 友好的字符串枚举
 // ---------------------------------------------------------------------------
-import { Type } from '@sinclair/typebox';
 /**
  * 创建 LLM 友好的字符串枚举 schema。
  *
@@ -350,6 +380,6 @@ import { Type } from '@sinclair/typebox';
  * 本函数生成 `{ type: 'string', enum: ['a', 'b'] }` 格式，
  * 兼容性更好。
  */
-export function StringEnum(values, options) {
-    return Type.Unsafe({ type: 'string', enum: values, ...options });
+function StringEnum(values, options) {
+    return typebox_1.Type.Unsafe({ type: 'string', enum: values, ...options });
 }

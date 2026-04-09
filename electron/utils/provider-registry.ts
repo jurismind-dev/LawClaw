@@ -18,7 +18,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'siliconflow',
   'minimax-portal',
   'minimax-portal-cn',
-  'qwen-portal',
+  'qwen',
   'ollama',
 ] as const;
 export type BuiltinProviderType = (typeof BUILTIN_PROVIDER_TYPES)[number];
@@ -140,7 +140,7 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   },
   'minimax-portal': {
     envVar: 'MINIMAX_API_KEY',
-    defaultModel: 'minimax-portal/MiniMax-M2.5',
+    defaultModel: 'minimax-portal/MiniMax-M2.7',
     providerConfig: {
       baseUrl: 'https://api.minimax.io/anthropic',
       api: 'anthropic-messages',
@@ -149,7 +149,7 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   },
   'minimax-portal-cn': {
     envVar: 'MINIMAX_CN_API_KEY',
-    defaultModel: 'minimax-portal/MiniMax-M2.5',
+    defaultModel: 'minimax-portal/MiniMax-M2.7',
     providerConfig: {
       baseUrl: 'https://api.minimaxi.com/anthropic',
       api: 'anthropic-messages',
@@ -157,10 +157,20 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
     },
   },
   'qwen-portal': {
+    canonicalProviderId: 'qwen',
     envVar: 'QWEN_API_KEY',
-    defaultModel: 'qwen-portal/coder-model',
+    defaultModel: 'qwen/qwen3.5-plus',
     providerConfig: {
-      baseUrl: 'https://portal.qwen.ai/v1',
+      baseUrl: 'https://coding-intl.dashscope.aliyuncs.com/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'QWEN_API_KEY',
+    },
+  },
+  qwen: {
+    envVar: 'QWEN_API_KEY',
+    defaultModel: 'qwen/qwen3.5-plus',
+    providerConfig: {
+      baseUrl: 'https://coding-intl.dashscope.aliyuncs.com/v1',
       api: 'openai-completions',
       apiKeyEnv: 'QWEN_API_KEY',
     },
@@ -179,6 +189,8 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
 const PROVIDER_ALIASES: Record<string, string[]> = {
   'kimi-coding': ['moonshot_code_plan'],
   moonshot_code_plan: ['kimi-coding'],
+  qwen: ['qwen-portal'],
+  'qwen-portal': ['qwen'],
 };
 
 /** Get the environment variable name for a provider type */

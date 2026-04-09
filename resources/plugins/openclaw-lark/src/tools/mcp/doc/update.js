@@ -6,25 +6,27 @@
  * MCP update-doc 工具
  * 更新云文档（overwrite/append/replace_range/replace_all/insert_before/insert_after/delete_range，支持异步 task_id 查询）
  */
-import { Type } from '@sinclair/typebox';
-import { registerMcpTool } from '../shared';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerUpdateDocTool = registerUpdateDocTool;
+const typebox_1 = require("@sinclair/typebox");
+const shared_1 = require("../shared.js");
 // Schema 定义
-const UpdateDocSchema = Type.Object({
-    doc_id: Type.Optional(Type.String({ description: '文档 ID 或 URL' })),
-    markdown: Type.Optional(Type.String({ description: 'Markdown 内容' })),
-    mode: Type.Union([
-        Type.Literal('overwrite'),
-        Type.Literal('append'),
-        Type.Literal('replace_range'),
-        Type.Literal('replace_all'),
-        Type.Literal('insert_before'),
-        Type.Literal('insert_after'),
-        Type.Literal('delete_range'),
+const UpdateDocSchema = typebox_1.Type.Object({
+    doc_id: typebox_1.Type.Optional(typebox_1.Type.String({ description: '文档 ID 或 URL' })),
+    markdown: typebox_1.Type.Optional(typebox_1.Type.String({ description: 'Markdown 内容' })),
+    mode: typebox_1.Type.Union([
+        typebox_1.Type.Literal('overwrite'),
+        typebox_1.Type.Literal('append'),
+        typebox_1.Type.Literal('replace_range'),
+        typebox_1.Type.Literal('replace_all'),
+        typebox_1.Type.Literal('insert_before'),
+        typebox_1.Type.Literal('insert_after'),
+        typebox_1.Type.Literal('delete_range'),
     ], { description: '更新模式（必填）' }),
-    selection_with_ellipsis: Type.Optional(Type.String({ description: '定位表达式：开头内容...结尾内容（与 selection_by_title 二选一）' })),
-    selection_by_title: Type.Optional(Type.String({ description: '标题定位：例如 ## 章节标题（与 selection_with_ellipsis 二选一）' })),
-    new_title: Type.Optional(Type.String({ description: '新的文档标题（可选）' })),
-    task_id: Type.Optional(Type.String({ description: '异步任务 ID，用于查询任务状态' })),
+    selection_with_ellipsis: typebox_1.Type.Optional(typebox_1.Type.String({ description: '定位表达式：开头内容...结尾内容（与 selection_by_title 二选一）' })),
+    selection_by_title: typebox_1.Type.Optional(typebox_1.Type.String({ description: '标题定位：例如 ## 章节标题（与 selection_with_ellipsis 二选一）' })),
+    new_title: typebox_1.Type.Optional(typebox_1.Type.String({ description: '新的文档标题（可选）' })),
+    task_id: typebox_1.Type.Optional(typebox_1.Type.String({ description: '异步任务 ID，用于查询任务状态' })),
 });
 // 参数验证
 function validateUpdateDocParams(p) {
@@ -49,8 +51,8 @@ function validateUpdateDocParams(p) {
 /**
  * 注册 update-doc 工具
  */
-export function registerUpdateDocTool(api) {
-    registerMcpTool(api, {
+function registerUpdateDocTool(api) {
+    return (0, shared_1.registerMcpTool)(api, {
         name: 'feishu_update_doc',
         mcpToolName: 'update-doc',
         toolActionKey: 'feishu_update_doc.default',

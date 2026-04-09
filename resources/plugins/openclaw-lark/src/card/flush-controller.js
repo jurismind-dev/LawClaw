@@ -9,11 +9,13 @@
  * mutex-guarded flushing, and reflush-on-conflict. Contains no
  * business logic — the actual flush work is provided via a callback.
  */
-import { THROTTLE_CONSTANTS } from './reply-dispatcher-types';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.FlushController = void 0;
+const reply_dispatcher_types_1 = require("./reply-dispatcher-types.js");
 // ---------------------------------------------------------------------------
 // FlushController
 // ---------------------------------------------------------------------------
-export class FlushController {
+class FlushController {
     doFlush;
     flushInProgress = false;
     flushResolvers = [];
@@ -93,14 +95,14 @@ export class FlushController {
         const elapsed = now - this.lastUpdateTime;
         if (elapsed >= throttleMs) {
             this.cancelPendingFlush();
-            if (elapsed > THROTTLE_CONSTANTS.LONG_GAP_THRESHOLD_MS) {
+            if (elapsed > reply_dispatcher_types_1.THROTTLE_CONSTANTS.LONG_GAP_THRESHOLD_MS) {
                 // After a long gap, batch briefly so the first visible update
                 // contains meaningful text rather than just 1-2 characters.
                 this.lastUpdateTime = now;
                 this.pendingFlushTimer = setTimeout(() => {
                     this.pendingFlushTimer = null;
                     void this.flush();
-                }, THROTTLE_CONSTANTS.BATCH_AFTER_GAP_MS);
+                }, reply_dispatcher_types_1.THROTTLE_CONSTANTS.BATCH_AFTER_GAP_MS);
             }
             else {
                 await this.flush();
@@ -133,3 +135,4 @@ export class FlushController {
         }
     }
 }
+exports.FlushController = FlushController;

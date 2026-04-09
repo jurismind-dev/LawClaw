@@ -9,9 +9,11 @@
  * `{from_user}`, `{to_chatters}`, `{divider_text}` that are replaced
  * with actual values from the message body.
  */
-import { safeParse } from './utils';
-export const convertSystem = (raw) => {
-    const parsed = safeParse(raw);
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertSystem = void 0;
+const utils_1 = require("./utils.js");
+const convertSystem = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     if (!parsed?.template) {
         return { content: '[system message]', resources: [] };
     }
@@ -31,3 +33,4 @@ export const convertSystem = (raw) => {
     }
     return { content: content.trim(), resources: [] };
 };
+exports.convertSystem = convertSystem;

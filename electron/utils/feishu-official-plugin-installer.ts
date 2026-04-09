@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   FEISHU_OFFICIAL_PLUGIN_ID,
   FEISHU_OFFICIAL_PLUGIN_NPM_SPEC,
+  FEISHU_OFFICIAL_PLUGIN_VERSION,
   findBundledFeishuOfficialPluginDir,
   getBundledFeishuOfficialPluginDirCandidates,
 } from './feishu-official-plugin';
@@ -50,6 +51,7 @@ export interface RepairInstalledFeishuOfficialPluginResult {
   repaired: boolean;
   reason: 'not-installed' | 'healthy' | 'repaired' | 'failed';
   pluginDir: string;
+  installedVersion: string | null;
   missingPaths: string[];
   error?: string;
   details?: string;
@@ -89,6 +91,13 @@ function parseJsonObject(filePath: string): JsonObject | null {
 
 function formatMissingRuntimePaths(missingPaths: string[]): string {
   return missingPaths.map((entry) => `"${entry}"`).join(', ');
+}
+
+function getPluginManifestVersion(packageDir: string): string | null {
+  const manifest = parseJsonObject(join(packageDir, 'package.json'));
+  return typeof manifest?.version === 'string' && manifest.version.trim()
+    ? manifest.version.trim()
+    : null;
 }
 
 function collectLockfileRootDependencies(packageDir: string): Record<string, string> {
@@ -332,16 +341,20 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
       repaired: false,
       reason: 'not-installed',
       pluginDir,
+      installedVersion: null,
       missingPaths: [],
     };
   }
 
   const missingPaths = getFeishuOfficialPluginMissingRuntimePaths(pluginDir);
-  if (missingPaths.length === 0) {
+  const installedVersion = getPluginManifestVersion(pluginDir);
+  const versionMismatch = installedVersion !== FEISHU_OFFICIAL_PLUGIN_VERSION;
+  if (missingPaths.length === 0 && !versionMismatch) {
     return {
       repaired: false,
       reason: 'healthy',
       pluginDir,
+      installedVersion,
       missingPaths: [],
     };
   }
@@ -352,6 +365,7 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
       repaired: false,
       reason: 'failed',
       pluginDir,
+      installedVersion,
       missingPaths,
       error: prepared.error || 'Failed to prepare Feishu official plugin repair payload',
       details: prepared.details,
@@ -375,9 +389,23 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
         repaired: false,
         reason: 'failed',
         pluginDir,
+        installedVersion: getPluginManifestVersion(pluginDir),
         missingPaths: missingAfterRepair,
         error: 'Feishu official plugin repair completed but runtime files are still missing',
         details: formatMissingRuntimePaths(missingAfterRepair),
+      };
+    }
+
+    const repairedVersion = getPluginManifestVersion(pluginDir);
+    if (repairedVersion !== FEISHU_OFFICIAL_PLUGIN_VERSION) {
+      return {
+        repaired: false,
+        reason: 'failed',
+        pluginDir,
+        installedVersion: repairedVersion,
+        missingPaths: [],
+        error: 'Feishu official plugin repair completed but version is still incompatible',
+        details: `expected ${FEISHU_OFFICIAL_PLUGIN_VERSION}, received ${repairedVersion || 'unknown'}`,
       };
     }
 
@@ -385,6 +413,7 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
       repaired: true,
       reason: 'repaired',
       pluginDir,
+      installedVersion: repairedVersion,
       missingPaths,
     };
   } catch (error) {
@@ -392,6 +421,7 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
       repaired: false,
       reason: 'failed',
       pluginDir,
+      installedVersion,
       missingPaths,
       error: String(error),
     };

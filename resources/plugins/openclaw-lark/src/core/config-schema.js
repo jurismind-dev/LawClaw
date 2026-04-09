@@ -8,168 +8,181 @@
  * Provides runtime validation, sensible defaults, and cross-field refinements
  * so that every consuming module can rely on well-typed configuration objects.
  */
-import { z, toJSONSchema } from 'zod';
-export { z };
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.FEISHU_CONFIG_JSON_SCHEMA = exports.FeishuConfigSchema = exports.FeishuAccountConfigSchema = exports.FeishuGroupSchema = exports.UATConfigSchema = exports.z = void 0;
+const zod_1 = require("zod");
+Object.defineProperty(exports, "z", { enumerable: true, get: function () { return zod_1.z; } });
 // ---------------------------------------------------------------------------
 // Shared micro-schemas
 // ---------------------------------------------------------------------------
-const DmPolicyEnum = z.enum(['open', 'pairing', 'allowlist', 'disabled']);
-const GroupPolicyEnum = z.enum(['open', 'allowlist', 'disabled']);
-const ConnectionModeEnum = z.enum(['websocket', 'webhook']);
-const ReplyModeValue = z.enum(['auto', 'static', 'streaming']);
-const ReplyModeSchema = z
+const DmPolicyEnum = zod_1.z.enum(['open', 'pairing', 'allowlist', 'disabled']);
+const GroupPolicyEnum = zod_1.z.enum(['open', 'allowlist', 'disabled']);
+const ConnectionModeEnum = zod_1.z.enum(['websocket', 'webhook']);
+const ReplyModeValue = zod_1.z.enum(['auto', 'static', 'streaming']);
+const ReplyModeSchema = zod_1.z
     .union([
     ReplyModeValue,
-    z.object({
+    zod_1.z.object({
         default: ReplyModeValue.optional(),
         group: ReplyModeValue.optional(),
         direct: ReplyModeValue.optional(),
     }),
 ])
     .optional();
-const ChunkModeEnum = z.enum(['newline', 'paragraph', 'none']);
-const DomainSchema = z.union([z.literal('feishu'), z.literal('lark'), z.string().regex(/^https:\/\//)]).optional();
-const AllowFromSchema = z
-    .union([z.string(), z.array(z.string())])
+const ChunkModeEnum = zod_1.z.enum(['newline', 'paragraph', 'none']);
+const DomainSchema = zod_1.z.union([zod_1.z.literal('feishu'), zod_1.z.literal('lark'), zod_1.z.string().regex(/^https:\/\//)]).optional();
+const AllowFromSchema = zod_1.z
+    .union([zod_1.z.string(), zod_1.z.array(zod_1.z.string())])
     .optional()
     .transform((v) => {
-    if (v === undefined || v === null)
+    if (v === undefined || v == null)
         return undefined;
     return Array.isArray(v) ? v : [v];
 });
-const ToolPolicySchema = z
+const ToolPolicySchema = zod_1.z
     .object({
-    allow: z.array(z.string()).optional(),
-    deny: z.array(z.string()).optional(),
+    allow: zod_1.z.array(zod_1.z.string()).optional(),
+    deny: zod_1.z.array(zod_1.z.string()).optional(),
 })
     .optional();
-const FeishuToolsFlagSchema = z
+const FeishuToolsFlagSchema = zod_1.z
     .object({
-    doc: z.boolean().optional(),
-    wiki: z.boolean().optional(),
-    drive: z.boolean().optional(),
-    perm: z.boolean().optional(),
-    scopes: z.boolean().optional(),
+    doc: zod_1.z.boolean().optional(),
+    wiki: zod_1.z.boolean().optional(),
+    drive: zod_1.z.boolean().optional(),
+    perm: zod_1.z.boolean().optional(),
+    scopes: zod_1.z.boolean().optional(),
 })
     .optional();
-const FeishuFooterSchema = z
+const FeishuFooterSchema = zod_1.z
     .object({
-    status: z.boolean().optional(),
-    elapsed: z.boolean().optional(),
+    status: zod_1.z.boolean().optional(),
+    elapsed: zod_1.z.boolean().optional(),
+    tokens: zod_1.z.boolean().optional(),
+    cache: zod_1.z.boolean().optional(),
+    context: zod_1.z.boolean().optional(),
+    model: zod_1.z.boolean().optional(),
 })
     .optional();
-const BlockStreamingCoalesceSchema = z
+const BlockStreamingCoalesceSchema = zod_1.z
     .object({
-    minChars: z.number().optional(),
-    maxChars: z.number().optional(),
-    idleMs: z.number().optional(),
+    minChars: zod_1.z.number().optional(),
+    maxChars: zod_1.z.number().optional(),
+    idleMs: zod_1.z.number().optional(),
 })
     .optional();
-const MarkdownConfigSchema = z
+const MarkdownConfigSchema = zod_1.z
     .object({
-    tables: z.enum(['off', 'bullets', 'code']).optional(),
+    tables: zod_1.z.enum(['off', 'bullets', 'code']).optional(),
 })
     .optional();
-const HeartbeatSchema = z
+const HeartbeatSchema = zod_1.z
     .object({
-    every: z.string().optional(),
-    activeHours: z
+    every: zod_1.z.string().optional(),
+    activeHours: zod_1.z
         .object({
-        start: z.string().optional(),
-        end: z.string().optional(),
-        timezone: z.string().optional(),
+        start: zod_1.z.string().optional(),
+        end: zod_1.z.string().optional(),
+        timezone: zod_1.z.string().optional(),
     })
         .optional(),
-    target: z.string().optional(),
-    to: z.string().optional(),
-    prompt: z.string().optional(),
-    accountId: z.string().optional(),
+    target: zod_1.z.string().optional(),
+    to: zod_1.z.string().optional(),
+    prompt: zod_1.z.string().optional(),
+    accountId: zod_1.z.string().optional(),
 })
     .optional();
-const CapabilitiesSchema = z
+const CapabilitiesSchema = zod_1.z
     .object({
-    image: z.boolean().optional(),
-    audio: z.boolean().optional(),
-    video: z.boolean().optional(),
+    image: zod_1.z.boolean().optional(),
+    audio: zod_1.z.boolean().optional(),
+    video: zod_1.z.boolean().optional(),
 })
     .optional();
-const DedupSchema = z
+const DedupSchema = zod_1.z
     .object({
-    ttlMs: z.number().optional(), // default 43200000 (12h)
-    maxEntries: z.number().optional(), // default 5000
+    ttlMs: zod_1.z.number().optional(), // default 43200000 (12h)
+    maxEntries: zod_1.z.number().optional(), // default 5000
 })
     .optional();
-const ReactionNotificationModeSchema = z.enum(['off', 'own', 'all']).optional();
-export const UATConfigSchema = z
+const ReactionNotificationModeSchema = zod_1.z.enum(['off', 'own', 'all']).optional();
+exports.UATConfigSchema = zod_1.z
     .object({
-    enabled: z.boolean().optional(),
-    allowedScopes: z.array(z.string()).optional(),
-    blockedScopes: z.array(z.string()).optional(),
+    enabled: zod_1.z.boolean().optional(),
+    allowedScopes: zod_1.z.array(zod_1.z.string()).optional(),
+    blockedScopes: zod_1.z.array(zod_1.z.string()).optional(),
 })
     .optional();
-const DmConfigSchema = z
+const DmConfigSchema = zod_1.z
     .object({
-    historyLimit: z.number().optional(),
+    historyLimit: zod_1.z.number().optional(),
 })
     .optional();
 // ---------------------------------------------------------------------------
 // Group schema
 // ---------------------------------------------------------------------------
-export const FeishuGroupSchema = z.object({
+exports.FeishuGroupSchema = zod_1.z.object({
     groupPolicy: GroupPolicyEnum.optional(),
-    requireMention: z.boolean().optional(),
+    requireMention: zod_1.z.boolean().optional(),
+    respondToMentionAll: zod_1.z.boolean().optional(),
     tools: ToolPolicySchema,
-    skills: z.array(z.string()).optional(),
-    enabled: z.boolean().optional(),
+    skills: zod_1.z.array(zod_1.z.string()).optional(),
+    enabled: zod_1.z.boolean().optional(),
     allowFrom: AllowFromSchema,
-    systemPrompt: z.string().optional(),
+    systemPrompt: zod_1.z.string().optional(),
 });
 // ---------------------------------------------------------------------------
 // Account config schema (same shape as top-level minus `accounts`)
 // ---------------------------------------------------------------------------
-export const FeishuAccountConfigSchema = z.object({
-    appId: z.string().optional(),
-    appSecret: z.string().optional(),
-    encryptKey: z.string().optional(),
-    verificationToken: z.string().optional(),
-    name: z.string().optional(),
-    enabled: z.boolean().optional(),
+exports.FeishuAccountConfigSchema = zod_1.z.object({
+    appId: zod_1.z.string().optional(),
+    appSecret: zod_1.z.string().optional(),
+    encryptKey: zod_1.z.string().optional(),
+    verificationToken: zod_1.z.string().optional(),
+    name: zod_1.z.string().optional(),
+    enabled: zod_1.z.boolean().optional(),
     domain: DomainSchema,
     connectionMode: ConnectionModeEnum.optional(),
-    webhookPath: z.string().optional(),
-    webhookPort: z.number().optional(),
+    webhookPath: zod_1.z.string().optional(),
+    webhookPort: zod_1.z.number().optional(),
     dmPolicy: DmPolicyEnum.optional(),
     allowFrom: AllowFromSchema,
     groupPolicy: GroupPolicyEnum.optional(),
     groupAllowFrom: AllowFromSchema,
-    requireMention: z.boolean().optional(),
-    groups: z.record(z.string(), FeishuGroupSchema).optional(),
-    historyLimit: z.number().optional(),
-    dmHistoryLimit: z.number().optional(),
+    requireMention: zod_1.z.boolean().optional(),
+    respondToMentionAll: zod_1.z.boolean().optional(),
+    groups: zod_1.z.record(zod_1.z.string(), exports.FeishuGroupSchema).optional(),
+    historyLimit: zod_1.z.number().optional(),
+    dmHistoryLimit: zod_1.z.number().optional(),
     dms: DmConfigSchema,
-    textChunkLimit: z.number().optional(),
+    textChunkLimit: zod_1.z.number().optional(),
     chunkMode: ChunkModeEnum.optional(),
     blockStreamingCoalesce: BlockStreamingCoalesceSchema,
-    mediaMaxMb: z.number().optional(),
+    mediaMaxMb: zod_1.z.number().optional(),
     heartbeat: HeartbeatSchema,
     replyMode: ReplyModeSchema,
-    streaming: z.boolean().optional(),
-    blockStreaming: z.boolean().optional(),
+    streaming: zod_1.z.boolean().optional(),
+    blockStreaming: zod_1.z.boolean().optional(),
+    toolUseDisplay: zod_1.z
+        .object({
+        showFullPaths: zod_1.z.boolean().optional(),
+    })
+        .optional(),
     tools: FeishuToolsFlagSchema,
     footer: FeishuFooterSchema,
     markdown: MarkdownConfigSchema,
-    configWrites: z.boolean().optional(),
+    configWrites: zod_1.z.boolean().optional(),
     capabilities: CapabilitiesSchema,
     dedup: DedupSchema,
     reactionNotifications: ReactionNotificationModeSchema,
-    threadSession: z.boolean().optional(),
-    uat: UATConfigSchema,
+    threadSession: zod_1.z.boolean().optional(),
+    uat: exports.UATConfigSchema,
 });
 // ---------------------------------------------------------------------------
 // Top-level Feishu config schema
 // ---------------------------------------------------------------------------
-export const FeishuConfigSchema = FeishuAccountConfigSchema.extend({
-    accounts: z.record(z.string(), FeishuAccountConfigSchema).optional(),
+exports.FeishuConfigSchema = exports.FeishuAccountConfigSchema.extend({
+    accounts: zod_1.z.record(zod_1.z.string(), exports.FeishuAccountConfigSchema).optional(),
 }).superRefine((data, ctx) => {
     // When dmPolicy is "open", allowFrom must contain the wildcard "*".
     if (data.dmPolicy === 'open') {
@@ -177,7 +190,7 @@ export const FeishuConfigSchema = FeishuAccountConfigSchema.extend({
         const hasWildcard = Array.isArray(list) && list.includes('*');
         if (!hasWildcard) {
             ctx.addIssue({
-                code: z.ZodIssueCode.custom,
+                code: zod_1.z.ZodIssueCode.custom,
                 path: ['allowFrom'],
                 message: 'When dmPolicy is "open", allowFrom must include "*" to permit all senders.',
             });
@@ -194,7 +207,7 @@ export const FeishuConfigSchema = FeishuAccountConfigSchema.extend({
  * - `unrepresentable: "any"` degrades `.superRefine()` constraints to `{}`.
  * - `target: "draft-07"` matches the plugin system's expected JSON Schema version.
  */
-export const FEISHU_CONFIG_JSON_SCHEMA = toJSONSchema(FeishuConfigSchema, {
+exports.FEISHU_CONFIG_JSON_SCHEMA = (0, zod_1.toJSONSchema)(exports.FeishuConfigSchema, {
     target: 'draft-07',
     io: 'input',
     unrepresentable: 'any',

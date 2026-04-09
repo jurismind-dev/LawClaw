@@ -9,8 +9,9 @@
  */
 import type { OpenClawConfig } from 'openclaw/plugin-sdk';
 export type { FeishuLocale } from './locale';
+import type { FeishuLocale } from './locale';
 /** @deprecated Use FeishuLocale instead */
-export type DoctorLocale = import('./locale').FeishuLocale;
+export type DoctorLocale = FeishuLocale;
 /**
  * 运行飞书插件诊断，生成 Markdown 格式报告。
  *

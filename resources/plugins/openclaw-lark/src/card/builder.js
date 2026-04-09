@@ -8,7 +8,21 @@
  * Provides utilities to construct Feishu Interactive Message Cards for
  * different agent response states (thinking, streaming, complete, confirm).
  */
-import { optimizeMarkdownStyle } from './markdown-style';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.REASONING_ELEMENT_ID = exports.STREAMING_ELEMENT_ID = void 0;
+exports.splitReasoningText = splitReasoningText;
+exports.stripReasoningTags = stripReasoningTags;
+exports.formatReasoningDuration = formatReasoningDuration;
+exports.formatToolUseDuration = formatToolUseDuration;
+exports.formatElapsed = formatElapsed;
+exports.compactNumber = compactNumber;
+exports.formatFooterRuntimeSegments = formatFooterRuntimeSegments;
+exports.buildCardContent = buildCardContent;
+exports.buildStreamingThinkingCard = buildStreamingThinkingCard;
+exports.buildStreamingPreAnswerCard = buildStreamingPreAnswerCard;
+exports.toCardKit2 = toCardKit2;
+const markdown_style_1 = require("./markdown-style.js");
+const tool_use_display_1 = require("./tool-use-display.js");
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -17,8 +31,8 @@ import { optimizeMarkdownStyle } from './markdown-style';
  * `cardElement.content()` API targets this element for typewriter-effect
  * streaming updates.
  */
-export const STREAMING_ELEMENT_ID = 'streaming_content';
-export const REASONING_ELEMENT_ID = 'reasoning_content';
+exports.STREAMING_ELEMENT_ID = 'streaming_content';
+exports.REASONING_ELEMENT_ID = 'reasoning_content';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -37,7 +51,7 @@ const REASONING_PREFIX = 'Reasoning:\n';
  *
  * Equivalent to the framework's `splitTelegramReasoningText()`.
  */
-export function splitReasoningText(text) {
+function splitReasoningText(text) {
     if (typeof text !== 'string' || !text.trim())
         return {};
     const trimmed = text.trim();
@@ -85,7 +99,7 @@ function extractThinkingContent(text) {
  * Strip reasoning blocks — both XML tags with their content and any
  * "Reasoning:\n" prefixed content.
  */
-export function stripReasoningTags(text) {
+function stripReasoningTags(text) {
     // Strip complete XML blocks
     let result = text.replace(/<\s*(?:think(?:ing)?|thought|antthinking)\s*>[\s\S]*?<\s*\/\s*(?:think(?:ing)?|thought|antthinking)\s*>/gi, '');
     // Strip unclosed tag at end (streaming)
@@ -110,14 +124,21 @@ function cleanReasoningPrefix(text) {
  * Format reasoning duration into a human-readable i18n pair.
  * e.g. { zh: "思考了 3.2s", en: "Thought for 3.2s" }
  */
-export function formatReasoningDuration(ms) {
+function formatReasoningDuration(ms) {
     const d = formatElapsed(ms);
     return { zh: `思考了 ${d}`, en: `Thought for ${d}` };
 }
 /**
+ * Format tool-use duration into a human-readable i18n pair.
+ */
+function formatToolUseDuration(ms) {
+    const d = formatElapsed(ms);
+    return { zh: `执行耗时 ${d}`, en: `Tool use for ${d}` };
+}
+/**
  * Format milliseconds into a human-readable duration string.
  */
-export function formatElapsed(ms) {
+function formatElapsed(ms) {
     const seconds = ms / 1000;
     return seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
 }
@@ -128,12 +149,98 @@ export function formatElapsed(ms) {
 function buildFooter(zhText, enText, isError) {
     const zhContent = isError ? `<font color='red'>${zhText}</font>` : zhText;
     const enContent = isError ? `<font color='red'>${enText}</font>` : enText;
-    return [{
+    return [
+        {
             tag: 'markdown',
             content: enContent,
             i18n_content: { zh_cn: zhContent, en_us: enContent },
             text_size: 'notation',
-        }];
+        },
+    ];
+}
+function compactNumber(value) {
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) {
+        const m = value / 1_000_000;
+        return Math.abs(m) >= 100 ? `${Math.round(m)}m` : `${m.toFixed(1)}m`;
+    }
+    if (abs >= 1_000) {
+        const k = value / 1_000;
+        return Math.abs(k) >= 100 ? `${Math.round(k)}k` : `${k.toFixed(1)}k`;
+    }
+    return `${Math.round(value)}`;
+}
+function formatFooterRuntimeSegments(params) {
+    const { footer, metrics, elapsedMs, isError, isAborted } = params;
+    const primaryZh = [];
+    const primaryEn = [];
+    const detailZh = [];
+    const detailEn = [];
+    // --- Primary line: status, elapsed, model ---
+    if (footer?.status) {
+        if (isError) {
+            primaryZh.push('出错');
+            primaryEn.push('Error');
+        }
+        else if (isAborted) {
+            primaryZh.push('已停止');
+            primaryEn.push('Stopped');
+        }
+        else {
+            primaryZh.push('已完成');
+            primaryEn.push('Completed');
+        }
+    }
+    if (footer?.elapsed && elapsedMs != null) {
+        const d = formatElapsed(elapsedMs);
+        primaryZh.push(`耗时 ${d}`);
+        primaryEn.push(`Elapsed ${d}`);
+    }
+    if (footer?.model && metrics?.model) {
+        const model = metrics.model.trim();
+        if (model) {
+            primaryZh.push(model);
+            primaryEn.push(model);
+        }
+    }
+    // --- Detail line: tokens, cache, context ---
+    if (footer?.tokens && metrics) {
+        const inTokens = typeof metrics.inputTokens === 'number' ? Math.max(0, metrics.inputTokens) : undefined;
+        const outTokens = typeof metrics.outputTokens === 'number' ? Math.max(0, metrics.outputTokens) : undefined;
+        if (inTokens != null && outTokens != null) {
+            const inLabel = compactNumber(inTokens);
+            const outLabel = compactNumber(outTokens);
+            detailZh.push(`↑ ${inLabel} ↓ ${outLabel}`);
+            detailEn.push(`↑ ${inLabel} ↓ ${outLabel}`);
+        }
+    }
+    if (footer?.cache && metrics) {
+        const read = typeof metrics.cacheRead === 'number' ? Math.max(0, metrics.cacheRead) : undefined;
+        const write = typeof metrics.cacheWrite === 'number' ? Math.max(0, metrics.cacheWrite) : undefined;
+        const inputVal = typeof metrics.inputTokens === 'number' ? Math.max(0, metrics.inputTokens) : undefined;
+        if (read != null && write != null && inputVal != null) {
+            const total = read + write + inputVal;
+            const hit = total > 0 ? Math.round((read / total) * 100) : 0;
+            const left = compactNumber(read);
+            const right = compactNumber(write);
+            detailZh.push(`缓存 ${left}/${right} (${hit}%)`);
+            detailEn.push(`Cache ${left}/${right} (${hit}%)`);
+        }
+    }
+    if (footer?.context && metrics) {
+        const freshTotal = metrics.totalTokensFresh === false ? undefined : metrics.totalTokens;
+        const total = typeof freshTotal === 'number' ? Math.max(0, freshTotal) : undefined;
+        const ctx = typeof metrics.contextTokens === 'number' ? Math.max(0, metrics.contextTokens) : undefined;
+        if (total != null && ctx != null) {
+            const totalLabel = compactNumber(total);
+            const ctxLabel = compactNumber(ctx);
+            const pct = ctx > 0 ? Math.round((total / ctx) * 100) : 0;
+            const pctLabel = `${pct}%`;
+            detailZh.push(`上下文 ${totalLabel}/${ctxLabel} (${pctLabel})`);
+            detailEn.push(`Context ${totalLabel}/${ctxLabel} (${pctLabel})`);
+        }
+    }
+    return { primaryZh, primaryEn, detailZh, detailEn };
 }
 // ---------------------------------------------------------------------------
 // buildCardContent
@@ -142,22 +249,31 @@ function buildFooter(zhText, enText, isError) {
  * Build a full Feishu Interactive Message Card JSON object for the
  * given state.
  */
-export function buildCardContent(state, data = {}) {
+function buildCardContent(state, data = {}) {
     switch (state) {
         case 'thinking':
             return buildThinkingCard();
         case 'streaming':
-            return buildStreamingCard(data.text ?? '', data.toolCalls ?? [], data.reasoningText);
+            return buildStreamingCard(data.text ?? '', {
+                reasoningText: data.reasoningText,
+                showToolUse: data.showToolUse,
+                toolUseSteps: data.toolUseSteps,
+                toolUseTitleSuffix: data.toolUseTitleSuffix,
+            });
         case 'complete':
             return buildCompleteCard({
                 text: data.text ?? '',
-                toolCalls: data.toolCalls ?? [],
                 elapsedMs: data.elapsedMs,
                 isError: data.isError,
                 reasoningText: data.reasoningText,
                 reasoningElapsedMs: data.reasoningElapsedMs,
+                toolUseSteps: data.toolUseSteps,
+                toolUseTitleSuffix: data.toolUseTitleSuffix,
+                toolUseElapsedMs: data.toolUseElapsedMs,
+                showToolUse: data.showToolUse,
                 isAborted: data.isAborted,
                 footer: data.footer,
+                footerMetrics: data.footerMetrics,
             });
         case 'confirm':
             return buildConfirmCard(data.confirmData);
@@ -180,8 +296,18 @@ function buildThinkingCard() {
         ],
     };
 }
-function buildStreamingCard(partialText, toolCalls, reasoningText) {
+function buildStreamingCard(partialText, params = {}) {
+    const { showToolUse = true, toolUseSteps, toolUseTitleSuffix, reasoningText } = params;
     const elements = [];
+    const hasToolUse = Boolean(toolUseSteps?.length);
+    if (showToolUse) {
+        elements.push(hasToolUse
+            ? buildToolUsePanel({
+                toolUseSteps,
+                titleSuffix: toolUseTitleSuffix,
+            })
+            : buildStreamingToolUsePendingPanel());
+    }
     if (!partialText && reasoningText) {
         // Reasoning phase: show reasoning content in notation style
         elements.push({
@@ -198,19 +324,7 @@ function buildStreamingCard(partialText, toolCalls, reasoningText) {
         // Answer phase: show answer content only
         elements.push({
             tag: 'markdown',
-            content: optimizeMarkdownStyle(partialText),
-        });
-    }
-    // Tool calls in progress
-    if (toolCalls.length > 0) {
-        const toolLines = toolCalls.map((tc) => {
-            const statusIcon = tc.status === 'running' ? '\ud83d\udd04' : tc.status === 'complete' ? '\u2705' : '\u274c';
-            return `${statusIcon} ${tc.name} - ${tc.status}`;
-        });
-        elements.push({
-            tag: 'markdown',
-            content: toolLines.join('\n'),
-            text_size: 'notation',
+            content: (0, markdown_style_1.optimizeMarkdownStyle)(partialText),
         });
     }
     return {
@@ -219,8 +333,15 @@ function buildStreamingCard(partialText, toolCalls, reasoningText) {
     };
 }
 function buildCompleteCard(params) {
-    const { text, toolCalls, elapsedMs, isError, reasoningText, reasoningElapsedMs, isAborted, footer } = params;
+    const { text, elapsedMs, isError, reasoningText, reasoningElapsedMs, toolUseSteps, toolUseTitleSuffix, toolUseElapsedMs, showToolUse = true, isAborted, footer, footerMetrics, } = params;
     const elements = [];
+    if (showToolUse) {
+        elements.push(buildToolUsePanel({
+            toolUseSteps,
+            toolUseElapsedMs,
+            titleSuffix: toolUseTitleSuffix,
+        }));
+    }
     // Collapsible reasoning panel (before main content)
     if (reasoningText) {
         const dur = reasoningElapsedMs ? formatReasoningDuration(reasoningElapsedMs) : null;
@@ -262,49 +383,34 @@ function buildCompleteCard(params) {
     // Full text content
     elements.push({
         tag: 'markdown',
-        content: optimizeMarkdownStyle(text),
+        content: (0, markdown_style_1.optimizeMarkdownStyle)(text),
     });
-    // Tool calls summary
-    if (toolCalls.length > 0) {
-        const toolSummaryLines = toolCalls.map((tc) => {
-            const statusIcon = tc.status === 'complete' ? '\u2705' : '\u274c';
-            return `${statusIcon} **${tc.name}** - ${tc.status}`;
-        });
-        elements.push({
-            tag: 'markdown',
-            content: toolSummaryLines.join('\n'),
-            text_size: 'notation',
-        });
+    // Footer meta-info: split into two lines for readability.
+    // Line 1 (primary): status · elapsed · model
+    // Line 2 (detail):  tokens · cache · context
+    const fp = formatFooterRuntimeSegments({
+        footer,
+        metrics: footerMetrics,
+        elapsedMs,
+        isError,
+        isAborted,
+    });
+    const footerZhLines = [];
+    const footerEnLines = [];
+    if (fp.primaryZh.length > 0) {
+        footerZhLines.push(fp.primaryZh.join(' · '));
+        footerEnLines.push(fp.primaryEn.join(' · '));
     }
-    // Footer meta-info: each metadata item is independently controlled via
-    // the `footer` config. Both status and elapsed default to hidden.
-    const zhParts = [];
-    const enParts = [];
-    if (footer?.status) {
-        if (isError) {
-            zhParts.push('出错');
-            enParts.push('Error');
-        }
-        else if (isAborted) {
-            zhParts.push('已停止');
-            enParts.push('Stopped');
-        }
-        else {
-            zhParts.push('已完成');
-            enParts.push('Completed');
-        }
+    if (fp.detailZh.length > 0) {
+        footerZhLines.push(fp.detailZh.join(' · '));
+        footerEnLines.push(fp.detailEn.join(' · '));
     }
-    if (footer?.elapsed && elapsedMs != null) {
-        const d = formatElapsed(elapsedMs);
-        zhParts.push(`耗时 ${d}`);
-        enParts.push(`Elapsed ${d}`);
+    if (footerZhLines.length > 0) {
+        elements.push(...buildFooter(footerZhLines.join('\n'), footerEnLines.join('\n'), isError));
     }
-    if (zhParts.length > 0) {
-        elements.push(...buildFooter(zhParts.join(' · '), enParts.join(' · '), isError));
-    }
-    // Use the answer text (not reasoning) as the feed preview summary.
+    // Use the answer text as the feed preview summary.
     // Strip markdown syntax so the preview reads as plain text.
-    const summaryText = text.replace(/[*_`#>\[\]()~]/g, '').trim();
+    const summaryText = text.replace(/[*_`#>[\]()~]/g, '').trim();
     const summary = summaryText ? { content: summaryText.slice(0, 120) } : undefined;
     return {
         config: { wide_screen_mode: true, update_multi: true, locales: ['zh_cn', 'en_us'], summary },
@@ -392,7 +498,103 @@ function buildConfirmCard(confirmData) {
  * Convert an old-format FeishuCard to CardKit JSON 2.0 format.
  * JSON 2.0 uses `body.elements` instead of top-level `elements`.
  */
-export function toCardKit2(card) {
+/**
+ * Build the initial CardKit 2.0 streaming card with a loading icon.
+ * Optionally includes a tool-use pending panel above the streaming area.
+ */
+function buildStreamingThinkingCard(showToolUse = true) {
+    return buildStreamingPreAnswerCard({ showToolUse });
+}
+/**
+ * Build a CardKit 2.0 card for the pre-answer streaming phase.
+ * Used both for the initial card and for live updates during tool calls.
+ */
+function buildStreamingPreAnswerCard(params) {
+    const { steps, elapsedMs, showToolUse = true } = params;
+    const hasSteps = Boolean(steps?.length);
+    const elements = [];
+    if (showToolUse) {
+        elements.push(hasSteps ? buildStreamingToolUseActivePanel({ steps: steps, elapsedMs }) : buildStreamingToolUsePendingPanel());
+    }
+    elements.push({
+        tag: 'markdown',
+        content: '',
+        text_align: 'left',
+        text_size: 'normal_v2',
+        margin: '0px 0px 0px 0px',
+        element_id: exports.STREAMING_ELEMENT_ID,
+    });
+    elements.push({
+        tag: 'markdown',
+        content: ' ',
+        icon: {
+            tag: 'custom_icon',
+            img_key: 'img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg',
+            size: '16px 16px',
+        },
+        element_id: 'loading_icon',
+    });
+    return {
+        schema: '2.0',
+        config: {
+            streaming_mode: true,
+            locales: ['zh_cn', 'en_us'],
+            summary: {
+                content: 'Processing...',
+                i18n_content: { zh_cn: '处理中...', en_us: 'Processing...' },
+            },
+        },
+        body: { elements },
+    };
+}
+/**
+ * Build the collapsible panel for the active pre-answer phase.
+ * Used by buildStreamingPreAnswerCard when at least one step exists.
+ */
+function buildStreamingToolUseActivePanel(params) {
+    const { steps, elapsedMs } = params;
+    const enParts = ['Tool use'];
+    const zhParts = ['工具执行'];
+    if (steps.length > 0) {
+        enParts.push(`${steps.length} step${steps.length === 1 ? '' : 's'}`);
+        zhParts.push(`${steps.length} 步`);
+    }
+    if (elapsedMs != null && elapsedMs > 0) {
+        const d = formatElapsed(elapsedMs);
+        enParts.push(`(${d})`);
+        zhParts.push(`(${d})`);
+    }
+    return {
+        tag: 'collapsible_panel',
+        expanded: true,
+        header: {
+            title: {
+                tag: 'plain_text',
+                content: `🛠️ ${enParts.join(' · ')}`,
+                i18n_content: {
+                    zh_cn: `🛠️ ${zhParts.join(' · ')}`,
+                    en_us: `🛠️ ${enParts.join(' · ')}`,
+                },
+                text_color: 'grey',
+                text_size: 'notation',
+            },
+            vertical_align: 'center',
+            icon: {
+                tag: 'standard_icon',
+                token: 'down-small-ccm_outlined',
+                color: 'grey',
+                size: '16px 16px',
+            },
+            icon_position: 'right',
+            icon_expanded_angle: -180,
+        },
+        border: { color: 'grey', corner_radius: '5px' },
+        vertical_spacing: '8px',
+        padding: '8px 8px 8px 8px',
+        elements: steps.map(buildToolUseStepElement),
+    };
+}
+function toCardKit2(card) {
     const result = {
         schema: '2.0',
         config: card.config,
@@ -401,4 +603,108 @@ export function toCardKit2(card) {
     if (card.header)
         result.header = card.header;
     return result;
+}
+function buildStreamingToolUsePendingPanel() {
+    return {
+        tag: 'collapsible_panel',
+        expanded: false,
+        header: {
+            title: {
+                tag: 'plain_text',
+                content: '🛠️ Tool use pending',
+                i18n_content: {
+                    zh_cn: '🛠️ 等待工具执行',
+                    en_us: '🛠️ Tool use pending',
+                },
+                text_color: 'grey',
+                text_size: 'notation',
+            },
+            vertical_align: 'center',
+            icon: {
+                tag: 'standard_icon',
+                token: 'down-small-ccm_outlined',
+                color: 'grey',
+                size: '16px 16px',
+            },
+            icon_position: 'right',
+            icon_expanded_angle: -180,
+        },
+        border: { color: 'grey', corner_radius: '5px' },
+        vertical_spacing: '8px',
+        padding: '8px 8px 8px 8px',
+        elements: [],
+    };
+}
+function buildToolUsePanel(params) {
+    const { toolUseSteps = [], toolUseElapsedMs, titleSuffix } = params;
+    const duration = toolUseElapsedMs ? formatToolUseDuration(toolUseElapsedMs) : null;
+    const zhTitleParts = [duration?.zh ?? '工具执行'];
+    const enTitleParts = [duration?.en ?? 'Tool use'];
+    if (titleSuffix) {
+        zhTitleParts.push(titleSuffix.zh);
+        enTitleParts.push(titleSuffix.en);
+    }
+    const stepElements = toolUseSteps.length > 0 ? toolUseSteps.map((step) => buildToolUseStepElement(step)) : [buildToolUsePlaceholder()];
+    return {
+        tag: 'collapsible_panel',
+        expanded: false,
+        header: {
+            title: {
+                tag: 'plain_text',
+                content: `🛠️ ${enTitleParts.join(' · ')}`,
+                i18n_content: {
+                    zh_cn: `🛠️ ${zhTitleParts.join(' · ')}`,
+                    en_us: `🛠️ ${enTitleParts.join(' · ')}`,
+                },
+                text_color: 'grey',
+                text_size: 'notation',
+            },
+            vertical_align: 'center',
+            icon: {
+                tag: 'standard_icon',
+                token: 'down-small-ccm_outlined',
+                color: 'grey',
+                size: '16px 16px',
+            },
+            icon_position: 'right',
+            icon_expanded_angle: -180,
+        },
+        border: { color: 'grey', corner_radius: '5px' },
+        vertical_spacing: '8px',
+        padding: '8px 8px 8px 8px',
+        elements: stepElements,
+    };
+}
+function buildToolUseStepElement(step) {
+    return {
+        tag: 'div',
+        icon: {
+            tag: 'standard_icon',
+            token: step.iconToken,
+            color: 'grey',
+        },
+        text: {
+            tag: 'plain_text',
+            content: step.detail ? `${step.title}\n${step.detail}` : step.title,
+            text_color: 'grey',
+            text_size: 'notation',
+        },
+    };
+}
+function buildToolUsePlaceholder(labels) {
+    const zh = labels?.zh ?? '暂无工具步骤';
+    const en = labels?.en ?? tool_use_display_1.EMPTY_TOOL_USE_PLACEHOLDER;
+    return {
+        tag: 'div',
+        text: {
+            tag: 'plain_text',
+            content: en,
+            i18n_content: {
+                zh_cn: zh,
+                en_us: en,
+            },
+            text_color: 'grey',
+            text_size: 'notation',
+        },
+    };
 }

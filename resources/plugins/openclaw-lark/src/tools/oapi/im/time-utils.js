@@ -8,6 +8,16 @@
  * 以 ISO 8601 (RFC 3339) 作为标准时间交换格式，
  * 提供 ISO 8601 ↔ Unix 转换工具及时间范围解析。
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.secondsToDateTime = secondsToDateTime;
+exports.secondsStringToDateTime = secondsStringToDateTime;
+exports.millisToDateTime = millisToDateTime;
+exports.millisStringToDateTime = millisStringToDateTime;
+exports.dateTimeToSeconds = dateTimeToSeconds;
+exports.dateTimeToSecondsString = dateTimeToSecondsString;
+exports.dateTimeToMillis = dateTimeToMillis;
+exports.parseTimeRange = parseTimeRange;
+exports.parseTimeRangeToSeconds = parseTimeRangeToSeconds;
 const BJ_OFFSET_MS = 8 * 60 * 60 * 1000;
 // ===========================================================================
 // ISO 8601 ↔ Unix 转换工具（对齐 time.go）
@@ -27,29 +37,29 @@ function formatBeijingISO(d) {
 // Unix 秒 → ISO 8601
 // ---------------------------------------------------------------------------
 /** Unix 秒（数字）→ ISO 8601 北京时间 */
-export function secondsToDateTime(seconds) {
+function secondsToDateTime(seconds) {
     return formatBeijingISO(new Date(seconds * 1000));
 }
 /** Unix 秒（字符串）→ ISO 8601 北京时间 */
-export function secondsStringToDateTime(seconds) {
+function secondsStringToDateTime(seconds) {
     return secondsToDateTime(parseInt(seconds, 10));
 }
 // ---------------------------------------------------------------------------
 // Unix 毫秒 → ISO 8601
 // ---------------------------------------------------------------------------
 /** Unix 毫秒（数字）→ ISO 8601 北京时间 */
-export function millisToDateTime(millis) {
+function millisToDateTime(millis) {
     return formatBeijingISO(new Date(millis));
 }
 /** Unix 毫秒（字符串）→ ISO 8601 北京时间 */
-export function millisStringToDateTime(millis) {
+function millisStringToDateTime(millis) {
     return millisToDateTime(parseInt(millis, 10));
 }
 // ---------------------------------------------------------------------------
 // ISO 8601 → Unix
 // ---------------------------------------------------------------------------
 /** ISO 8601 → Unix 秒（数字） */
-export function dateTimeToSeconds(datetime) {
+function dateTimeToSeconds(datetime) {
     const d = new Date(datetime);
     if (isNaN(d.getTime())) {
         throw new Error(`无法解析 ISO 8601 时间: "${datetime}"。格式示例: 2026-02-27T14:30:00+08:00`);
@@ -57,11 +67,11 @@ export function dateTimeToSeconds(datetime) {
     return Math.floor(d.getTime() / 1000);
 }
 /** ISO 8601 → Unix 秒（字符串） */
-export function dateTimeToSecondsString(datetime) {
+function dateTimeToSecondsString(datetime) {
     return dateTimeToSeconds(datetime).toString();
 }
 /** ISO 8601 → Unix 毫秒（数字） */
-export function dateTimeToMillis(datetime) {
+function dateTimeToMillis(datetime) {
     const d = new Date(datetime);
     if (isNaN(d.getTime())) {
         throw new Error(`无法解析 ISO 8601 时间: "${datetime}"。格式示例: 2026-02-27T14:30:00+08:00`);
@@ -78,7 +88,7 @@ export function dateTimeToMillis(datetime) {
  *
  * 所有计算基于北京时间 (UTC+8)。
  */
-export function parseTimeRange(input) {
+function parseTimeRange(input) {
     const now = new Date();
     const bjNow = toBeijingDate(now);
     let start;
@@ -161,7 +171,7 @@ export function parseTimeRange(input) {
 /**
  * 解析时间范围标识，返回 Unix 秒字符串对（供 SDK 调用）。
  */
-export function parseTimeRangeToSeconds(input) {
+function parseTimeRangeToSeconds(input) {
     const range = parseTimeRange(input);
     return {
         start: dateTimeToSecondsString(range.start),

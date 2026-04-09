@@ -5,9 +5,11 @@
  *
  * Converter for "sticker" message type.
  */
-import { safeParse } from './utils';
-export const convertSticker = (raw) => {
-    const parsed = safeParse(raw);
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertSticker = void 0;
+const utils_1 = require("./utils.js");
+const convertSticker = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const fileKey = parsed?.file_key;
     if (!fileKey) {
         return { content: '[sticker]', resources: [] };
@@ -17,3 +19,4 @@ export const convertSticker = (raw) => {
         resources: [{ type: 'sticker', fileKey }],
     };
 };
+exports.convertSticker = convertSticker;

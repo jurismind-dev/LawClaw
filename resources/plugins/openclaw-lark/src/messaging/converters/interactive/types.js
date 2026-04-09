@@ -5,7 +5,9 @@
  *
  * Types and constants for the interactive (card) converter.
  */
-export const EMOJI_MAP = {
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CHART_TYPE_NAMES = exports.EMOJI_MAP = void 0;
+exports.EMOJI_MAP = {
     OK: '👌',
     THUMBSUP: '👍',
     SMILE: '😊',
@@ -15,7 +17,7 @@ export const EMOJI_MAP = {
     PARTY: '🎉',
     THINK: '🤔',
 };
-export const CHART_TYPE_NAMES = {
+exports.CHART_TYPE_NAMES = {
     bar: '柱状图',
     line: '折线图',
     pie: '饼图',

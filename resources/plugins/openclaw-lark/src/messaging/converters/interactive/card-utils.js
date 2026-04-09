@@ -5,16 +5,20 @@
  *
  * Utility functions for card content conversion.
  */
-export function escapeAttr(s) {
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.escapeAttr = escapeAttr;
+exports.formatMillisecondsToISO8601 = formatMillisecondsToISO8601;
+exports.normalizeTimeFormat = normalizeTimeFormat;
+function escapeAttr(s) {
     return s.replace(/"/g, '\\"').replace(/\n/g, '\\n');
 }
-export function formatMillisecondsToISO8601(milliseconds) {
+function formatMillisecondsToISO8601(milliseconds) {
     const ms = parseInt(milliseconds, 10);
     if (isNaN(ms))
         return '';
     return new Date(ms).toISOString();
 }
-export function normalizeTimeFormat(input) {
+function normalizeTimeFormat(input) {
     if (!input)
         return '';
     const num = parseInt(input, 10);

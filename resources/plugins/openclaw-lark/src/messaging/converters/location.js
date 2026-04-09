@@ -5,9 +5,11 @@
  *
  * Converter for "location" message type.
  */
-import { safeParse } from './utils';
-export const convertLocation = (raw) => {
-    const parsed = safeParse(raw);
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertLocation = void 0;
+const utils_1 = require("./utils.js");
+const convertLocation = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const name = parsed?.name ?? '';
     const lat = parsed?.latitude ?? '';
     const lng = parsed?.longitude ?? '';
@@ -18,3 +20,4 @@ export const convertLocation = (raw) => {
         resources: [],
     };
 };
+exports.convertLocation = convertLocation;

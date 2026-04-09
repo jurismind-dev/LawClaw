@@ -28,7 +28,6 @@ description: |
 | 查重复日程实例 | feishu_calendar_event | instances | event_id, start_time, end_time | - | - |
 | 查忙闲 | feishu_calendar_freebusy | list | time_min, time_max, user_ids[] | - | - |
 | 邀请参会人 | feishu_calendar_event_attendee | create | calendar_id, event_id, attendees[] | - | - |
-| 删除参会人 | feishu_calendar_event_attendee | batch_delete | calendar_id, event_id, user_open_ids[] | - | - |
 
 ---
 
@@ -63,7 +62,6 @@ description: |
 
 - ✅ 创建日程：`user_open_id = SenderId`
 - ✅ 邀请参会人：`attendees[].id = "ou_xxx"`
-- ✅ 删除参会人：`user_open_ids = ["ou_xxx"]`（工具已优化，直接传 open_id 即可）
 
 ⚠️ **ID 格式区分**：
 - `ou_xxx`：用户的 open_id（**你应该使用的**）

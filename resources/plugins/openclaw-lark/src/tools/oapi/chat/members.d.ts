@@ -8,4 +8,4 @@
  * 使用 sdk.im.v1.chatMembers.get 接口
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerChatMembersTool(api: OpenClawPluginApi): void;
+export declare function registerChatMembersTool(api: OpenClawPluginApi): boolean;

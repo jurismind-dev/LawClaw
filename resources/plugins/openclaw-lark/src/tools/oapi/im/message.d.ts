@@ -13,4 +13,4 @@
  * 全部以用户身份（user_access_token）调用，scope 来自 real-scope.json。
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerFeishuImUserMessageTool(api: OpenClawPluginApi): void;
+export declare function registerFeishuImUserMessageTool(api: OpenClawPluginApi): boolean;

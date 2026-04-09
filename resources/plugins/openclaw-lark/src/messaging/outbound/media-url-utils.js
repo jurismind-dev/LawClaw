@@ -3,10 +3,51 @@
  * Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
  * SPDX-License-Identifier: MIT
  */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
-export function normalizeMediaUrlInput(value) {
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.normalizeMediaUrlInput = normalizeMediaUrlInput;
+exports.isWindowsAbsolutePath = isWindowsAbsolutePath;
+exports.isLocalMediaPath = isLocalMediaPath;
+exports.safeFileUrlToPath = safeFileUrlToPath;
+exports.validateLocalMediaRoots = validateLocalMediaRoots;
+exports.resolveBaseNameFromPath = resolveBaseNameFromPath;
+exports.resolveFileNameFromMediaUrl = resolveFileNameFromMediaUrl;
+const fs = __importStar(require("node:fs"));
+const path = __importStar(require("node:path"));
+const node_url_1 = require("node:url");
+function normalizeMediaUrlInput(value) {
     let raw = value.trim();
     // Common wrappers from markdown/chat payloads.
     if (raw.startsWith('<') && raw.endsWith('>') && raw.length >= 2) {
@@ -24,17 +65,17 @@ export function normalizeMediaUrlInput(value) {
 function stripQueryAndHash(value) {
     return value.split(/[?#]/, 1)[0] ?? value;
 }
-export function isWindowsAbsolutePath(value) {
+function isWindowsAbsolutePath(value) {
     return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\');
 }
-export function isLocalMediaPath(value) {
+function isLocalMediaPath(value) {
     const raw = normalizeMediaUrlInput(value);
     return raw.startsWith('file://') || path.isAbsolute(raw) || isWindowsAbsolutePath(raw);
 }
-export function safeFileUrlToPath(fileUrl) {
+function safeFileUrlToPath(fileUrl) {
     const raw = normalizeMediaUrlInput(fileUrl);
     try {
-        return fileURLToPath(raw);
+        return (0, node_url_1.fileURLToPath)(raw);
     }
     catch {
         return new URL(raw).pathname;
@@ -58,7 +99,7 @@ export function safeFileUrlToPath(fileUrl) {
  * @throws {Error} When the path is not under any allowed root, or
  *                 when `localRoots` is an empty array.
  */
-export function validateLocalMediaRoots(filePath, localRoots) {
+function validateLocalMediaRoots(filePath, localRoots) {
     // Not configured — skip validation (backwards-compatible).
     if (localRoots === undefined)
         return;
@@ -94,7 +135,7 @@ export function validateLocalMediaRoots(filePath, localRoots) {
             `Move the file to an allowed directory or use a remote URL instead.`);
     }
 }
-export function resolveBaseNameFromPath(value) {
+function resolveBaseNameFromPath(value) {
     const raw = normalizeMediaUrlInput(value);
     const cleanPath = stripQueryAndHash(raw);
     const fileName = isWindowsAbsolutePath(cleanPath) ? path.win32.basename(cleanPath) : path.basename(cleanPath);
@@ -103,7 +144,7 @@ export function resolveBaseNameFromPath(value) {
     }
     return undefined;
 }
-export function resolveFileNameFromMediaUrl(mediaUrl) {
+function resolveFileNameFromMediaUrl(mediaUrl) {
     const raw = normalizeMediaUrlInput(mediaUrl);
     if (!raw)
         return undefined;

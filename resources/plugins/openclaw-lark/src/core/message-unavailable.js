@@ -9,9 +9,19 @@
  * 1) 当命中飞书终止错误码（230011/231003）时，按 message_id 标记不可用；
  * 2) 后续针对该 message_id 的 API 调用直接短路，避免持续报错刷屏。
  */
-import { MESSAGE_TERMINAL_CODES } from './auth-errors';
-import { extractLarkApiCode } from './api-error';
-import { normalizeMessageId } from './targets';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MessageUnavailableError = void 0;
+exports.isTerminalMessageApiCode = isTerminalMessageApiCode;
+exports.markMessageUnavailable = markMessageUnavailable;
+exports.getMessageUnavailableState = getMessageUnavailableState;
+exports.isMessageUnavailable = isMessageUnavailable;
+exports.markMessageUnavailableFromError = markMessageUnavailableFromError;
+exports.isMessageUnavailableError = isMessageUnavailableError;
+exports.assertMessageAvailable = assertMessageAvailable;
+exports.runWithMessageUnavailableGuard = runWithMessageUnavailableGuard;
+const auth_errors_1 = require("./auth-errors.js");
+const api_error_1 = require("./api-error.js");
+const targets_1 = require("./targets.js");
 const UNAVAILABLE_CACHE_TTL_MS = 30 * 60 * 1000;
 const MAX_CACHE_SIZE_BEFORE_PRUNE = 512;
 const unavailableMessageCache = new Map();
@@ -22,11 +32,11 @@ function pruneExpired(nowMs = Date.now()) {
         }
     }
 }
-export function isTerminalMessageApiCode(code) {
-    return typeof code === 'number' && MESSAGE_TERMINAL_CODES.has(code);
+function isTerminalMessageApiCode(code) {
+    return typeof code === 'number' && auth_errors_1.MESSAGE_TERMINAL_CODES.has(code);
 }
-export function markMessageUnavailable(params) {
-    const normalizedId = normalizeMessageId(params.messageId);
+function markMessageUnavailable(params) {
+    const normalizedId = (0, targets_1.normalizeMessageId)(params.messageId);
     if (!normalizedId)
         return;
     if (unavailableMessageCache.size >= MAX_CACHE_SIZE_BEFORE_PRUNE) {
@@ -38,8 +48,8 @@ export function markMessageUnavailable(params) {
         markedAtMs: Date.now(),
     });
 }
-export function getMessageUnavailableState(messageId) {
-    const normalizedId = normalizeMessageId(messageId);
+function getMessageUnavailableState(messageId) {
+    const normalizedId = (0, targets_1.normalizeMessageId)(messageId);
     if (!normalizedId)
         return undefined;
     const state = unavailableMessageCache.get(normalizedId);
@@ -51,14 +61,14 @@ export function getMessageUnavailableState(messageId) {
     }
     return state;
 }
-export function isMessageUnavailable(messageId) {
+function isMessageUnavailable(messageId) {
     return !!getMessageUnavailableState(messageId);
 }
-export function markMessageUnavailableFromError(params) {
-    const normalizedId = normalizeMessageId(params.messageId);
+function markMessageUnavailableFromError(params) {
+    const normalizedId = (0, targets_1.normalizeMessageId)(params.messageId);
     if (!normalizedId)
         return undefined;
-    const code = extractLarkApiCode(params.error);
+    const code = (0, api_error_1.extractLarkApiCode)(params.error);
     if (!isTerminalMessageApiCode(code))
         return undefined;
     markMessageUnavailable({
@@ -68,7 +78,7 @@ export function markMessageUnavailableFromError(params) {
     });
     return code;
 }
-export class MessageUnavailableError extends Error {
+class MessageUnavailableError extends Error {
     messageId;
     apiCode;
     operation;
@@ -81,12 +91,13 @@ export class MessageUnavailableError extends Error {
         this.operation = params.operation;
     }
 }
-export function isMessageUnavailableError(error) {
+exports.MessageUnavailableError = MessageUnavailableError;
+function isMessageUnavailableError(error) {
     return (error instanceof MessageUnavailableError ||
-        (typeof error === 'object' && error !== null && error.name === 'MessageUnavailableError'));
+        (typeof error === 'object' && error != null && error.name === 'MessageUnavailableError'));
 }
-export function assertMessageAvailable(messageId, operation) {
-    const normalizedId = normalizeMessageId(messageId);
+function assertMessageAvailable(messageId, operation) {
+    const normalizedId = (0, targets_1.normalizeMessageId)(messageId);
     if (!normalizedId)
         return;
     const state = getMessageUnavailableState(normalizedId);
@@ -104,8 +115,8 @@ export function assertMessageAvailable(messageId, operation) {
  * - 调用报错后识别 230011/231003 并标记；
  * - 命中时抛出 MessageUnavailableError 供上游快速终止流程。
  */
-export async function runWithMessageUnavailableGuard(params) {
-    const normalizedId = normalizeMessageId(params.messageId);
+async function runWithMessageUnavailableGuard(params) {
+    const normalizedId = (0, targets_1.normalizeMessageId)(params.messageId);
     if (!normalizedId) {
         return params.fn();
     }

@@ -8,9 +8,11 @@
  * 所有 owner 判定统一使用 {@link getAppInfo} 返回的 `effectiveOwnerOpenId`。
  * 不维护独立缓存，完全依赖 app-scope-checker 的 30s 缓存。
  */
-import { getAppInfo } from './app-scope-checker';
-import { larkLogger } from './lark-logger';
-const log = larkLogger('core/app-owner-fallback');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getAppOwnerFallback = getAppOwnerFallback;
+const app_scope_checker_1 = require("./app-scope-checker.js");
+const lark_logger_1 = require("./lark-logger.js");
+const log = (0, lark_logger_1.larkLogger)('core/app-owner-fallback');
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -24,12 +26,10 @@ const log = larkLogger('core/app-owner-fallback');
  * @param sdk - 飞书 SDK 实例（必须已初始化 TAT）
  * @returns 应用所有者的 open_id，如果查询失败则返回 undefined
  */
-export async function getAppOwnerFallback(account, 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-sdk) {
+async function getAppOwnerFallback(account, sdk) {
     const { appId } = account;
     try {
-        const appInfo = await getAppInfo(sdk, appId);
+        const appInfo = await (0, app_scope_checker_1.getAppInfo)(sdk, appId);
         return appInfo.effectiveOwnerOpenId;
     }
     catch (err) {

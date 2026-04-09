@@ -13,51 +13,178 @@
  *
  * 全部以用户身份（user_access_token）调用，scope 来自 real-scope.json。
  */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerFeishuImUserMessageTool = registerFeishuImUserMessageTool;
+const typebox_1 = require("@sinclair/typebox");
+const accounts_1 = require("../../../core/accounts.js");
+const lark_client_1 = require("../../../core/lark-client.js");
+const helpers_1 = require("../helpers.js");
+const FEISHU_POST_LOCALE_PRIORITY = ['zh_cn', 'en_us', 'ja_jp'];
+/**
+ * Check whether a value is a non-null object whose properties can be read.
+ *
+ * @param value - The value to check
+ * @returns Whether the value is a non-null object
+ */
+function isRecord(value) {
+    return value != null && typeof value === 'object';
+}
+/**
+ * Collect post content bodies from a parsed Feishu post payload.
+ * Handles both flat (title/content at root) and multi-locale wrapper structures.
+ *
+ * @param parsed - The parsed JSON object
+ * @returns List of post content bodies to process
+ */
+function collectPostContents(parsed) {
+    if ('title' in parsed || 'content' in parsed) {
+        return [parsed];
+    }
+    const bodies = [];
+    const seen = new Set();
+    // Process well-known locales first
+    for (const locale of FEISHU_POST_LOCALE_PRIORITY) {
+        const localeContent = parsed[locale];
+        if (!isRecord(localeContent)) {
+            continue;
+        }
+        const body = localeContent;
+        if (!seen.has(body)) {
+            bodies.push(body);
+            seen.add(body);
+        }
+    }
+    // Process remaining locales
+    for (const value of Object.values(parsed)) {
+        if (!isRecord(value)) {
+            continue;
+        }
+        const body = value;
+        if (!seen.has(body)) {
+            bodies.push(body);
+            seen.add(body);
+        }
+    }
+    return bodies;
+}
+/**
+ * Convert markdown tables to the Feishu-compatible list format.
+ *
+ * Reuses the channel runtime's existing converter so the tool send path
+ * behaves identically to the main reply path.
+ *
+ * @param cfg - Current tool configuration
+ * @param text - Raw markdown text
+ * @returns Converted text, or the original text when runtime is unavailable
+ */
+function convertMarkdownTablesForLark(cfg, text) {
+    try {
+        const runtime = lark_client_1.LarkClient.runtime;
+        if (runtime?.channel?.text?.convertMarkdownTables && runtime.channel.text.resolveMarkdownTableMode) {
+            const tableMode = runtime.channel.text.resolveMarkdownTableMode({
+                cfg,
+                channel: 'feishu',
+            });
+            return runtime.channel.text.convertMarkdownTables(text, tableMode);
+        }
+    }
+    catch {
+        // Runtime converter unavailable -- keep text as-is.
+    }
+    return text;
+}
+/**
+ * Pre-process `tag="md"` text nodes inside `post` messages so the tool send
+ * path also renders markdown tables correctly.
+ *
+ * @param cfg - Current tool configuration
+ * @param msgType - Feishu message type
+ * @param content - The JSON string from tool parameters
+ * @returns Pre-processed JSON string
+ */
+function preprocessPostContent(cfg, msgType, content) {
+    if (msgType !== 'post') {
+        return content;
+    }
+    try {
+        const parsed = JSON.parse(content);
+        if (!isRecord(parsed)) {
+            return content;
+        }
+        const postContents = collectPostContents(parsed);
+        if (postContents.length === 0) {
+            return content;
+        }
+        let changed = false;
+        for (const postContent of postContents) {
+            if (!postContent.content || !Array.isArray(postContent.content)) {
+                continue;
+            }
+            for (const line of postContent.content) {
+                if (!Array.isArray(line)) {
+                    continue;
+                }
+                for (const block of line) {
+                    if (!isRecord(block) || block.tag !== 'md' || typeof block.text !== 'string') {
+                        continue;
+                    }
+                    const convertedText = convertMarkdownTablesForLark(cfg, block.text);
+                    if (convertedText !== block.text) {
+                        block.text = convertedText;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        return changed ? JSON.stringify(parsed) : content;
+    }
+    catch {
+        return content;
+    }
+}
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const FeishuImMessageSchema = Type.Union([
+const FeishuImMessageSchema = typebox_1.Type.Union([
     // SEND
-    Type.Object({
-        action: Type.Literal('send'),
-        receive_id_type: StringEnum(['open_id', 'chat_id'], {
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('send'),
+        receive_id_type: (0, helpers_1.StringEnum)(['open_id', 'chat_id'], {
             description: '接收者 ID 类型：open_id（私聊，ou_xxx）、chat_id（群聊，oc_xxx）',
         }),
-        receive_id: Type.String({
+        receive_id: typebox_1.Type.String({
             description: "接收者 ID，与 receive_id_type 对应。open_id 填 'ou_xxx'，chat_id 填 'oc_xxx'",
         }),
-        msg_type: StringEnum(['text', 'post', 'image', 'file', 'audio', 'media', 'interactive', 'share_chat', 'share_user'], {
+        msg_type: (0, helpers_1.StringEnum)(['text', 'post', 'image', 'file', 'audio', 'media', 'interactive', 'share_chat', 'share_user'], {
             description: '消息类型：text（纯文本）、post（富文本）、image（图片）、file（文件）、interactive（消息卡片）、share_chat（群名片）、share_user（个人名片）等',
         }),
-        content: Type.String({
+        content: typebox_1.Type.String({
             description: '消息内容（JSON 字符串），格式取决于 msg_type。' +
                 '示例：text → \'{"text":"你好"}\'，' +
                 'image → \'{"image_key":"img_xxx"}\'，' +
                 'share_chat → \'{"chat_id":"oc_xxx"}\'，' +
                 'post → \'{"zh_cn":{"title":"标题","content":[[{"tag":"text","text":"正文"}]]}}\'',
         }),
-        uuid: Type.Optional(Type.String({
+        uuid: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '幂等唯一标识。同一 uuid 在 1 小时内只会发送一条消息，用于去重',
         })),
     }),
     // REPLY
-    Type.Object({
-        action: Type.Literal('reply'),
-        message_id: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('reply'),
+        message_id: typebox_1.Type.String({
             description: '被回复消息的 ID（om_xxx 格式）',
         }),
-        msg_type: StringEnum(['text', 'post', 'image', 'file', 'audio', 'media', 'interactive', 'share_chat', 'share_user'], {
+        msg_type: (0, helpers_1.StringEnum)(['text', 'post', 'image', 'file', 'audio', 'media', 'interactive', 'share_chat', 'share_user'], {
             description: '消息类型：text（纯文本）、post（富文本）、image（图片）、interactive（消息卡片）等',
         }),
-        content: Type.String({
+        content: typebox_1.Type.String({
             description: '回复消息内容（JSON 字符串），格式同 send 的 content',
         }),
-        reply_in_thread: Type.Optional(Type.Boolean({
+        reply_in_thread: typebox_1.Type.Optional(typebox_1.Type.Boolean({
             description: '是否以话题形式回复。true 则消息出现在该消息的话题中，false（默认）则出现在聊天主流',
         })),
-        uuid: Type.Optional(Type.String({
+        uuid: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '幂等唯一标识',
         })),
     }),
@@ -65,12 +192,12 @@ const FeishuImMessageSchema = Type.Union([
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerFeishuImUserMessageTool(api) {
+function registerFeishuImUserMessageTool(api) {
     if (!api.config)
-        return;
+        return false;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_im_user_message');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_im_user_message');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_im_user_message',
         label: 'Feishu: IM User Message',
         description: '飞书用户身份 IM 消息工具。**有且仅当用户明确要求以自己身份发消息、回复消息时使用，当没有明确要求时优先使用message系统工具**。' +
@@ -93,22 +220,24 @@ export function registerFeishuImUserMessageTool(api) {
                     // -----------------------------------------------------------------
                     case 'send': {
                         log.info(`send: receive_id_type=${p.receive_id_type}, receive_id=${p.receive_id}, msg_type=${p.msg_type}`);
+                        const accountScopedCfg = (0, accounts_1.createAccountScopedConfig)(cfg, client.account.accountId);
+                        const processedContent = preprocessPostContent(accountScopedCfg, p.msg_type, p.content);
                         const res = await client.invoke('feishu_im_user_message.send', (sdk, opts) => sdk.im.v1.message.create({
                             params: { receive_id_type: p.receive_id_type },
                             data: {
                                 receive_id: p.receive_id,
                                 msg_type: p.msg_type,
-                                content: p.content,
+                                content: processedContent,
                                 uuid: p.uuid,
                             },
                         }, opts), {
                             as: 'user',
                         });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const data = res.data;
                         log.info(`send: message sent, message_id=${data?.message_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             message_id: data?.message_id,
                             chat_id: data?.chat_id,
                             create_time: data?.create_time,
@@ -119,10 +248,12 @@ export function registerFeishuImUserMessageTool(api) {
                     // -----------------------------------------------------------------
                     case 'reply': {
                         log.info(`reply: message_id=${p.message_id}, msg_type=${p.msg_type}, reply_in_thread=${p.reply_in_thread ?? false}`);
+                        const accountScopedCfg = (0, accounts_1.createAccountScopedConfig)(cfg, client.account.accountId);
+                        const processedContent = preprocessPostContent(accountScopedCfg, p.msg_type, p.content);
                         const res = await client.invoke('feishu_im_user_message.reply', (sdk, opts) => sdk.im.v1.message.reply({
                             path: { message_id: p.message_id },
                             data: {
-                                content: p.content,
+                                content: processedContent,
                                 msg_type: p.msg_type,
                                 reply_in_thread: p.reply_in_thread,
                                 uuid: p.uuid,
@@ -130,11 +261,11 @@ export function registerFeishuImUserMessageTool(api) {
                         }, opts), {
                             as: 'user',
                         });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const data = res.data;
                         log.info(`reply: message sent, message_id=${data?.message_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             message_id: data?.message_id,
                             chat_id: data?.chat_id,
                             create_time: data?.create_time,
@@ -143,7 +274,7 @@ export function registerFeishuImUserMessageTool(api) {
                 }
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_im_user_message' });

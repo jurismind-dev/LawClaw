@@ -10,4 +10,4 @@
  *   - feishu_im_user_search_messages     (跨会话关键词搜索)
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerMessageReadTools(api: OpenClawPluginApi): void;
+export declare function registerMessageReadTools(api: OpenClawPluginApi): string[];

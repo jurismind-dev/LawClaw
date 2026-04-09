@@ -5,9 +5,11 @@
  *
  * Converter for "vote" message type.
  */
-import { safeParse } from './utils';
-export const convertVote = (raw) => {
-    const parsed = safeParse(raw);
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertVote = void 0;
+const utils_1 = require("./utils.js");
+const convertVote = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const topic = parsed?.topic ?? '';
     const options = parsed?.options ?? [];
     const parts = [];
@@ -23,3 +25,4 @@ export const convertVote = (raw) => {
         resources: [],
     };
 };
+exports.convertVote = convertVote;

@@ -10,11 +10,15 @@
  * parameters explicitly.  Call {@link withTicket} at the event entry point
  * (monitor.ts) and use {@link getTicket} anywhere downstream.
  */
-import { AsyncLocalStorage } from 'node:async_hooks';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.withTicket = withTicket;
+exports.getTicket = getTicket;
+exports.ticketElapsed = ticketElapsed;
+const node_async_hooks_1 = require("node:async_hooks");
 // ---------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------
-const store = new AsyncLocalStorage();
+const store = new node_async_hooks_1.AsyncLocalStorage();
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -22,15 +26,15 @@ const store = new AsyncLocalStorage();
  * Run `fn` within a ticket context.  All async operations spawned inside
  * `fn` will inherit the context and can access it via {@link getTicket}.
  */
-export function withTicket(ticket, fn) {
+function withTicket(ticket, fn) {
     return store.run(ticket, fn);
 }
 /** Return the current ticket, or `undefined` if not inside withTicket. */
-export function getTicket() {
+function getTicket() {
     return store.getStore();
 }
 /** Milliseconds elapsed since the current ticket was created, or 0. */
-export function ticketElapsed() {
+function ticketElapsed() {
     const t = store.getStore();
     return t ? Date.now() - t.startTime : 0;
 }

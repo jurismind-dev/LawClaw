@@ -9,6 +9,7 @@ import {
   cleanupOpenClawAuthProfilesEncoding,
   cleanupOpenClawProviderApiKeyConfig,
   cleanupLegacyProviderProfiles,
+  cleanupLegacyOpenClawProviderAliases,
   cleanupOpenClawProviderEntries,
   getOpenClawAgentModelPrimary,
   saveProviderKeyToOpenClaw,
@@ -25,6 +26,23 @@ const JURISMIND_LEGACY_MODELS = new Set([
   'jurismind',
   'jurismind/kimi-k2.5',
   'kimi-k2.5',
+]);
+const LEGACY_QWEN_PROVIDER_TYPE = 'qwen-portal';
+const QWEN_PROVIDER_TYPE = 'qwen';
+const QWEN_MANAGED_MODEL = 'qwen/qwen3.5-plus';
+const QWEN_MANAGED_BASE_URL = 'https://coding-intl.dashscope.aliyuncs.com/v1';
+const QWEN_LEGACY_BASE_URLS = new Set(['https://portal.qwen.ai', 'https://portal.qwen.ai/v1']);
+const QWEN_LEGACY_MODELS = new Set([
+  'coder-model',
+  'qwen-portal/coder-model',
+  'qwen/coder-model',
+]);
+const MINIMAX_PROVIDER_TYPES = new Set(['minimax-portal', 'minimax-portal-cn']);
+const MINIMAX_MANAGED_MODEL = 'minimax-portal/MiniMax-M2.7';
+const MINIMAX_LEGACY_MODELS = new Set([
+  'MiniMax-M2.5',
+  'minimax-portal/MiniMax-M2.5',
+  'minimax-portal-cn/MiniMax-M2.5',
 ]);
 const LAWCLAW_AGENT_ID = 'lawclaw-main';
 
@@ -46,6 +64,7 @@ interface ProviderMigrationDependencies {
   getDefaultProvider: typeof getDefaultProvider;
   saveProviderKeyToOpenClaw: typeof saveProviderKeyToOpenClaw;
   cleanupLegacyProviderProfiles: typeof cleanupLegacyProviderProfiles;
+  cleanupLegacyOpenClawProviderAliases: typeof cleanupLegacyOpenClawProviderAliases;
   setOpenClawAgentModel: typeof setOpenClawAgentModel;
   cleanupOpenClawProviderEntries: typeof cleanupOpenClawProviderEntries;
   getOpenClawAgentModelPrimary: typeof getOpenClawAgentModelPrimary;
@@ -60,6 +79,7 @@ const defaultDeps: ProviderMigrationDependencies = {
   getDefaultProvider,
   saveProviderKeyToOpenClaw,
   cleanupLegacyProviderProfiles,
+  cleanupLegacyOpenClawProviderAliases,
   setOpenClawAgentModel,
   cleanupOpenClawProviderEntries,
   getOpenClawAgentModelPrimary,
@@ -111,7 +131,7 @@ function normalizeJurismindProvider(
   provider: ProviderConfig,
   nowIso: string
 ): { changed: boolean; next: ProviderConfig } {
-  if (provider.type !== JURISMIND_PROVIDER_TYPE) {
+  if (String(provider.type) !== JURISMIND_PROVIDER_TYPE) {
     return { changed: false, next: provider };
   }
 
@@ -124,6 +144,97 @@ function normalizeJurismindProvider(
     next: {
       ...provider,
       model: JURISMIND_MANAGED_MODEL,
+      updatedAt: nowIso,
+    },
+  };
+}
+
+function getProviderType(provider: ProviderConfig): string {
+  return String(provider.type || '').trim();
+}
+
+function getOpenClawProviderKey(providerType: string): string {
+  if (providerType === 'minimax-portal-cn') {
+    return 'minimax-portal';
+  }
+  if (providerType === LEGACY_QWEN_PROVIDER_TYPE) {
+    return QWEN_PROVIDER_TYPE;
+  }
+  return providerType;
+}
+
+function cleanupLegacyProfilesForAllAgents(
+  provider: string,
+  deps: ProviderMigrationDependencies
+): boolean {
+  const cleanedMainProfiles = deps.cleanupLegacyProviderProfiles(provider);
+  const cleanedLawClawProfiles = deps.cleanupLegacyProviderProfiles(provider, LAWCLAW_AGENT_ID);
+  return cleanedMainProfiles || cleanedLawClawProfiles;
+}
+
+function normalizeQwenProvider(
+  provider: ProviderConfig,
+  nowIso: string
+): { changed: boolean; next: ProviderConfig } {
+  const providerType = getProviderType(provider);
+  let changed = false;
+  const next: ProviderConfig = {
+    ...provider,
+  };
+
+  if (providerType === LEGACY_QWEN_PROVIDER_TYPE) {
+    next.type = QWEN_PROVIDER_TYPE;
+    changed = true;
+  }
+
+  const normalizedBaseUrl = String(provider.baseUrl || '').trim();
+  if (
+    providerType === LEGACY_QWEN_PROVIDER_TYPE
+    || !normalizedBaseUrl
+    || QWEN_LEGACY_BASE_URLS.has(normalizedBaseUrl)
+  ) {
+    if (provider.baseUrl !== QWEN_MANAGED_BASE_URL) {
+      next.baseUrl = QWEN_MANAGED_BASE_URL;
+      changed = true;
+    }
+  }
+
+  const normalizedModel = String(provider.model || '').trim();
+  if (
+    providerType === LEGACY_QWEN_PROVIDER_TYPE
+    || !normalizedModel
+    || QWEN_LEGACY_MODELS.has(normalizedModel)
+  ) {
+    if (provider.model !== QWEN_MANAGED_MODEL) {
+      next.model = QWEN_MANAGED_MODEL;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    next.updatedAt = nowIso;
+  }
+
+  return { changed, next };
+}
+
+function normalizeMiniMaxProvider(
+  provider: ProviderConfig,
+  nowIso: string
+): { changed: boolean; next: ProviderConfig } {
+  if (!MINIMAX_PROVIDER_TYPES.has(getProviderType(provider))) {
+    return { changed: false, next: provider };
+  }
+
+  if (!provider.model || !MINIMAX_LEGACY_MODELS.has(provider.model)) {
+    return { changed: false, next: provider };
+  }
+
+  return {
+    changed: true,
+    next: {
+      ...provider,
+      model: MINIMAX_MANAGED_MODEL,
       updatedAt: nowIso,
     },
   };
@@ -154,9 +265,7 @@ export async function migrateMoonshotCodePlanProvider(
     }
   }
 
-  const cleanedLegacyProfiles =
-    deps.cleanupLegacyProviderProfiles(LEGACY_PROVIDER_TYPE)
-    || deps.cleanupLegacyProviderProfiles(LEGACY_PROVIDER_TYPE, LAWCLAW_AGENT_ID);
+  const cleanedLegacyProfiles = cleanupLegacyProfilesForAllAgents(LEGACY_PROVIDER_TYPE, deps);
   const removedStaleProviderEntries = deps.cleanupOpenClawProviderEntries(LEGACY_PROVIDER_TYPE);
 
   let rewroteDefaultModel = false;
@@ -181,11 +290,81 @@ export async function migrateMoonshotCodePlanProvider(
   };
 }
 
+export async function migrateQwenProvider(
+  deps: ProviderMigrationDependencies = defaultDeps
+): Promise<ProviderMigrationSummary> {
+  const providers = await deps.getAllProviders();
+  const targetProviders = providers.filter((provider) => {
+    const providerType = getProviderType(provider);
+    return providerType === LEGACY_QWEN_PROVIDER_TYPE || providerType === QWEN_PROVIDER_TYPE;
+  });
+  const nowIso = new Date().toISOString();
+  let normalizedProviders = 0;
+  let syncedKeys = 0;
+  const cleanedMainAuthProfileEncoding = deps.cleanupOpenClawAuthProfilesEncoding();
+  const cleanedLawClawAuthProfileEncoding = deps.cleanupOpenClawAuthProfilesEncoding(
+    LAWCLAW_AGENT_ID
+  );
+  const cleanedAuthProfileEncoding =
+    cleanedMainAuthProfileEncoding || cleanedLawClawAuthProfileEncoding;
+
+  for (const provider of targetProviders) {
+    const { changed, next } = normalizeQwenProvider(provider, nowIso);
+    if (changed) {
+      await deps.saveProvider(next);
+      normalizedProviders += 1;
+    }
+
+    const apiKey = await deps.getApiKey(provider.id);
+    if (apiKey?.trim()) {
+      deps.saveProviderKeyToOpenClaw(QWEN_PROVIDER_TYPE, apiKey.trim());
+      deps.saveProviderKeyToOpenClaw(QWEN_PROVIDER_TYPE, apiKey.trim(), LAWCLAW_AGENT_ID);
+      syncedKeys += 1;
+    }
+  }
+
+  let rewroteDefaultModel = false;
+  const cleanedLegacyProfiles = cleanupLegacyProfilesForAllAgents(QWEN_PROVIDER_TYPE, deps);
+  const removedStaleProviderEntries = deps.cleanupLegacyOpenClawProviderAliases(QWEN_PROVIDER_TYPE);
+  const cleanedInvalidApiKeyConfig = deps.cleanupOpenClawProviderApiKeyConfig(QWEN_PROVIDER_TYPE);
+  const defaultProviderId = await deps.getDefaultProvider();
+  if (defaultProviderId) {
+    const defaultProvider = providers.find((provider) => provider.id === defaultProviderId);
+    const defaultProviderType = defaultProvider ? getProviderType(defaultProvider) : '';
+    const currentPrimary = deps.getOpenClawAgentModelPrimary(LAWCLAW_AGENT_ID);
+    if (
+      defaultProvider
+      && (defaultProviderType === LEGACY_QWEN_PROVIDER_TYPE || defaultProviderType === QWEN_PROVIDER_TYPE)
+      && (!currentPrimary || QWEN_LEGACY_MODELS.has(currentPrimary))
+    ) {
+      deps.setOpenClawAgentModel(
+        LAWCLAW_AGENT_ID,
+        getOpenClawProviderKey(defaultProviderType),
+        QWEN_MANAGED_MODEL
+      );
+      rewroteDefaultModel = true;
+    }
+  }
+
+  return {
+    touchedProviders: targetProviders.length,
+    normalizedProviders,
+    syncedKeys,
+    cleanedLegacyProfiles,
+    rewroteDefaultModel,
+    removedStaleProviderEntries,
+    cleanedInvalidApiKeyConfig,
+    cleanedAuthProfileEncoding,
+  };
+}
+
 export async function migrateJurismindProviderModel(
   deps: ProviderMigrationDependencies = defaultDeps
 ): Promise<ProviderMigrationSummary> {
   const providers = await deps.getAllProviders();
-  const targetProviders = providers.filter((provider) => provider.type === JURISMIND_PROVIDER_TYPE);
+  const targetProviders = providers.filter(
+    (provider) => getProviderType(provider) === JURISMIND_PROVIDER_TYPE
+  );
   const nowIso = new Date().toISOString();
   let normalizedProviders = 0;
   let syncedKeys = 0;
@@ -245,6 +424,58 @@ export async function migrateJurismindProviderModel(
   };
 }
 
+export async function migrateMiniMaxProviderModel(
+  deps: ProviderMigrationDependencies = defaultDeps
+): Promise<ProviderMigrationSummary> {
+  const providers = await deps.getAllProviders();
+  const targetProviders = providers.filter((provider) => MINIMAX_PROVIDER_TYPES.has(getProviderType(provider)));
+  const nowIso = new Date().toISOString();
+  let normalizedProviders = 0;
+  let syncedKeys = 0;
+
+  for (const provider of targetProviders) {
+    const { changed, next } = normalizeMiniMaxProvider(provider, nowIso);
+    if (changed) {
+      await deps.saveProvider(next);
+      normalizedProviders += 1;
+    }
+
+    const apiKey = await deps.getApiKey(provider.id);
+    if (apiKey?.trim()) {
+      const providerKey = getOpenClawProviderKey(getProviderType(provider));
+      deps.saveProviderKeyToOpenClaw(providerKey, apiKey.trim());
+      deps.saveProviderKeyToOpenClaw(providerKey, apiKey.trim(), LAWCLAW_AGENT_ID);
+      syncedKeys += 1;
+    }
+  }
+
+  let rewroteDefaultModel = false;
+  const defaultProviderId = await deps.getDefaultProvider();
+  if (defaultProviderId) {
+    const defaultProvider = providers.find((provider) => provider.id === defaultProviderId);
+    const currentPrimary = deps.getOpenClawAgentModelPrimary(LAWCLAW_AGENT_ID);
+    if (
+      defaultProvider
+      && MINIMAX_PROVIDER_TYPES.has(getProviderType(defaultProvider))
+      && (!currentPrimary || MINIMAX_LEGACY_MODELS.has(currentPrimary))
+    ) {
+      deps.setOpenClawAgentModel(LAWCLAW_AGENT_ID, 'minimax-portal', MINIMAX_MANAGED_MODEL);
+      rewroteDefaultModel = true;
+    }
+  }
+
+  return {
+    touchedProviders: targetProviders.length,
+    normalizedProviders,
+    syncedKeys,
+    cleanedLegacyProfiles: false,
+    rewroteDefaultModel,
+    removedStaleProviderEntries: false,
+    cleanedInvalidApiKeyConfig: false,
+    cleanedAuthProfileEncoding: false,
+  };
+}
+
 export async function runProviderStartupMigration(): Promise<void> {
   try {
     const moonshotResult = await migrateMoonshotCodePlanProvider();
@@ -256,6 +487,27 @@ export async function runProviderStartupMigration(): Promise<void> {
       logger.info('Kimi Coding provider migration completed:', moonshotResult);
     } else {
       logger.debug('Kimi Coding provider migration skipped (no legacy data found).');
+    }
+
+    const qwenResult = await migrateQwenProvider();
+    if (
+      qwenResult.normalizedProviders > 0
+      || qwenResult.rewroteDefaultModel
+      || qwenResult.cleanedLegacyProfiles
+      || qwenResult.removedStaleProviderEntries
+      || qwenResult.cleanedInvalidApiKeyConfig
+      || qwenResult.cleanedAuthProfileEncoding
+    ) {
+      logger.info('Qwen provider migration completed:', qwenResult);
+    } else {
+      logger.debug('Qwen provider migration skipped (no legacy data found).');
+    }
+
+    const minimaxResult = await migrateMiniMaxProviderModel();
+    if (minimaxResult.normalizedProviders > 0 || minimaxResult.rewroteDefaultModel) {
+      logger.info('MiniMax provider model migration completed:', minimaxResult);
+    } else {
+      logger.debug('MiniMax provider model migration skipped (no legacy data found).');
     }
 
     const jurismindResult = await migrateJurismindProviderModel();

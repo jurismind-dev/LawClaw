@@ -10,13 +10,21 @@
  * Delegates throttling to FlushController and message-unavailable
  * detection to UnavailableGuard.
  */
-import { type ReplyPayload } from 'openclaw/plugin-sdk';
-import type { CardPhase, TerminalReason, StreamingCardDeps } from './reply-dispatcher-types';
+import type { ReplyPayload } from 'openclaw/plugin-sdk';
+import type { CardPhase, StreamingCardDeps, TerminalReason } from './reply-dispatcher-types';
+interface TerminalCardTextImageResolver {
+    resolveImages(text: string): string;
+}
+interface TerminalCardContentInput {
+    text: string;
+    reasoningText?: string;
+}
 export declare class StreamingCardController {
     private phase;
     private cardKit;
     private text;
     private reasoning;
+    private toolUse;
     private readonly flush;
     private readonly guard;
     private readonly imageResolver;
@@ -28,6 +36,8 @@ export declare class StreamingCardController {
     private readonly dispatchStartTime;
     private readonly deps;
     private elapsed;
+    private needsFooterMetrics;
+    private getFooterSessionMetrics;
     constructor(deps: StreamingCardDeps);
     get cardMessageId(): string | null;
     get isTerminalPhase(): boolean;
@@ -48,6 +58,10 @@ export declare class StreamingCardController {
     get terminalReason(): TerminalReason | null;
     /** @internal — exposed for test assertions only. */
     get currentPhase(): CardPhase;
+    private get shouldDisplayToolUse();
+    private computeToolUseDisplay;
+    private get visibleToolUseElapsedMs();
+    private computeToolUseTitleSuffix;
     /**
      * Unified callback guard — returns true if the pipeline is active
      * and the callback should proceed.
@@ -61,6 +75,8 @@ export declare class StreamingCardController {
     private isStaleCreate;
     private transition;
     private onEnterTerminalPhase;
+    private markToolUseActivity;
+    private captureToolUseElapsed;
     /**
      * Handle a deliver() call in streaming card mode.
      *
@@ -69,6 +85,11 @@ export declare class StreamingCardController {
      */
     onDeliver(payload: ReplyPayload): Promise<void>;
     onReasoningStream(payload: ReplyPayload): Promise<void>;
+    onToolStart(payload: {
+        name?: string;
+        phase?: string;
+    }): Promise<void>;
+    onToolPayload(_payload: ReplyPayload): Promise<void>;
     onPartialReply(payload: ReplyPayload): Promise<void>;
     onError(err: unknown, info: {
         kind: string;
@@ -80,9 +101,18 @@ export declare class StreamingCardController {
     private performFlush;
     private buildDisplayText;
     private throttledCardUpdate;
+    private lastToolUseStatusUpdateTime;
+    private throttledToolUseStatusUpdate;
+    private updateToolUseStatus;
     private finalizeCard;
     /**
      * Close streaming mode then update card content (shared by onError and abortCard).
      */
     private closeStreamingAndUpdate;
 }
+/**
+ * 终态卡片的正文和 reasoning 都会被飞书按 markdown 渲染，
+ * 因此两者都要先做图片替换与表格降级，避免再次撞到 230099/11310。
+ */
+export declare function prepareTerminalCardContent(content: TerminalCardContentInput, imageResolver: TerminalCardTextImageResolver, tableLimit?: number): TerminalCardContentInput;
+export {};

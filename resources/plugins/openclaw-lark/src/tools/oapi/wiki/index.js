@@ -6,30 +6,37 @@
  * Wiki 工具集
  * 统一导出所有知识库相关工具的注册函数
  */
-import { getEnabledLarkAccounts } from '../../../core/accounts';
-import { resolveAnyEnabledToolsConfig } from '../../../core/tools-config';
-import { registerFeishuWikiSpaceTool } from './space';
-import { registerFeishuWikiSpaceNodeTool } from './space-node';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerFeishuWikiTools = registerFeishuWikiTools;
+const accounts_1 = require("../../../core/accounts.js");
+const tools_config_1 = require("../../../core/tools-config.js");
+const space_1 = require("./space.js");
+const space_node_1 = require("./space-node.js");
 /**
  * 注册所有 Wiki 工具
  */
-export function registerFeishuWikiTools(api) {
+function registerFeishuWikiTools(api) {
     if (!api.config) {
         api.logger.debug?.('feishu_wiki: No config available, skipping');
         return;
     }
-    const accounts = getEnabledLarkAccounts(api.config);
+    const accounts = (0, accounts_1.getEnabledLarkAccounts)(api.config);
     if (accounts.length === 0) {
         api.logger.debug?.('feishu_wiki: No Feishu accounts configured, skipping');
         return;
     }
-    const toolsCfg = resolveAnyEnabledToolsConfig(accounts);
+    const toolsCfg = (0, tools_config_1.resolveAnyEnabledToolsConfig)(accounts);
     if (!toolsCfg.wiki) {
         api.logger.debug?.('feishu_wiki: wiki tool disabled in all accounts');
         return;
     }
     // 注册所有工具
-    registerFeishuWikiSpaceTool(api);
-    registerFeishuWikiSpaceNodeTool(api);
-    api.logger.info?.('feishu_wiki: Registered feishu_wiki_space, feishu_wiki_space_node');
+    const registered = [];
+    if ((0, space_1.registerFeishuWikiSpaceTool)(api))
+        registered.push('feishu_wiki_space');
+    if ((0, space_node_1.registerFeishuWikiSpaceNodeTool)(api))
+        registered.push('feishu_wiki_space_node');
+    if (registered.length > 0) {
+        api.logger.debug?.(`feishu_wiki: Registered ${registered.join(', ')}`);
+    }
 }

@@ -17,8 +17,12 @@
  * Both paths intercept well-known codes (e.g. LARK_ERROR.APP_SCOPE_MISSING (99991672) — missing API scopes)
  * and produce user-friendly messages with actionable authorization links.
  */
-import { extractPermissionGrantUrl, extractPermissionScopes } from './permission-url';
-import { LARK_ERROR } from './auth-errors';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.extractLarkApiCode = extractLarkApiCode;
+exports.assertLarkOk = assertLarkOk;
+exports.formatLarkError = formatLarkError;
+const permission_url_1 = require("./permission-url.js");
+const auth_errors_1 = require("./auth-errors.js");
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -27,10 +31,10 @@ import { LARK_ERROR } from './auth-errors';
  * error string if the code is LARK_ERROR.APP_SCOPE_MISSING (99991672).  Returns `null` for other codes.
  */
 function formatPermissionError(code, msg) {
-    if (code !== LARK_ERROR.APP_SCOPE_MISSING)
+    if (code !== auth_errors_1.LARK_ERROR.APP_SCOPE_MISSING)
         return null;
-    const authUrl = extractPermissionGrantUrl(msg);
-    const scopes = extractPermissionScopes(msg);
+    const authUrl = (0, permission_url_1.extractPermissionGrantUrl)(msg);
+    const scopes = (0, permission_url_1.extractPermissionScopes)(msg);
     return `权限不足：应用缺少 [${scopes}] 权限。\n` + `请管理员点击以下链接申请并开通权限：\n${authUrl}`;
 }
 // ---------------------------------------------------------------------------
@@ -55,7 +59,7 @@ function coerceCode(value) {
  * - `{ data: { code } }` — 响应体嵌套
  * - `{ response: { data: { code } } }` — Axios 风格
  */
-export function extractLarkApiCode(err) {
+function extractLarkApiCode(err) {
     if (!err || typeof err !== 'object')
         return undefined;
     const e = err;
@@ -71,7 +75,7 @@ export function extractLarkApiCode(err) {
  * required scope names and a direct authorization URL so the AI can
  * present it to the end user.
  */
-export function assertLarkOk(res) {
+function assertLarkOk(res) {
     if (!res.code || res.code === 0)
         return;
     const permMsg = formatPermissionError(res.code, res.msg ?? '');
@@ -88,7 +92,7 @@ export function assertLarkOk(res) {
  * For all other errors we try `err.msg` first (the Feishu detail) and fall
  * back to `err.message` (the generic Axios text).
  */
-export function formatLarkError(err) {
+function formatLarkError(err) {
     if (!err || typeof err !== 'object') {
         return String(err);
     }

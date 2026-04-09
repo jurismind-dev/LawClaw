@@ -18,9 +18,11 @@
  * injected via callbacks in `ConvertContext`. Callers are responsible
  * for creating the appropriate callbacks (UAT / TAT / event push).
  */
-import { convertMessageContent, buildConvertContextFromItem } from './content-converter';
-import { larkLogger } from '../../core/lark-logger';
-const log = larkLogger('converters/merge-forward');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertMergeForward = void 0;
+const lark_logger_1 = require("../../core/lark-logger.js");
+const content_converter_helpers_1 = require("./content-converter-helpers.js");
+const log = (0, lark_logger_1.larkLogger)('converters/merge-forward');
 /**
  * Recursively expand a merge_forward message.
  *
@@ -32,18 +34,19 @@ const log = larkLogger('converters/merge-forward');
  * </forwarded_messages>
  * ```
  */
-export const convertMergeForward = async (_raw, ctx) => {
-    const { accountId, messageId, resolveUserName, batchResolveNames, fetchSubMessages } = ctx;
+const convertMergeForward = async (_raw, ctx) => {
+    const { accountId, messageId, resolveUserName, batchResolveNames, fetchSubMessages, convertMessageContent } = ctx;
     if (!fetchSubMessages) {
         return { content: '<forwarded_messages/>', resources: [] };
     }
-    const content = await expand(accountId, messageId, resolveUserName, batchResolveNames, fetchSubMessages);
+    const content = await expand(accountId, messageId, resolveUserName, batchResolveNames, fetchSubMessages, convertMessageContent);
     return { content, resources: [] };
 };
+exports.convertMergeForward = convertMergeForward;
 // ---------------------------------------------------------------------------
 // Single-API-call expansion with tree building
 // ---------------------------------------------------------------------------
-async function expand(accountId, messageId, resolveUserName, batchResolveNames, fetchSubMessages) {
+async function expand(accountId, messageId, resolveUserName, batchResolveNames, fetchSubMessages, convertContent) {
     // --- Phase 1: Fetch (single API call via callback) ---
     let items;
     try {
@@ -74,7 +77,7 @@ async function expand(accountId, messageId, resolveUserName, batchResolveNames, 
         }
     }
     // --- Phase 3: Format tree recursively ---
-    return formatSubTree(messageId, childrenMap, accountId, resolveUserName);
+    return formatSubTree(messageId, childrenMap, accountId, resolveUserName, convertContent);
 }
 // ---------------------------------------------------------------------------
 // Tree building
@@ -145,7 +148,7 @@ function collectSenderIds(items, rootMessageId) {
  * directly (no additional API calls). For other message types it
  * delegates to `convertMessageContent`.
  */
-async function formatSubTree(parentId, childrenMap, accountId, resolveUserName) {
+async function formatSubTree(parentId, childrenMap, accountId, resolveUserName, convertContent) {
     const children = childrenMap.get(parentId);
     if (!children || children.length === 0) {
         return '<forwarded_messages/>';
@@ -163,7 +166,7 @@ async function formatSubTree(parentId, childrenMap, accountId, resolveUserName) 
                 // Recurse into nested merge_forward via the tree — no API call
                 const nestedId = item.message_id;
                 if (nestedId) {
-                    content = await formatSubTree(nestedId, childrenMap, accountId, resolveUserName);
+                    content = await formatSubTree(nestedId, childrenMap, accountId, resolveUserName, convertContent);
                 }
                 else {
                     content = '<forwarded_messages/>';
@@ -175,11 +178,17 @@ async function formatSubTree(parentId, childrenMap, accountId, resolveUserName) 
                 // types don't need it, and passing it would cause nested
                 // merge_forward to re-enter expand() via convertMessageContent.
                 const subCtx = {
-                    ...buildConvertContextFromItem(item, parentId, accountId),
+                    ...(0, content_converter_helpers_1.buildConvertContextFromItem)(item, parentId, accountId),
                     accountId,
                     resolveUserName,
+                    convertMessageContent: convertContent,
                 };
-                content = (await convertMessageContent(rawContent, msgType, subCtx)).content;
+                if (!convertContent) {
+                    content = rawContent;
+                }
+                else {
+                    content = (await convertContent(rawContent, msgType, subCtx)).content;
+                }
             }
             const displayName = resolveUserName?.(senderId) ?? senderId;
             const indented = indentLines(content, '    ');

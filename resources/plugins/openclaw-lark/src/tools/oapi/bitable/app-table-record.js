@@ -18,109 +18,111 @@
  *   - batch_delete: POST /open-apis/bitable/v1/apps/:app_token/tables/:table_id/records/batch_delete
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerFeishuBitableAppTableRecordTool = registerFeishuBitableAppTableRecordTool;
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const FeishuBitableAppTableRecordSchema = Type.Union([
+const FeishuBitableAppTableRecordSchema = typebox_1.Type.Union([
     // CREATE (P0)
-    Type.Object({
-        action: Type.Literal('create'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        fields: Type.Object({}, {
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('create'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        fields: typebox_1.Type.Object({}, {
             additionalProperties: true,
             description: "记录字段（单条记录）。键为字段名，值根据字段类型而定：\n- 文本：string\n- 数字：number\n- 单选：string（选项名）\n- 多选：string[]（选项名数组）\n- 日期：number（毫秒时间戳，如 1740441600000）\n- 复选框：boolean\n- 人员：[{id: 'ou_xxx'}]\n- 附件：[{file_token: 'xxx'}]\n⚠️ 注意：create 只创建单条记录；批量创建请使用 batch_create",
         }),
     }),
     // UPDATE (P0)
-    Type.Object({
-        action: Type.Literal('update'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        record_id: Type.String({ description: '记录 ID' }),
-        fields: Type.Object({}, {
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('update'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        record_id: typebox_1.Type.String({ description: '记录 ID' }),
+        fields: typebox_1.Type.Object({}, {
             additionalProperties: true,
             description: '要更新的字段',
         }),
     }),
     // DELETE (P0)
-    Type.Object({
-        action: Type.Literal('delete'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        record_id: Type.String({ description: '记录 ID' }),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('delete'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        record_id: typebox_1.Type.String({ description: '记录 ID' }),
     }),
     // BATCH_CREATE (P1)
-    Type.Object({
-        action: Type.Literal('batch_create'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        records: Type.Array(Type.Object({
-            fields: Type.Object({}, { additionalProperties: true }),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('batch_create'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        records: typebox_1.Type.Array(typebox_1.Type.Object({
+            fields: typebox_1.Type.Object({}, { additionalProperties: true }),
         }), { description: '要批量创建的记录列表（最多 500 条）' }),
     }),
     // BATCH_UPDATE (P1)
-    Type.Object({
-        action: Type.Literal('batch_update'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        records: Type.Array(Type.Object({
-            record_id: Type.String(),
-            fields: Type.Object({}, { additionalProperties: true }),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('batch_update'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        records: typebox_1.Type.Array(typebox_1.Type.Object({
+            record_id: typebox_1.Type.String(),
+            fields: typebox_1.Type.Object({}, { additionalProperties: true }),
         }), { description: '要批量更新的记录列表（最多 500 条）' }),
     }),
     // BATCH_DELETE (P1)
-    Type.Object({
-        action: Type.Literal('batch_delete'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        record_ids: Type.Array(Type.String(), { description: '要删除的记录 ID 列表（最多 500 条）' }),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('batch_delete'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        record_ids: typebox_1.Type.Array(typebox_1.Type.String(), { description: '要删除的记录 ID 列表（最多 500 条）' }),
     }),
     // LIST (P0) - 使用 search API（旧 list API 已废弃）
-    Type.Object({
-        action: Type.Literal('list'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        view_id: Type.Optional(Type.String({ description: '视图 ID（可选，建议指定以获得更好的性能）' })),
-        field_names: Type.Optional(Type.Array(Type.String(), {
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('list'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        view_id: typebox_1.Type.Optional(typebox_1.Type.String({ description: '视图 ID（可选，建议指定以获得更好的性能）' })),
+        field_names: typebox_1.Type.Optional(typebox_1.Type.Array(typebox_1.Type.String(), {
             description: '要返回的字段名列表（可选，不指定则返回所有字段）',
         })),
-        filter: Type.Optional(Type.Object({
-            conjunction: StringEnum(['and', 'or'], {
+        filter: typebox_1.Type.Optional(typebox_1.Type.Object({
+            conjunction: (0, helpers_1.StringEnum)(['and', 'or'], {
                 description: '条件逻辑：and（全部满足）or（任一满足）',
             }),
-            conditions: Type.Array(Type.Object({
-                field_name: Type.String({ description: '字段名' }),
-                operator: StringEnum(['is', 'isNot', 'contains', 'doesNotContain', 'isEmpty', 'isNotEmpty', 'isGreater', 'isGreaterEqual', 'isLess', 'isLessEqual'], { description: '运算符' }),
-                value: Type.Optional(Type.Array(Type.String(), {
+            conditions: typebox_1.Type.Array(typebox_1.Type.Object({
+                field_name: typebox_1.Type.String({ description: '字段名' }),
+                operator: (0, helpers_1.StringEnum)(['is', 'isNot', 'contains', 'doesNotContain', 'isEmpty', 'isNotEmpty', 'isGreater', 'isGreaterEqual', 'isLess', 'isLessEqual'], { description: '运算符' }),
+                value: typebox_1.Type.Optional(typebox_1.Type.Array(typebox_1.Type.String(), {
                     description: '条件值（isEmpty/isNotEmpty 时可省略）',
                 })),
             }), { description: '筛选条件列表' }),
         }, {
             description: "筛选条件（必须是结构化对象）。示例：{conjunction: 'and', conditions: [{field_name: '文本', operator: 'is', value: ['测试']}]}",
         })),
-        sort: Type.Optional(Type.Array(Type.Object({
-            field_name: Type.String({ description: '排序字段名' }),
-            desc: Type.Boolean({ description: '是否降序' }),
+        sort: typebox_1.Type.Optional(typebox_1.Type.Array(typebox_1.Type.Object({
+            field_name: typebox_1.Type.String({ description: '排序字段名' }),
+            desc: typebox_1.Type.Boolean({ description: '是否降序' }),
         }), { description: '排序规则' })),
-        automatic_fields: Type.Optional(Type.Boolean({
+        automatic_fields: typebox_1.Type.Optional(typebox_1.Type.Boolean({
             description: '是否返回自动字段（created_time, last_modified_time, created_by, last_modified_by），默认 false',
         })),
-        page_size: Type.Optional(Type.Number({ description: '每页数量，默认 50，最大 500' })),
-        page_token: Type.Optional(Type.String({ description: '分页标记' })),
+        page_size: typebox_1.Type.Optional(typebox_1.Type.Number({ description: '每页数量，默认 50，最大 500' })),
+        page_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '分页标记' })),
     }),
 ]);
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerFeishuBitableAppTableRecordTool(api) {
+function registerFeishuBitableAppTableRecordTool(api) {
     if (!api.config)
         return;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_bitable_app_table_record');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_bitable_app_table_record');
+    (0, helpers_1.registerTool)(api, {
         name: 'feishu_bitable_app_table_record',
         label: 'Feishu Bitable Records',
         description: '【以用户身份】飞书多维表格记录（行）管理工具。当用户要求创建/查询/更新/删除记录、搜索数据时使用。\n\n' +
@@ -147,7 +149,7 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                     case 'create': {
                         // 参数验证：检查是否误用了 batch_create 的参数格式
                         if (p.records) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: "create action does not accept 'records' parameter",
                                 hint: "Use 'fields' for single record creation. For batch creation, use action: 'batch_create' with 'records' parameter.",
                                 correct_format: {
@@ -161,7 +163,7 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                             });
                         }
                         if (!p.fields || Object.keys(p.fields).length === 0) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: 'fields is required and cannot be empty',
                                 hint: "create action requires 'fields' parameter, e.g. { 'field_name': 'value', ... }",
                             });
@@ -179,9 +181,9 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                                 fields: p.fields,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`create: created record ${res.data?.record?.record_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             record: res.data?.record,
                         });
                     }
@@ -191,7 +193,7 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                     case 'update': {
                         // 参数验证：检查是否误用了 batch_update 的参数格式
                         if (p.records) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: "update action does not accept 'records' parameter",
                                 hint: "Use 'record_id' + 'fields' for single record update. For batch update, use action: 'batch_update' with 'records' parameter.",
                                 correct_format: {
@@ -219,9 +221,9 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                                 fields: p.fields,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`update: updated record ${p.record_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             record: res.data?.record,
                         });
                     }
@@ -237,9 +239,9 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                                 record_id: p.record_id,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`delete: deleted record ${p.record_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             success: true,
                         });
                     }
@@ -249,7 +251,7 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                     case 'batch_create': {
                         // 参数验证：检查是否误用了 create 的参数格式
                         if (p.fields) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: "batch_create action does not accept 'fields' parameter",
                                 hint: "Use 'records' array for batch creation. For single record, use action: 'create' with 'fields' parameter.",
                                 correct_format: {
@@ -263,13 +265,13 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                             });
                         }
                         if (!p.records || p.records.length === 0) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: 'records is required and cannot be empty',
                                 hint: "batch_create requires 'records' array, e.g. [{ fields: {...} }, ...]",
                             });
                         }
                         if (p.records.length > 500) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: 'records count exceeds limit (maximum 500)',
                                 received_count: p.records.length,
                             });
@@ -287,9 +289,9 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                                 records: p.records,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`batch_create: created ${p.records.length} records in table ${p.table_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             records: res.data?.records,
                         });
                     }
@@ -299,7 +301,7 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                     case 'batch_update': {
                         // 参数验证：检查是否误用了 update 的参数格式
                         if (p.record_id || p.fields) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: "batch_update action does not accept 'record_id' or 'fields' parameters",
                                 hint: "Use 'records' array for batch update. For single record, use action: 'update' with 'record_id' + 'fields' parameters.",
                                 correct_format: {
@@ -314,13 +316,13 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                             });
                         }
                         if (!p.records || p.records.length === 0) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: 'records is required and cannot be empty',
                                 hint: "batch_update requires 'records' array, e.g. [{ record_id: 'recXXX', fields: {...} }, ...]",
                             });
                         }
                         if (p.records.length > 500) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: 'records cannot exceed 500 items',
                             });
                         }
@@ -337,9 +339,9 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                                 records: p.records,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`batch_update: updated ${p.records.length} records in table ${p.table_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             records: res.data?.records,
                         });
                     }
@@ -348,12 +350,12 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                     // -----------------------------------------------------------------
                     case 'batch_delete': {
                         if (!p.record_ids || p.record_ids.length === 0) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: 'record_ids is required and cannot be empty',
                             });
                         }
                         if (p.record_ids.length > 500) {
-                            return json({
+                            return (0, helpers_1.json)({
                                 error: 'record_ids cannot exceed 500 items',
                             });
                         }
@@ -367,9 +369,9 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                                 records: p.record_ids,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`batch_delete: deleted ${p.record_ids.length} records from table ${p.table_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             success: true,
                         });
                     }
@@ -413,10 +415,10 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                             },
                             data: searchData,
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         const data = res.data;
                         log.info(`list: returned ${data?.items?.length ?? 0} records`);
-                        return json({
+                        return (0, helpers_1.json)({
                             records: data?.items,
                             has_more: data?.has_more ?? false,
                             page_token: data?.page_token,
@@ -424,13 +426,13 @@ export function registerFeishuBitableAppTableRecordTool(api) {
                         });
                     }
                     default:
-                        return json({
+                        return (0, helpers_1.json)({
                             error: `Unknown action: ${p.action}`,
                         });
                 }
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_bitable_app_table_record' });

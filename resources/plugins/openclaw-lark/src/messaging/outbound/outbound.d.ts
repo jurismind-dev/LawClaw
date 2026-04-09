@@ -1,14 +1,4 @@
-/**
- * Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
- * SPDX-License-Identifier: MIT
- *
- * Outbound message adapter for the Lark/Feishu channel plugin.
- *
- * Exposes a `ChannelOutboundAdapter` that the OpenClaw core uses to deliver
- * agent-generated replies back to Feishu chats. The adapter translates SDK
- * parameters and delegates to standalone sending functions.
- */
-import type { ChannelOutboundAdapter } from 'openclaw/plugin-sdk';
+import type { ChannelOutboundAdapter } from 'openclaw/plugin-sdk/channel-send-result';
 /**
  * Channel-specific payload for Feishu, carried in `ReplyPayload.channelData.feishu`.
  *

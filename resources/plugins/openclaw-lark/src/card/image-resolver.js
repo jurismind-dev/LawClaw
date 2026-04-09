@@ -9,12 +9,14 @@
  * images referenced via `![alt](https://...)` in model-generated markdown,
  * replacing them with `![alt](img_xxx)` that Feishu cards can render.
  */
-import { fetchRemoteImageBuffer, uploadImageLark } from '../messaging/outbound/media';
-import { larkLogger } from '../core/lark-logger';
-const log = larkLogger('card/image-resolver');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ImageResolver = void 0;
+const media_1 = require("../messaging/outbound/media.js");
+const lark_logger_1 = require("../core/lark-logger.js");
+const log = (0, lark_logger_1.larkLogger)('card/image-resolver');
 /** Matches complete markdown image syntax: `![alt](value)` */
 const IMAGE_RE = /!\[([^\]]*)\]\(([^)\s]+)\)/g;
-export class ImageResolver {
+class ImageResolver {
     /** URL → imageKey for successfully uploaded images. */
     resolved = new Map();
     /** URL → upload Promise for in-flight uploads (dedup). */
@@ -90,8 +92,8 @@ export class ImageResolver {
     async doUpload(url) {
         try {
             log.info('uploading image', { url });
-            const buffer = await fetchRemoteImageBuffer(url);
-            const { imageKey } = await uploadImageLark({
+            const buffer = await (0, media_1.fetchRemoteImageBuffer)(url);
+            const { imageKey } = await (0, media_1.uploadImageLark)({
                 cfg: this.cfg,
                 image: buffer,
                 imageType: 'message',
@@ -111,3 +113,4 @@ export class ImageResolver {
         }
     }
 }
+exports.ImageResolver = ImageResolver;

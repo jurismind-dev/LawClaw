@@ -21,7 +21,7 @@ import { logger } from './logger';
 
 const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
 const KEYLESS_PROVIDER_TYPES = new Set(['ollama']);
-const OAUTH_ONLY_PROVIDER_TYPES = new Set(['qwen-portal']);
+const OAUTH_ONLY_PROVIDER_TYPES = new Set<string>();
 const OAUTH_OR_API_KEY_PROVIDER_TYPES = new Set(['minimax-portal', 'minimax-portal-cn']);
 const JURISMIND_MANAGED_MODELS = new Set([
   'jurismind',

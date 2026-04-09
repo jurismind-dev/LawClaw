@@ -5,9 +5,11 @@
  *
  * Converter for "file" message type.
  */
-import { safeParse } from './utils';
-export const convertFile = (raw) => {
-    const parsed = safeParse(raw);
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertFile = void 0;
+const utils_1 = require("./utils.js");
+const convertFile = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const fileKey = parsed?.file_key;
     if (!fileKey) {
         return { content: '[file]', resources: [] };
@@ -19,3 +21,4 @@ export const convertFile = (raw) => {
         resources: [{ type: 'file', fileKey, fileName: fileName || undefined }],
     };
 };
+exports.convertFile = convertFile;

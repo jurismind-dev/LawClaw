@@ -15,54 +15,56 @@
  *   - patch:  PATCH /open-apis/bitable/v1/apps/:app_token
  *   - copy:   POST /open-apis/bitable/v1/apps/:app_token/copy
  */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool } from '../helpers';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerFeishuBitableAppTool = registerFeishuBitableAppTool;
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const FeishuBitableAppSchema = Type.Union([
+const FeishuBitableAppSchema = typebox_1.Type.Union([
     // CREATE (P0)
-    Type.Object({
-        action: Type.Literal('create'),
-        name: Type.String({ description: '多维表格名称' }),
-        folder_token: Type.Optional(Type.String({ description: '所在文件夹 token（默认创建在我的空间）' })),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('create'),
+        name: typebox_1.Type.String({ description: '多维表格名称' }),
+        folder_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '所在文件夹 token（默认创建在我的空间）' })),
     }),
     // GET (P0)
-    Type.Object({
-        action: Type.Literal('get'),
-        app_token: Type.String({ description: '多维表格的唯一标识 token' }),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('get'),
+        app_token: typebox_1.Type.String({ description: '多维表格的唯一标识 token' }),
     }),
     // LIST (P0) - 通过 Drive API 获取
-    Type.Object({
-        action: Type.Literal('list'),
-        folder_token: Type.Optional(Type.String({ description: '文件夹 token（默认列出我的空间）' })),
-        page_size: Type.Optional(Type.Number({ description: '每页数量，默认 50，最大 200' })),
-        page_token: Type.Optional(Type.String({ description: '分页标记' })),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('list'),
+        folder_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '文件夹 token（默认列出我的空间）' })),
+        page_size: typebox_1.Type.Optional(typebox_1.Type.Number({ description: '每页数量，默认 50，最大 200' })),
+        page_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '分页标记' })),
     }),
     // PATCH (P0)
-    Type.Object({
-        action: Type.Literal('patch'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        name: Type.Optional(Type.String({ description: '新的名称' })),
-        is_advanced: Type.Optional(Type.Boolean({ description: '是否开启高级权限' })),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('patch'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        name: typebox_1.Type.Optional(typebox_1.Type.String({ description: '新的名称' })),
+        is_advanced: typebox_1.Type.Optional(typebox_1.Type.Boolean({ description: '是否开启高级权限' })),
     }),
     // COPY (P1)
-    Type.Object({
-        action: Type.Literal('copy'),
-        app_token: Type.String({ description: '源多维表格 token' }),
-        name: Type.String({ description: '新的名称' }),
-        folder_token: Type.Optional(Type.String({ description: '目标文件夹 token' })),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('copy'),
+        app_token: typebox_1.Type.String({ description: '源多维表格 token' }),
+        name: typebox_1.Type.String({ description: '新的名称' }),
+        folder_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '目标文件夹 token' })),
     }),
 ]);
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerFeishuBitableAppTool(api) {
+function registerFeishuBitableAppTool(api) {
     if (!api.config)
         return;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_bitable_app');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_bitable_app');
+    (0, helpers_1.registerTool)(api, {
         name: 'feishu_bitable_app',
         label: 'Feishu Bitable Apps',
         description: '【以用户身份】飞书多维表格应用管理工具。当用户要求创建/查询/管理多维表格时使用。Actions: create（创建多维表格）, get（获取多维表格元数据）, list（列出多维表格）, patch（更新元数据）, delete（删除多维表格）, copy（复制多维表格）。',
@@ -85,9 +87,9 @@ export function registerFeishuBitableAppTool(api) {
                         const res = await client.invoke('feishu_bitable_app.create', (sdk, opts) => sdk.bitable.app.create({
                             data,
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`create: created app ${res.data?.app?.app_token}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             app: res.data?.app,
                         });
                     }
@@ -101,9 +103,9 @@ export function registerFeishuBitableAppTool(api) {
                                 app_token: p.app_token,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`get: returned app ${p.app_token}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             app: res.data?.app,
                         });
                     }
@@ -119,14 +121,14 @@ export function registerFeishuBitableAppTool(api) {
                                 page_token: p.page_token,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         // 筛选出 type === "bitable" 的文件
                         const data = res.data;
                         const bitables = data?.files?.filter(
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         (f) => f.type === 'bitable') || [];
                         log.info(`list: returned ${bitables.length} bitable apps`);
-                        return json({
+                        return (0, helpers_1.json)({
                             apps: bitables,
                             has_more: data?.has_more ?? false,
                             page_token: data?.page_token,
@@ -149,9 +151,9 @@ export function registerFeishuBitableAppTool(api) {
                             },
                             data: updateData,
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`patch: updated app ${p.app_token}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             app: res.data?.app,
                         });
                     }
@@ -171,16 +173,16 @@ export function registerFeishuBitableAppTool(api) {
                             },
                             data,
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`copy: created copy ${res.data?.app?.app_token}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             app: res.data?.app,
                         });
                     }
                 }
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_bitable_app' });

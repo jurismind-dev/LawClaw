@@ -10,4 +10,4 @@
  *   - search: POST /open-apis/search/v2/doc_wiki/search
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerFeishuSearchDocWikiTool(api: OpenClawPluginApi): void;
+export declare function registerFeishuSearchDocWikiTool(api: OpenClawPluginApi): boolean;

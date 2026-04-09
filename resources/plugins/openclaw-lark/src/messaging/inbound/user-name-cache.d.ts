@@ -13,35 +13,7 @@
  */
 import type { LarkAccount } from '../../core/types';
 import { type PermissionError } from './permission';
-export declare class UserNameCache {
-    private map;
-    private maxSize;
-    private ttlMs;
-    constructor(maxSize?: number, ttlMs?: number);
-    /** Check whether the cache holds a (possibly empty) entry for this openId. */
-    has(openId: string): boolean;
-    /** Get a cached name (refreshes LRU position). Returns `undefined` on miss or expiry. */
-    get(openId: string): string | undefined;
-    /** Write a single entry (evicts oldest if over capacity). */
-    set(openId: string, name: string): void;
-    /** Write multiple entries at once. */
-    setMany(entries: Iterable<[string, string]>): void;
-    /** Return openIds that are NOT present (or expired) in the cache. */
-    filterMissing(openIds: string[]): string[];
-    /** Bulk read — returns a Map of openId→name for all hits (including empty-string names). */
-    getMany(openIds: string[]): Map<string, string>;
-    /** Clear all entries. */
-    clear(): void;
-    private evict;
-}
-/** Get (or create) the UserNameCache for a given account. */
-export declare function getUserNameCache(accountId: string): UserNameCache;
-/**
- * Clear user-name caches.
- * - With `accountId`: clear that single cache.
- * - Without: clear all caches.
- */
-export declare function clearUserNameCache(accountId?: string): void;
+export { UserNameCache, clearUserNameCache, getUserNameCache } from './user-name-cache-store';
 /**
  * Batch-resolve user display names.
  *

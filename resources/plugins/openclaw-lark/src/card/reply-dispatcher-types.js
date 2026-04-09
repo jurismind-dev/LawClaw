@@ -9,10 +9,12 @@
  * reply-dispatcher.ts, streaming-card-controller.ts, flush-controller.ts,
  * and unavailable-guard.ts.
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EMPTY_REPLY_FALLBACK_TEXT = exports.THROTTLE_CONSTANTS = exports.PHASE_TRANSITIONS = exports.TERMINAL_PHASES = exports.CARD_PHASES = void 0;
 // ---------------------------------------------------------------------------
 // CardPhase — explicit state machine replacing boolean flags
 // ---------------------------------------------------------------------------
-export const CARD_PHASES = {
+exports.CARD_PHASES = {
     idle: 'idle',
     creating: 'creating',
     streaming: 'streaming',
@@ -21,13 +23,13 @@ export const CARD_PHASES = {
     terminated: 'terminated',
     creation_failed: 'creation_failed',
 };
-export const TERMINAL_PHASES = new Set([
+exports.TERMINAL_PHASES = new Set([
     'completed',
     'aborted',
     'terminated',
     'creation_failed',
 ]);
-export const PHASE_TRANSITIONS = {
+exports.PHASE_TRANSITIONS = {
     idle: new Set(['creating', 'aborted', 'terminated']),
     creating: new Set(['streaming', 'creation_failed', 'aborted', 'terminated']),
     streaming: new Set(['completed', 'aborted', 'terminated']),
@@ -49,10 +51,11 @@ export const PHASE_TRANSITIONS = {
  *   defer the first flush briefly.
  * - `BATCH_AFTER_GAP_MS`: Batching window after a long gap.
  */
-export const THROTTLE_CONSTANTS = {
+exports.THROTTLE_CONSTANTS = {
     CARDKIT_MS: 100,
     PATCH_MS: 1500,
     LONG_GAP_THRESHOLD_MS: 2000,
     BATCH_AFTER_GAP_MS: 300,
+    REASONING_STATUS_MS: 1500,
 };
-export const EMPTY_REPLY_FALLBACK_TEXT = 'Done.';
+exports.EMPTY_REPLY_FALLBACK_TEXT = 'Done.';

@@ -6,16 +6,18 @@
  * MCP create-doc 工具
  * 从 Markdown 创建云文档（支持异步 task_id 查询）
  */
-import { Type } from '@sinclair/typebox';
-import { registerMcpTool } from '../shared';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerCreateDocTool = registerCreateDocTool;
+const typebox_1 = require("@sinclair/typebox");
+const shared_1 = require("../shared.js");
 // Schema 定义
-const CreateDocSchema = Type.Object({
-    markdown: Type.Optional(Type.String({ description: 'Markdown 内容' })),
-    title: Type.Optional(Type.String({ description: '文档标题' })),
-    folder_token: Type.Optional(Type.String({ description: '父文件夹 token（可选）' })),
-    wiki_node: Type.Optional(Type.String({ description: '知识库节点 token 或 URL（可选，传入则在该节点下创建文档）' })),
-    wiki_space: Type.Optional(Type.String({ description: '知识空间 ID（可选，特殊值 my_library）' })),
-    task_id: Type.Optional(Type.String({ description: '异步任务 ID。提供此参数将查询任务状态而非创建新文档' })),
+const CreateDocSchema = typebox_1.Type.Object({
+    markdown: typebox_1.Type.Optional(typebox_1.Type.String({ description: 'Markdown 内容' })),
+    title: typebox_1.Type.Optional(typebox_1.Type.String({ description: '文档标题' })),
+    folder_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '父文件夹 token（可选）' })),
+    wiki_node: typebox_1.Type.Optional(typebox_1.Type.String({ description: '知识库节点 token 或 URL（可选，传入则在该节点下创建文档）' })),
+    wiki_space: typebox_1.Type.Optional(typebox_1.Type.String({ description: '知识空间 ID（可选，特殊值 my_library）' })),
+    task_id: typebox_1.Type.Optional(typebox_1.Type.String({ description: '异步任务 ID。提供此参数将查询任务状态而非创建新文档' })),
 });
 // 参数验证
 function validateCreateDocParams(p) {
@@ -32,8 +34,8 @@ function validateCreateDocParams(p) {
 /**
  * 注册 create-doc 工具
  */
-export function registerCreateDocTool(api) {
-    registerMcpTool(api, {
+function registerCreateDocTool(api) {
+    return (0, shared_1.registerMcpTool)(api, {
         name: 'feishu_create_doc',
         mcpToolName: 'create-doc',
         toolActionKey: 'feishu_create_doc.default',

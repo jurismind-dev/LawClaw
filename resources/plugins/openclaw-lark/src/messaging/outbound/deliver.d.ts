@@ -153,3 +153,32 @@ export interface SendMediaLarkParams {
  * ```
  */
 export declare function sendMediaLark(params: SendMediaLarkParams): Promise<FeishuSendResult>;
+/**
+ * Parameters for sending a reply to a Drive comment thread.
+ */
+export interface SendCommentReplyLarkParams {
+    /** Plugin configuration. */
+    cfg: ClawdbotConfig;
+    /**
+     * Target in comment format: `comment:<fileType>:<fileToken>:<commentId>`.
+     * Parsed via `parseFeishuCommentTarget`.
+     */
+    to: string;
+    /** Reply text content. */
+    text: string;
+    /** Optional account identifier for multi-account setups. */
+    accountId?: string;
+}
+/**
+ * Send a text message to a Feishu Drive comment surface.
+ *
+ * Parses the comment target from `to`, then chooses one of two delivery
+ * strategies:
+ * - `reply`        → reply in the existing comment thread
+ * - `create_whole` → create a new whole-document comment
+ *
+ * Returns a synthetic FeishuSendResult (no IM messageId).
+ *
+ * @throws {Error} When the target is not a valid comment target or API fails.
+ */
+export declare function sendCommentReplyLark(params: SendCommentReplyLarkParams): Promise<FeishuSendResult>;

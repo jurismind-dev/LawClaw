@@ -14,25 +14,30 @@
  *   6. Content resolution    → enrich.ts (media / quote, parallel)
  *   7. Agent dispatch        → dispatch.ts
  */
-import { recordPendingHistoryEntryIfEnabled, DEFAULT_GROUP_HISTORY_LIMIT, resolveSenderCommandAuthorization, isNormalizedSenderAllowed, } from 'openclaw/plugin-sdk';
-import { getLarkAccount } from '../../core/accounts';
-import { LarkClient } from '../../core/lark-client';
-import { larkLogger } from '../../core/lark-logger';
-import { ticketElapsed } from '../../core/lark-ticket';
-import { parseMessageEvent } from './parse';
-import { resolveSenderInfo, prefetchUserNames, resolveMedia, resolveQuotedContent, substituteMediaPaths, } from './enrich';
-import { checkMessageGate, readFeishuAllowFromStore } from './gate';
-import { dispatchToAgent } from './dispatch';
-import { resolveFeishuGroupConfig, splitLegacyGroupAllowFrom } from './policy';
-import { threadScopedKey } from '../../channel/chat-queue';
-const logger = larkLogger('inbound/handler');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.handleFeishuMessage = handleFeishuMessage;
+const reply_history_1 = require("openclaw/plugin-sdk/reply-history");
+const zalouser_1 = require("openclaw/plugin-sdk/zalouser");
+const allow_from_1 = require("openclaw/plugin-sdk/allow-from");
+const accounts_1 = require("../../core/accounts.js");
+const lark_client_1 = require("../../core/lark-client.js");
+const lark_logger_1 = require("../../core/lark-logger.js");
+const lark_ticket_1 = require("../../core/lark-ticket.js");
+const chat_queue_1 = require("../../channel/chat-queue.js");
+const parse_1 = require("./parse.js");
+const enrich_1 = require("./enrich.js");
+const gate_1 = require("./gate.js");
+const handler_registry_1 = require("./handler-registry.js");
+const dispatch_1 = require("./dispatch.js");
+const policy_1 = require("./policy.js");
+const logger = (0, lark_logger_1.larkLogger)('inbound/handler');
 // ---------------------------------------------------------------------------
 // Public: handle inbound message
 // ---------------------------------------------------------------------------
-export async function handleFeishuMessage(params) {
+async function handleFeishuMessage(params) {
     const { cfg, event, botOpenId, runtime, chatHistories, accountId, replyToMessageId, forceMention, skipTyping } = params;
     // 1. Account resolution
-    const account = getLarkAccount(cfg, accountId);
+    const account = (0, accounts_1.getLarkAccount)(cfg, accountId);
     const accountFeishuCfg = account.config;
     // ★ 多账号配置隔离：构造 account 级别的 ClawdbotConfig
     //
@@ -51,12 +56,12 @@ export async function handleFeishuMessage(params) {
     const log = runtime?.log ?? ((...args) => logger.info(args.map(String).join(' ')));
     const error = runtime?.error ?? ((...args) => logger.error(args.map(String).join(' ')));
     // 2. Parse event → MessageContext (merge_forward expanded in-place)
-    let ctx = await parseMessageEvent(event, botOpenId, {
+    let ctx = await (0, parse_1.parseMessageEvent)(event, botOpenId, {
         cfg: accountScopedCfg,
         accountId: account.accountId,
     });
     // 3. Enrich (lightweight): sender name + permission error tracking
-    const { ctx: enrichedCtx, permissionError } = await resolveSenderInfo({
+    const { ctx: enrichedCtx, permissionError } = await (0, enrich_1.resolveSenderInfo)({
         ctx,
         account,
         log,
@@ -64,19 +69,19 @@ export async function handleFeishuMessage(params) {
     ctx = enrichedCtx;
     log(`feishu[${account.accountId}]: received message from ${ctx.senderId} in ${ctx.chatId} (${ctx.chatType})`);
     logger.info(`received from ${ctx.senderId} in ${ctx.chatId} (${ctx.chatType})`);
-    const historyLimit = Math.max(0, accountFeishuCfg?.historyLimit ?? accountScopedCfg.messages?.groupChat?.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT);
+    const historyLimit = Math.max(0, accountFeishuCfg?.historyLimit ?? accountScopedCfg.messages?.groupChat?.historyLimit ?? reply_history_1.DEFAULT_GROUP_HISTORY_LIMIT);
     // 4. Gate: policy / access-control checks (skipped for synthetic messages)
     const gate = forceMention
         ? { allowed: true }
-        : await checkMessageGate({ ctx, accountFeishuCfg, account, accountScopedCfg, log });
+        : await (0, gate_1.checkMessageGate)({ ctx, accountFeishuCfg, account, accountScopedCfg, log });
     if (!gate.allowed) {
         if (gate.reason === 'no_mention') {
             logger.info(`rejected: no bot mention in group ${ctx.chatId}`);
         }
         // Record history entry if the gate produced one (group no-mention case)
         if (gate.historyEntry && chatHistories) {
-            const historyKey = threadScopedKey(ctx.chatId, ctx.threadId);
-            recordPendingHistoryEntryIfEnabled({
+            const historyKey = (0, chat_queue_1.threadScopedKey)(ctx.chatId, ctx.threadId);
+            (0, reply_history_1.recordPendingHistoryEntryIfEnabled)({
                 historyMap: chatHistories,
                 historyKey,
                 limit: historyLimit,
@@ -86,12 +91,12 @@ export async function handleFeishuMessage(params) {
         return;
     }
     // 5. Batch pre-warm user name cache (sender + mentions)
-    await prefetchUserNames({ ctx, account, log });
+    await (0, enrich_1.prefetchUserNames)({ ctx, account, log });
     // 6. Enrich (heavyweight, after gate — parallel where possible)
     const enrichParams = { ctx, accountScopedCfg, account, log };
     const [mediaResult, quotedContent] = await Promise.all([
-        resolveMedia(enrichParams),
-        resolveQuotedContent(enrichParams),
+        (0, enrich_1.resolveMedia)(enrichParams),
+        (0, enrich_1.resolveQuotedContent)(enrichParams),
     ]);
     // 6b. Replace Feishu file-key placeholders in content with local
     //     file paths so the SDK can detect images for native vision and
@@ -99,16 +104,16 @@ export async function handleFeishuMessage(params) {
     if (mediaResult.mediaList.length > 0) {
         ctx = {
             ...ctx,
-            content: substituteMediaPaths(ctx.content, mediaResult.mediaList),
+            content: (0, enrich_1.substituteMediaPaths)(ctx.content, mediaResult.mediaList),
         };
     }
     // 7. Compute commandAuthorized via SDK access group command gating
-    const core = LarkClient.runtime;
+    const core = lark_client_1.LarkClient.runtime;
     const isGroup = ctx.chatType === 'group';
     const dmPolicy = accountFeishuCfg?.dmPolicy ?? 'pairing';
     // Resolve per-group config early — shared by both command authorization
     // and dispatch (step 8).
-    const groupConfig = isGroup ? resolveFeishuGroupConfig({ cfg: accountFeishuCfg, groupId: ctx.chatId }) : undefined;
+    const groupConfig = isGroup ? (0, policy_1.resolveFeishuGroupConfig)({ cfg: accountFeishuCfg, groupId: ctx.chatId }) : undefined;
     const defaultGroupConfig = isGroup ? accountFeishuCfg?.groups?.['*'] : undefined;
     // Build the sender allowlist for command authorization in group context.
     // Excludes legacy oc_xxx chat-id entries (group admission, not sender identity).
@@ -122,7 +127,7 @@ export async function handleFeishuMessage(params) {
         if (!isGroup)
             return undefined;
         // Exclude legacy oc_xxx chat-id entries from groupAllowFrom (sender filter only).
-        const { senderAllowFrom } = splitLegacyGroupAllowFrom(accountFeishuCfg?.groupAllowFrom ?? []);
+        const { senderAllowFrom } = (0, policy_1.splitLegacyGroupAllowFrom)(accountFeishuCfg?.groupAllowFrom ?? []);
         const senderGroupAllowFrom = senderAllowFrom;
         const perGroupAllowFrom = (groupConfig?.allowFrom ?? []).map(String);
         const defaultSenderAllowFrom = !groupConfig && defaultGroupConfig?.allowFrom ? defaultGroupConfig.allowFrom.map(String) : [];
@@ -134,7 +139,7 @@ export async function handleFeishuMessage(params) {
         const explicitSenderPolicy = groupConfig?.groupPolicy ?? defaultGroupConfig?.groupPolicy ?? accountFeishuCfg?.groupPolicy;
         return explicitSenderPolicy === 'open' ? ['*'] : [];
     })();
-    const { commandAuthorized } = await resolveSenderCommandAuthorization({
+    const { commandAuthorized } = await (0, zalouser_1.resolveSenderCommandAuthorization)({
         rawBody: ctx.content,
         cfg: accountScopedCfg,
         isGroup,
@@ -142,15 +147,15 @@ export async function handleFeishuMessage(params) {
         configuredAllowFrom: (accountFeishuCfg?.allowFrom ?? []).map(String),
         configuredGroupAllowFrom,
         senderId: ctx.senderId,
-        isSenderAllowed: (senderId, allowFrom) => isNormalizedSenderAllowed({ senderId, allowFrom }),
-        readAllowFromStore: () => readFeishuAllowFromStore(account.accountId),
+        isSenderAllowed: (senderId, allowFrom) => (0, allow_from_1.isNormalizedSenderAllowed)({ senderId, allowFrom }),
+        readAllowFromStore: () => (0, gate_1.readFeishuAllowFromStore)(account.accountId),
         shouldComputeCommandAuthorized: core.channel.commands.shouldComputeCommandAuthorized,
         resolveCommandAuthorizedFromAuthorizers: core.channel.commands.resolveCommandAuthorizedFromAuthorizers,
     });
     // 8. Dispatch to agent
     // groupConfig and defaultGroupConfig are already resolved above.
     try {
-        await dispatchToAgent({
+        await (0, dispatch_1.dispatchToAgent)({
             ctx,
             permissionError,
             mediaPayload: mediaResult.payload,
@@ -169,6 +174,7 @@ export async function handleFeishuMessage(params) {
     }
     catch (err) {
         error(`feishu[${account.accountId}]: failed to dispatch message: ${String(err)}`);
-        logger.error(`dispatch failed: ${String(err)} (elapsed=${ticketElapsed()}ms)`);
+        logger.error(`dispatch failed: ${String(err)} (elapsed=${(0, lark_ticket_1.ticketElapsed)()}ms)`);
     }
 }
+(0, handler_registry_1.injectInboundHandler)(handleFeishuMessage);

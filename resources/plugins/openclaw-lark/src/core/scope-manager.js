@@ -39,8 +39,18 @@
  * 4. 调用 API
  * ```
  */
-import { TOOL_SCOPES } from './tool-scopes';
-export { TOOL_SCOPES };
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TOOL_SCOPES = void 0;
+exports.getRequiredScopes = getRequiredScopes;
+exports.getRequiredScopesForActions = getRequiredScopesForActions;
+exports.hasRequiredScopes = hasRequiredScopes;
+exports.getActionsForScope = getActionsForScope;
+exports.checkAppScopes = checkAppScopes;
+exports.getMissingAppScopes = getMissingAppScopes;
+exports.checkUserScopes = checkUserScopes;
+exports.getMissingUserScopes = getMissingUserScopes;
+const tool_scopes_1 = require("./tool-scopes.js");
+Object.defineProperty(exports, "TOOL_SCOPES", { enumerable: true, get: function () { return tool_scopes_1.TOOL_SCOPES; } });
 // ===== 函数：Required Scopes（API 需要的权限）=====
 /**
  * 获取单个工具动作所需的 scopes（Required Scopes）
@@ -54,8 +64,8 @@ export { TOOL_SCOPES };
  * // 返回: ["calendar:calendar.event:create", "calendar:calendar.event:update"]
  * ```
  */
-export function getRequiredScopes(toolAction) {
-    return TOOL_SCOPES[toolAction] ?? [];
+function getRequiredScopes(toolAction) {
+    return tool_scopes_1.TOOL_SCOPES[toolAction] ?? [];
 }
 /**
  * 获取多个工具动作的合并 Required Scopes（去重）
@@ -72,7 +82,7 @@ export function getRequiredScopes(toolAction) {
  * // 返回两个动作的所有唯一 scopes
  * ```
  */
-export function getRequiredScopesForActions(toolActions) {
+function getRequiredScopesForActions(toolActions) {
     const scopesSet = new Set();
     for (const action of toolActions) {
         const scopes = getRequiredScopes(action);
@@ -92,7 +102,7 @@ export function getRequiredScopesForActions(toolActions) {
  * hasRequiredScopes("feishu_sheets_spreadsheet.create"); // false (空数组)
  * ```
  */
-export function hasRequiredScopes(toolAction) {
+function hasRequiredScopes(toolAction) {
     return getRequiredScopes(toolAction).length > 0;
 }
 /**
@@ -107,9 +117,9 @@ export function hasRequiredScopes(toolAction) {
  * // 返回: ["feishu_calendar_event.create"]
  * ```
  */
-export function getActionsForScope(scope) {
+function getActionsForScope(scope) {
     const actions = [];
-    for (const [action, scopes] of Object.entries(TOOL_SCOPES)) {
+    for (const [action, scopes] of Object.entries(tool_scopes_1.TOOL_SCOPES)) {
         if (scopes.includes(scope)) {
             actions.push(action);
         }
@@ -136,7 +146,7 @@ export function getActionsForScope(scope) {
  * checkAppScopes("feishu_calendar_event.create", partialAppScopes); // false
  * ```
  */
-export function checkAppScopes(toolAction, appGrantedScopes) {
+function checkAppScopes(toolAction, appGrantedScopes) {
     const requiredScopes = getRequiredScopes(toolAction);
     // 如果不需要任何 scope，则总是满足要求
     if (requiredScopes.length === 0) {
@@ -159,7 +169,7 @@ export function checkAppScopes(toolAction, appGrantedScopes) {
  * // 返回: ["calendar:calendar.event:update"]
  * ```
  */
-export function getMissingAppScopes(toolAction, appGrantedScopes) {
+function getMissingAppScopes(toolAction, appGrantedScopes) {
     const requiredScopes = getRequiredScopes(toolAction);
     const grantedSet = Array.isArray(appGrantedScopes) ? new Set(appGrantedScopes) : appGrantedScopes;
     return requiredScopes.filter((scope) => !grantedSet.has(scope));
@@ -184,7 +194,7 @@ export function getMissingAppScopes(toolAction, appGrantedScopes) {
  * checkUserScopes("feishu_calendar_event.create", partialUserScopes); // false
  * ```
  */
-export function checkUserScopes(toolAction, userGrantedScopes) {
+function checkUserScopes(toolAction, userGrantedScopes) {
     const requiredScopes = getRequiredScopes(toolAction);
     // 如果不需要任何 scope，则总是满足要求
     if (requiredScopes.length === 0) {
@@ -207,7 +217,7 @@ export function checkUserScopes(toolAction, userGrantedScopes) {
  * // 返回: ["calendar:calendar.event:update"]
  * ```
  */
-export function getMissingUserScopes(toolAction, userGrantedScopes) {
+function getMissingUserScopes(toolAction, userGrantedScopes) {
     const requiredScopes = getRequiredScopes(toolAction);
     const grantedSet = Array.isArray(userGrantedScopes) ? new Set(userGrantedScopes) : userGrantedScopes;
     return requiredScopes.filter((scope) => !grantedSet.has(scope));

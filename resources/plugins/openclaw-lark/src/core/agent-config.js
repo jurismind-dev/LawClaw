@@ -8,6 +8,14 @@
  * bridge the gap between the SDK's agent infrastructure and the Feishu
  * plugin's dispatch/reply layers.
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.listConfiguredAgents = listConfiguredAgents;
+exports.resolveAgentEntry = resolveAgentEntry;
+exports.getAgentDisplayName = getAgentDisplayName;
+exports.getAgentSkillsFilter = getAgentSkillsFilter;
+exports.getAgentToolsPolicy = getAgentToolsPolicy;
+exports.mergeSkillFilters = mergeSkillFilters;
+exports.isToolAllowedByPolicy = isToolAllowedByPolicy;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -17,7 +25,7 @@
  * @param cfg - The top-level application config.
  * @returns Array of agent entries, or empty array if none configured.
  */
-export function listConfiguredAgents(cfg) {
+function listConfiguredAgents(cfg) {
     const agents = cfg.agents;
     return agents?.list ?? [];
 }
@@ -28,7 +36,7 @@ export function listConfiguredAgents(cfg) {
  * @param agentId - The agent ID to search for.
  * @returns The matching agent entry, or `undefined` if not found.
  */
-export function resolveAgentEntry(cfg, agentId) {
+function resolveAgentEntry(cfg, agentId) {
     return listConfiguredAgents(cfg).find((a) => a.id === agentId);
 }
 /**
@@ -40,7 +48,7 @@ export function resolveAgentEntry(cfg, agentId) {
  * @param agentId - The agent ID.
  * @returns The display name, or `undefined` if none configured.
  */
-export function getAgentDisplayName(cfg, agentId) {
+function getAgentDisplayName(cfg, agentId) {
     const entry = resolveAgentEntry(cfg, agentId);
     if (!entry)
         return undefined;
@@ -53,7 +61,7 @@ export function getAgentDisplayName(cfg, agentId) {
  * @param agentId - The agent ID.
  * @returns Skill allowlist, or `undefined` if no agent-level filter.
  */
-export function getAgentSkillsFilter(cfg, agentId) {
+function getAgentSkillsFilter(cfg, agentId) {
     return resolveAgentEntry(cfg, agentId)?.skills;
 }
 /**
@@ -63,7 +71,7 @@ export function getAgentSkillsFilter(cfg, agentId) {
  * @param agentId - The agent ID.
  * @returns Tools policy object, or `undefined` if none configured.
  */
-export function getAgentToolsPolicy(cfg, agentId) {
+function getAgentToolsPolicy(cfg, agentId) {
     const entry = resolveAgentEntry(cfg, agentId);
     if (!entry?.tools)
         return undefined;
@@ -83,7 +91,7 @@ export function getAgentToolsPolicy(cfg, agentId) {
  * @param groupSkills - Per-group skill allowlist (from FeishuGroupConfig.skills).
  * @returns Merged skill filter, or `undefined` if neither is set.
  */
-export function mergeSkillFilters(agentSkills, groupSkills) {
+function mergeSkillFilters(agentSkills, groupSkills) {
     if (!agentSkills && !groupSkills)
         return undefined;
     if (!agentSkills)
@@ -108,7 +116,7 @@ export function mergeSkillFilters(agentSkills, groupSkills) {
  * @param policy - The agent's tool policy.
  * @returns `true` if the tool is allowed, `false` if denied.
  */
-export function isToolAllowedByPolicy(toolName, policy) {
+function isToolAllowedByPolicy(toolName, policy) {
     if (!policy)
         return true;
     if (policy.deny && policy.deny.length > 0) {

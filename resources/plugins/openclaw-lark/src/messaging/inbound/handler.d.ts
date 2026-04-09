@@ -14,7 +14,7 @@
  *   7. Agent dispatch        → dispatch.ts
  */
 import type { ClawdbotConfig, RuntimeEnv } from 'openclaw/plugin-sdk';
-import { type HistoryEntry } from 'openclaw/plugin-sdk';
+import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
 import type { FeishuMessageEvent } from '../types';
 export declare function handleFeishuMessage(params: {
     cfg: ClawdbotConfig;

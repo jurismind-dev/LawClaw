@@ -9,14 +9,18 @@
  * behalf of a user.  Tokens are read from the OS Keychain, refreshed
  * transparently, and **never** exposed to the AI layer.
  */
-import { getStoredToken, setStoredToken, removeStoredToken, tokenStatus, maskToken, } from './token-store';
-import { resolveOAuthEndpoints } from './device-flow';
-import { larkLogger } from './lark-logger';
-const log = larkLogger('core/uat-client');
-import { feishuFetch } from './feishu-fetch';
-import { REFRESH_TOKEN_RETRYABLE, TOKEN_RETRY_CODES, NeedAuthorizationError } from './auth-errors';
-// Re-export for backward compatibility
-export { NeedAuthorizationError };
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.NeedAuthorizationError = void 0;
+exports.getValidAccessToken = getValidAccessToken;
+exports.callWithUAT = callWithUAT;
+exports.revokeUAT = revokeUAT;
+const token_store_1 = require("./token-store.js");
+const device_flow_1 = require("./device-flow.js");
+const lark_logger_1 = require("./lark-logger.js");
+const log = (0, lark_logger_1.larkLogger)('core/uat-client');
+const feishu_fetch_1 = require("./feishu-fetch.js");
+const auth_errors_1 = require("./auth-errors.js");
+Object.defineProperty(exports, "NeedAuthorizationError", { enumerable: true, get: function () { return auth_errors_1.NeedAuthorizationError; } });
 // ---------------------------------------------------------------------------
 // Per-user refresh lock
 // ---------------------------------------------------------------------------
@@ -35,10 +39,10 @@ async function doRefreshToken(opts, stored) {
     // refresh_token already expired → can't refresh, need re-auth.
     if (Date.now() >= stored.refreshExpiresAt) {
         log.info(`refresh_token expired for ${opts.userOpenId}, clearing`);
-        await removeStoredToken(opts.appId, opts.userOpenId);
+        await (0, token_store_1.removeStoredToken)(opts.appId, opts.userOpenId);
         return null;
     }
-    const endpoints = resolveOAuthEndpoints(opts.domain);
+    const endpoints = (0, device_flow_1.resolveOAuthEndpoints)(opts.domain);
     const requestBody = new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: stored.refreshToken,
@@ -46,7 +50,7 @@ async function doRefreshToken(opts, stored) {
         client_secret: opts.appSecret,
     }).toString();
     const callEndpoint = async () => {
-        const resp = await feishuFetch(endpoints.token, {
+        const resp = await (0, feishu_fetch_1.feishuFetch)(endpoints.token, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: requestBody,
@@ -61,7 +65,7 @@ async function doRefreshToken(opts, stored) {
     if ((code !== undefined && code !== 0) || error) {
         const errCode = code ?? error;
         // Transient server error: retry once, then clear.
-        if (REFRESH_TOKEN_RETRYABLE.has(code)) {
+        if (auth_errors_1.REFRESH_TOKEN_RETRYABLE.has(code)) {
             log.warn(`refresh transient error (code=${errCode}) for ${opts.userOpenId}, retrying once`);
             data = await callEndpoint();
             const retryCode = data.code;
@@ -69,14 +73,14 @@ async function doRefreshToken(opts, stored) {
             if ((retryCode !== undefined && retryCode !== 0) || retryError) {
                 const retryErrCode = retryCode ?? retryError;
                 log.warn(`refresh failed after retry (code=${retryErrCode}), clearing token for ${opts.userOpenId}`);
-                await removeStoredToken(opts.appId, opts.userOpenId);
+                await (0, token_store_1.removeStoredToken)(opts.appId, opts.userOpenId);
                 return null;
             }
         }
         else {
             // Any other error (invalid/expired/revoked token, or unknown): clear and force re-auth.
             log.warn(`refresh failed (code=${errCode}), clearing token for ${opts.userOpenId}`);
-            await removeStoredToken(opts.appId, opts.userOpenId);
+            await (0, token_store_1.removeStoredToken)(opts.appId, opts.userOpenId);
             return null;
         }
     }
@@ -97,8 +101,8 @@ async function doRefreshToken(opts, stored) {
         scope: data.scope ?? stored.scope,
         grantedAt: stored.grantedAt,
     };
-    await setStoredToken(updated);
-    log.info(`refreshed UAT for ${opts.userOpenId} (at:${maskToken(updated.accessToken)})`);
+    await (0, token_store_1.setStoredToken)(updated);
+    log.info(`refreshed UAT for ${opts.userOpenId} (at:${(0, token_store_1.maskToken)(updated.accessToken)})`);
     return updated;
 }
 /**
@@ -110,7 +114,7 @@ async function refreshWithLock(opts, stored) {
     const existing = refreshLocks.get(key);
     if (existing) {
         await existing;
-        return getStoredToken(opts.appId, opts.userOpenId);
+        return (0, token_store_1.getStoredToken)(opts.appId, opts.userOpenId);
     }
     const promise = doRefreshToken(opts, stored);
     refreshLocks.set(key, promise);
@@ -133,31 +137,31 @@ async function refreshWithLock(opts, stored) {
  *
  * **The returned token must never be exposed to the AI layer.**
  */
-export async function getValidAccessToken(opts) {
+async function getValidAccessToken(opts) {
     // Owner 检查已迁移到 owner-policy.ts（由 tool-client.ts 的 invokeAsUser 调用）
-    const stored = await getStoredToken(opts.appId, opts.userOpenId);
+    const stored = await (0, token_store_1.getStoredToken)(opts.appId, opts.userOpenId);
     if (!stored) {
-        throw new NeedAuthorizationError(opts.userOpenId);
+        throw new auth_errors_1.NeedAuthorizationError(opts.userOpenId);
     }
-    const status = tokenStatus(stored);
+    const status = (0, token_store_1.tokenStatus)(stored);
     if (status === 'valid') {
         return stored.accessToken;
     }
     if (status === 'needs_refresh') {
         const refreshed = await refreshWithLock(opts, stored);
         if (!refreshed) {
-            throw new NeedAuthorizationError(opts.userOpenId);
+            throw new auth_errors_1.NeedAuthorizationError(opts.userOpenId);
         }
         return refreshed.accessToken;
     }
     // expired
-    await removeStoredToken(opts.appId, opts.userOpenId);
-    throw new NeedAuthorizationError(opts.userOpenId);
+    await (0, token_store_1.removeStoredToken)(opts.appId, opts.userOpenId);
+    throw new auth_errors_1.NeedAuthorizationError(opts.userOpenId);
 }
 /**
  * Execute an API call with a valid UAT, retrying once on token-expiry errors.
  */
-export async function callWithUAT(opts, apiCall) {
+async function callWithUAT(opts, apiCall) {
     const accessToken = await getValidAccessToken(opts);
     try {
         return await apiCall(accessToken);
@@ -166,14 +170,14 @@ export async function callWithUAT(opts, apiCall) {
         // Retry once if the server reports token invalid/expired.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const code = err?.code ?? err?.response?.data?.code;
-        if (TOKEN_RETRY_CODES.has(code)) {
+        if (auth_errors_1.TOKEN_RETRY_CODES.has(code)) {
             log.warn(`API call failed (code=${code}), refreshing and retrying`);
-            const stored = await getStoredToken(opts.appId, opts.userOpenId);
+            const stored = await (0, token_store_1.getStoredToken)(opts.appId, opts.userOpenId);
             if (!stored)
-                throw new NeedAuthorizationError(opts.userOpenId);
+                throw new auth_errors_1.NeedAuthorizationError(opts.userOpenId);
             const refreshed = await refreshWithLock(opts, stored);
             if (!refreshed)
-                throw new NeedAuthorizationError(opts.userOpenId);
+                throw new auth_errors_1.NeedAuthorizationError(opts.userOpenId);
             return await apiCall(refreshed.accessToken);
         }
         throw err;
@@ -182,7 +186,7 @@ export async function callWithUAT(opts, apiCall) {
 /**
  * Revoke a user's UAT by removing it from the Keychain.
  */
-export async function revokeUAT(appId, userOpenId) {
-    await removeStoredToken(appId, userOpenId);
+async function revokeUAT(appId, userOpenId) {
+    await (0, token_store_1.removeStoredToken)(appId, userOpenId);
     log.info(`revoked UAT for ${userOpenId}`);
 }

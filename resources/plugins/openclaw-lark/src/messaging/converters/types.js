@@ -5,4 +5,4 @@
  *
  * Shared types for the content converter system.
  */
-export {};
+Object.defineProperty(exports, "__esModule", { value: true });

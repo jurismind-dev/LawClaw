@@ -17,14 +17,49 @@
  * - sdk.board.v1.whiteboard.downloadAsImage - 下载画板缩略图
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
-import { validateLocalMediaRoots } from '../../../messaging/outbound/media-url-utils';
-import * as fs from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { imageSize } from 'image-size';
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerDocMediaTool = registerDocMediaTool;
+const fs = __importStar(require("node:fs/promises"));
+const node_fs_1 = require("node:fs");
+const os = __importStar(require("node:os"));
+const path = __importStar(require("node:path"));
+const typebox_1 = require("@sinclair/typebox");
+const image_size_1 = require("image-size");
+const media_url_utils_1 = require("../../../messaging/outbound/media-url-utils.js");
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -92,36 +127,36 @@ function extractDocumentId(input) {
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const DocMediaSchema = Type.Union([
+const DocMediaSchema = typebox_1.Type.Union([
     // INSERT action
-    Type.Object({
-        action: Type.Literal('insert'),
-        doc_id: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('insert'),
+        doc_id: typebox_1.Type.String({
             description: '文档 ID 或文档 URL（必填）。支持从 URL 自动提取 document_id',
         }),
-        file_path: Type.String({
+        file_path: typebox_1.Type.String({
             description: '本地文件的绝对路径（必填）。图片支持 jpg/png/gif/webp 等，文件支持任意格式，最大 20MB',
         }),
-        type: Type.Optional(StringEnum(['image', 'file'], {
+        type: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['image', 'file'], {
             description: '媒体类型："image"（图片，默认）或 "file"（文件附件）',
         })),
-        align: Type.Optional(StringEnum(['left', 'center', 'right'], {
+        align: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['left', 'center', 'right'], {
             description: '对齐方式（仅图片生效）："center"（默认居中）、"left"（居左）、"right"（居右）',
         })),
-        caption: Type.Optional(Type.String({
+        caption: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '图片描述/标题（可选，仅图片生效）',
         })),
     }),
     // DOWNLOAD action
-    Type.Object({
-        action: Type.Literal('download'),
-        resource_token: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('download'),
+        resource_token: typebox_1.Type.String({
             description: '资源的唯一标识（file_token 用于文档素材，whiteboard_id 用于画板）',
         }),
-        resource_type: StringEnum(['media', 'whiteboard'], {
+        resource_type: (0, helpers_1.StringEnum)(['media', 'whiteboard'], {
             description: '资源类型：media（文档素材：图片、视频、文件等）或 whiteboard（画板缩略图）',
         }),
-        output_path: Type.String({
+        output_path: typebox_1.Type.String({
             description: '保存文件的完整本地路径。可以包含扩展名（如 /tmp/image.png），' +
                 '也可以不带扩展名，系统会根据 Content-Type 自动添加',
         }),
@@ -137,7 +172,7 @@ async function handleInsert(p, client, log) {
     // 0. 路径白名单校验 — 仅允许 tmpdir 下的文件
     const filePath = p.file_path;
     const DOC_MEDIA_ALLOWED_ROOTS = [os.tmpdir()];
-    validateLocalMediaRoots(path.resolve(filePath), DOC_MEDIA_ALLOWED_ROOTS);
+    (0, media_url_utils_1.validateLocalMediaRoots)(path.resolve(filePath), DOC_MEDIA_ALLOWED_ROOTS);
     // 1. 读取并校验本地文件
     let fileSize;
     try {
@@ -145,12 +180,12 @@ async function handleInsert(p, client, log) {
         fileSize = stat.size;
     }
     catch (err) {
-        return json({
+        return (0, helpers_1.json)({
             error: `failed to read file: ${err instanceof Error ? err.message : String(err)}`,
         });
     }
     if (fileSize > MAX_FILE_SIZE) {
-        return json({
+        return (0, helpers_1.json)({
             error: `file ${(fileSize / 1024 / 1024).toFixed(1)}MB exceeds 20MB limit`,
         });
     }
@@ -167,7 +202,7 @@ async function handleInsert(p, client, log) {
         },
         params: { document_revision_id: -1 },
     }, opts), { as: 'user' });
-    assertLarkOk(createRes);
+    (0, helpers_1.assertLarkOk)(createRes);
     // File Block 返回 View Block（block_type: 33）作为容器，
     // 真正的 File Block ID 在 children[0].children[0]；
     // Image Block 直接返回，block_id 在 children[0].block_id
@@ -179,7 +214,7 @@ async function handleInsert(p, client, log) {
         blockId = createRes.data?.children?.[0]?.block_id;
     }
     if (!blockId) {
-        return json({
+        return (0, helpers_1.json)({
             error: `failed to create ${config.label} block: no block_id returned`,
         });
     }
@@ -191,7 +226,7 @@ async function handleInsert(p, client, log) {
             parent_type: config.parent_type,
             parent_node: blockId,
             size: fileSize,
-            file: createReadStream(filePath),
+            file: (0, node_fs_1.createReadStream)(filePath),
             extra: JSON.stringify({
                 drive_route_token: documentId,
             }),
@@ -199,7 +234,7 @@ async function handleInsert(p, client, log) {
     }, opts), { as: 'user' });
     const fileToken = uploadRes?.file_token ?? uploadRes?.data?.file_token;
     if (!fileToken) {
-        return json({
+        return (0, helpers_1.json)({
             error: `failed to upload ${config.label} media: no file_token returned`,
         });
     }
@@ -213,7 +248,7 @@ async function handleInsert(p, client, log) {
         let height;
         try {
             const imgBuf = await fs.readFile(filePath);
-            const dims = imageSize(imgBuf);
+            const dims = (0, image_size_1.imageSize)(imgBuf);
             if (dims.width && dims.height) {
                 width = dims.width;
                 height = dims.height;
@@ -239,9 +274,9 @@ async function handleInsert(p, client, log) {
         data: { requests: [patchRequest] },
         params: { document_revision_id: -1 },
     }, opts), { as: 'user' });
-    assertLarkOk(patchRes);
+    (0, helpers_1.assertLarkOk)(patchRes);
     log.info(`insert: patched ${mediaType} block with file_token`);
-    return json({
+    return (0, helpers_1.json)({
         success: true,
         type: mediaType,
         document_id: documentId,
@@ -287,11 +322,11 @@ async function handleDownload(p, client, log) {
         log.info(`download: saved to ${finalPath}`);
     }
     catch (err) {
-        return json({
+        return (0, helpers_1.json)({
             error: `failed to save file: ${err instanceof Error ? err.message : String(err)}`,
         });
     }
-    return json({
+    return (0, helpers_1.json)({
         resource_type: p.resource_type,
         resource_token: p.resource_token,
         size_bytes: buffer.length,
@@ -302,12 +337,12 @@ async function handleDownload(p, client, log) {
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerDocMediaTool(api) {
+function registerDocMediaTool(api) {
     if (!api.config)
-        return;
+        return false;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_doc_media');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_doc_media');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_doc_media',
         label: 'Feishu: Document Media',
         description: '【以用户身份】文档媒体管理工具。' +
@@ -326,10 +361,10 @@ export function registerDocMediaTool(api) {
                 if (p.action === 'download') {
                     return await handleDownload(p, client, log);
                 }
-                return json({ error: `unknown action: ${p.action}` });
+                return (0, helpers_1.json)({ error: `unknown action: ${p.action}` });
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_doc_media' });

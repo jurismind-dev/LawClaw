@@ -110,6 +110,250 @@ function trimString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function hasWeixinRuntimeConfig(config: OpenClawConfig): boolean {
+  if (asObject(config.channels?.[WEIXIN_CHANNEL_ID])) {
+    return true;
+  }
+
+  if (asObject(config.plugins?.entries?.[WEIXIN_CHANNEL_ID])) {
+    return true;
+  }
+
+  if (
+    Array.isArray(config.plugins?.allow)
+    && config.plugins.allow.some((item) => item === WEIXIN_CHANNEL_ID)
+  ) {
+    return true;
+  }
+
+  return (
+    Array.isArray(config.bindings)
+    && config.bindings.some(
+      (binding) =>
+        asObject(binding)
+        && asObject((binding as Record<string, unknown>).match)
+        && binding.match.channel === WEIXIN_CHANNEL_ID
+    )
+  );
+}
+
+export interface OpenClawCliCommandResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+
+export async function runOpenClawCliCommand(
+  args: string[]
+): Promise<OpenClawCliCommandResult> {
+  const status = getOpenClawStatus();
+  if (!status.packageExists || !existsSync(status.entryPath)) {
+    return {
+      success: false,
+      stdout: '',
+      stderr: '',
+      error: `OpenClaw entry script not found at: ${status.entryPath}`,
+    };
+  }
+
+  const openclawConfigDir = getOpenClawConfigDir();
+  ensureDir(openclawConfigDir);
+
+  let cliEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+  };
+
+  try {
+    const configPath = join(openclawConfigDir, 'openclaw.json');
+    if (existsSync(configPath)) {
+      cliEnv = applyOpenClawConfigEnvFallbacks(
+        stripUtf8Bom(readFileSync(configPath, 'utf-8')),
+        cliEnv
+      );
+    }
+  } catch (error) {
+    logger.warn('[WeixinOnboarding] Failed to apply OpenClaw config env fallbacks', error);
+  }
+
+  cliEnv = applyBundledNpmToCliEnv(cliEnv);
+  cliEnv.OPENCLAW_NO_RESPAWN = '1';
+  cliEnv.OPENCLAW_EMBEDDED_IN = 'LawClaw';
+
+  const nodeExec = getNodeExecForCli();
+
+  return new Promise((resolve) => {
+    const child = spawn(nodeExec, [status.entryPath, ...args], {
+      cwd: status.dir,
+      env: cliEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk: Buffer | string) => {
+      stdout += String(chunk);
+    });
+
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      stderr += String(chunk);
+    });
+
+    child.on('error', (error) => {
+      resolve({
+        success: false,
+        stdout,
+        stderr,
+        error: String(error),
+      });
+    });
+
+    child.on('close', (code) => {
+      resolve({
+        success: code === 0,
+        stdout,
+        stderr,
+        ...(code === 0 ? {} : { error: `OpenClaw CLI exited with code ${code}` }),
+      });
+    });
+  });
+}
+
+export interface RepairInstalledWeixinPluginResult {
+  repaired: boolean;
+  reason: 'not-configured' | 'healthy' | 'repaired' | 'failed';
+  pluginDir: string;
+  installedVersion: string | null;
+  error?: string;
+  details?: string;
+}
+
+interface RepairInstalledWeixinPluginDependencies {
+  readOpenClawConfig: typeof readOpenClawConfig;
+  hasStoredWeixinCredentials: typeof hasStoredWeixinCredentials;
+  isWeixinPluginInstalledDirPresent: typeof isWeixinPluginInstalledDirPresent;
+  getInstalledWeixinPluginVersion: typeof getInstalledWeixinPluginVersion;
+  detectPluginInstallationState: typeof detectPluginInstallationState;
+  runOpenClawCliCommand: typeof runOpenClawCliCommand;
+  removeInstalledPluginDir: typeof removeInstalledPluginDir;
+  getOpenClawConfigDir: typeof getOpenClawConfigDir;
+}
+
+const defaultRepairInstalledWeixinPluginDeps: RepairInstalledWeixinPluginDependencies = {
+  readOpenClawConfig,
+  hasStoredWeixinCredentials,
+  isWeixinPluginInstalledDirPresent,
+  getInstalledWeixinPluginVersion,
+  detectPluginInstallationState,
+  runOpenClawCliCommand,
+  removeInstalledPluginDir,
+  getOpenClawConfigDir,
+};
+
+function formatCliDetails(result: OpenClawCliCommandResult): string {
+  return [result.error, result.stderr, result.stdout].filter(Boolean).join('\n');
+}
+
+export async function repairInstalledWeixinPluginIfNeeded(
+  deps: RepairInstalledWeixinPluginDependencies = defaultRepairInstalledWeixinPluginDeps
+): Promise<RepairInstalledWeixinPluginResult> {
+  const openClawConfigDir = deps.getOpenClawConfigDir();
+  const pluginDir = join(openClawConfigDir, 'extensions', WEIXIN_CHANNEL_ID);
+  const config = await deps.readOpenClawConfig();
+  const hasExtensionDir = await deps.isWeixinPluginInstalledDirPresent();
+  const installationState = deps.detectPluginInstallationState(WEIXIN_CHANNEL_ID, {
+    hasExtensionDir,
+    config: config as Record<string, unknown>,
+  });
+  const configured = (await deps.hasStoredWeixinCredentials()) || hasWeixinRuntimeConfig(config);
+  const installedVersion = await deps.getInstalledWeixinPluginVersion();
+
+  if (!configured) {
+    return {
+      repaired: false,
+      reason: 'not-configured',
+      pluginDir,
+      installedVersion,
+    };
+  }
+
+  if (installationState.installed && installedVersion === WEIXIN_PLUGIN_VERSION) {
+    return {
+      repaired: false,
+      reason: 'healthy',
+      pluginDir,
+      installedVersion,
+    };
+  }
+
+  const removeExistingInstall = async (reason: string): Promise<void> => {
+    const uninstallResult = await deps.runOpenClawCliCommand(['plugins', 'uninstall', WEIXIN_CHANNEL_ID]);
+    if (!uninstallResult.success) {
+      logger.warn('[WeixinOnboarding] OpenClaw CLI uninstall failed during startup repair', {
+        reason,
+        details: formatCliDetails(uninstallResult),
+      });
+    }
+
+    deps.removeInstalledPluginDir(join(openClawConfigDir, 'extensions'), WEIXIN_CHANNEL_ID);
+    if (await deps.isWeixinPluginInstalledDirPresent()) {
+      throw new Error('卸载旧版微信插件失败');
+    }
+  };
+
+  try {
+    if (installationState.installed || installedVersion) {
+      await removeExistingInstall(`Weixin plugin version ${installedVersion || 'unknown'} is incompatible`);
+    }
+
+    let installResult = await deps.runOpenClawCliCommand(['plugins', 'install', WEIXIN_PLUGIN_NPM_SPEC]);
+    if (!installResult.success && isAlreadyInstalledErrorMessage(formatCliDetails(installResult))) {
+      await removeExistingInstall('Weixin plugin install directory already exists');
+      installResult = await deps.runOpenClawCliCommand(['plugins', 'install', WEIXIN_PLUGIN_NPM_SPEC]);
+    }
+
+    if (!installResult.success) {
+      return {
+        repaired: false,
+        reason: 'failed',
+        pluginDir,
+        installedVersion,
+        error: '安装兼容微信插件失败',
+        details: formatCliDetails(installResult),
+      };
+    }
+
+    const resolvedInstalledVersion = await deps.getInstalledWeixinPluginVersion();
+    if (resolvedInstalledVersion !== WEIXIN_PLUGIN_VERSION) {
+      return {
+        repaired: false,
+        reason: 'failed',
+        pluginDir,
+        installedVersion: resolvedInstalledVersion,
+        error: '微信插件版本校验失败',
+        details: `expected ${WEIXIN_PLUGIN_VERSION}, received ${resolvedInstalledVersion || 'unknown'}`,
+      };
+    }
+
+    return {
+      repaired: true,
+      reason: 'repaired',
+      pluginDir,
+      installedVersion: resolvedInstalledVersion,
+    };
+  } catch (error) {
+    return {
+      repaired: false,
+      reason: 'failed',
+      pluginDir,
+      installedVersion,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 class WeixinOnboardingManager extends EventEmitter {
   private status: WeixinOnboardingStatus = {
     phase: 'idle',
@@ -658,78 +902,7 @@ class WeixinOnboardingManager extends EventEmitter {
     stderr: string;
     error?: string;
   }> {
-    const status = getOpenClawStatus();
-    if (!status.packageExists || !existsSync(status.entryPath)) {
-      return {
-        success: false,
-        stdout: '',
-        stderr: '',
-        error: `OpenClaw entry script not found at: ${status.entryPath}`,
-      };
-    }
-
-    const openclawConfigDir = getOpenClawConfigDir();
-    ensureDir(openclawConfigDir);
-
-    let cliEnv: NodeJS.ProcessEnv = {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-    };
-
-    try {
-      const configPath = join(openclawConfigDir, 'openclaw.json');
-      if (existsSync(configPath)) {
-        cliEnv = applyOpenClawConfigEnvFallbacks(
-          stripUtf8Bom(readFileSync(configPath, 'utf-8')),
-          cliEnv
-        );
-      }
-    } catch (error) {
-      logger.warn('[WeixinOnboarding] Failed to apply OpenClaw config env fallbacks', error);
-    }
-
-    cliEnv = applyBundledNpmToCliEnv(cliEnv);
-    cliEnv.OPENCLAW_NO_RESPAWN = '1';
-    cliEnv.OPENCLAW_EMBEDDED_IN = 'LawClaw';
-
-    const nodeExec = getNodeExecForCli();
-
-    return new Promise((resolve) => {
-      const child = spawn(nodeExec, [status.entryPath, ...args], {
-        cwd: status.dir,
-        env: cliEnv,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (chunk: Buffer | string) => {
-        stdout += String(chunk);
-      });
-
-      child.stderr.on('data', (chunk: Buffer | string) => {
-        stderr += String(chunk);
-      });
-
-      child.on('error', (error) => {
-        resolve({
-          success: false,
-          stdout,
-          stderr,
-          error: String(error),
-        });
-      });
-
-      child.on('close', (code) => {
-        resolve({
-          success: code === 0,
-          stdout,
-          stderr,
-          ...(code === 0 ? {} : { error: `OpenClaw CLI exited with code ${code}` }),
-        });
-      });
-    });
+    return runOpenClawCliCommand(args);
   }
 }
 

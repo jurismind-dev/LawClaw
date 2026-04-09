@@ -9,11 +9,14 @@
  * setup` wizard can configure Feishu credentials, domain, group
  * policies, and DM allowlists interactively.
  */
-import { DEFAULT_ACCOUNT_ID, formatDocsLink } from 'openclaw/plugin-sdk';
-import { getLarkCredentials } from '../core/accounts';
-import { probeFeishu } from './probe';
-import { setFeishuDmPolicy, setFeishuAllowFrom, setFeishuGroupPolicy, setFeishuGroupAllowFrom, parseAllowFromInput, } from './onboarding-config';
-import { migrateLegacyGroupAllowFrom } from './onboarding-migrate';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.feishuOnboardingAdapter = void 0;
+const account_id_1 = require("openclaw/plugin-sdk/account-id");
+const setup_1 = require("openclaw/plugin-sdk/setup");
+const accounts_1 = require("../core/accounts.js");
+const probe_1 = require("./probe.js");
+const onboarding_config_1 = require("./onboarding-config.js");
+const onboarding_migrate_1 = require("./onboarding-migrate.js");
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -29,7 +32,7 @@ async function noteFeishuCredentialHelp(prompter) {
         '4) Enable required permissions: im:message, im:chat, contact:user.base:readonly',
         '5) Publish the app or add it to a test group',
         'Tip: you can also set FEISHU_APP_ID / FEISHU_APP_SECRET env vars.',
-        `Docs: ${formatDocsLink('/channels/feishu', 'feishu')}`,
+        `Docs: ${(0, setup_1.formatDocsLink)('/channels/feishu', 'feishu')}`,
     ].join('\n'), 'Feishu credentials');
 }
 async function promptFeishuAllowFrom(params) {
@@ -48,13 +51,13 @@ async function promptFeishuAllowFrom(params) {
             initialValue: existing[0] ? String(existing[0]) : undefined,
             validate: (value) => (String(value ?? '').trim() ? undefined : 'Required'),
         });
-        const parts = parseAllowFromInput(String(entry));
+        const parts = (0, onboarding_config_1.parseAllowFromInput)(String(entry));
         if (parts.length === 0) {
             await params.prompter.note('Enter at least one user.', 'Feishu allowlist');
             continue;
         }
         const unique = [...new Set([...existing.map((v) => String(v).trim()).filter(Boolean), ...parts])];
-        return setFeishuAllowFrom(params.cfg, unique);
+        return (0, onboarding_config_1.setFeishuAllowFrom)(params.cfg, unique);
     }
 }
 // ---------------------------------------------------------------------------
@@ -129,25 +132,25 @@ const dmPolicy = {
     policyKey: 'channels.feishu.dmPolicy',
     allowFromKey: 'channels.feishu.allowFrom',
     getCurrent: (cfg) => cfg.channels?.feishu?.dmPolicy ?? 'pairing',
-    setPolicy: (cfg, policy) => setFeishuDmPolicy(cfg, policy),
+    setPolicy: (cfg, policy) => (0, onboarding_config_1.setFeishuDmPolicy)(cfg, policy),
     promptAllowFrom: promptFeishuAllowFrom,
 };
 // ---------------------------------------------------------------------------
 // Adapter
 // ---------------------------------------------------------------------------
-export const feishuOnboardingAdapter = {
+exports.feishuOnboardingAdapter = {
     channel,
     // -----------------------------------------------------------------------
     // getStatus
     // -----------------------------------------------------------------------
     getStatus: async ({ cfg }) => {
         const feishuCfg = cfg.channels?.feishu;
-        const configured = Boolean(getLarkCredentials(feishuCfg));
+        const configured = Boolean((0, accounts_1.getLarkCredentials)(feishuCfg));
         // Attempt a live probe when credentials are present.
         let probeResult = null;
         if (configured && feishuCfg) {
             try {
-                probeResult = await probeFeishu(feishuCfg);
+                probeResult = await (0, probe_1.probeFeishu)(feishuCfg);
             }
             catch {
                 // Ignore probe errors -- status degrades gracefully.
@@ -176,7 +179,7 @@ export const feishuOnboardingAdapter = {
     // -----------------------------------------------------------------------
     configure: async ({ cfg, prompter }) => {
         const feishuCfg = cfg.channels?.feishu;
-        const resolved = getLarkCredentials(feishuCfg);
+        const resolved = (0, accounts_1.getLarkCredentials)(feishuCfg);
         let next = cfg;
         // Show credential help if nothing is configured yet.
         if (!resolved) {
@@ -201,7 +204,7 @@ export const feishuOnboardingAdapter = {
             };
             const testCfg = next.channels?.feishu;
             try {
-                const probe = await probeFeishu(testCfg);
+                const probe = await (0, probe_1.probeFeishu)(testCfg);
                 if (probe.ok) {
                     await prompter.note(`Connected as ${probe.botName ?? probe.botOpenId ?? 'bot'}`, 'Feishu connection test');
                 }
@@ -236,7 +239,7 @@ export const feishuOnboardingAdapter = {
             };
         }
         // --- Legacy migration ---
-        next = await migrateLegacyGroupAllowFrom({ cfg: next, prompter });
+        next = await (0, onboarding_migrate_1.migrateLegacyGroupAllowFrom)({ cfg: next, prompter });
         // --- Group policy ---
         const groupPolicy = await prompter.select({
             message: 'Group chat policy — which groups can interact with the bot?',
@@ -257,7 +260,7 @@ export const feishuOnboardingAdapter = {
             initialValue: next.channels?.feishu?.groupPolicy ?? 'allowlist',
         });
         if (groupPolicy) {
-            next = setFeishuGroupPolicy(next, groupPolicy);
+            next = (0, onboarding_config_1.setFeishuGroupPolicy)(next, groupPolicy);
         }
         // --- Group sender allowlist ---
         if (groupPolicy !== 'disabled') {
@@ -268,9 +271,9 @@ export const feishuOnboardingAdapter = {
                 initialValue: existing.length > 0 ? existing.map(String).join(', ') : undefined,
             });
             if (entry) {
-                const parts = parseAllowFromInput(String(entry));
+                const parts = (0, onboarding_config_1.parseAllowFromInput)(String(entry));
                 if (parts.length > 0) {
-                    next = setFeishuGroupAllowFrom(next, parts);
+                    next = (0, onboarding_config_1.setFeishuGroupAllowFrom)(next, parts);
                 }
             }
             else if (groupPolicy === 'allowlist') {
@@ -278,7 +281,7 @@ export const feishuOnboardingAdapter = {
                     "Use groupPolicy 'open' if you want anyone in allowed groups to trigger.", 'Note');
             }
         }
-        return { cfg: next, accountId: DEFAULT_ACCOUNT_ID };
+        return { cfg: next, accountId: account_id_1.DEFAULT_ACCOUNT_ID };
     },
     // -----------------------------------------------------------------------
     // dmPolicy

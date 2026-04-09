@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { prepareFeishuOfficialPluginInstallDir } from '../../electron/utils/feishu-official-plugin-installer';
+import {
+  prepareFeishuOfficialPluginInstallDir,
+  repairInstalledFeishuOfficialPluginIfNeeded,
+} from '../../electron/utils/feishu-official-plugin-installer';
 
 describe('feishu official plugin installer', () => {
   let tempRoot = '';
@@ -30,7 +33,7 @@ describe('feishu official plugin installer', () => {
       join(bundledPluginDir, 'package.json'),
       `${JSON.stringify({
         name: '@larksuite/openclaw-lark',
-        version: '2026.3.17',
+        version: '2026.4.7',
         dependencies: {},
       }, null, 2)}\n`,
       'utf-8'
@@ -48,7 +51,7 @@ describe('feishu official plugin installer', () => {
         packages: {
           '': {
             name: '@larksuite/openclaw-lark',
-            version: '2026.3.17',
+            version: '2026.4.7',
             dependencies: {},
           },
           'node_modules/@sinclair/typebox': {
@@ -106,5 +109,90 @@ describe('feishu official plugin installer', () => {
     if (result.tempDir) {
       rmSync(result.tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('repairs installed feishu plugin when the version is older than the bundled npm version', async () => {
+    const resourcesDir = join(tempRoot, 'resources');
+    const bundledPluginDir = join(resourcesDir, 'plugins', 'openclaw-lark');
+    const configDir = join(tempRoot, '.openclaw');
+    const installedPluginDir = join(configDir, 'extensions', 'openclaw-lark');
+
+    mkdirSync(join(bundledPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk'), {
+      recursive: true,
+    });
+    mkdirSync(join(bundledPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs'), {
+      recursive: true,
+    });
+    mkdirSync(join(bundledPluginDir, 'node_modules', 'zod'), { recursive: true });
+    writeFileSync(
+      join(bundledPluginDir, 'package.json'),
+      `${JSON.stringify({
+        name: '@larksuite/openclaw-lark',
+        version: '2026.4.7',
+        dependencies: {},
+      }, null, 2)}\n`,
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'openclaw.plugin.json'), '{}\n', 'utf-8');
+    writeFileSync(join(bundledPluginDir, 'index.js'), 'export {};\n', 'utf-8');
+    writeFileSync(
+      join(bundledPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'),
+      '{}\n',
+      'utf-8'
+    );
+    writeFileSync(
+      join(bundledPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs', 'index.js'),
+      'module.exports = {};\n',
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'node_modules', 'zod', 'package.json'), '{}\n', 'utf-8');
+
+    mkdirSync(installedPluginDir, { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk'), {
+      recursive: true,
+    });
+    mkdirSync(join(installedPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs'), {
+      recursive: true,
+    });
+    mkdirSync(join(installedPluginDir, 'node_modules', 'zod'), { recursive: true });
+    writeFileSync(
+      join(installedPluginDir, 'package.json'),
+      `${JSON.stringify({
+        name: '@larksuite/openclaw-lark',
+        version: '2026.3.17',
+      }, null, 2)}\n`,
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'openclaw.plugin.json'), '{}\n', 'utf-8');
+    writeFileSync(join(installedPluginDir, 'index.js'), 'export {};\n', 'utf-8');
+    writeFileSync(
+      join(installedPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'),
+      '{}\n',
+      'utf-8'
+    );
+    writeFileSync(
+      join(installedPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs', 'index.js'),
+      'module.exports = {};\n',
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'node_modules', 'zod', 'package.json'), '{}\n', 'utf-8');
+
+    const runCommand = vi.fn(async () => ({ success: true, stdout: '', stderr: '' }));
+
+    const result = await repairInstalledFeishuOfficialPluginIfNeeded({
+      openClawConfigDir: configDir,
+      isPackaged: false,
+      resourcesDir,
+      runCommand,
+    });
+
+    const repairedManifest = JSON.parse(readFileSync(join(installedPluginDir, 'package.json'), 'utf-8'));
+    expect(result).toMatchObject({
+      repaired: true,
+      reason: 'repaired',
+      installedVersion: '2026.4.7',
+    });
+    expect(runCommand).not.toHaveBeenCalled();
+    expect(repairedManifest.version).toBe('2026.4.7');
   });
 });

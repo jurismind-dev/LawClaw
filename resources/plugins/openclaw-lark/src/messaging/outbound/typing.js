@@ -14,11 +14,14 @@
  * This provides a lightweight visual cue that the bot has acknowledged
  * the message and is working on a reply.
  */
-import { LarkClient } from '../../core/lark-client';
-import { normalizeMessageId } from '../../core/targets';
-import { isMessageUnavailableError, runWithMessageUnavailableGuard } from '../../core/message-unavailable';
-import { larkLogger } from '../../core/lark-logger';
-const log = larkLogger('outbound/typing');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.addTypingIndicator = addTypingIndicator;
+exports.removeTypingIndicator = removeTypingIndicator;
+const lark_client_1 = require("../../core/lark-client.js");
+const targets_1 = require("../../core/targets.js");
+const message_unavailable_1 = require("../../core/message-unavailable.js");
+const lark_logger_1 = require("../../core/lark-logger.js");
+const log = (0, lark_logger_1.larkLogger)('outbound/typing');
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -45,17 +48,17 @@ const TYPING_EMOJI_TYPE = 'Typing';
  * @param params.accountId - Optional account identifier for multi-account setups.
  * @returns A state object that should be passed to {@link removeTypingIndicator}.
  */
-export async function addTypingIndicator(params) {
+async function addTypingIndicator(params) {
     const { cfg, messageId, accountId } = params;
     // 规范化 message_id，处理合成 ID（如 "om_xxx:auth-complete"）
-    const normalizedId = normalizeMessageId(messageId);
+    const normalizedId = (0, targets_1.normalizeMessageId)(messageId);
     const state = {
         messageId: normalizedId, // 保存规范化后的 ID
         reactionId: null,
     };
     try {
-        const client = LarkClient.fromCfg(cfg, accountId).sdk;
-        const response = await runWithMessageUnavailableGuard({
+        const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
+        const response = await (0, message_unavailable_1.runWithMessageUnavailableGuard)({
             messageId: normalizedId,
             operation: 'im.messageReaction.create(typing)',
             fn: () => client.im.messageReaction.create({
@@ -72,7 +75,7 @@ export async function addTypingIndicator(params) {
         state.reactionId = response?.data?.reaction_id ?? null;
     }
     catch (error) {
-        if (isMessageUnavailableError(error)) {
+        if ((0, message_unavailable_1.isMessageUnavailableError)(error)) {
             log.debug(`Skip add typing indicator for unavailable message`, { messageId: normalizedId });
             return state;
         }
@@ -99,7 +102,7 @@ export async function addTypingIndicator(params) {
  * @param params.state - The typing indicator state returned by {@link addTypingIndicator}.
  * @param params.accountId - Optional account identifier for multi-account setups.
  */
-export async function removeTypingIndicator(params) {
+async function removeTypingIndicator(params) {
     const { cfg, state, accountId } = params;
     const reactionId = state.reactionId;
     if (!reactionId) {
@@ -108,8 +111,8 @@ export async function removeTypingIndicator(params) {
         return;
     }
     try {
-        const client = LarkClient.fromCfg(cfg, accountId).sdk;
-        await runWithMessageUnavailableGuard({
+        const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
+        await (0, message_unavailable_1.runWithMessageUnavailableGuard)({
             messageId: state.messageId,
             operation: 'im.messageReaction.delete(typing)',
             fn: () => client.im.messageReaction.delete({
@@ -121,7 +124,7 @@ export async function removeTypingIndicator(params) {
         });
     }
     catch (error) {
-        if (isMessageUnavailableError(error)) {
+        if ((0, message_unavailable_1.isMessageUnavailableError)(error)) {
             log.debug(`Skip remove typing indicator for unavailable message`, { messageId: state.messageId });
             return;
         }

@@ -5,6 +5,8 @@
  *
  * Markdown 样式优化工具
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.optimizeMarkdownStyle = optimizeMarkdownStyle;
 /**
  * 优化 Markdown 样式：
  * - 标题降级：H1 → H4，H2~H6 → H5
@@ -14,7 +16,7 @@
  * - 表格：单元格前后补空格，分隔符行规范化，表格前后加空行
  * - 代码块内容不受影响
  */
-export function optimizeMarkdownStyle(text, cardVersion = 2) {
+function optimizeMarkdownStyle(text, cardVersion = 2) {
     try {
         let r = _optimizeMarkdownStyle(text, cardVersion);
         r = stripInvalidImageKeys(r);
@@ -48,8 +50,13 @@ function _optimizeMarkdownStyle(text, cardVersion = 2) {
         r = r.replace(/^([^|\n].*)\n(\|.+\|)/gm, '$1\n\n$2');
         // 4b. 表格前：在空行之前插入 <br>（即 \n\n| → \n<br>\n\n| ）
         r = r.replace(/\n\n((?:\|.+\|[^\S\n]*\n?)+)/g, '\n\n<br>\n\n$1');
-        // 4c. 表格后：在表格块末尾追加 <br>
-        r = r.replace(/((?:^\|.+\|[^\S\n]*\n?)+)/gm, '$1\n<br>\n');
+        // 4c. 表格后：在表格块末尾追加 <br>（跳过后接分隔线/标题/加粗/文末的情况）
+        r = r.replace(/((?:^\|.+\|[^\S\n]*\n?)+)/gm, (m, _table, offset) => {
+            const after = r.slice(offset + m.length).replace(/^\n+/, '');
+            if (!after || /^(---|#{4,5} |\*\*)/.test(after))
+                return m;
+            return m + '\n<br>\n';
+        });
         // 4d. 表格前是普通文本（非标题、非加粗行）时，只需 <br>，去掉多余空行
         //     "text\n\n<br>\n\n|" → "text\n<br>\n|"
         r = r.replace(/^((?!#{4,5} )(?!\*\*).+)\n\n(<br>)\n\n(\|)/gm, '$1\n$2\n$3');

@@ -8,8 +8,11 @@
  * 直接生成 Markdown 诊断报告，不依赖 diagnose.ts 的任何架构和代码。
  * 按照 doctor_template.md 的格式规范实现。
  */
-import { getEnabledLarkAccounts } from '../core/accounts';
-import { LarkClient } from '../core/lark-client';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.runFeishuDoctor = runFeishuDoctor;
+exports.runFeishuDoctorI18n = runFeishuDoctorI18n;
+const accounts_1 = require("../core/accounts.js");
+const lark_client_1 = require("../core/lark-client.js");
 /**
  * Resolve the global config for cross-account operations.
  *
@@ -19,16 +22,16 @@ import { LarkClient } from '../core/lark-client';
  * need the original global config to see the full `accounts` map.
  */
 function resolveGlobalConfig(config) {
-    return LarkClient.globalConfig ?? config;
+    return lark_client_1.LarkClient.globalConfig ?? config;
 }
-import { getAppGrantedScopes, missingScopes } from '../core/app-scope-checker';
-import { getAppOwnerFallback } from '../core/app-owner-fallback';
-import { getStoredToken, tokenStatus } from '../core/token-store';
-import { filterSensitiveScopes, REQUIRED_APP_SCOPES, TOOL_SCOPES } from '../core/tool-scopes';
-import { probeFeishu } from '../channel/probe';
-import { AppScopeCheckFailedError } from '../core/tool-client';
-import { getPluginVersion } from '../core/version';
-import { openPlatformDomain } from '../core/domains';
+const app_scope_checker_1 = require("../core/app-scope-checker.js");
+const app_owner_fallback_1 = require("../core/app-owner-fallback.js");
+const token_store_1 = require("../core/token-store.js");
+const tool_scopes_1 = require("../core/tool-scopes.js");
+const probe_1 = require("../channel/probe.js");
+const tool_client_1 = require("../core/tool-client.js");
+const version_1 = require("../core/version.js");
+const domains_1 = require("../core/domains.js");
 // ---------------------------------------------------------------------------
 // I18n text map
 // ---------------------------------------------------------------------------
@@ -174,7 +177,7 @@ function formatTimestamp(date) {
  */
 function getAllToolScopes() {
     const scopesSet = new Set();
-    for (const scopes of Object.values(TOOL_SCOPES)) {
+    for (const scopes of Object.values(tool_scopes_1.TOOL_SCOPES)) {
         for (const scope of scopes) {
             scopesSet.add(scope);
         }
@@ -215,7 +218,7 @@ async function checkBasicInfo(account, config, locale) {
     lines.push(t.accountEnabled);
     // API 连通性
     try {
-        const probeResult = await probeFeishu({
+        const probeResult = await (0, probe_1.probeFeishu)({
             accountId: account.accountId,
             appId: account.appId,
             appSecret: account.appSecret,
@@ -279,17 +282,17 @@ function checkToolsProfile(config, locale) {
 async function checkAppPermissions(account, sdk, locale) {
     const t = T[locale];
     const { appId } = account;
-    const openDomain = openPlatformDomain(account.brand);
+    const openDomain = (0, domains_1.openPlatformDomain)(account.brand);
     try {
         // 获取应用已开通的权限（tenant token）
-        const grantedScopes = await getAppGrantedScopes(sdk, appId, 'tenant');
+        const grantedScopes = await (0, app_scope_checker_1.getAppGrantedScopes)(sdk, appId, 'tenant');
         // 计算缺失的必需权限
-        const requiredMissing = missingScopes(grantedScopes, Array.from(REQUIRED_APP_SCOPES));
+        const requiredMissing = (0, app_scope_checker_1.missingScopes)(grantedScopes, Array.from(tool_scopes_1.REQUIRED_APP_SCOPES));
         if (requiredMissing.length === 0) {
             // 全部权限已开通
             return {
                 status: 'pass',
-                markdown: t.allPermsGranted(REQUIRED_APP_SCOPES.length),
+                markdown: t.allPermsGranted(tool_scopes_1.REQUIRED_APP_SCOPES.length),
                 missingScopes: [],
             };
         }
@@ -313,7 +316,7 @@ async function checkAppPermissions(account, sdk, locale) {
     catch (err) {
         // API 调用失败（通常是缺少 application:application:self_manage 权限）
         const applyUrl = `${openDomain}/app/${appId}/auth?q=application:application:self_manage&op_from=feishu-openclaw&token_type=tenant`;
-        if (err instanceof AppScopeCheckFailedError) {
+        if (err instanceof tool_client_1.AppScopeCheckFailedError) {
             return {
                 status: 'fail',
                 markdown: `${t.cannotQueryPerms}\n\n${t.adminApply} [${t.apply}](${applyUrl})`,
@@ -335,7 +338,7 @@ async function checkAppPermissions(account, sdk, locale) {
  */
 function generatePermissionTable(appGrantedScopes, userGrantedScopes, hasValidUser, locale) {
     let allScopes = getAllToolScopes();
-    allScopes = filterSensitiveScopes(allScopes);
+    allScopes = (0, tool_scopes_1.filterSensitiveScopes)(allScopes);
     const appSet = new Set(appGrantedScopes);
     const userSet = new Set(userGrantedScopes);
     const lines = [];
@@ -355,13 +358,13 @@ function generatePermissionTable(appGrantedScopes, userGrantedScopes, hasValidUs
 async function checkUserPermissions(account, sdk, locale) {
     const t = T[locale];
     const { appId } = account;
-    const openDomain = openPlatformDomain(account.brand);
+    const openDomain = (0, domains_1.openPlatformDomain)(account.brand);
     const lines = [];
     try {
         // 1. 获取应用所有者
-        const ownerId = await getAppOwnerFallback(account, sdk);
+        const ownerId = await (0, app_owner_fallback_1.getAppOwnerFallback)(account, sdk);
         // 2. 读取 token
-        const token = ownerId ? await getStoredToken(appId, ownerId) : null;
+        const token = ownerId ? await (0, token_store_1.getStoredToken)(appId, ownerId) : null;
         // 判断是否有有效的用户授权
         const hasUserAuth = !!token;
         // 变量初始化
@@ -372,13 +375,13 @@ async function checkUserPermissions(account, sdk, locale) {
         let userTokenStatus = 'expired';
         let userMissing = [];
         // 获取应用开通的支持 user token 的权限
-        const appUserScopes = await getAppGrantedScopes(sdk, appId, 'user');
+        const appUserScopes = await (0, app_scope_checker_1.getAppGrantedScopes)(sdk, appId, 'user');
         let allScopes = getAllToolScopes();
-        allScopes = filterSensitiveScopes(allScopes);
+        allScopes = (0, tool_scopes_1.filterSensitiveScopes)(allScopes);
         const appGrantedCount = appUserScopes.filter((s) => allScopes.includes(s)).length;
         if (hasUserAuth) {
             // 有用户授权 - 检查授权状态
-            const status = tokenStatus(token);
+            const status = (0, token_store_1.tokenStatus)(token);
             userTokenStatus = status;
             scopes = token.scope.split(' ').filter(Boolean);
             validCount = status === 'valid' ? 1 : 0;
@@ -461,7 +464,7 @@ async function checkUserPermissions(account, sdk, locale) {
     }
     catch (err) {
         const applyUrl = `${openDomain}/app/${appId}/auth?q=application:application:self_manage&op_from=feishu-openclaw&token_type=tenant`;
-        if (err instanceof AppScopeCheckFailedError) {
+        if (err instanceof tool_client_1.AppScopeCheckFailedError) {
             return {
                 status: 'warn',
                 markdown: `${t.userPermFailedNoSelfManage}\n\n${t.adminApply} [${t.apply}](${applyUrl})`,
@@ -489,14 +492,14 @@ async function checkUserPermissions(account, sdk, locale) {
  * @param currentAccountId - 当前发送命令的机器人账号 ID（若有则只诊断该账号）
  * @param locale - 输出语言，默认 zh_cn
  */
-export async function runFeishuDoctor(config, currentAccountId, locale = 'zh_cn') {
+async function runFeishuDoctor(config, currentAccountId, locale = 'zh_cn') {
     const t = T[locale];
     const lines = [];
     // 1. 获取目标账户
     //    Use the global config to enumerate all accounts — the passed-in
     //    config may be account-scoped (accounts map stripped).
     const globalCfg = resolveGlobalConfig(config);
-    const allAccounts = getEnabledLarkAccounts(globalCfg);
+    const allAccounts = (0, accounts_1.getEnabledLarkAccounts)(globalCfg);
     if (allAccounts.length === 0) {
         return t.noAccounts;
     }
@@ -508,7 +511,7 @@ export async function runFeishuDoctor(config, currentAccountId, locale = 'zh_cn'
     // 2. 生成报告头部
     lines.push(t.reportTitle);
     lines.push('');
-    lines.push(`${t.pluginVersionLabel}: ${getPluginVersion()}  |  ${t.diagTimeLabel}: ${formatTimestamp(new Date())}`);
+    lines.push(`${t.pluginVersionLabel}: ${(0, version_1.getPluginVersion)()}  |  ${t.diagTimeLabel}: ${formatTimestamp(new Date())}`);
     lines.push('');
     lines.push('---');
     lines.push('');
@@ -534,7 +537,7 @@ export async function runFeishuDoctor(config, currentAccountId, locale = 'zh_cn'
     // 4. 逐账户诊断（仅目标账户）
     for (let i = 0; i < accounts.length; i++) {
         const account = accounts[i];
-        const sdk = LarkClient.fromAccount(account).sdk;
+        const sdk = lark_client_1.LarkClient.fromAccount(account).sdk;
         const accountLabel = account.accountId || account.appId;
         if (accounts.length > 1) {
             lines.push(`${t.accountPrefix} ${i + 1}: ${accountLabel}`);
@@ -576,7 +579,7 @@ export async function runFeishuDoctor(config, currentAccountId, locale = 'zh_cn'
  * 运行飞书插件诊断，同时生成中英双语 Markdown 报告。
  * 用于飞书 channel 的多语言 post 发送。
  */
-export async function runFeishuDoctorI18n(config, currentAccountId) {
+async function runFeishuDoctorI18n(config, currentAccountId) {
     const [zh_cn, en_us] = await Promise.all([
         runFeishuDoctor(config, currentAccountId, 'zh_cn'),
         runFeishuDoctor(config, currentAccountId, 'en_us'),

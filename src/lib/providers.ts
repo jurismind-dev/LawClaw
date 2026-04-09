@@ -18,7 +18,7 @@ export const PROVIDER_TYPES = [
   'siliconflow',
   'minimax-portal',
   'minimax-portal-cn',
-  'qwen-portal',
+  'qwen',
   'ollama',
   'custom',
 ] as const;
@@ -90,9 +90,9 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'ark', name: 'ByteDance Ark', icon: 'A', placeholder: 'your-ark-api-key', model: 'Doubao', requiresApiKey: true, defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'ep-20260228000000-xxxxx' },
   { id: 'moonshot', name: 'Moonshot (CN)', icon: '\ud83c\udf19', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModelId: 'kimi-k2.5' },
   { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '\ud83c\udf0a', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', defaultModelId: 'Pro/moonshotai/Kimi-K2.5' },
-  { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '\u2601\ufe0f', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.5', apiKeyUrl: 'https://intl.minimaxi.com/' },
-  { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '\u2601\ufe0f', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.5', apiKeyUrl: 'https://platform.minimaxi.com/' },
-  { id: 'qwen-portal', name: 'Qwen', icon: '\u2601\ufe0f', placeholder: 'sk-...', model: 'Qwen', requiresApiKey: false, isOAuth: true, defaultModelId: 'coder-model' },
+  { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '\u2601\ufe0f', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.7', apiKeyUrl: 'https://intl.minimaxi.com/' },
+  { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '\u2601\ufe0f', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.7', apiKeyUrl: 'https://platform.minimaxi.com/' },
+  { id: 'qwen', name: 'Qwen', icon: '\u2601\ufe0f', placeholder: 'sk-...', model: 'Qwen', requiresApiKey: true, defaultBaseUrl: 'https://coding-intl.dashscope.aliyuncs.com/v1', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3.5-plus', defaultModelId: 'qwen3.5-plus', apiKeyUrl: 'https://home.qwencloud.com/api-keys' },
   { id: 'ollama', name: 'Ollama', icon: '\ud83e\udd99', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
   { id: 'custom', name: 'Custom', icon: '\u2699\ufe0f', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
 ];

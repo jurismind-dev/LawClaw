@@ -12,6 +12,8 @@ export { formatToolResult, formatToolError, createToolLogger, createClientGetter
 export type { ToolResult, ClientGetter, ToolContext } from '../helpers';
 export { ToolClient, createToolClient, NeedAuthorizationError, AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError, } from '../../core/tool-client';
 export type { ApiFn, InvokeFn, InvokeOptions, InvokeByPathOptions, AuthHint, TryInvokeResult, } from '../../core/tool-client';
+import type { SchemaOptions, TUnsafe } from '@sinclair/typebox';
+import type { ToolResult } from '../helpers';
 /**
  * 从配置直接创建飞书客户端（OAPI 工具常用模式）
  *
@@ -50,7 +52,7 @@ export declare function createFeishuClientFromConfig(config: ClawdbotConfig): La
  * return json({ error: "Invalid parameter" });
  * ```
  */
-export declare function json(data: unknown): any;
+export declare function json(data: unknown): ToolResult;
 /**
  * 解析时间字符串为 Unix 时间戳（秒）
  *
@@ -171,7 +173,6 @@ export { assertLarkOk, formatLarkError } from '../../core/api-error';
  */
 export declare function isInvokeError(err: unknown): boolean;
 export { handleInvokeErrorWithAutoAuth } from '../auto-auth';
-import type { SchemaOptions } from '@sinclair/typebox';
 /**
  * 创建 LLM 友好的字符串枚举 schema。
  *
@@ -179,4 +180,4 @@ import type { SchemaOptions } from '@sinclair/typebox';
  * 本函数生成 `{ type: 'string', enum: ['a', 'b'] }` 格式，
  * 兼容性更好。
  */
-export declare function StringEnum<T extends string>(values: T[], options?: SchemaOptions): import("@sinclair/typebox").TUnsafe<T>;
+export declare function StringEnum<T extends string>(values: T[], options?: SchemaOptions): TUnsafe<T>;

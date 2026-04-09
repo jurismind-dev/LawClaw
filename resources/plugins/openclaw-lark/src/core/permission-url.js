@@ -8,6 +8,9 @@
  * Shared functions for extracting and processing permission grant URLs
  * from Feishu API error messages.
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.extractPermissionGrantUrl = extractPermissionGrantUrl;
+exports.extractPermissionScopes = extractPermissionScopes;
 // ---------------------------------------------------------------------------
 // Permission priority
 // ---------------------------------------------------------------------------
@@ -45,7 +48,7 @@ function extractHighestPriorityScope(scopeList) {
  * @param msg - The error message containing the grant URL
  * @returns The optimized grant URL with single permission, or empty string if not found
  */
-export function extractPermissionGrantUrl(msg) {
+function extractPermissionGrantUrl(msg) {
     const urlMatch = msg.match(/https:\/\/[^\s]+\/app\/[^\s]+/);
     if (!urlMatch?.[0]) {
         return '';
@@ -67,7 +70,7 @@ export function extractPermissionGrantUrl(msg) {
  * Extract permission scopes from a Feishu error message.
  * Looks for scopes in the format [scope1,scope2,...]
  */
-export function extractPermissionScopes(msg) {
+function extractPermissionScopes(msg) {
     const scopeMatch = msg.match(/\[([^\]]+)\]/);
     return scopeMatch?.[1] ?? 'unknown';
 }

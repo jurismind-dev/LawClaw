@@ -5,18 +5,21 @@
  *
  * Entry point for the interactive (card) message converter.
  */
-import { safeParse } from '../utils';
-import { CardConverter, MODE } from './card-converter';
-import { convertLegacyCard } from './legacy';
-export const convertInteractive = (raw) => {
-    const parsed = safeParse(raw);
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertInteractive = void 0;
+const utils_1 = require("../utils.js");
+const card_converter_1 = require("./card-converter.js");
+const legacy_1 = require("./legacy.js");
+const convertInteractive = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     if (!parsed) {
         return { content: '[interactive card]', resources: [] };
     }
     if (typeof parsed.json_card === 'string') {
-        const converter = new CardConverter(MODE.Concise);
+        const converter = new card_converter_1.CardConverter(card_converter_1.MODE.Concise);
         const result = converter.convert(parsed);
         return { content: result.content || '[interactive card]', resources: [] };
     }
-    return convertLegacyCard(parsed);
+    return (0, legacy_1.convertLegacyCard)(parsed);
 };
+exports.convertInteractive = convertInteractive;

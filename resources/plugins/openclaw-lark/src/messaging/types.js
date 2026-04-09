@@ -8,4 +8,4 @@
  * Pure shape types for inbound message events, normalised message context,
  * mention targets, and media metadata.
  */
-export {};
+Object.defineProperty(exports, "__esModule", { value: true });

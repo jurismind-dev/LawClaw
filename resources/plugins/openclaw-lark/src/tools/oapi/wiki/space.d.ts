@@ -12,4 +12,4 @@
  *   - create: POST /open-apis/wiki/v2/spaces
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerFeishuWikiSpaceTool(api: OpenClawPluginApi): void;
+export declare function registerFeishuWikiSpaceTool(api: OpenClawPluginApi): boolean;

@@ -5,14 +5,19 @@
  *
  * Shared utilities for content converters.
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.escapeRegExp = escapeRegExp;
+exports.safeParse = safeParse;
+exports.formatDuration = formatDuration;
+exports.millisToDatetime = millisToDatetime;
 /** Escape a string for safe use inside a RegExp. */
-export function escapeRegExp(str) {
+function escapeRegExp(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 /**
  * Safely parse a JSON string, returning undefined on failure.
  */
-export function safeParse(raw) {
+function safeParse(raw) {
     try {
         return JSON.parse(raw);
     }
@@ -25,7 +30,7 @@ export function safeParse(raw) {
  *
  * Examples: 1500 → "1.5s", 65000 → "65s"
  */
-export function formatDuration(ms) {
+function formatDuration(ms) {
     const seconds = ms / 1000;
     if (seconds < 1)
         return `${ms}ms`;
@@ -36,7 +41,7 @@ export function formatDuration(ms) {
 /**
  * Convert a millisecond timestamp to "YYYY-MM-DD HH:mm" in UTC+8 (Beijing time).
  */
-export function millisToDatetime(ms) {
+function millisToDatetime(ms) {
     const num = Number(ms);
     if (!Number.isFinite(num))
         return String(ms);

@@ -8,9 +8,13 @@
  * Contains API-calling functions that are used during the parse phase
  * but separated from the pure parsing logic in parse.ts.
  */
-import { larkLogger } from '../../core/lark-logger';
-import { createBatchResolveNames } from './user-name-cache';
-const log = larkLogger('inbound/parse-io');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.fetchCardContent = fetchCardContent;
+exports.createFetchSubMessages = createFetchSubMessages;
+exports.createParseResolveNames = createParseResolveNames;
+const lark_logger_1 = require("../../core/lark-logger.js");
+const user_name_cache_1 = require("./user-name-cache.js");
+const log = (0, lark_logger_1.larkLogger)('inbound/parse-io');
 // ---------------------------------------------------------------------------
 // Card content fetcher
 // ---------------------------------------------------------------------------
@@ -22,7 +26,7 @@ const log = larkLogger('inbound/parse-io');
  * Note: `larkClient.sdk` 的类型定义不暴露 raw `request` 方法，
  * 因此这里使用 `as any` 断言调用。
  */
-export async function fetchCardContent(messageId, larkClient) {
+async function fetchCardContent(messageId, larkClient) {
     try {
         // SDK 类型不暴露 raw request 方法，需要 as any
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,7 +57,7 @@ export async function fetchCardContent(messageId, larkClient) {
  * Note: `larkClient.sdk` 的类型定义不暴露 raw `request` 方法，
  * 因此这里使用 `as any` 断言调用。
  */
-export function createFetchSubMessages(larkClient) {
+function createFetchSubMessages(larkClient) {
     return async (msgId) => {
         // SDK 类型不暴露 raw request 方法，需要 as any
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,6 +81,6 @@ export function createFetchSubMessages(larkClient) {
  * Wraps `createBatchResolveNames` from user-name-cache.ts, providing
  * the account and log function.
  */
-export function createParseResolveNames(account) {
-    return createBatchResolveNames(account, (...args) => log.info(args.map(String).join(' ')));
+function createParseResolveNames(account) {
+    return (0, user_name_cache_1.createBatchResolveNames)(account, (...args) => log.info(args.map(String).join(' ')));
 }

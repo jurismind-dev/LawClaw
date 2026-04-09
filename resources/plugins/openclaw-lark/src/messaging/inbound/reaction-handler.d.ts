@@ -13,7 +13,8 @@
  *   - `"own"`  — only reactions on the bot's own messages are dispatched.
  *   - `"all"`  — reactions on any message in the chat are dispatched.
  */
-import type { ClawdbotConfig, RuntimeEnv, HistoryEntry } from 'openclaw/plugin-sdk';
+import type { ClawdbotConfig, RuntimeEnv } from 'openclaw/plugin-sdk';
+import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
 import type { FeishuReactionCreatedEvent } from '../types';
 import { type FeishuMessageInfo } from '../shared/message-lookup';
 export interface ReactionContext {

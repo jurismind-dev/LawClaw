@@ -1,8 +1,18 @@
-const { existsSync, readdirSync, readFileSync, writeFileSync } = require('fs');
-const { join } = require('path');
+const {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} = require('fs');
+const { dirname, join, relative } = require('path');
 
 const DOUBAO_DEFAULT_BASE_URL = 'http://101.132.245.215:3001/v1';
 const DOUBAO_DEFAULT_MODEL = 'doubao';
+const JURISMIND_WEB_SEARCH_PLUGIN_ID = 'jurismind';
+const JURISMIND_WEB_SEARCH_PLUGIN_MARKER = 'lawclaw jurismind web search plugin v1';
 const WINDOWS_SPAWN_PATCH_MARKER = 'lawclaw windows spawn patch v1';
 
 function isPlainObject(value) {
@@ -65,6 +75,102 @@ function patchRequireCompatiblePackage(nodeModulesDir, packageName, entry = './d
 
   writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
   return true;
+}
+
+function pathExistsIncludingBrokenSymlink(targetPath) {
+  try {
+    lstatSync(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function listNodeModulesPackages(nodeModulesDir) {
+  if (!existsSync(nodeModulesDir)) {
+    return [];
+  }
+
+  const packages = [];
+  for (const entry of readdirSync(nodeModulesDir, { withFileTypes: true })) {
+    if (entry.name === '.bin' || entry.name.startsWith('.')) {
+      continue;
+    }
+
+    const entryPath = join(nodeModulesDir, entry.name);
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    if (entry.name.startsWith('@')) {
+      for (const scopedEntry of readdirSync(entryPath, { withFileTypes: true })) {
+        if (!scopedEntry.isDirectory()) {
+          continue;
+        }
+
+        packages.push({
+          name: `${entry.name}/${scopedEntry.name}`,
+          dirPath: join(entryPath, scopedEntry.name),
+        });
+      }
+      continue;
+    }
+
+    packages.push({
+      name: entry.name,
+      dirPath: entryPath,
+    });
+  }
+
+  return packages.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function ensureNodeModulesSymlink(sourceDir, targetDir) {
+  if (pathExistsIncludingBrokenSymlink(targetDir)) {
+    return false;
+  }
+
+  mkdirSync(dirname(targetDir), { recursive: true });
+  const symlinkTarget =
+    process.platform === 'win32'
+      ? sourceDir
+      : relative(dirname(targetDir), sourceDir) || '.';
+  symlinkSync(
+    symlinkTarget,
+    targetDir,
+    process.platform === 'win32' ? 'junction' : 'dir'
+  );
+  return true;
+}
+
+function patchOpenClawExtensionRuntimeDeps(openClawDir) {
+  const extensionsDir = join(openClawDir, 'dist', 'extensions');
+  if (!existsSync(extensionsDir)) {
+    return [];
+  }
+
+  const rootNodeModulesDir = join(openClawDir, 'node_modules');
+  mkdirSync(rootNodeModulesDir, { recursive: true });
+
+  const bridgedPackages = [];
+  const extensionDirs = readdirSync(extensionsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+
+  for (const extensionName of extensionDirs) {
+    const extensionNodeModulesDir = join(extensionsDir, extensionName, 'node_modules');
+    for (const pkg of listNodeModulesPackages(extensionNodeModulesDir)) {
+      const targetDir = join(rootNodeModulesDir, ...pkg.name.split('/'));
+      if (!ensureNodeModulesSymlink(pkg.dirPath, targetDir)) {
+        continue;
+      }
+
+      bridgedPackages.push(pkg.name);
+    }
+  }
+
+  return bridgedPackages;
 }
 
 function replaceRequired(content, filePath, label, before, after) {
@@ -233,6 +339,328 @@ function patchOnboardSearchChunk(filePath) {
   }
 
   return writePatchedFile(filePath, content, changed);
+}
+
+function findDistBasenameByPrefix(distDir, prefix) {
+  if (!existsSync(distDir)) {
+    return null;
+  }
+
+  return (
+    readdirSync(distDir).find((name) => name.startsWith(prefix) && name.endsWith('.js'))
+    || null
+  );
+}
+
+function buildJurismindWebSearchPluginManifest() {
+  return `${JSON.stringify(
+    {
+      id: JURISMIND_WEB_SEARCH_PLUGIN_ID,
+      providerAuthEnvVars: {
+        doubao: ['JURISMIND_API_KEY'],
+      },
+      uiHints: {
+        'webSearch.apiKey': {
+          label: 'Jurismind Search API Key',
+          help: 'Jurismind API key for Doubao web search.',
+          sensitive: true,
+          placeholder: 'token_key...',
+        },
+        'webSearch.baseUrl': {
+          label: 'Jurismind Search Base URL',
+          help: 'Optional Jurismind Responses API base URL override.',
+        },
+        'webSearch.model': {
+          label: 'Jurismind Search Model',
+          help: 'Optional Jurismind Responses API model override.',
+        },
+      },
+      contracts: {
+        webSearchProviders: ['doubao'],
+      },
+      configSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          webSearch: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              apiKey: {
+                type: ['string', 'object'],
+              },
+              baseUrl: {
+                type: 'string',
+              },
+              model: {
+                type: 'string',
+              },
+            },
+          },
+        },
+      },
+    },
+    null,
+    2
+  )}\n`;
+}
+
+function buildJurismindWebSearchPluginSource(modules) {
+  return `import { t as definePluginEntry } from "../../${modules.pluginEntry}";
+import { d as readNumberParam, h as readStringParam } from "../../${modules.common}";
+import { C as resolveSearchCacheTtlMs, T as resolveSearchTimeoutSeconds, a as mergeScopedSearchConfig, b as readCachedSearchPayload, c as setScopedCredentialValue, k as writeCachedSearchPayload, m as buildUnsupportedSearchFilterResponse, n as resolveWebSearchProviderCredential, o as resolveProviderWebSearchPluginConfig, p as buildSearchCacheKey, r as getScopedCredentialValue, s as setProviderWebSearchPluginConfigValue, w as resolveSearchCount, y as postTrustedWebToolsJson } from "../../${modules.providerWebSearch}";
+import { c as wrapWebContent } from "../../${modules.externalContent}";
+import { s as resolveXaiResponseTextAndCitations } from "../../${modules.toolConfigShared}";
+import { Type } from "@sinclair/typebox";
+//#region lawclaw/extensions/jurismind/web-search.ts
+// ${JURISMIND_WEB_SEARCH_PLUGIN_MARKER}
+const JURISMIND_PLUGIN_ID = "jurismind";
+const DOUBAO_PROVIDER_ID = "doubao";
+const DOUBAO_ENV_VARS = ["JURISMIND_API_KEY"];
+const DOUBAO_DEFAULT_BASE_URL = "${DOUBAO_DEFAULT_BASE_URL}";
+const DOUBAO_DEFAULT_MODEL = "${DOUBAO_DEFAULT_MODEL}";
+const WEB_SEARCH_DOCS_URL = "https://docs.openclaw.ai/tools/web";
+function isRecord(value) {
+\treturn typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function resolveLegacyDoubaoConfig(config) {
+\tconst search = config?.tools?.web?.search;
+\tif (!isRecord(search)) return {};
+\tconst doubao = search.doubao;
+\treturn isRecord(doubao) ? doubao : {};
+}
+function resolveDoubaoConfig(searchConfig) {
+\tconst doubao = searchConfig?.doubao;
+\treturn isRecord(doubao) ? doubao : {};
+}
+function resolveDoubaoConfiguredCredentialValue(config) {
+\treturn resolveProviderWebSearchPluginConfig(config, JURISMIND_PLUGIN_ID)?.apiKey ?? resolveLegacyDoubaoConfig(config).apiKey;
+}
+function setDoubaoConfiguredCredentialValue(configTarget, value) {
+\tsetProviderWebSearchPluginConfigValue(configTarget, JURISMIND_PLUGIN_ID, "apiKey", value);
+}
+function resolveDoubaoBaseUrl(searchConfig) {
+\tconst doubao = resolveDoubaoConfig(searchConfig);
+\tconst configured = typeof doubao.baseUrl === "string" ? doubao.baseUrl.trim().replace(/\\/+$/, "") : "";
+\treturn configured || DOUBAO_DEFAULT_BASE_URL;
+}
+function resolveDoubaoModel(searchConfig) {
+\tconst doubao = resolveDoubaoConfig(searchConfig);
+\treturn (typeof doubao.model === "string" ? doubao.model.trim() : "") || DOUBAO_DEFAULT_MODEL;
+}
+async function runDoubaoSearch(params) {
+\tconst endpoint = \`\${params.baseUrl.replace(/\\/+$/, "")}/responses\`;
+\treturn await postTrustedWebToolsJson({
+\t\turl: endpoint,
+\t\ttimeoutSeconds: params.timeoutSeconds,
+\t\tapiKey: params.apiKey,
+\t\tbody: {
+\t\t\tmodel: params.model,
+\t\t\ttools: [{ type: "web_search" }],
+\t\t\tinput: params.query
+\t\t},
+\t\terrorLabel: "Doubao"
+\t}, async (response) => {
+\t\tconst data = await response.json();
+\t\treturn resolveXaiResponseTextAndCitations(data);
+\t});
+}
+function createDoubaoSchema() {
+\treturn Type.Object({
+\t\tquery: Type.String({ description: "Search query string." }),
+\t\tcount: Type.Optional(Type.Number({
+\t\t\tdescription: "Number of results to return (1-10).",
+\t\t\tminimum: 1,
+\t\t\tmaximum: 10
+\t\t})),
+\t\tcountry: Type.Optional(Type.String({ description: "Not supported by Doubao." })),
+\t\tlanguage: Type.Optional(Type.String({ description: "Not supported by Doubao." })),
+\t\tfreshness: Type.Optional(Type.String({ description: "Not supported by Doubao." })),
+\t\tdate_after: Type.Optional(Type.String({ description: "Not supported by Doubao." })),
+\t\tdate_before: Type.Optional(Type.String({ description: "Not supported by Doubao." }))
+\t});
+}
+function createDoubaoToolDefinition(searchConfig) {
+\treturn {
+\t\tdescription: "Search the web using Doubao Responses API web_search. Returns AI-synthesized answers with citations from Doubao web-grounded search.",
+\t\tparameters: createDoubaoSchema(),
+\t\texecute: async (args) => {
+\t\t\tconst params = args;
+\t\t\tconst unsupportedResponse = buildUnsupportedSearchFilterResponse(params, "doubao");
+\t\t\tif (unsupportedResponse) return unsupportedResponse;
+\t\t\tconst apiKey = resolveWebSearchProviderCredential({
+\t\t\t\tcredentialValue: getScopedCredentialValue(searchConfig, DOUBAO_PROVIDER_ID),
+\t\t\t\tenvVars: DOUBAO_ENV_VARS
+\t\t\t});
+\t\t\tif (!apiKey) return {
+\t\t\t\terror: "missing_doubao_api_key",
+\t\t\t\tmessage: "web_search (doubao) needs a Jurismind API key. Set JURISMIND_API_KEY in the Gateway environment, or configure plugins.entries.jurismind.config.webSearch.apiKey.",
+\t\t\t\tdocs: WEB_SEARCH_DOCS_URL
+\t\t\t};
+\t\t\tconst query = readStringParam(params, "query", { required: true });
+\t\t\tconst count = readNumberParam(params, "count", { integer: true }) ?? searchConfig?.maxResults ?? void 0;
+\t\t\tconst baseUrl = resolveDoubaoBaseUrl(searchConfig);
+\t\t\tconst model = resolveDoubaoModel(searchConfig);
+\t\t\tconst cacheKey = buildSearchCacheKey([
+\t\t\t\tDOUBAO_PROVIDER_ID,
+\t\t\t\tquery,
+\t\t\t\tresolveSearchCount(count, 5),
+\t\t\t\tbaseUrl,
+\t\t\t\tmodel
+\t\t\t]);
+\t\t\tconst cached = readCachedSearchPayload(cacheKey);
+\t\t\tif (cached) return cached;
+\t\t\tconst start = Date.now();
+\t\t\tconst result = await runDoubaoSearch({
+\t\t\t\tquery,
+\t\t\t\tapiKey,
+\t\t\t\tbaseUrl,
+\t\t\t\tmodel,
+\t\t\t\ttimeoutSeconds: resolveSearchTimeoutSeconds(searchConfig)
+\t\t\t});
+\t\t\tconst payload = {
+\t\t\t\tquery,
+\t\t\t\tprovider: DOUBAO_PROVIDER_ID,
+\t\t\t\tmodel,
+\t\t\t\ttookMs: Date.now() - start,
+\t\t\t\texternalContent: {
+\t\t\t\t\tuntrusted: true,
+\t\t\t\t\tsource: "web_search",
+\t\t\t\t\tprovider: DOUBAO_PROVIDER_ID,
+\t\t\t\t\twrapped: true
+\t\t\t\t},
+\t\t\t\tcontent: wrapWebContent(result.content, "web_search"),
+\t\t\t\tcitations: result.citations
+\t\t\t};
+\t\t\twriteCachedSearchPayload(cacheKey, payload, resolveSearchCacheTtlMs(searchConfig));
+\t\t\treturn payload;
+\t\t}
+\t};
+}
+function createJurismindWebSearchProvider() {
+\treturn {
+\t\tid: DOUBAO_PROVIDER_ID,
+\t\tlabel: "Doubao Search",
+\t\thint: "Jurismind Responses API web_search",
+\t\tonboardingScopes: ["text-inference"],
+\t\tcredentialLabel: "Jurismind API key",
+\t\tenvVars: DOUBAO_ENV_VARS,
+\t\tplaceholder: "token_key...",
+\t\tsignupUrl: "https://lawclaw-app.jurismind.com",
+\t\tdocsUrl: WEB_SEARCH_DOCS_URL,
+\t\tautoDetectOrder: 45,
+\t\tcredentialPath: "plugins.entries.jurismind.config.webSearch.apiKey",
+\t\tinactiveSecretPaths: [
+\t\t\t"plugins.entries.jurismind.config.webSearch.apiKey",
+\t\t\t"tools.web.search.doubao.apiKey"
+\t\t],
+\t\tgetCredentialValue: (searchConfig) => getScopedCredentialValue(searchConfig, DOUBAO_PROVIDER_ID),
+\t\tsetCredentialValue: (searchConfigTarget, value) => setScopedCredentialValue(searchConfigTarget, DOUBAO_PROVIDER_ID, value),
+\t\tgetConfiguredCredentialValue: resolveDoubaoConfiguredCredentialValue,
+\t\tsetConfiguredCredentialValue: setDoubaoConfiguredCredentialValue,
+\t\tcreateTool: (ctx) => createDoubaoToolDefinition(
+\t\t\tmergeScopedSearchConfig(
+\t\t\t\tctx.searchConfig,
+\t\t\t\tDOUBAO_PROVIDER_ID,
+\t\t\t\tresolveProviderWebSearchPluginConfig(ctx.config, JURISMIND_PLUGIN_ID)
+\t\t\t)
+\t\t)
+\t};
+}
+var jurismind_default = definePluginEntry({
+\tid: JURISMIND_PLUGIN_ID,
+\tname: "Jurismind Web Search Plugin",
+\tdescription: "Bundled Jurismind Doubao web_search plugin",
+\tregister(api) {
+\t\tapi.registerWebSearchProvider(createJurismindWebSearchProvider());
+\t}
+});
+//#endregion
+export { jurismind_default as default };
+`;
+}
+
+function patchModernJurismindWebSearchRuntime(openClawDir) {
+  const distDir = join(openClawDir, 'dist');
+  if (!existsSync(distDir)) {
+    return null;
+  }
+
+  const modules = {
+    pluginEntry: findDistBasenameByPrefix(distDir, 'plugin-entry-'),
+    common: findDistBasenameByPrefix(distDir, 'common-'),
+    providerWebSearch: findDistBasenameByPrefix(distDir, 'provider-web-search-'),
+    externalContent: findDistBasenameByPrefix(distDir, 'external-content-'),
+    toolConfigShared: findDistBasenameByPrefix(distDir, 'tool-config-shared-'),
+  };
+
+  if (Object.values(modules).some((value) => !value)) {
+    return null;
+  }
+
+  const extensionDir = join(distDir, 'extensions', JURISMIND_WEB_SEARCH_PLUGIN_ID);
+  mkdirSync(extensionDir, { recursive: true });
+
+  const indexPath = join(extensionDir, 'index.js');
+  const manifestPath = join(extensionDir, 'openclaw.plugin.json');
+
+  const nextIndexSource = buildJurismindWebSearchPluginSource(modules);
+  const nextManifestSource = buildJurismindWebSearchPluginManifest();
+
+  const patchedFiles = [];
+
+  const currentIndexSource = existsSync(indexPath) ? readFileSync(indexPath, 'utf8') : null;
+  if (currentIndexSource !== nextIndexSource) {
+    writeFileSync(indexPath, nextIndexSource, 'utf8');
+    patchedFiles.push(`extensions/${JURISMIND_WEB_SEARCH_PLUGIN_ID}/index.js`);
+  }
+
+  const currentManifestSource = existsSync(manifestPath) ? readFileSync(manifestPath, 'utf8') : null;
+  if (currentManifestSource !== nextManifestSource) {
+    writeFileSync(manifestPath, nextManifestSource, 'utf8');
+    patchedFiles.push(`extensions/${JURISMIND_WEB_SEARCH_PLUGIN_ID}/openclaw.plugin.json`);
+  }
+
+  return patchedFiles;
+}
+
+function patchOpenClawWebSearchRuntimeLegacy(openClawDir) {
+  const distDir = join(openClawDir, 'dist');
+  if (!existsSync(distDir)) {
+    return [];
+  }
+
+  const patchedFiles = [];
+  const runtimeRootChunkPatterns = [
+    /^auth-profiles-.*\.js$/,
+    /^model-selection-.*\.js$/,
+    /^reply-.*\.js$/,
+  ];
+  const onboardingPatterns = [
+    /^onboard-search-.*\.js$/,
+  ];
+
+  walkFiles(distDir, (filePath) => {
+    const relativeName = filePath.slice(distDir.length + 1).replace(/\\/g, '/');
+    const basename = relativeName.split('/').pop() || '';
+    const isRuntimeChunk =
+      (!relativeName.includes('/') && runtimeRootChunkPatterns.some((pattern) => pattern.test(basename)))
+      || (relativeName.startsWith('plugin-sdk/') && /^thread-bindings-.*\.js$/.test(basename));
+    const isOnboardingChunk = onboardingPatterns.some((pattern) => pattern.test(basename));
+
+    let patched = false;
+    if (isRuntimeChunk) {
+      patched = patchRuntimeWebSearchChunk(filePath);
+    } else if (isOnboardingChunk) {
+      patched = patchOnboardSearchChunk(filePath);
+    }
+
+    if (patched) {
+      patchedFiles.push(relativeName);
+    }
+  });
+
+  return patchedFiles;
 }
 
 function buildPatchedWindowsSpawnSource() {
@@ -495,7 +923,7 @@ function patchOpenClawWindowsSpawnRuntime(openClawDir) {
   const patchedFiles = [];
   walkFiles(pluginSdkDir, (filePath) => {
     const basename = filePath.slice(pluginSdkDir.length + 1).replace(/\\/g, '/');
-    if (!/^windows-spawn-.*\.js$/.test(basename)) {
+    if (!/^windows-spawn(?:-.*)?\.js$/.test(basename)) {
       return;
     }
 
@@ -526,42 +954,12 @@ function walkFiles(dir, visitor) {
 }
 
 function patchOpenClawWebSearchRuntime(openClawDir) {
-  const distDir = join(openClawDir, 'dist');
-  if (!existsSync(distDir)) {
-    return [];
+  const patchedModernRuntime = patchModernJurismindWebSearchRuntime(openClawDir);
+  if (patchedModernRuntime) {
+    return patchedModernRuntime;
   }
 
-  const patchedFiles = [];
-  const runtimeRootChunkPatterns = [
-    /^auth-profiles-.*\.js$/,
-    /^model-selection-.*\.js$/,
-    /^reply-.*\.js$/,
-  ];
-  const onboardingPatterns = [
-    /^onboard-search-.*\.js$/,
-  ];
-
-  walkFiles(distDir, (filePath) => {
-    const relativeName = filePath.slice(distDir.length + 1).replace(/\\/g, '/');
-    const basename = relativeName.split('/').pop() || '';
-    const isRuntimeChunk =
-      (!relativeName.includes('/') && runtimeRootChunkPatterns.some((pattern) => pattern.test(basename)))
-      || (relativeName.startsWith('plugin-sdk/') && /^thread-bindings-.*\.js$/.test(basename));
-    const isOnboardingChunk = onboardingPatterns.some((pattern) => pattern.test(basename));
-
-    let patched = false;
-    if (isRuntimeChunk) {
-      patched = patchRuntimeWebSearchChunk(filePath);
-    } else if (isOnboardingChunk) {
-      patched = patchOnboardSearchChunk(filePath);
-    }
-
-    if (patched) {
-      patchedFiles.push(relativeName);
-    }
-  });
-
-  return patchedFiles;
+  return patchOpenClawWebSearchRuntimeLegacy(openClawDir);
 }
 
 function patchOpenClawBundleCompat(nodeModulesDir) {
@@ -579,6 +977,7 @@ function patchOpenClawBundleCompat(nodeModulesDir) {
 
 module.exports = {
   patchRequireCompatiblePackage,
+  patchOpenClawExtensionRuntimeDeps,
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
   patchOpenClawBundleCompat,

@@ -13,64 +13,66 @@
  *   - update: PUT  /open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields/:field_id
  *   - delete: DELETE /open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields/:field_id
  */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool } from '../helpers';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerFeishuBitableAppTableFieldTool = registerFeishuBitableAppTableFieldTool;
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const FeishuBitableAppTableFieldSchema = Type.Union([
+const FeishuBitableAppTableFieldSchema = typebox_1.Type.Union([
     // CREATE (P1)
-    Type.Object({
-        action: Type.Literal('create'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        field_name: Type.String({ description: '字段名称' }),
-        type: Type.Number({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('create'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        field_name: typebox_1.Type.String({ description: '字段名称' }),
+        type: typebox_1.Type.Number({
             description: '字段类型（1=文本，2=数字，3=单选，4=多选，5=日期，7=复选框，11=人员，13=电话，15=超链接，17=附件，1001=创建时间，1002=修改时间等）',
         }),
-        property: Type.Optional(Type.Any({
+        property: typebox_1.Type.Optional(typebox_1.Type.Any({
             description: '字段属性配置（根据类型而定，例如单选/多选需要options，数字需要formatter等）。' +
                 '⚠️ 重要：超链接字段（type=15）必须完全省略此参数，传空对象 {} 也会报错（URLFieldPropertyError）。',
         })),
     }),
     // LIST (P1)
-    Type.Object({
-        action: Type.Literal('list'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        view_id: Type.Optional(Type.String({ description: '视图 ID（可选）' })),
-        page_size: Type.Optional(Type.Number({ description: '每页数量，默认 50，最大 100' })),
-        page_token: Type.Optional(Type.String({ description: '分页标记' })),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('list'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        view_id: typebox_1.Type.Optional(typebox_1.Type.String({ description: '视图 ID（可选）' })),
+        page_size: typebox_1.Type.Optional(typebox_1.Type.Number({ description: '每页数量，默认 50，最大 100' })),
+        page_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '分页标记' })),
     }),
     // UPDATE (P1)
-    Type.Object({
-        action: Type.Literal('update'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        field_id: Type.String({ description: '字段 ID' }),
-        field_name: Type.Optional(Type.String({ description: '字段名（可选，不传则不修改）' })),
-        type: Type.Optional(Type.Number({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('update'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        field_id: typebox_1.Type.String({ description: '字段 ID' }),
+        field_name: typebox_1.Type.Optional(typebox_1.Type.String({ description: '字段名（可选，不传则不修改）' })),
+        type: typebox_1.Type.Optional(typebox_1.Type.Number({
             description: '字段类型（可选，不传则自动查询）：1=文本, 2=数字, 3=单选, 4=多选, 5=日期, 7=复选框, 11=人员, 13=电话, 15=超链接, 17=附件等',
         })),
-        property: Type.Optional(Type.Any({ description: '字段属性配置（可选，不传则自动查询）' })),
+        property: typebox_1.Type.Optional(typebox_1.Type.Any({ description: '字段属性配置（可选，不传则自动查询）' })),
     }),
     // DELETE (P1)
-    Type.Object({
-        action: Type.Literal('delete'),
-        app_token: Type.String({ description: '多维表格 token' }),
-        table_id: Type.String({ description: '数据表 ID' }),
-        field_id: Type.String({ description: '字段 ID' }),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('delete'),
+        app_token: typebox_1.Type.String({ description: '多维表格 token' }),
+        table_id: typebox_1.Type.String({ description: '数据表 ID' }),
+        field_id: typebox_1.Type.String({ description: '字段 ID' }),
     }),
 ]);
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerFeishuBitableAppTableFieldTool(api) {
+function registerFeishuBitableAppTableFieldTool(api) {
     if (!api.config)
         return;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_bitable_app_table_field');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_bitable_app_table_field');
+    (0, helpers_1.registerTool)(api, {
         name: 'feishu_bitable_app_table_field',
         label: 'Feishu Bitable Fields',
         description: '【以用户身份】飞书多维表格字段（列）管理工具。当用户要求创建/查询/更新/删除字段、调整表结构时使用。Actions: create（创建字段）, list（列出所有字段）, update（更新字段，支持只传 field_name 改名）, delete（删除字段）。',
@@ -105,10 +107,10 @@ export function registerFeishuBitableAppTableFieldTool(api) {
                                 property: propertyToSend,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         const data = res.data;
                         log.info(`create: created field ${data?.field?.field_id ?? 'unknown'}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             field: data?.field ?? res.data,
                         });
                     }
@@ -128,10 +130,10 @@ export function registerFeishuBitableAppTableFieldTool(api) {
                                 page_token: p.page_token,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         const data = res.data;
                         log.info(`list: returned ${data?.items?.length ?? 0} fields`);
-                        return json({
+                        return (0, helpers_1.json)({
                             fields: data?.items,
                             has_more: data?.has_more ?? false,
                             page_token: data?.page_token,
@@ -157,11 +159,11 @@ export function registerFeishuBitableAppTableFieldTool(api) {
                                     page_size: 500,
                                 },
                             }, opts), { as: 'user' });
-                            assertLarkOk(listRes);
+                            (0, helpers_1.assertLarkOk)(listRes);
                             const listData = listRes.data;
                             const currentField = listData?.items?.find((f) => f.field_id === p.field_id);
                             if (!currentField) {
-                                return json({
+                                return (0, helpers_1.json)({
                                     error: `field ${p.field_id} does not exist`,
                                     hint: 'Please verify field_id is correct. Use list action to view all fields.',
                                 });
@@ -188,10 +190,10 @@ export function registerFeishuBitableAppTableFieldTool(api) {
                             },
                             data: updateData,
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`update: updated field ${p.field_id}`);
                         const updateData2 = res.data;
-                        return json({
+                        return (0, helpers_1.json)({
                             field: updateData2?.field ?? res.data,
                         });
                     }
@@ -207,16 +209,16 @@ export function registerFeishuBitableAppTableFieldTool(api) {
                                 field_id: p.field_id,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`delete: deleted field ${p.field_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             success: true,
                         });
                     }
                 }
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_bitable_app_table_field' });

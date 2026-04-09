@@ -28,26 +28,66 @@
  * );
  * ```
  */
-import * as Lark from '@larksuiteoapi/node-sdk';
-import { getLarkAccount, getEnabledLarkAccounts } from './accounts';
-import { LarkClient } from './lark-client';
-import { getTicket } from './lark-ticket';
-import { callWithUAT } from './uat-client';
-import { getStoredToken } from './token-store';
-import { getAppGrantedScopes, invalidateAppScopeCache, missingScopes } from './app-scope-checker';
-import { getAppOwnerFallback } from './app-owner-fallback';
-import { larkLogger } from './lark-logger';
-import { getRequiredScopes } from './scope-manager';
-import { rawLarkRequest } from './raw-request';
-import { assertOwnerAccessStrict } from './owner-policy';
-import { LARK_ERROR, NeedAuthorizationError, AppScopeCheckFailedError, AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError, } from './auth-errors';
-// Re-export for backward compatibility — 下游模块可继续从 tool-client 导入
-export { LARK_ERROR, NeedAuthorizationError, AppScopeCheckFailedError, AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError, };
-const tcLog = larkLogger('core/tool-client');
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ToolClient = exports.UserScopeInsufficientError = exports.UserAuthRequiredError = exports.AppScopeMissingError = exports.AppScopeCheckFailedError = exports.NeedAuthorizationError = exports.LARK_ERROR = void 0;
+exports.createToolClient = createToolClient;
+const Lark = __importStar(require("@larksuiteoapi/node-sdk"));
+const accounts_1 = require("./accounts.js");
+const lark_client_1 = require("./lark-client.js");
+const lark_ticket_1 = require("./lark-ticket.js");
+const uat_client_1 = require("./uat-client.js");
+const token_store_1 = require("./token-store.js");
+const app_scope_checker_1 = require("./app-scope-checker.js");
+const app_owner_fallback_1 = require("./app-owner-fallback.js");
+const lark_logger_1 = require("./lark-logger.js");
+const scope_manager_1 = require("./scope-manager.js");
+const raw_request_1 = require("./raw-request.js");
+const owner_policy_1 = require("./owner-policy.js");
+const auth_errors_1 = require("./auth-errors.js");
+Object.defineProperty(exports, "AppScopeCheckFailedError", { enumerable: true, get: function () { return auth_errors_1.AppScopeCheckFailedError; } });
+Object.defineProperty(exports, "AppScopeMissingError", { enumerable: true, get: function () { return auth_errors_1.AppScopeMissingError; } });
+Object.defineProperty(exports, "LARK_ERROR", { enumerable: true, get: function () { return auth_errors_1.LARK_ERROR; } });
+Object.defineProperty(exports, "NeedAuthorizationError", { enumerable: true, get: function () { return auth_errors_1.NeedAuthorizationError; } });
+Object.defineProperty(exports, "UserAuthRequiredError", { enumerable: true, get: function () { return auth_errors_1.UserAuthRequiredError; } });
+Object.defineProperty(exports, "UserScopeInsufficientError", { enumerable: true, get: function () { return auth_errors_1.UserScopeInsufficientError; } });
+const tcLog = (0, lark_logger_1.larkLogger)('core/tool-client');
 // ---------------------------------------------------------------------------
 // ToolClient
 // ---------------------------------------------------------------------------
-export class ToolClient {
+class ToolClient {
     config;
     /** 当前解析的账号信息（appId、appSecret 保证存在）。 */
     account;
@@ -118,7 +158,7 @@ export class ToolClient {
                 '```');
         }
         // 2. 从 scope.ts 查询 API 需要的 scopes（Required Scopes）
-        const requiredScopes = getRequiredScopes(toolAction);
+        const requiredScopes = (0, scope_manager_1.getRequiredScopes)(toolAction);
         // 3. 决定 token 类型（默认 user，用户可通过 options.as 覆盖）
         const tokenType = options?.as ?? 'user';
         // ---- App Granted Scopes 检查（应用已开通的权限）----
@@ -127,12 +167,12 @@ export class ToolClient {
         const appCheckScopes = tokenType === 'user' ? [...new Set([...requiredScopes, 'offline_access'])] : requiredScopes;
         let appScopeVerified = true;
         if (appCheckScopes.length > 0) {
-            const appGrantedScopes = await getAppGrantedScopes(this.sdk, this.account.appId, tokenType);
+            const appGrantedScopes = await (0, app_scope_checker_1.getAppGrantedScopes)(this.sdk, this.account.appId, tokenType);
             if (appGrantedScopes.length > 0) {
                 // 严格模式：应用必须开通所有 Required Scopes（+ offline_access）
-                const missingAppScopes = missingScopes(appGrantedScopes, appCheckScopes);
+                const missingAppScopes = (0, app_scope_checker_1.missingScopes)(appGrantedScopes, appCheckScopes);
                 if (missingAppScopes.length > 0) {
-                    throw new AppScopeMissingError({ apiName: toolAction, scopes: missingAppScopes, appId: this.account.appId }, 'all', tokenType, requiredScopes);
+                    throw new auth_errors_1.AppScopeMissingError({ apiName: toolAction, scopes: missingAppScopes, appId: this.account.appId }, 'all', tokenType, requiredScopes);
                 }
             }
             else {
@@ -149,7 +189,7 @@ export class ToolClient {
         let userOpenId = options?.userOpenId ?? this.senderOpenId;
         // 5.2 兜底逻辑：如果没有 senderOpenId，尝试使用应用所有者
         if (!userOpenId) {
-            const fallbackUserId = await getAppOwnerFallback(this.account, this.sdk);
+            const fallbackUserId = await (0, app_owner_fallback_1.getAppOwnerFallback)(this.account, this.sdk);
             if (fallbackUserId) {
                 userOpenId = fallbackUserId;
                 tcLog.info(`Using app owner as fallback user`, {
@@ -223,7 +263,7 @@ export class ToolClient {
     // -------------------------------------------------------------------------
     async invokeAsUser(toolAction, fn, requiredScopes, userOpenId, appScopeVerified) {
         if (!userOpenId) {
-            throw new UserAuthRequiredError('unknown', {
+            throw new auth_errors_1.UserAuthRequiredError('unknown', {
                 apiName: toolAction,
                 scopes: requiredScopes,
                 appScopeVerified,
@@ -231,11 +271,11 @@ export class ToolClient {
             });
         }
         // Owner 检查：非 owner 用户直接拒绝（从 uat-client.ts 迁移至此）
-        await assertOwnerAccessStrict(this.account, this.sdk, userOpenId);
+        await (0, owner_policy_1.assertOwnerAccessStrict)(this.account, this.sdk, userOpenId);
         // 预检：是否有已存储的 token
-        const stored = await getStoredToken(this.account.appId, userOpenId);
+        const stored = await (0, token_store_1.getStoredToken)(this.account.appId, userOpenId);
         if (!stored) {
-            throw new UserAuthRequiredError(userOpenId, {
+            throw new auth_errors_1.UserAuthRequiredError(userOpenId, {
                 apiName: toolAction,
                 scopes: requiredScopes,
                 appScopeVerified,
@@ -254,7 +294,7 @@ export class ToolClient {
             const userGrantedScopes = new Set(stored.scope.split(/\s+/).filter(Boolean));
             const missingUserScopes = requiredScopes.filter((s) => !userGrantedScopes.has(s));
             if (missingUserScopes.length > 0) {
-                throw new UserAuthRequiredError(userOpenId, {
+                throw new auth_errors_1.UserAuthRequiredError(userOpenId, {
                     apiName: toolAction,
                     scopes: missingUserScopes,
                     appScopeVerified,
@@ -264,7 +304,7 @@ export class ToolClient {
         }
         // 通过 callWithUAT 执行（自动 refresh + retry）
         try {
-            return await callWithUAT({
+            return await (0, uat_client_1.callWithUAT)({
                 userOpenId,
                 appId: this.account.appId,
                 appSecret: this.account.appSecret,
@@ -272,8 +312,8 @@ export class ToolClient {
             }, (accessToken) => fn(this.sdk, Lark.withUserAccessToken(accessToken), accessToken));
         }
         catch (err) {
-            if (err instanceof NeedAuthorizationError) {
-                throw new UserAuthRequiredError(userOpenId, {
+            if (err instanceof auth_errors_1.NeedAuthorizationError) {
+                throw new auth_errors_1.UserAuthRequiredError(userOpenId, {
                     apiName: toolAction,
                     scopes: requiredScopes,
                     appScopeVerified,
@@ -290,7 +330,7 @@ export class ToolClient {
      * 发起 raw HTTP 请求到飞书 API，委托 rawLarkRequest 处理。
      */
     async rawRequest(path, options) {
-        return rawLarkRequest({
+        return (0, raw_request_1.rawLarkRequest)({
             brand: this.account.brand,
             path,
             ...options,
@@ -309,23 +349,24 @@ export class ToolClient {
         const code = 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         err?.code ?? err?.response?.data?.code;
-        if (code === LARK_ERROR.APP_SCOPE_MISSING) {
+        if (code === auth_errors_1.LARK_ERROR.APP_SCOPE_MISSING) {
             // 应用 scope 不足 — 清缓存（管理员可能刚开通）
-            invalidateAppScopeCache(this.account.appId);
-            throw new AppScopeMissingError({
+            (0, app_scope_checker_1.invalidateAppScopeCache)(this.account.appId);
+            throw new auth_errors_1.AppScopeMissingError({
                 apiName,
                 scopes: effectiveScopes,
                 appId: this.account.appId,
             }, 'all', tokenType);
         }
-        if (code === LARK_ERROR.USER_SCOPE_INSUFFICIENT && userOpenId) {
-            throw new UserScopeInsufficientError(userOpenId, {
+        if (code === auth_errors_1.LARK_ERROR.USER_SCOPE_INSUFFICIENT && userOpenId) {
+            throw new auth_errors_1.UserScopeInsufficientError(userOpenId, {
                 apiName,
                 scopes: effectiveScopes,
             });
         }
     }
 }
+exports.ToolClient = ToolClient;
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -339,12 +380,16 @@ export class ToolClient {
  * @param config - OpenClaw 配置对象
  * @param accountIndex - 回退账号索引（默认 0）
  */
-export function createToolClient(config, accountIndex = 0) {
-    const ticket = getTicket();
+function createToolClient(config, accountIndex = 0) {
+    const ticket = (0, lark_ticket_1.getTicket)();
     // 1. 解析账号
+    //
+    // `config` is the closure-captured snapshot from plugin registration and may be
+    // stale after a hot-reload.  Use getResolvedConfig() to always get the live config.
+    const resolveConfig = (0, lark_client_1.getResolvedConfig)(config);
     let account;
     if (ticket?.accountId) {
-        const resolved = getLarkAccount(config, ticket.accountId);
+        const resolved = (0, accounts_1.getLarkAccount)(resolveConfig, ticket.accountId);
         if (!resolved.configured) {
             throw new Error(`Feishu account "${ticket.accountId}" is not configured (missing appId or appSecret). ` +
                 `Please check channels.feishu.accounts.${ticket.accountId} in your config.`);
@@ -356,7 +401,7 @@ export function createToolClient(config, accountIndex = 0) {
         account = resolved;
     }
     if (!account) {
-        const accounts = getEnabledLarkAccounts(config);
+        const accounts = (0, accounts_1.getEnabledLarkAccounts)(resolveConfig);
         if (accounts.length === 0) {
             throw new Error('No enabled Feishu accounts configured. ' + 'Please add appId and appSecret in config under channels.feishu');
         }
@@ -370,7 +415,7 @@ export function createToolClient(config, accountIndex = 0) {
         account = fallback;
     }
     // 2. 获取 SDK 实例（复用 LarkClient 的缓存）
-    const larkClient = LarkClient.fromAccount(account);
+    const larkClient = lark_client_1.LarkClient.fromAccount(account);
     // 3. 组装 ToolClient
     return new ToolClient({
         account,

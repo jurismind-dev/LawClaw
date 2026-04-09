@@ -8,7 +8,10 @@
  * 从 uat-client.ts 迁移 owner 检查逻辑到独立 policy 层。
  * 提供 fail-close 策略（安全优先：授权发起路径）。
  */
-import { getAppOwnerFallback } from './app-owner-fallback';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.OwnerAccessDeniedError = void 0;
+exports.assertOwnerAccessStrict = assertOwnerAccessStrict;
+const app_owner_fallback_1 = require("./app-owner-fallback.js");
 // ---------------------------------------------------------------------------
 // Error class
 // ---------------------------------------------------------------------------
@@ -18,7 +21,7 @@ import { getAppOwnerFallback } from './app-owner-fallback';
  * 注意：`appOwnerId` 仅用于内部日志，不应序列化到用户可见的响应中，
  * 以避免泄露 owner 的 open_id。
  */
-export class OwnerAccessDeniedError extends Error {
+class OwnerAccessDeniedError extends Error {
     userOpenId;
     appOwnerId;
     constructor(userOpenId, appOwnerId) {
@@ -28,6 +31,7 @@ export class OwnerAccessDeniedError extends Error {
         this.appOwnerId = appOwnerId;
     }
 }
+exports.OwnerAccessDeniedError = OwnerAccessDeniedError;
 // ---------------------------------------------------------------------------
 // Policy functions
 // ---------------------------------------------------------------------------
@@ -40,10 +44,8 @@ export class OwnerAccessDeniedError extends Error {
  * 适用于：`executeAuthorize`（OAuth 授权发起）、`commands/auth.ts`（批量授权）等
  * 赋予实质性权限的入口。
  */
-export async function assertOwnerAccessStrict(account, 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-sdk, userOpenId) {
-    const ownerOpenId = await getAppOwnerFallback(account, sdk);
+async function assertOwnerAccessStrict(account, sdk, userOpenId) {
+    const ownerOpenId = await (0, app_owner_fallback_1.getAppOwnerFallback)(account, sdk);
     if (!ownerOpenId) {
         throw new OwnerAccessDeniedError(userOpenId, 'unknown');
     }

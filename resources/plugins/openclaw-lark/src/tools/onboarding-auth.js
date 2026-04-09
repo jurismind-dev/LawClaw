@@ -11,14 +11,16 @@
  * 飞书限制：单次 OAuth 最多 50 个 scope。
  * 超过 50 个时自动分批处理，每批授权完成后自动发起下一批（链式触发）。
  */
-import { getLarkAccount } from '../core/accounts';
-import { LarkClient } from '../core/lark-client';
-import { getAppGrantedScopes } from '../core/app-scope-checker';
-import { getAppOwnerFallback } from '../core/app-owner-fallback';
-import { executeAuthorize } from './oauth';
-import { larkLogger } from '../core/lark-logger';
-import { filterSensitiveScopes } from '../core/tool-scopes';
-const log = larkLogger('tools/onboarding-auth');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.triggerOnboarding = triggerOnboarding;
+const accounts_1 = require("../core/accounts.js");
+const lark_client_1 = require("../core/lark-client.js");
+const app_scope_checker_1 = require("../core/app-scope-checker.js");
+const app_owner_fallback_1 = require("../core/app-owner-fallback.js");
+const lark_logger_1 = require("../core/lark-logger.js");
+const tool_scopes_1 = require("../core/tool-scopes.js");
+const oauth_1 = require("./oauth.js");
+const log = (0, lark_logger_1.larkLogger)('tools/onboarding-auth');
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -35,17 +37,17 @@ const MAX_SCOPES_PER_BATCH = 100;
  *   3. 分批处理（每批最多 50 个），第一批直接发起 OAuth Device Flow
  *   4. 每批授权完成后通过 onAuthComplete 回调自动发起下一批
  */
-export async function triggerOnboarding(params) {
+async function triggerOnboarding(params) {
     const { cfg, userOpenId, accountId } = params;
-    const acct = getLarkAccount(cfg, accountId);
+    const acct = (0, accounts_1.getLarkAccount)(cfg, accountId);
     if (!acct.configured) {
         log.warn(`account ${accountId} not configured, skipping`);
         return;
     }
-    const sdk = LarkClient.fromAccount(acct).sdk;
+    const sdk = lark_client_1.LarkClient.fromAccount(acct).sdk;
     const { appId } = acct;
     // 1. 检查 userOpenId === 应用 owner（统一走 getAppOwnerFallback）
-    const ownerOpenId = await getAppOwnerFallback(acct, sdk);
+    const ownerOpenId = await (0, app_owner_fallback_1.getAppOwnerFallback)(acct, sdk);
     if (!ownerOpenId) {
         log.info(`app ${appId} has no owner info, skipping`);
         return;
@@ -58,14 +60,14 @@ export async function triggerOnboarding(params) {
     // 3. 动态获取应用已开通的 user scope 列表
     let allUserScopes;
     try {
-        allUserScopes = await getAppGrantedScopes(sdk, appId, 'user');
+        allUserScopes = await (0, app_scope_checker_1.getAppGrantedScopes)(sdk, appId, 'user');
     }
     catch (err) {
         log.warn(`failed to get app granted scopes: ${err}`);
         return;
     }
     // 过滤掉敏感 scope
-    allUserScopes = filterSensitiveScopes(allUserScopes);
+    allUserScopes = (0, tool_scopes_1.filterSensitiveScopes)(allUserScopes);
     if (allUserScopes.length === 0) {
         log.info('no user scopes configured, skipping');
         return;
@@ -106,7 +108,7 @@ export async function triggerOnboarding(params) {
         };
         log.info(`starting batch ${batchIndex + 1}/${batches.length}, scopes=${batch.length}`);
         try {
-            await executeAuthorize({
+            await (0, oauth_1.executeAuthorize)({
                 account: acct,
                 senderOpenId: userOpenId,
                 scope,

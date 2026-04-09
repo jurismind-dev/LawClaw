@@ -9,4 +9,4 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 /**
  * 注册 create-doc 工具
  */
-export declare function registerCreateDocTool(api: OpenClawPluginApi): void;
+export declare function registerCreateDocTool(api: OpenClawPluginApi): boolean;

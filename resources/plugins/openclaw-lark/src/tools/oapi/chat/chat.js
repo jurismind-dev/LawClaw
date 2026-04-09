@@ -13,36 +13,38 @@
  *   - search: GET /open-apis/im/v1/chats/search
  *   - get:    GET /open-apis/im/v1/chats/:chat_id
  */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerChatSearchTool = registerChatSearchTool;
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const FeishuChatSchema = Type.Union([
+const FeishuChatSchema = typebox_1.Type.Union([
     // SEARCH
-    Type.Object({
-        action: Type.Literal('search'),
-        query: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('search'),
+        query: typebox_1.Type.String({
             description: '搜索关键词（必填）。支持匹配群名称、群成员名称。' + '支持多语种、拼音、前缀等模糊搜索。',
         }),
-        page_size: Type.Optional(Type.Integer({
+        page_size: typebox_1.Type.Optional(typebox_1.Type.Integer({
             description: '分页大小（默认20）',
             minimum: 1,
         })),
-        page_token: Type.Optional(Type.String({
+        page_token: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '分页标记。首次请求无需填写',
         })),
-        user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'], {
+        user_id_type: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['open_id', 'union_id', 'user_id'], {
             description: '用户 ID 类型（默认 open_id）',
         })),
     }),
     // GET
-    Type.Object({
-        action: Type.Literal('get'),
-        chat_id: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('get'),
+        chat_id: typebox_1.Type.String({
             description: '群 ID（格式如 oc_xxx）',
         }),
-        user_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'], {
+        user_id_type: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['open_id', 'union_id', 'user_id'], {
             description: '用户 ID 类型（默认 open_id）',
         })),
     }),
@@ -50,12 +52,12 @@ const FeishuChatSchema = Type.Union([
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerChatSearchTool(api) {
+function registerChatSearchTool(api) {
     if (!api.config)
-        return;
+        return false;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_chat');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_chat');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_chat',
         label: 'Feishu: Chat Management',
         description: '以用户身份调用飞书群聊管理工具。Actions: search（搜索群列表，支持关键词匹配群名称、群成员）, get（获取指定群的详细信息，包括群名称、描述、头像、群主、权限配置等）。',
@@ -78,11 +80,11 @@ export function registerChatSearchTool(api) {
                                 page_token: p.page_token,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         const data = res.data;
                         const chatCount = data?.items?.length ?? 0;
                         log.info(`search: found ${chatCount} chats`);
-                        return json({
+                        return (0, helpers_1.json)({
                             items: data?.items,
                             has_more: data?.has_more ?? false,
                             page_token: data?.page_token,
@@ -109,16 +111,16 @@ export function registerChatSearchTool(api) {
                             },
                             // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         }), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`get: retrieved chat info for ${p.chat_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             chat: res.data,
                         });
                     }
                 }
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_chat' });

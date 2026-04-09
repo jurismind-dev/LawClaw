@@ -4,7 +4,7 @@
  *
  * Register all chat commands (/feishu_diagnose, /feishu_doctor, /feishu_auth, /feishu).
  */
-import type { OpenClawPluginApi, OpenClawConfig } from 'openclaw/plugin-sdk';
+import type { OpenClawConfig, OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import type { FeishuLocale } from './locale';
 /**
  * 运行 /feishu start 校验，返回 Markdown 格式结果。

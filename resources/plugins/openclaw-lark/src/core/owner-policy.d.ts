@@ -7,6 +7,7 @@
  * 从 uat-client.ts 迁移 owner 检查逻辑到独立 policy 层。
  * 提供 fail-close 策略（安全优先：授权发起路径）。
  */
+import type * as Lark from '@larksuiteoapi/node-sdk';
 import type { ConfiguredLarkAccount } from './types';
 /**
  * 非应用 owner 尝试执行 owner-only 操作时抛出。
@@ -28,4 +29,4 @@ export declare class OwnerAccessDeniedError extends Error {
  * 适用于：`executeAuthorize`（OAuth 授权发起）、`commands/auth.ts`（批量授权）等
  * 赋予实质性权限的入口。
  */
-export declare function assertOwnerAccessStrict(account: ConfiguredLarkAccount, sdk: any, userOpenId: string): Promise<void>;
+export declare function assertOwnerAccessStrict(account: ConfiguredLarkAccount, sdk: Lark.Client, userOpenId: string): Promise<void>;

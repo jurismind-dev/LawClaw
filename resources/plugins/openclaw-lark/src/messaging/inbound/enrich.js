@@ -22,11 +22,16 @@
  * at parse time in {@link parseMessageEvent}. Quoted merge_forward
  * messages are still expanded here via {@link resolveQuotedContent}.
  */
-import { PERMISSION_ERROR_COOLDOWN_MS, permissionErrorNotifiedAt } from './permission';
-import { resolveUserName } from './user-name-cache';
-import { downloadResources, buildFeishuMediaPayload } from './media-resolver';
-import { getMessageFeishu } from '../outbound/fetch';
-import { getUserNameCache, batchResolveUserNames } from './user-name-cache';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveSenderInfo = resolveSenderInfo;
+exports.prefetchUserNames = prefetchUserNames;
+exports.resolveMedia = resolveMedia;
+exports.substituteMediaPaths = substituteMediaPaths;
+exports.resolveQuotedContent = resolveQuotedContent;
+const fetch_1 = require("../outbound/fetch.js");
+const permission_1 = require("./permission.js");
+const user_name_cache_1 = require("./user-name-cache.js");
+const media_resolver_1 = require("./media-resolver.js");
 // ---------------------------------------------------------------------------
 // Phase 1: Sender info (lightweight, before gate)
 // ---------------------------------------------------------------------------
@@ -36,7 +41,7 @@ import { getUserNameCache, batchResolveUserNames } from './user-name-cache';
  * This must run before the gate check because per-group sender
  * allowlists may match on senderName.
  */
-export async function resolveSenderInfo(params) {
+async function resolveSenderInfo(params) {
     const { account, log } = params;
     let ctx = params.ctx;
     // Only resolve display name for real users — the contact API
@@ -46,7 +51,7 @@ export async function resolveSenderInfo(params) {
         return { ctx };
     }
     // Resolve sender display name (best-effort)
-    const senderResult = await resolveUserName({
+    const senderResult = await (0, user_name_cache_1.resolveUserName)({
         account,
         openId: ctx.senderId,
         log,
@@ -63,9 +68,9 @@ export async function resolveSenderInfo(params) {
     if (senderResult.permissionError) {
         const appKey = account.appId ?? 'default';
         const now = Date.now();
-        const lastNotified = permissionErrorNotifiedAt.get(appKey) ?? 0;
-        if (now - lastNotified > PERMISSION_ERROR_COOLDOWN_MS) {
-            permissionErrorNotifiedAt.set(appKey, now);
+        const lastNotified = permission_1.permissionErrorNotifiedAt.get(appKey) ?? 0;
+        if (now - lastNotified > permission_1.PERMISSION_ERROR_COOLDOWN_MS) {
+            permission_1.permissionErrorNotifiedAt.set(appKey, now);
             permissionError = senderResult.permissionError;
         }
     }
@@ -79,11 +84,11 @@ export async function resolveSenderInfo(params) {
  * mentions. Mention names that are already known from the event payload
  * are written into the cache for free.
  */
-export async function prefetchUserNames(params) {
+async function prefetchUserNames(params) {
     const { ctx, account, log } = params;
     if (!account.configured)
         return;
-    const cache = getUserNameCache(account.accountId);
+    const cache = (0, user_name_cache_1.getUserNameCache)(account.accountId);
     // Seed cache with mention names already present in the event payload
     for (const m of ctx.mentions) {
         if (!m.isBot && m.openId && m.name) {
@@ -101,7 +106,7 @@ export async function prefetchUserNames(params) {
     // Batch-resolve any that are still missing
     const toResolve = cache.filterMissing([...openIds]);
     if (toResolve.length > 0) {
-        await batchResolveUserNames({ account, openIds: toResolve, log });
+        await (0, user_name_cache_1.batchResolveUserNames)({ account, openIds: toResolve, log });
     }
 }
 /**
@@ -115,11 +120,11 @@ export async function prefetchUserNames(params) {
  * are spread directly into the agent envelope, plus the raw mediaList
  * for content substitution.
  */
-export async function resolveMedia(params) {
+async function resolveMedia(params) {
     const { ctx, accountScopedCfg, account, log } = params;
     const accountFeishuCfg = account.config;
     const mediaMaxBytes = (accountFeishuCfg?.mediaMaxMb ?? 30) * 1024 * 1024;
-    const mediaList = await downloadResources({
+    const mediaList = await (0, media_resolver_1.downloadResources)({
         cfg: accountScopedCfg,
         messageId: ctx.messageId,
         resources: ctx.resources,
@@ -131,7 +136,7 @@ export async function resolveMedia(params) {
         log(`media resolved: ${mediaList.length} attachment(s)`);
     }
     return {
-        payload: buildFeishuMediaPayload(mediaList),
+        payload: (0, media_resolver_1.buildFeishuMediaPayload)(mediaList),
         mediaList,
     };
 }
@@ -149,7 +154,7 @@ export async function resolveMedia(params) {
  *   what was received (the SDK reads these via `MediaPath` directly,
  *   but the text body should still reflect the actual attachments).
  */
-export function substituteMediaPaths(content, mediaList) {
+function substituteMediaPaths(content, mediaList) {
     let result = content;
     for (const media of mediaList) {
         const { fileKey, path, resourceType } = media;
@@ -199,12 +204,12 @@ function escapeRegExp(s) {
  * Returns `"senderName: content"` when the sender name is available so
  * the AI knows who originally wrote the quoted message.
  */
-export async function resolveQuotedContent(params) {
+async function resolveQuotedContent(params) {
     const { ctx, accountScopedCfg, account, log } = params;
     if (!ctx.parentId)
         return undefined;
     try {
-        const quotedMsg = await getMessageFeishu({
+        const quotedMsg = await (0, fetch_1.getMessageFeishu)({
             cfg: accountScopedCfg,
             messageId: ctx.parentId,
             accountId: account.accountId,

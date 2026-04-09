@@ -12,44 +12,46 @@
  *   - list:   GET  /open-apis/task/v2/tasks/:task_guid/comments
  *   - get:    GET  /open-apis/task/v2/comments/:comment_id
  */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerFeishuTaskCommentTool = registerFeishuTaskCommentTool;
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const FeishuTaskCommentSchema = Type.Union([
+const FeishuTaskCommentSchema = typebox_1.Type.Union([
     // CREATE (P1)
-    Type.Object({
-        action: Type.Literal('create'),
-        task_guid: Type.String({ description: '任务 GUID' }),
-        content: Type.String({ description: '评论内容（纯文本，最长 3000 字符）' }),
-        reply_to_comment_id: Type.Optional(Type.String({ description: '要回复的评论 ID（用于回复评论）' })),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('create'),
+        task_guid: typebox_1.Type.String({ description: '任务 GUID' }),
+        content: typebox_1.Type.String({ description: '评论内容（纯文本，最长 3000 字符）' }),
+        reply_to_comment_id: typebox_1.Type.Optional(typebox_1.Type.String({ description: '要回复的评论 ID（用于回复评论）' })),
     }),
     // LIST (P1)
-    Type.Object({
-        action: Type.Literal('list'),
-        resource_id: Type.String({ description: '要获取评论的资源 ID（任务 GUID）' }),
-        direction: Type.Optional(StringEnum(['asc', 'desc'], {
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('list'),
+        resource_id: typebox_1.Type.String({ description: '要获取评论的资源 ID（任务 GUID）' }),
+        direction: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['asc', 'desc'], {
             description: '排序方式（asc=从旧到新，desc=从新到旧，默认 asc）',
         })),
-        page_size: Type.Optional(Type.Number({ description: '每页数量，默认 50，最大 100' })),
-        page_token: Type.Optional(Type.String({ description: '分页标记' })),
+        page_size: typebox_1.Type.Optional(typebox_1.Type.Number({ description: '每页数量，默认 50，最大 100' })),
+        page_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '分页标记' })),
     }),
     // GET (P1)
-    Type.Object({
-        action: Type.Literal('get'),
-        comment_id: Type.String({ description: '评论 ID' }),
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('get'),
+        comment_id: typebox_1.Type.String({ description: '评论 ID' }),
     }),
 ]);
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerFeishuTaskCommentTool(api) {
+function registerFeishuTaskCommentTool(api) {
     if (!api.config)
         return;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_task_comment');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_task_comment');
+    (0, helpers_1.registerTool)(api, {
         name: 'feishu_task_comment',
         label: 'Feishu Task Comments',
         description: '【以用户身份】飞书任务评论管理工具。当用户要求添加/查询任务评论、回复评论时使用。Actions: create（添加评论）, list（列出任务的所有评论）, get（获取单个评论详情）。',
@@ -80,9 +82,9 @@ export function registerFeishuTaskCommentTool(api) {
                             },
                             data,
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`create: created comment ${res.data?.comment?.id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             comment: res.data?.comment,
                         });
                     }
@@ -102,10 +104,10 @@ export function registerFeishuTaskCommentTool(api) {
                                 user_id_type: 'open_id',
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         const data = res.data;
                         log.info(`list: returned ${data?.items?.length ?? 0} comments`);
-                        return json({
+                        return (0, helpers_1.json)({
                             comments: data?.items,
                             has_more: data?.has_more ?? false,
                             page_token: data?.page_token,
@@ -125,16 +127,16 @@ export function registerFeishuTaskCommentTool(api) {
                                 user_id_type: 'open_id',
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`get: returned comment ${p.comment_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             comment: res.data?.comment,
                         });
                     }
                 }
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_task_comment' });

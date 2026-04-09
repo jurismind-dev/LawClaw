@@ -15,7 +15,7 @@
  *   - Token values are never included in the return payload (AI cannot see
  *     them).
  */
-import type { OpenClawPluginApi, ClawdbotConfig } from 'openclaw/plugin-sdk';
+import type { ClawdbotConfig, OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import type { ConfiguredLarkAccount } from '../core/types';
 import type { LarkTicket } from '../core/lark-ticket';
 export declare function registerFeishuOAuthTool(api: OpenClawPluginApi): void;

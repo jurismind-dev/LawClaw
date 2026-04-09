@@ -17,12 +17,12 @@ describe('weixin channel integration', () => {
     expect(setupSource).toContain('<WeixinOnboardingPanel');
   });
 
-  it('pins the Weixin plugin to the legacy-compatible version for the bundled OpenClaw host', () => {
+  it('pins the Weixin plugin to the npm-official host-compatible version', () => {
     const stateSource = readSource('electron/utils/weixin-channel-state.ts');
     const onboardingSource = readSource('electron/utils/weixin-onboarding.ts');
     const pluginInstallSource = readSource('electron/utils/openclaw-plugin-install.ts');
 
-    expect(stateSource).toContain("export const WEIXIN_PLUGIN_VERSION = '1.0.3'");
+    expect(stateSource).toContain("export const WEIXIN_PLUGIN_VERSION = '2.1.7'");
     expect(stateSource).toContain('`@tencent-weixin/openclaw-weixin@${WEIXIN_PLUGIN_VERSION}`');
     expect(onboardingSource).toContain('installedVersion === WEIXIN_PLUGIN_VERSION');
     expect(onboardingSource).toContain('removeExistingPluginInstallDir');
@@ -53,5 +53,20 @@ describe('weixin channel integration', () => {
     expect(storeSource).toContain('isSupportedChannelType');
     expect(packageJsonSource).not.toContain('bundle-qq-plugin.mjs');
     expect(ipcHandlersSource).not.toContain('qqbot');
+  });
+
+  it('removes dingtalk from channel metadata, translations, and bundled dependencies', () => {
+    const channelTypesSource = readSource('src/types/channel.ts');
+    const zhChannelsSource = readSource('src/i18n/locales/zh/channels.json');
+    const channelConfigSource = readSource('electron/utils/channel-config.ts');
+    const gatewayClientSource = readSource('electron/gateway/client.ts');
+    const packageJsonSource = readSource('package.json');
+
+    expect(channelTypesSource).not.toContain("| 'dingtalk'");
+    expect(channelTypesSource).not.toContain("id: 'dingtalk'");
+    expect(zhChannelsSource).not.toContain('"dingtalk"');
+    expect(channelConfigSource).not.toContain("channelType === 'dingtalk'");
+    expect(gatewayClientSource).not.toContain("'dingtalk'");
+    expect(packageJsonSource).not.toContain('@soimy/dingtalk');
   });
 });

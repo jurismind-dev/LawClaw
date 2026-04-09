@@ -8,7 +8,14 @@
  * 从 oauth.ts 提取的纯 UI 函数，与 OAuth 业务流程解耦。
  * 卡片使用 v2 JSON 结构 + i18n_content 支持多语言。
  */
-import { applinkDomain } from '../core/domains';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.buildAuthCard = buildAuthCard;
+exports.formatScopeDescription = formatScopeDescription;
+exports.toInAppWebUrl = toInAppWebUrl;
+exports.buildAuthSuccessCard = buildAuthSuccessCard;
+exports.buildAuthFailedCard = buildAuthFailedCard;
+exports.buildAuthIdentityMismatchCard = buildAuthIdentityMismatchCard;
+const domains_1 = require("../core/domains.js");
 /** v2 卡片 i18n 配置，注入到 config 中 */
 const I18N_CONFIG = {
     update_multi: true,
@@ -68,7 +75,7 @@ function i18nPlainText(zh, en) {
 // ---------------------------------------------------------------------------
 // Card builders
 // ---------------------------------------------------------------------------
-export function buildAuthCard(params) {
+function buildAuthCard(params) {
     const { verificationUriComplete, expiresMin, scope, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo, filteredScopes, appId, showBatchAuthHint, brand, } = params;
     const inAppUrl = toInAppWebUrl(verificationUriComplete, brand);
     const multiUrl = {
@@ -161,7 +168,7 @@ export function buildAuthCard(params) {
     };
 }
 /** scope 字符串 → 可读描述（支持多语言） */
-export function formatScopeDescription(locale, params) {
+function formatScopeDescription(locale, params) {
     const { scope, isBatchAuth, totalAppScopes, alreadyGranted, batchInfo } = params;
     const t = CARD_TEXTS[locale];
     const scopes = scope?.split(/\s+/).filter(Boolean);
@@ -184,18 +191,19 @@ export function formatScopeDescription(locale, params) {
         return t.scopeDesc;
     return t.scopeDesc + '\n\n' + t.requiredScopes + '\n' + scopes.map((s) => `- ${s}`).join('\n');
 }
-export function toInAppWebUrl(targetUrl, brand) {
-    const encoded = encodeURIComponent(targetUrl);
+function toInAppWebUrl(targetUrl, brand) {
     const lkMeta = encodeURIComponent(JSON.stringify({
         'page-meta': {
             showNavBar: 'false',
             showBottomNavBar: 'false',
         },
     }));
-    return (`${applinkDomain(brand)}/client/web_url/open` +
-        `?mode=sidebar-semi&max_width=800&reload=false&url=${encoded}&lk_meta=${lkMeta}`);
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const fullUrl = `${targetUrl}${separator}lk_meta=${lkMeta}`;
+    const encoded = encodeURIComponent(fullUrl);
+    return `${(0, domains_1.applinkDomain)(brand)}/client/web_url/open` + `?mode=sidebar-semi&max_width=800&reload=false&url=${encoded}`;
 }
-export function buildAuthSuccessCard(brand) {
+function buildAuthSuccessCard(brand) {
     const zhT = CARD_TEXTS.zh_cn;
     const enT = CARD_TEXTS.en_us;
     const brandZh = brand === 'lark' ? 'Lark' : '飞书';
@@ -238,7 +246,7 @@ export function buildAuthSuccessCard(brand) {
         },
     };
 }
-export function buildAuthFailedCard(_reason) {
+function buildAuthFailedCard(_reason) {
     const zhT = CARD_TEXTS.zh_cn;
     const enT = CARD_TEXTS.en_us;
     return {
@@ -279,7 +287,7 @@ export function buildAuthFailedCard(_reason) {
         },
     };
 }
-export function buildAuthIdentityMismatchCard(brand) {
+function buildAuthIdentityMismatchCard(brand) {
     const zhT = CARD_TEXTS.zh_cn;
     const enT = CARD_TEXTS.en_us;
     const brandZh = brand === 'lark' ? 'Lark' : '飞书';

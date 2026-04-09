@@ -12,4 +12,4 @@
  * - sdk.drive.v1.fileCommentReply.list - 获取回复列表
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerDocCommentsTool(api: OpenClawPluginApi): void;
+export declare function registerDocCommentsTool(api: OpenClawPluginApi): boolean;

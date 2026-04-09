@@ -43,6 +43,9 @@
  *
  * 最后更新: 2026-03-03
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SENSITIVE_SCOPES = exports.REQUIRED_SCOPE_DESCRIPTIONS = exports.REQUIRED_APP_SCOPES = exports.TOOL_SCOPES = void 0;
+exports.filterSensitiveScopes = filterSensitiveScopes;
 // ===== 数据 =====
 /**
  * Tool Scope 数据
@@ -64,7 +67,7 @@
  *
  * @see {@link ToolActionKey} 所有可用的工具动作键
  */
-export const TOOL_SCOPES = {
+exports.TOOL_SCOPES = {
     'feishu_bitable_app.create': ['base:app:create'],
     'feishu_bitable_app.get': ['base:app:read'],
     'feishu_bitable_app.list': ['space:document:retrieve'],
@@ -73,9 +76,7 @@ export const TOOL_SCOPES = {
     'feishu_bitable_app_table.create': ['base:table:create'],
     'feishu_bitable_app_table.list': ['base:table:read'],
     'feishu_bitable_app_table.patch': ['base:table:update'],
-    'feishu_bitable_app_table.delete': ['base:table:delete'],
     'feishu_bitable_app_table.batch_create': ['base:table:create'],
-    'feishu_bitable_app_table.batch_delete': ['base:table:delete'],
     'feishu_bitable_app_table_record.create': ['base:record:create'],
     'feishu_bitable_app_table_record.update': ['base:record:update'],
     'feishu_bitable_app_table_record.delete': ['base:record:delete'],
@@ -91,7 +92,6 @@ export const TOOL_SCOPES = {
     'feishu_bitable_app_table_view.get': ['base:view:read'],
     'feishu_bitable_app_table_view.list': ['base:view:read'],
     'feishu_bitable_app_table_view.patch': ['base:view:write_only'],
-    'feishu_bitable_app_table_view.delete': ['base:view:write_only'],
     'feishu_calendar_calendar.list': ['calendar:calendar:read'],
     'feishu_calendar_calendar.get': ['calendar:calendar:read'],
     'feishu_calendar_calendar.primary': ['calendar:calendar:read'],
@@ -106,7 +106,6 @@ export const TOOL_SCOPES = {
     'feishu_calendar_event.instance_view': ['calendar:calendar.event:read'],
     'feishu_calendar_event_attendee.create': ['calendar:calendar.event:update'],
     'feishu_calendar_event_attendee.list': ['calendar:calendar.event:read'],
-    'feishu_calendar_event_attendee.batch_delete': ['calendar:calendar.event:read', 'calendar:calendar.event:update'],
     'feishu_calendar_freebusy.list': ['calendar:calendar.free_busy:read'],
     'feishu_task_task.create': ['task:task:write', 'task:task:writeonly'],
     'feishu_task_task.get': ['task:task:read', 'task:task:write'],
@@ -117,12 +116,15 @@ export const TOOL_SCOPES = {
     'feishu_task_tasklist.list': ['task:tasklist:read', 'task:tasklist:write'],
     'feishu_task_tasklist.tasks': ['task:tasklist:read', 'task:tasklist:write'],
     'feishu_task_tasklist.patch': ['task:tasklist:write'],
-    'feishu_task_tasklist.delete': ['task:tasklist:write'],
     'feishu_task_tasklist.add_members': ['task:tasklist:write'],
-    'feishu_task_tasklist.remove_members': ['task:tasklist:write'],
     'feishu_task_comment.create': ['task:comment:write'],
     'feishu_task_comment.list': ['task:comment:read', 'task:comment:write'],
     'feishu_task_comment.get': ['task:comment:read', 'task:comment:write'],
+    'feishu_task_section.create': ['task:task'],
+    'feishu_task_section.get': ['task:task'],
+    'feishu_task_section.list': ['task:task'],
+    'feishu_task_section.patch': ['task:task'],
+    'feishu_task_section.tasks': ['task:task'],
     'feishu_task_subtask.create': ['task:task:write'],
     'feishu_task_subtask.list': ['task:task:read', 'task:task:write'],
     'feishu_chat.search': ['im:chat:read'],
@@ -138,7 +140,9 @@ export const TOOL_SCOPES = {
     'feishu_doc_media.download': ['board:whiteboard:node:read', 'docs:document.media:download'],
     'feishu_doc_media.insert': ['docx:document:write_only', 'docs:document.media:upload'],
     'feishu_doc_comments.list': ['wiki:node:read', 'docs:document.comment:read'],
+    'feishu_doc_comments.list_replies': ['wiki:node:read', 'docs:document.comment:read'],
     'feishu_doc_comments.create': ['wiki:node:read', 'docs:document.comment:create'],
+    'feishu_doc_comments.reply': ['wiki:node:read', 'docs:document.comment:create'],
     'feishu_doc_comments.patch': ['docs:document.comment:update'],
     'feishu_wiki_space.list': ['wiki:space:retrieve'],
     'feishu_wiki_space.get': ['wiki:space:read'],
@@ -233,7 +237,7 @@ export const TOOL_SCOPES = {
  *
  * 最后更新: 2026-03-03
  */
-export const REQUIRED_APP_SCOPES = [
+exports.REQUIRED_APP_SCOPES = [
     'contact:contact.base:readonly',
     'docx:document:readonly',
     'im:chat:read',
@@ -260,7 +264,7 @@ export const REQUIRED_APP_SCOPES = [
  *
  * 描述每个必需权限的具体用途，帮助管理员理解为什么需要开通该权限。
  */
-export const REQUIRED_SCOPE_DESCRIPTIONS = {
+exports.REQUIRED_SCOPE_DESCRIPTIONS = {
     'contact:contact.base:readonly': '获取用户基本信息（姓名、头像）',
     'docx:document:readonly': '读取文档内容、预览文档链接',
     'im:chat:read': '读取群聊信息、获取群成员列表',
@@ -290,15 +294,23 @@ export const REQUIRED_SCOPE_DESCRIPTIONS = {
  * 用户需要明确知晓这些权限的影响后，才能手动授权。
  *
  * 权限说明：
- * - im:message:send_as_user - 以用户身份发送消息（高风险，可能被滥用发送钓鱼或垃圾消息）
+ * - im:message.send_as_user - 以用户身份发送消息（高风险，可能被滥用发送钓鱼或垃圾消息）
+ * - space:document:delete - 删除云文档
+ * - calendar:calendar.event:delete - 删除日程
+ * - base:table:delete - 删除多维表格数据表
  *
  * 使用场景：
  * - 批量授权时会自动过滤掉这些权限
  * - 需要这些权限的功能会单独提示用户授权
  *
- * 最后更新: 2026-03-03
+ * 最后更新: 2026-03-17
  */
-export const SENSITIVE_SCOPES = ['im:message.send_as_user'];
+exports.SENSITIVE_SCOPES = [
+    'im:message.send_as_user',
+    'space:document:delete',
+    'calendar:calendar.event:delete',
+    'base:table:delete',
+];
 /**
  * 过滤掉高敏感权限
  *
@@ -309,19 +321,19 @@ export const SENSITIVE_SCOPES = ['im:message.send_as_user'];
  *
  * @example
  * ```typescript
- * const allScopes = ["im:message", "im:message:send_as_user", "calendar:calendar:read"];
+ * const allScopes = ["im:message", "im:message.send_as_user", "calendar:calendar:read"];
  * const safeScopes = filterSensitiveScopes(allScopes);
  * // 返回: ["im:message", "calendar:calendar:read"]
  * ```
  */
-export function filterSensitiveScopes(scopes) {
-    const sensitiveSet = new Set(SENSITIVE_SCOPES);
+function filterSensitiveScopes(scopes) {
+    const sensitiveSet = new Set(exports.SENSITIVE_SCOPES);
     return scopes.filter((scope) => !sensitiveSet.has(scope));
 }
 // ===== 统计信息 =====
 /**
- * 工具动作总数: 99
- * 唯一 scope 总数: 67
+ * 工具动作总数: 96
+ * 唯一 scope 总数: 74
  * 必需应用权限总数: 20
- * 高敏感权限总数: 1
+ * 高敏感权限总数: 4
  */

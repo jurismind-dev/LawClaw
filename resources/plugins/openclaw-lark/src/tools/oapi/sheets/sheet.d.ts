@@ -13,4 +13,4 @@
  *   - info 一次返回表格信息 + 全部工作表列表
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerFeishuSheetTool(api: OpenClawPluginApi): void;
+export declare function registerFeishuSheetTool(api: OpenClawPluginApi): boolean;

@@ -1,5 +1,9 @@
 "use strict";
 // SPDX-License-Identifier: MIT
+Object.defineProperty(exports, "__esModule", { value: true });
+exports._resetShutdownHooks = _resetShutdownHooks;
+exports.registerShutdownHook = registerShutdownHook;
+exports.drainShutdownHooks = drainShutdownHooks;
 /**
  * Process-level graceful shutdown hook registry.
  *
@@ -8,7 +12,7 @@
  */
 const hooks = new Map();
 /** @internal — test-only reset. */
-export function _resetShutdownHooks() {
+function _resetShutdownHooks() {
     hooks.clear();
 }
 /**
@@ -19,7 +23,7 @@ export function _resetShutdownHooks() {
  * @returns An unregister function — call it when the resource is
  *          released normally (e.g. card streaming completes).
  */
-export function registerShutdownHook(key, cleanup) {
+function registerShutdownHook(key, cleanup) {
     hooks.set(key, cleanup);
     return () => {
         hooks.delete(key);
@@ -32,7 +36,7 @@ export function registerShutdownHook(key, cleanup) {
  * @param opts.deadlineMs - Maximum time to wait for all hooks (default 5000).
  * @param opts.log - Logger function for progress/error output.
  */
-export async function drainShutdownHooks(opts) {
+async function drainShutdownHooks(opts) {
     if (hooks.size === 0)
         return;
     const log = opts?.log;

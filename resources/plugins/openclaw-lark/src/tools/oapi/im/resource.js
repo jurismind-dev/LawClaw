@@ -10,11 +10,46 @@
  *
  * 全部以用户身份（user_access_token）调用，scope 来自 real-scope.json。
  */
-import { buildRandomTempFilePath } from 'openclaw/plugin-sdk';
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerFeishuImUserFetchResourceTool = registerFeishuImUserFetchResourceTool;
+const fs = __importStar(require("node:fs/promises"));
+const path = __importStar(require("node:path"));
+const temp_path_1 = require("openclaw/plugin-sdk/temp-path");
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // Helper: MIME type to extension mapping
 // ---------------------------------------------------------------------------
@@ -56,26 +91,26 @@ const MIME_TO_EXT = {
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const FetchResourceSchema = Type.Object({
-    message_id: Type.String({
+const FetchResourceSchema = typebox_1.Type.Object({
+    message_id: typebox_1.Type.String({
         description: '消息 ID（om_xxx 格式），从消息事件或消息列表中获取',
     }),
-    file_key: Type.String({
+    file_key: typebox_1.Type.String({
         description: '资源 Key，从消息体中获取。图片消息的 image_key（img_xxx）或文件消息的 file_key（file_xxx）',
     }),
-    type: StringEnum(['image', 'file'], {
+    type: (0, helpers_1.StringEnum)(['image', 'file'], {
         description: '资源类型：image（图片消息中的图片）、file（文件/音频/视频消息中的文件）',
     }),
 });
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerFeishuImUserFetchResourceTool(api) {
+function registerFeishuImUserFetchResourceTool(api) {
     if (!api.config)
-        return;
+        return false;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_im_user_fetch_resource');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_im_user_fetch_resource');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_im_user_fetch_resource',
         label: 'Feishu: IM Fetch Resource',
         description: '【以用户身份】下载飞书 IM 消息中的文件或图片资源到本地文件。需要用户 OAuth 授权。' +
@@ -116,7 +151,7 @@ export function registerFeishuImUserFetchResourceTool(api) {
                 // 从 Content-Type 推断扩展名，自动生成保存路径
                 const mimeType = contentType ? contentType.split(';')[0].trim() : '';
                 const mimeExt = mimeType ? MIME_TO_EXT[mimeType] : undefined;
-                const finalPath = buildRandomTempFilePath({
+                const finalPath = (0, temp_path_1.buildRandomTempFilePath)({
                     prefix: 'im-resource',
                     extension: mimeExt,
                 });
@@ -127,7 +162,7 @@ export function registerFeishuImUserFetchResourceTool(api) {
                 try {
                     await fs.writeFile(finalPath, buffer);
                     log.info(`fetch_resource: saved to ${finalPath}`);
-                    return json({
+                    return (0, helpers_1.json)({
                         message_id: p.message_id,
                         file_key: p.file_key,
                         type: p.type,
@@ -138,13 +173,13 @@ export function registerFeishuImUserFetchResourceTool(api) {
                 }
                 catch (err) {
                     log.error(`fetch_resource: failed to save file: ${err}`);
-                    return json({
+                    return (0, helpers_1.json)({
                         error: `保存文件失败: ${err instanceof Error ? err.message : String(err)}`,
                     });
                 }
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_im_user_fetch_resource' });

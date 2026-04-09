@@ -9,13 +9,20 @@
  * to a ClawdbotConfig. Extracted from onboarding.ts for reuse
  * in CLI commands and other configuration flows.
  */
-import { addWildcardAllowFrom } from 'openclaw/plugin-sdk';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.setFeishuDmPolicy = setFeishuDmPolicy;
+exports.setFeishuAllowFrom = setFeishuAllowFrom;
+exports.setFeishuGroupPolicy = setFeishuGroupPolicy;
+exports.setFeishuGroupAllowFrom = setFeishuGroupAllowFrom;
+exports.setFeishuGroups = setFeishuGroups;
+exports.parseAllowFromInput = parseAllowFromInput;
+const setup_1 = require("openclaw/plugin-sdk/setup");
 // ---------------------------------------------------------------------------
 // Config mutation helpers
 // ---------------------------------------------------------------------------
-export function setFeishuDmPolicy(cfg, dmPolicy) {
+function setFeishuDmPolicy(cfg, dmPolicy) {
     const allowFrom = dmPolicy === 'open'
-        ? addWildcardAllowFrom(cfg.channels?.feishu?.allowFrom)?.map((entry) => String(entry))
+        ? (0, setup_1.addWildcardAllowFrom)(cfg.channels?.feishu?.allowFrom)?.map((entry) => String(entry))
         : undefined;
     return {
         ...cfg,
@@ -29,7 +36,7 @@ export function setFeishuDmPolicy(cfg, dmPolicy) {
         },
     };
 }
-export function setFeishuAllowFrom(cfg, allowFrom) {
+function setFeishuAllowFrom(cfg, allowFrom) {
     return {
         ...cfg,
         channels: {
@@ -41,7 +48,7 @@ export function setFeishuAllowFrom(cfg, allowFrom) {
         },
     };
 }
-export function setFeishuGroupPolicy(cfg, groupPolicy) {
+function setFeishuGroupPolicy(cfg, groupPolicy) {
     return {
         ...cfg,
         channels: {
@@ -54,7 +61,7 @@ export function setFeishuGroupPolicy(cfg, groupPolicy) {
         },
     };
 }
-export function setFeishuGroupAllowFrom(cfg, groupAllowFrom) {
+function setFeishuGroupAllowFrom(cfg, groupAllowFrom) {
     return {
         ...cfg,
         channels: {
@@ -66,7 +73,7 @@ export function setFeishuGroupAllowFrom(cfg, groupAllowFrom) {
         },
     };
 }
-export function setFeishuGroups(cfg, groups) {
+function setFeishuGroups(cfg, groups) {
     return {
         ...cfg,
         channels: {
@@ -81,7 +88,7 @@ export function setFeishuGroups(cfg, groups) {
 // ---------------------------------------------------------------------------
 // Input helpers
 // ---------------------------------------------------------------------------
-export function parseAllowFromInput(raw) {
+function parseAllowFromInput(raw) {
     return raw
         .split(/[\n,;]+/g)
         .map((entry) => entry.trim())

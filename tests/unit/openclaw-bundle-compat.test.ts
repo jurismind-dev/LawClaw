@@ -1,4 +1,12 @@
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -26,7 +34,9 @@ function findDistFile(prefix: string): string {
 
 function findPluginSdkDistFile(prefix: string): string {
   const distDir = join(process.cwd(), 'node_modules', 'openclaw', 'dist', 'plugin-sdk');
-  const match = readdirSync(distDir).find((name) => name.startsWith(prefix));
+  const match = readdirSync(distDir).find(
+    (name) => name.startsWith(prefix) && name.endsWith('.js')
+  );
   if (!match) {
     throw new Error(`Missing OpenClaw plugin-sdk dist file with prefix ${prefix}`);
   }
@@ -104,48 +114,110 @@ describe('openclaw bundle compatibility patches', () => {
     expect(readFileSync(packageJsonPath, 'utf8')).toBe(before);
   });
 
+  it('bridges staged extension runtime deps into the OpenClaw root node_modules path', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-extension-runtime-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const carbonDir = join(
+      openclawDir,
+      'dist',
+      'extensions',
+      'discord',
+      'node_modules',
+      '@buape',
+      'carbon'
+    );
+    const agentBaseDir = join(
+      openclawDir,
+      'dist',
+      'extensions',
+      'discord',
+      'node_modules',
+      'agent-base'
+    );
+
+    mkdirSync(carbonDir, { recursive: true });
+    mkdirSync(agentBaseDir, { recursive: true });
+    writeFileSync(
+      join(carbonDir, 'package.json'),
+      `${JSON.stringify({ name: '@buape/carbon', version: '0.14.0' }, null, 2)}\n`,
+      'utf8'
+    );
+    writeFileSync(
+      join(agentBaseDir, 'package.json'),
+      `${JSON.stringify({ name: 'agent-base', version: '7.1.4' }, null, 2)}\n`,
+      'utf8'
+    );
+
+    const { patchOpenClawExtensionRuntimeDeps } = await loadCompatTools();
+    expect(patchOpenClawExtensionRuntimeDeps(openclawDir)).toEqual([
+      '@buape/carbon',
+      'agent-base',
+    ]);
+
+    expect(
+      JSON.parse(readFileSync(join(openclawDir, 'node_modules', '@buape', 'carbon', 'package.json'), 'utf8'))
+    ).toMatchObject({
+      name: '@buape/carbon',
+    });
+    expect(
+      JSON.parse(readFileSync(join(openclawDir, 'node_modules', 'agent-base', 'package.json'), 'utf8'))
+    ).toMatchObject({
+      name: 'agent-base',
+    });
+
+    expect(patchOpenClawExtensionRuntimeDeps(openclawDir)).toEqual([]);
+  });
+
   it('patches OpenClaw runtime chunks to add native doubao web_search support', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-runtime-'));
     tempDirs.push(tempRoot);
 
     const openclawDir = join(tempRoot, 'openclaw');
     const distDir = join(openclawDir, 'dist');
-    mkdirSync(join(distDir, 'plugin-sdk'), { recursive: true });
+    mkdirSync(distDir, { recursive: true });
 
-    const authProfilesSource = findDistFile('auth-profiles-');
-    const onboardSearchSource = findDistFile('onboard-search-');
-    const threadBindingsSource = join(
-      process.cwd(),
-      'node_modules',
-      'openclaw',
-      'dist',
-      'plugin-sdk',
-      'thread-bindings-SYAnWHuW.js'
-    );
-
-    cpSync(authProfilesSource, join(distDir, basename(authProfilesSource)));
-    cpSync(onboardSearchSource, join(distDir, basename(onboardSearchSource)));
-    cpSync(threadBindingsSource, join(distDir, 'plugin-sdk', 'thread-bindings-SYAnWHuW.js'));
+    for (const prefix of [
+      'plugin-entry-',
+      'common-',
+      'provider-web-search-',
+      'external-content-',
+      'tool-config-shared-',
+    ]) {
+      const source = findDistFile(prefix);
+      cpSync(source, join(distDir, basename(source)));
+    }
 
     const { patchOpenClawWebSearchRuntime } = await loadCompatTools();
-    const patchedFiles = patchOpenClawWebSearchRuntime(openclawDir);
-    expect(Array.isArray(patchedFiles)).toBe(true);
+    const patchedFiles = patchOpenClawWebSearchRuntime(openclawDir).sort();
+    expect(patchedFiles).toEqual([
+      'extensions/jurismind/index.js',
+      'extensions/jurismind/openclaw.plugin.json',
+    ]);
 
-    const patchedAuthProfiles = readFileSync(
-      join(distDir, basename(authProfilesSource)),
+    const patchedJurismindPlugin = readFileSync(
+      join(distDir, 'extensions', 'jurismind', 'index.js'),
       'utf8'
     );
-    expect(patchedAuthProfiles).toContain('DEFAULT_DOUBAO_BASE_URL');
-    expect(patchedAuthProfiles).toContain('"tools.web.search.doubao.apiKey"');
-    expect(patchedAuthProfiles).toContain('provider === "doubao"');
-    expect(patchedAuthProfiles).toContain('/responses');
+    expect(patchedJurismindPlugin).toContain('lawclaw jurismind web search plugin v1');
+    expect(patchedJurismindPlugin).toContain('const DOUBAO_PROVIDER_ID = "doubao"');
+    expect(patchedJurismindPlugin).toContain('JURISMIND_API_KEY');
+    expect(patchedJurismindPlugin).toContain('plugins.entries.jurismind.config.webSearch.apiKey');
 
-    const patchedOnboardSearch = readFileSync(
-      join(distDir, basename(onboardSearchSource)),
-      'utf8'
-    );
-    expect(patchedOnboardSearch).toContain('label: "Doubao Search"');
-    expect(patchedOnboardSearch).toContain('case "doubao": return search?.doubao?.apiKey;');
+    const patchedManifest = JSON.parse(
+      readFileSync(join(distDir, 'extensions', 'jurismind', 'openclaw.plugin.json'), 'utf8')
+    ) as {
+      id: string;
+      contracts?: {
+        webSearchProviders?: string[];
+      };
+      uiHints?: Record<string, { sensitive?: boolean }>;
+    };
+
+    expect(patchedManifest.id).toBe('jurismind');
+    expect(patchedManifest.contracts?.webSearchProviders).toEqual(['doubao']);
+    expect(patchedManifest.uiHints?.['webSearch.apiKey']?.sensitive).toBe(true);
 
     expect(patchOpenClawWebSearchRuntime(openclawDir)).toEqual([]);
   });
@@ -158,7 +230,7 @@ describe('openclaw bundle compatibility patches', () => {
     const pluginSdkDir = join(openclawDir, 'dist', 'plugin-sdk');
     mkdirSync(pluginSdkDir, { recursive: true });
 
-    const windowsSpawnSource = findPluginSdkDistFile('windows-spawn-');
+    const windowsSpawnSource = findPluginSdkDistFile('windows-spawn');
     const windowsSpawnCopy = join(pluginSdkDir, basename(windowsSpawnSource));
     writeFileSync(windowsSpawnCopy, 'export const placeholder = true;\n', 'utf8');
 

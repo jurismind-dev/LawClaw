@@ -12,8 +12,8 @@ const openclawAuthMock = vi.hoisted(() => ({
 
 const providerRegistryMock = vi.hoisted(() => ({
   getProviderDefaultModel: vi.fn((provider: string) => {
-    if (provider === 'qwen-portal') {
-      return 'qwen-portal/coder-model';
+    if (provider === 'minimax-portal') {
+      return 'minimax-portal/MiniMax-M2.7';
     }
     return undefined;
   }),
@@ -23,17 +23,13 @@ const pathsMock = vi.hoisted(() => ({
   isOpenClawPresent: vi.fn(() => true),
 }));
 
-const qwenOAuthMock = vi.hoisted(() => ({
-  loginQwenPortalOAuth: vi.fn(async () => ({
+const minimaxOAuthMock = vi.hoisted(() => ({
+  loginMiniMaxPortalOAuth: vi.fn(async () => ({
     access: 'access-token',
     refresh: 'refresh-token',
     expires: 1234567890,
-    resourceUrl: 'https://portal.qwen.ai',
+    resourceUrl: 'https://api.minimax.io',
   })),
-}));
-
-const minimaxOAuthMock = vi.hoisted(() => ({
-  loginMiniMaxPortalOAuth: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -55,8 +51,7 @@ vi.mock('@electron/utils/secure-storage', () => secureStorageMock);
 vi.mock('@electron/utils/provider-registry', () => providerRegistryMock);
 vi.mock('@electron/utils/paths', () => pathsMock);
 vi.mock('@electron/utils/openclaw-auth', () => openclawAuthMock);
-vi.mock('../../node_modules/openclaw/extensions/qwen-portal-auth/oauth', () => qwenOAuthMock);
-vi.mock('../../node_modules/openclaw/extensions/minimax-portal-auth/oauth', () => minimaxOAuthMock);
+vi.mock('../../node_modules/openclaw/dist/extensions/minimax/oauth.js', () => minimaxOAuthMock);
 
 describe('device OAuth provider persistence', () => {
   beforeEach(() => {
@@ -78,25 +73,25 @@ describe('device OAuth provider persistence', () => {
 
     deviceOAuthManager.setWindow(mainWindow as never);
 
-    const success = await deviceOAuthManager.startFlow('qwen-portal');
+    const success = await deviceOAuthManager.startFlow('minimax-portal');
 
     expect(success).toBe(true);
-    expect(openclawAuthMock.saveOAuthTokenToOpenClaw).toHaveBeenCalledWith('qwen-portal', {
+    expect(openclawAuthMock.saveOAuthTokenToOpenClaw).toHaveBeenCalledWith('minimax-portal', {
       access: 'access-token',
       refresh: 'refresh-token',
       expires: 1234567890,
     });
     expect(secureStorageMock.saveProvider).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'qwen-portal',
-        type: 'qwen-portal',
-        baseUrl: 'https://portal.qwen.ai/v1',
-        model: 'qwen-portal/coder-model',
+        id: 'minimax-portal',
+        type: 'minimax-portal',
+        baseUrl: 'https://api.minimax.io/anthropic',
+        model: 'minimax-portal/MiniMax-M2.7',
       })
     );
     expect(openclawAuthMock.setOpenClawDefaultModelWithOverride).not.toHaveBeenCalled();
     expect(mainWindow.webContents.send).toHaveBeenCalledWith('oauth:success', {
-      provider: 'qwen-portal',
+      provider: 'minimax-portal',
       success: true,
     });
   });

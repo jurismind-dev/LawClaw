@@ -15,7 +15,11 @@
  * 底层使用 contact/v3/users/basic_batch 接口（scope: contact:user.basic_profile:readonly），
  * 每次最多查询 10 个用户。
  */
-import { isInvokeError } from '../helpers';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getUATUserName = getUATUserName;
+exports.setUATUserNames = setUATUserNames;
+exports.batchResolveUserNamesAsUser = batchResolveUserNamesAsUser;
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // 独立缓存：accountId → Map<openId, { name, expireAt }>
 // ---------------------------------------------------------------------------
@@ -38,7 +42,7 @@ function evict(cache) {
     }
 }
 /** 从 UAT 缓存中获取用户名 */
-export function getUATUserName(accountId, openId) {
+function getUATUserName(accountId, openId) {
     const cache = uatRegistry.get(accountId);
     if (!cache)
         return undefined;
@@ -55,7 +59,7 @@ export function getUATUserName(accountId, openId) {
     return entry.name;
 }
 /** 批量写入 UAT 缓存 */
-export function setUATUserNames(accountId, entries) {
+function setUATUserNames(accountId, entries) {
     const cache = getOrCreateCache(accountId);
     const now = Date.now();
     for (const [openId, name] of entries) {
@@ -68,7 +72,7 @@ export function setUATUserNames(accountId, entries) {
 // 以 UAT 身份批量解析用户名
 // ---------------------------------------------------------------------------
 const BATCH_SIZE = 10; // basic_batch API 限制每次最多 10 个
-export async function batchResolveUserNamesAsUser(params) {
+async function batchResolveUserNamesAsUser(params) {
     const { client, openIds, log } = params;
     if (openIds.length === 0)
         return new Map();
@@ -100,7 +104,6 @@ export async function batchResolveUserNamesAsUser(params) {
         const chunk = uniqueMissing.slice(i, i + BATCH_SIZE);
         const batchIndex = Math.floor(i / BATCH_SIZE) + 1;
         try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const res = await client.invoke('feishu_get_user.basic_batch', (sdk, opts) => sdk.request({
                 method: 'POST',
                 url: '/open-apis/contact/v3/users/basic_batch',
@@ -109,7 +112,6 @@ export async function batchResolveUserNamesAsUser(params) {
             }, opts), {
                 as: 'user',
             });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const users = res?.data?.users ?? [];
             let resolved = 0;
             for (const user of users) {
@@ -131,7 +133,7 @@ export async function batchResolveUserNamesAsUser(params) {
         }
         catch (err) {
             // 授权/权限错误向上冒泡，由上层 handleInvokeErrorWithAutoAuth 处理自动授权
-            if (isInvokeError(err))
+            if ((0, helpers_1.isInvokeError)(err))
                 throw err;
             log(`batchResolveUserNamesAsUser: failed: ${String(err)}`);
         }

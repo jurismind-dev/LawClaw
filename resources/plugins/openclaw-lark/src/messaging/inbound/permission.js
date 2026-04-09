@@ -8,12 +8,15 @@
  * Extracted from bot.ts: PermissionError type, extractPermissionError,
  * PERMISSION_ERROR_COOLDOWN_MS, permissionErrorNotifiedAt.
  */
-import { extractPermissionGrantUrl } from '../../core/permission-url';
-import { LARK_ERROR } from '../../core/auth-errors';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.permissionErrorNotifiedAt = exports.PERMISSION_ERROR_COOLDOWN_MS = void 0;
+exports.extractPermissionError = extractPermissionError;
+const permission_url_1 = require("../../core/permission-url.js");
+const auth_errors_1 = require("../../core/auth-errors.js");
 // ---------------------------------------------------------------------------
 // Permission error extraction
 // ---------------------------------------------------------------------------
-export function extractPermissionError(err) {
+function extractPermissionError(err) {
     if (!err || typeof err !== 'object') {
         return null;
     }
@@ -24,11 +27,11 @@ export function extractPermissionError(err) {
     }
     const feishuErr = data;
     // Feishu permission error code
-    if (feishuErr.code !== LARK_ERROR.APP_SCOPE_MISSING) {
+    if (feishuErr.code !== auth_errors_1.LARK_ERROR.APP_SCOPE_MISSING) {
         return null;
     }
     const msg = feishuErr.msg ?? '';
-    const grantUrl = extractPermissionGrantUrl(msg);
+    const grantUrl = (0, permission_url_1.extractPermissionGrantUrl)(msg);
     if (!grantUrl) {
         return null;
     }
@@ -37,5 +40,5 @@ export function extractPermissionError(err) {
 // ---------------------------------------------------------------------------
 // Cooldown tracking
 // ---------------------------------------------------------------------------
-export const PERMISSION_ERROR_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
-export const permissionErrorNotifiedAt = new Map();
+exports.PERMISSION_ERROR_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+exports.permissionErrorNotifiedAt = new Map();

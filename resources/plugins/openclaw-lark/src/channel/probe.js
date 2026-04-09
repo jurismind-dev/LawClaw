@@ -3,7 +3,9 @@
  * Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
  * SPDX-License-Identifier: MIT
  */
-import { LarkClient } from '../core/lark-client';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.probeFeishu = probeFeishu;
+const lark_client_1 = require("../core/lark-client.js");
 /**
  * Probe the Feishu bot connection by calling the bot/v3/info API.
  *
@@ -11,12 +13,12 @@ import { LarkClient } from '../core/lark-client';
  * basic identity (name, open_id).  Used by onboarding and status
  * checks to verify credentials before committing them to config.
  */
-export async function probeFeishu(credentials) {
+async function probeFeishu(credentials) {
     if (!credentials?.appId || !credentials?.appSecret) {
         return {
             ok: false,
             error: 'missing credentials (appId, appSecret)',
         };
     }
-    return LarkClient.fromCredentials(credentials).probe();
+    return lark_client_1.LarkClient.fromCredentials(credentials).probe();
 }

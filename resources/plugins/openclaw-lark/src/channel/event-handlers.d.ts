@@ -12,4 +12,5 @@ import type { MonitorContext } from './types';
 export declare function handleMessageEvent(ctx: MonitorContext, data: unknown): Promise<void>;
 export declare function handleReactionEvent(ctx: MonitorContext, data: unknown): Promise<void>;
 export declare function handleBotMembershipEvent(ctx: MonitorContext, data: unknown, action: 'added' | 'removed'): Promise<void>;
+export declare function handleCommentEvent(ctx: MonitorContext, data: unknown): Promise<void>;
 export declare function handleCardActionEvent(ctx: MonitorContext, data: unknown): Promise<unknown>;

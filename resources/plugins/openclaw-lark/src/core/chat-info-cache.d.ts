@@ -11,7 +11,16 @@
  * - `chat_mode`: "group" | "topic" | "p2p"
  * - `group_message_type`: "chat" | "thread" (only for chat_mode=group)
  */
+import type * as Lark from '@larksuiteoapi/node-sdk';
 import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
+/** Minimal structural type for LarkClient class (avoids circular import). */
+interface LarkClientStatic {
+    fromCfg(cfg: ClawdbotConfig, accountId?: string): {
+        sdk: Lark.Client;
+    };
+}
+/** @internal Called by lark-client.ts at module init time. */
+export declare function injectLarkClient(cls: LarkClientStatic): void;
 export interface ChatInfo {
     chatMode: 'group' | 'topic' | 'p2p';
     groupMessageType?: 'chat' | 'thread';
@@ -55,3 +64,4 @@ export declare function getChatTypeFeishu(params: {
     chatId: string;
     accountId?: string;
 }): Promise<'p2p' | 'group'>;
+export {};

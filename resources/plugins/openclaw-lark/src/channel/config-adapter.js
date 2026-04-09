@@ -10,12 +10,17 @@
  * both the default account (top-level fields) and named accounts
  * (nested under `accounts`).
  */
-import { DEFAULT_ACCOUNT_ID } from 'openclaw/plugin-sdk';
-import { getLarkAccount, getLarkAccountIds } from '../core/accounts';
-import { collectIsolationWarnings } from '../core/security-check';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.setAccountEnabled = setAccountEnabled;
+exports.applyAccountConfig = applyAccountConfig;
+exports.deleteAccount = deleteAccount;
+exports.collectFeishuSecurityWarnings = collectFeishuSecurityWarnings;
+const account_id_1 = require("openclaw/plugin-sdk/account-id");
+const accounts_1 = require("../core/accounts.js");
+const security_check_1 = require("../core/security-check.js");
 /** Generic Feishu account config merge. */
 function mergeFeishuAccountConfig(cfg, accountId, patch) {
-    const isDefault = !accountId || accountId === DEFAULT_ACCOUNT_ID;
+    const isDefault = !accountId || accountId === account_id_1.DEFAULT_ACCOUNT_ID;
     if (isDefault) {
         return {
             ...cfg,
@@ -41,16 +46,16 @@ function mergeFeishuAccountConfig(cfg, accountId, patch) {
     };
 }
 /** Set the `enabled` flag on a Feishu account. */
-export function setAccountEnabled(cfg, accountId, enabled) {
+function setAccountEnabled(cfg, accountId, enabled) {
     return mergeFeishuAccountConfig(cfg, accountId, { enabled });
 }
 /** Apply an arbitrary config patch to a Feishu account. */
-export function applyAccountConfig(cfg, accountId, patch) {
+function applyAccountConfig(cfg, accountId, patch) {
     return mergeFeishuAccountConfig(cfg, accountId, patch);
 }
 /** Delete a Feishu account entry from the config. */
-export function deleteAccount(cfg, accountId) {
-    const isDefault = !accountId || accountId === DEFAULT_ACCOUNT_ID;
+function deleteAccount(cfg, accountId) {
+    const isDefault = !accountId || accountId === account_id_1.DEFAULT_ACCOUNT_ID;
     if (isDefault) {
         // Delete entire feishu config
         const next = { ...cfg };
@@ -80,10 +85,10 @@ export function deleteAccount(cfg, accountId) {
     };
 }
 /** Collect security warnings for a Feishu account. */
-export function collectFeishuSecurityWarnings(params) {
+function collectFeishuSecurityWarnings(params) {
     const { cfg, accountId } = params;
     const warnings = [];
-    const account = getLarkAccount(cfg, accountId);
+    const account = (0, accounts_1.getLarkAccount)(cfg, accountId);
     const feishuCfg = account.config;
     // cfg.channels.defaults is a cross-channel defaults object (not formally typed)
     const defaultGroupPolicy = cfg.channels?.defaults?.groupPolicy;
@@ -92,9 +97,9 @@ export function collectFeishuSecurityWarnings(params) {
         warnings.push(`- Feishu[${account.accountId}] groups: groupPolicy="open" allows any group to interact (mention-gated). To restrict which groups are allowed, set groupPolicy="allowlist" and list group IDs in channels.feishu.groups. To restrict which senders can trigger the bot, set channels.feishu.groupAllowFrom with user open_ids (ou_xxx).`);
     }
     // Multi-account cross-tenant isolation check (only on first account to avoid duplicates)
-    const allIds = getLarkAccountIds(cfg);
+    const allIds = (0, accounts_1.getLarkAccountIds)(cfg);
     if (allIds.length === 0 || accountId === allIds[0]) {
-        for (const w of collectIsolationWarnings(cfg)) {
+        for (const w of (0, security_check_1.collectIsolationWarnings)(cfg)) {
             warnings.push(w);
         }
     }

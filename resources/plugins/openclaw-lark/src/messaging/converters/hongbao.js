@@ -5,9 +5,11 @@
  *
  * Converter for "hongbao" (red packet) message type.
  */
-import { safeParse } from './utils';
-export const convertHongbao = (raw) => {
-    const parsed = safeParse(raw);
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertHongbao = void 0;
+const utils_1 = require("./utils.js");
+const convertHongbao = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const text = parsed?.text;
     const textAttr = text ? ` text="${text}"` : '';
     return {
@@ -15,3 +17,4 @@ export const convertHongbao = (raw) => {
         resources: [],
     };
 };
+exports.convertHongbao = convertHongbao;

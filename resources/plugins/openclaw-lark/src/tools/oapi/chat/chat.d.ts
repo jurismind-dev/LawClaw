@@ -13,4 +13,4 @@
  *   - get:    GET /open-apis/im/v1/chats/:chat_id
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerChatSearchTool(api: OpenClawPluginApi): void;
+export declare function registerChatSearchTool(api: OpenClawPluginApi): boolean;

@@ -12,16 +12,23 @@
  * scope 检查失败后可调 {@link invalidateAppScopeCache} 清缓存重查。
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { larkLogger } from './lark-logger';
-const log = larkLogger('core/app-scope-checker');
-import { AppScopeCheckFailedError } from './auth-errors';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.invalidateAppScopeCache = invalidateAppScopeCache;
+exports.getAppGrantedScopes = getAppGrantedScopes;
+exports.getAppInfo = getAppInfo;
+exports.intersectScopes = intersectScopes;
+exports.missingScopes = missingScopes;
+exports.isAppScopeSatisfied = isAppScopeSatisfied;
+const lark_logger_1 = require("./lark-logger.js");
+const log = (0, lark_logger_1.larkLogger)('core/app-scope-checker');
+const auth_errors_1 = require("./auth-errors.js");
 // ---------------------------------------------------------------------------
 // Cache
 // ---------------------------------------------------------------------------
 const cache = new Map();
 const CACHE_TTL_MS = 30 * 1000; // 30 秒
 /** 清除指定 appId 的缓存。 */
-export function invalidateAppScopeCache(appId) {
+function invalidateAppScopeCache(appId) {
     cache.delete(appId);
 }
 // ---------------------------------------------------------------------------
@@ -38,7 +45,7 @@ export function invalidateAppScopeCache(appId) {
  * @param tokenType - token 类型，用于过滤只支持特定 token 类型的 scope
  * @returns scope 字符串数组，如 `["calendar:calendar", "task:task:write"]`
  */
-export async function getAppGrantedScopes(sdk, appId, tokenType) {
+async function getAppGrantedScopes(sdk, appId, tokenType) {
     // 1. 检查缓存
     const cached = cache.get(appId);
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
@@ -61,7 +68,7 @@ export async function getAppGrantedScopes(sdk, appId, tokenType) {
         });
         if (res.code !== 0) {
             // 任何 API 错误都认为是应用缺少 application:application:self_manage 权限
-            throw new AppScopeCheckFailedError(appId);
+            throw new auth_errors_1.AppScopeCheckFailedError(appId);
         }
         // 响应结构: res.data.app.scopes → [{ scope: "xxx", description, level, token_types?: string[] }]
         // 或者从 app_version 中获取 scopes
@@ -88,7 +95,7 @@ export async function getAppGrantedScopes(sdk, appId, tokenType) {
     }
     catch (err) {
         // 如果是 AppScopeCheckFailedError，重新抛出（不吞掉）
-        if (err instanceof AppScopeCheckFailedError) {
+        if (err instanceof auth_errors_1.AppScopeCheckFailedError) {
             throw err;
         }
         // 检查是否是权限相关的 HTTP 错误（400/403）
@@ -98,7 +105,7 @@ export async function getAppGrantedScopes(sdk, appId, tokenType) {
             statusCode === 403 ||
             (err instanceof Error && (err.message.includes('status code 400') || err.message.includes('status code 403')));
         if (isPermissionError) {
-            throw new AppScopeCheckFailedError(appId);
+            throw new auth_errors_1.AppScopeCheckFailedError(appId);
         }
         log.warn(`failed to fetch scopes for ${appId}: ${err instanceof Error ? err.message : err}`);
         // 其他查询失败不阻塞调用，返回空数组（后续 API 调用如果缺 scope 会被服务端拒绝）
@@ -117,7 +124,7 @@ export async function getAppGrantedScopes(sdk, appId, tokenType) {
  * @param sdk - Lark SDK 实例
  * @param appId - 应用 ID（可传 "me"）
  */
-export async function getAppInfo(sdk, appId) {
+async function getAppInfo(sdk, appId) {
     // 先确保缓存已填充（调一次 getAppGrantedScopes 来触发 API + 缓存）
     await getAppGrantedScopes(sdk, appId);
     const cached = cache.get(appId);
@@ -150,7 +157,7 @@ export async function getAppInfo(sdk, appId) {
  * @param apiRequired - OAPI 要求的 scope 列表
  * @returns 交集 scope 列表
  */
-export function intersectScopes(appGranted, apiRequired) {
+function intersectScopes(appGranted, apiRequired) {
     const grantedSet = new Set(appGranted);
     return apiRequired.filter((s) => grantedSet.has(s));
 }
@@ -163,7 +170,7 @@ export function intersectScopes(appGranted, apiRequired) {
  * @param apiRequired - OAPI 要求的 scope 列表
  * @returns 缺失的 scope 列表
  */
-export function missingScopes(appGranted, apiRequired) {
+function missingScopes(appGranted, apiRequired) {
     const grantedSet = new Set(appGranted);
     return apiRequired.filter((s) => !grantedSet.has(s));
 }
@@ -179,7 +186,7 @@ export function missingScopes(appGranted, apiRequired) {
  * @param requiredScopes - 需要的 scope 列表
  * @param scopeNeedType  - "all" 表示全部必须，undefined/"one" 表示任一即可
  */
-export function isAppScopeSatisfied(appScopes, requiredScopes, scopeNeedType) {
+function isAppScopeSatisfied(appScopes, requiredScopes, scopeNeedType) {
     if (appScopes.length === 0)
         return true; // API 查询失败 → 退回服务端判断
     if (requiredScopes.length === 0)

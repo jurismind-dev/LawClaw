@@ -12,4 +12,4 @@
  * 凭证: tenant_access_token
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerFeishuImBotImageTool(api: OpenClawPluginApi): void;
+export declare function registerFeishuImBotImageTool(api: OpenClawPluginApi): boolean;

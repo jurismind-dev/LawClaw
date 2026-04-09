@@ -5,4 +5,4 @@
  *
  * Channel type definitions for the Lark/Feishu channel plugin.
  */
-export {};
+Object.defineProperty(exports, "__esModule", { value: true });

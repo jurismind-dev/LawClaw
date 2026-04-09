@@ -8,7 +8,7 @@
  * lookups so the outbound subsystem and UI can resolve targets.
  */
 import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
-import type { FeishuDirectoryPeer, FeishuDirectoryGroup } from './types';
+import type { FeishuDirectoryGroup, FeishuDirectoryPeer } from './types';
 export type { FeishuDirectoryPeer, FeishuDirectoryGroup } from './types';
 /**
  * List users known from the channel config (allowFrom + dms fields).

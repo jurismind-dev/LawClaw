@@ -9,12 +9,14 @@
  * Extracted from `outbound/fetch.ts` to eliminate inbound→outbound
  * dependency inversion.
  */
-import { convertMessageContent, buildConvertContextFromItem } from '../converters/content-converter';
-import { LarkClient } from '../../core/lark-client';
-import { larkLogger } from '../../core/lark-logger';
-const log = larkLogger('shared/message-lookup');
-import { getUserNameCache, createBatchResolveNames } from '../inbound/user-name-cache';
-import { getLarkAccount } from '../../core/accounts';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getMessageFeishu = getMessageFeishu;
+const content_converter_1 = require("../converters/content-converter.js");
+const lark_client_1 = require("../../core/lark-client.js");
+const lark_logger_1 = require("../../core/lark-logger.js");
+const log = (0, lark_logger_1.larkLogger)('shared/message-lookup');
+const user_name_cache_1 = require("../inbound/user-name-cache.js");
+const accounts_1 = require("../../core/accounts.js");
 // ---------------------------------------------------------------------------
 // getMessageFeishu
 // ---------------------------------------------------------------------------
@@ -28,9 +30,9 @@ import { getLarkAccount } from '../../core/accounts';
  * @param params.messageId - The message ID to fetch.
  * @param params.accountId - Optional account identifier for multi-account setups.
  */
-export async function getMessageFeishu(params) {
+async function getMessageFeishu(params) {
     const { cfg, messageId, accountId, expandForward } = params;
-    const larkClient = LarkClient.fromCfg(cfg, accountId);
+    const larkClient = lark_client_1.LarkClient.fromCfg(cfg, accountId);
     const sdk = larkClient.sdk;
     try {
         const requestOpts = {
@@ -65,7 +67,7 @@ export async function getMessageFeishu(params) {
                     }
                     return res?.data?.items ?? [];
                 },
-                batchResolveNames: createBatchResolveNames(getLarkAccount(cfg, accountId), (...args) => log.info(args.map(String).join(' '))),
+                batchResolveNames: (0, user_name_cache_1.createBatchResolveNames)((0, accounts_1.getLarkAccount)(cfg, accountId), (...args) => log.info(args.map(String).join(' '))),
             }
             : undefined;
         return await parseMessageItem(items[0], messageId, expandCtx);
@@ -93,16 +95,16 @@ msg, fallbackMessageId, expandCtx) {
     const messageId = msg.message_id ?? fallbackMessageId;
     const acctId = expandCtx?.accountId;
     const ctx = {
-        ...buildConvertContextFromItem(msg, fallbackMessageId, acctId),
+        ...(0, content_converter_1.buildConvertContextFromItem)(msg, fallbackMessageId, acctId),
         cfg: expandCtx?.cfg,
         accountId: acctId,
         fetchSubMessages: expandCtx?.fetchSubMessages,
         batchResolveNames: expandCtx?.batchResolveNames,
     };
-    const { content } = await convertMessageContent(rawContent, msgType, ctx);
+    const { content } = await (0, content_converter_1.convertMessageContent)(rawContent, msgType, ctx);
     const senderId = msg.sender?.id ?? undefined;
     const senderType = msg.sender?.sender_type ?? undefined;
-    const senderName = senderId && acctId ? getUserNameCache(acctId).get(senderId) : undefined;
+    const senderName = senderId && acctId ? (0, user_name_cache_1.getUserNameCache)(acctId).get(senderId) : undefined;
     return {
         messageId,
         chatId: msg.chat_id ?? '',

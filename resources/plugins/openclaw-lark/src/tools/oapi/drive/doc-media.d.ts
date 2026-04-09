@@ -16,4 +16,4 @@
  * - sdk.board.v1.whiteboard.downloadAsImage - 下载画板缩略图
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-export declare function registerDocMediaTool(api: OpenClawPluginApi): void;
+export declare function registerDocMediaTool(api: OpenClawPluginApi): boolean;

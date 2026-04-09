@@ -8,8 +8,10 @@
  * Extracted from gate.ts to separate pure policy decisions from I/O
  * operations (pairing request creation, message sending).
  */
-import { LarkClient } from '../../core/lark-client';
-import { sendMessageFeishu } from '../outbound/send';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.sendPairingReply = sendPairingReply;
+const lark_client_1 = require("../../core/lark-client.js");
+const send_1 = require("../outbound/send.js");
 // ---------------------------------------------------------------------------
 // Pairing reply
 // ---------------------------------------------------------------------------
@@ -20,9 +22,9 @@ import { sendMessageFeishu } from '../outbound/send';
  * policy decision (whether to pair) is made in gate.ts, and this
  * function executes the resulting I/O.
  */
-export async function sendPairingReply(params) {
+async function sendPairingReply(params) {
     const { senderId, chatId, accountId, accountScopedCfg } = params;
-    const core = LarkClient.runtime;
+    const core = lark_client_1.LarkClient.runtime;
     const { code } = await core.channel.pairing.upsertPairingRequest({
         channel: 'feishu',
         id: senderId,
@@ -34,7 +36,7 @@ export async function sendPairingReply(params) {
         code,
     });
     if (accountScopedCfg) {
-        await sendMessageFeishu({
+        await (0, send_1.sendMessageFeishu)({
             cfg: accountScopedCfg,
             to: chatId,
             text: pairingReply,

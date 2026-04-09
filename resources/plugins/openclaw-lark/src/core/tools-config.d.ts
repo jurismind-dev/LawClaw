@@ -8,8 +8,8 @@
  * agent tools (document access, wiki queries, drive operations, etc.) is
  * enabled for a given account.
  */
-import type { FeishuToolsConfig, LarkAccount } from './types';
 import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
+import type { FeishuToolsConfig, LarkAccount } from './types';
 /**
  * The default tools configuration.
  *

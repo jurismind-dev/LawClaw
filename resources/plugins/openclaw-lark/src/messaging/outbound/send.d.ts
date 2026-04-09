@@ -5,8 +5,7 @@
  * Message sending for the Lark/Feishu channel plugin.
  */
 import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
-import type { FeishuSendResult } from '../types';
-import type { MentionInfo } from '../types';
+import type { FeishuSendResult, MentionInfo } from '../types';
 /**
  * Parameters for sending a text / post message.
  */

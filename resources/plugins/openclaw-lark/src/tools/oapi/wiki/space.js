@@ -12,38 +12,40 @@
  *   - get:    GET  /open-apis/wiki/v2/spaces/:space_id
  *   - create: POST /open-apis/wiki/v2/spaces
  */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, } from '../helpers';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerFeishuWikiSpaceTool = registerFeishuWikiSpaceTool;
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const FeishuWikiSpaceSchema = Type.Union([
+const FeishuWikiSpaceSchema = typebox_1.Type.Union([
     // LIST SPACES
-    Type.Object({
-        action: Type.Literal('list'),
-        page_size: Type.Optional(Type.Integer({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('list'),
+        page_size: typebox_1.Type.Optional(typebox_1.Type.Integer({
             description: '分页大小（默认 10，最大 50）',
             minimum: 1,
             maximum: 50,
         })),
-        page_token: Type.Optional(Type.String({
+        page_token: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '分页标记。首次请求无需填写',
         })),
     }),
     // GET SPACE
-    Type.Object({
-        action: Type.Literal('get'),
-        space_id: Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('get'),
+        space_id: typebox_1.Type.String({
             description: '知识空间 ID（必填）',
         }),
     }),
     // CREATE SPACE
-    Type.Object({
-        action: Type.Literal('create'),
-        name: Type.Optional(Type.String({
+    typebox_1.Type.Object({
+        action: typebox_1.Type.Literal('create'),
+        name: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '知识空间名称',
         })),
-        description: Type.Optional(Type.String({
+        description: typebox_1.Type.Optional(typebox_1.Type.String({
             description: '知识空间描述',
         })),
     }),
@@ -51,12 +53,12 @@ const FeishuWikiSpaceSchema = Type.Union([
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerFeishuWikiSpaceTool(api) {
+function registerFeishuWikiSpaceTool(api) {
     if (!api.config)
-        return;
+        return false;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_wiki_space');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_wiki_space');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_wiki_space',
         label: 'Feishu Wiki Spaces',
         description: '飞书知识空间管理工具。当用户要求查看知识库列表、获取知识库信息、创建知识库时使用。Actions: list（列出知识空间）, get（获取知识空间信息）, create（创建知识空间）。' +
@@ -80,10 +82,10 @@ export function registerFeishuWikiSpaceTool(api) {
                                 page_token: p.page_token,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         const data = res.data;
                         log.info(`list: returned ${data?.items?.length ?? 0} spaces`);
-                        return json({
+                        return (0, helpers_1.json)({
                             spaces: data?.items,
                             has_more: data?.has_more,
                             page_token: data?.page_token,
@@ -97,9 +99,9 @@ export function registerFeishuWikiSpaceTool(api) {
                         const res = await client.invoke('feishu_wiki_space.get', (sdk, opts) => sdk.wiki.space.get({
                             path: { space_id: p.space_id },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         log.info(`get: retrieved space ${p.space_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             space: res.data?.space,
                         });
                     }
@@ -114,17 +116,17 @@ export function registerFeishuWikiSpaceTool(api) {
                                 description: p.description,
                             },
                         }, opts), { as: 'user' });
-                        assertLarkOk(res);
+                        (0, helpers_1.assertLarkOk)(res);
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         log.info(`create: created space_id=${res.data?.space?.space_id}`);
-                        return json({
+                        return (0, helpers_1.json)({
                             space: res.data?.space,
                         });
                     }
                 }
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_wiki_space' });

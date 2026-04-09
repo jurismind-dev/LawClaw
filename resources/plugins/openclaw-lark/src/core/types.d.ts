@@ -8,7 +8,7 @@
  * tools configuration, and account types. Messaging, outbound, and channel types
  * live in their respective module type files.
  */
-import type { FeishuConfigSchema, FeishuGroupSchema, FeishuAccountConfigSchema, UATConfigSchema, z } from './config-schema';
+import type { FeishuAccountConfigSchema, FeishuConfigSchema, FeishuGroupSchema, UATConfigSchema, z } from './config-schema';
 /** Fully resolved top-level Feishu channel configuration. */
 export type FeishuConfig = z.infer<typeof FeishuConfigSchema>;
 /** Per-group configuration overrides. */
@@ -41,6 +41,10 @@ export interface FeishuToolsConfig {
 export interface FeishuFooterConfig {
     status?: boolean;
     elapsed?: boolean;
+    tokens?: boolean;
+    cache?: boolean;
+    context?: boolean;
+    model?: boolean;
 }
 /** Common fields shared by all resolved account states. */
 interface LarkAccountBase {

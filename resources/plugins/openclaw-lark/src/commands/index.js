@@ -5,10 +5,16 @@
  *
  * Register all chat commands (/feishu_diagnose, /feishu_doctor, /feishu_auth, /feishu).
  */
-import { runDiagnosis, formatDiagReportText } from './diagnose';
-import { runFeishuDoctor } from './doctor';
-import { runFeishuAuth } from './auth';
-import { getPluginVersion } from '../core/version';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.runFeishuStart = runFeishuStart;
+exports.runFeishuStartI18n = runFeishuStartI18n;
+exports.getFeishuHelp = getFeishuHelp;
+exports.getFeishuHelpI18n = getFeishuHelpI18n;
+exports.registerCommands = registerCommands;
+const version_1 = require("../core/version.js");
+const diagnose_1 = require("./diagnose.js");
+const doctor_1 = require("./doctor.js");
+const auth_1 = require("./auth.js");
 // ---------------------------------------------------------------------------
 // I18n text map for /feishu start, help, and error messages
 // ---------------------------------------------------------------------------
@@ -62,7 +68,7 @@ const T = {
 /**
  * 运行 /feishu start 校验，返回 Markdown 格式结果。
  */
-export function runFeishuStart(config, locale = 'zh_cn') {
+function runFeishuStart(config, locale = 'zh_cn') {
     const t = T[locale];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cfg = config;
@@ -84,14 +90,14 @@ export function runFeishuStart(config, locale = 'zh_cn') {
         return t.startFailed(all.join('\n\n'));
     }
     if (warnings.length > 0) {
-        return t.startWithWarnings(getPluginVersion(), warnings.join('\n\n'));
+        return t.startWithWarnings((0, version_1.getPluginVersion)(), warnings.join('\n\n'));
     }
-    return t.startOk(getPluginVersion());
+    return t.startOk((0, version_1.getPluginVersion)());
 }
 /**
  * 运行 /feishu start，同时生成中英双语结果。
  */
-export function runFeishuStartI18n(config) {
+function runFeishuStartI18n(config) {
     return {
         zh_cn: runFeishuStart(config, 'zh_cn'),
         en_us: runFeishuStart(config, 'en_us'),
@@ -100,9 +106,9 @@ export function runFeishuStartI18n(config) {
 /**
  * 生成 /feishu help 帮助文本。
  */
-export function getFeishuHelp(locale = 'zh_cn') {
+function getFeishuHelp(locale = 'zh_cn') {
     const t = T[locale];
-    return (`${t.helpTitle(getPluginVersion())}\n\n` +
+    return (`${t.helpTitle((0, version_1.getPluginVersion)())}\n\n` +
         `${t.helpUsage}\n` +
         `  ${t.helpStart}\n` +
         `  ${t.helpAuth}\n` +
@@ -112,7 +118,7 @@ export function getFeishuHelp(locale = 'zh_cn') {
 /**
  * 生成 /feishu help，同时生成中英双语结果。
  */
-export function getFeishuHelpI18n() {
+function getFeishuHelpI18n() {
     return {
         zh_cn: getFeishuHelp('zh_cn'),
         en_us: getFeishuHelp('en_us'),
@@ -121,7 +127,7 @@ export function getFeishuHelpI18n() {
 // ---------------------------------------------------------------------------
 // Command registration
 // ---------------------------------------------------------------------------
-export function registerCommands(api) {
+function registerCommands(api) {
     // /feishu_diagnose
     api.registerCommand({
         name: 'feishu_diagnose',
@@ -130,8 +136,8 @@ export function registerCommands(api) {
         requireAuth: true,
         async handler(ctx) {
             try {
-                const report = await runDiagnosis({ config: ctx.config });
-                return { text: formatDiagReportText(report) };
+                const report = await (0, diagnose_1.runDiagnosis)({ config: ctx.config });
+                return { text: (0, diagnose_1.formatDiagReportText)(report) };
             }
             catch (err) {
                 return {
@@ -148,7 +154,7 @@ export function registerCommands(api) {
         requireAuth: true,
         async handler(ctx) {
             try {
-                const markdown = await runFeishuDoctor(ctx.config, ctx.accountId);
+                const markdown = await (0, doctor_1.runFeishuDoctor)(ctx.config, ctx.accountId);
                 return { text: markdown };
             }
             catch (err) {
@@ -166,7 +172,7 @@ export function registerCommands(api) {
         requireAuth: true,
         async handler(ctx) {
             try {
-                const result = await runFeishuAuth(ctx.config);
+                const result = await (0, auth_1.runFeishuAuth)(ctx.config);
                 return { text: result };
             }
             catch (err) {
@@ -188,12 +194,12 @@ export function registerCommands(api) {
             try {
                 // /feishu auth 或 /feishu onboarding
                 if (subcommand === 'auth' || subcommand === 'onboarding') {
-                    const result = await runFeishuAuth(ctx.config);
+                    const result = await (0, auth_1.runFeishuAuth)(ctx.config);
                     return { text: result };
                 }
                 // /feishu doctor
                 if (subcommand === 'doctor') {
-                    const markdown = await runFeishuDoctor(ctx.config, ctx.accountId);
+                    const markdown = await (0, doctor_1.runFeishuDoctor)(ctx.config, ctx.accountId);
                     return { text: markdown };
                 }
                 // /feishu start

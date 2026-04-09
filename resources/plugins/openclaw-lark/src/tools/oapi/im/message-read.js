@@ -11,11 +11,13 @@
  *   - feishu_im_user_search_messages     (跨会话关键词搜索)
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Type } from '@sinclair/typebox';
-import { assertLarkOk, createToolContext, getFirstAccount, handleInvokeErrorWithAutoAuth, json, registerTool, StringEnum } from '../helpers';
-import { dateTimeToSecondsString, parseTimeRangeToSeconds } from './time-utils';
-import { formatMessageList } from './format-messages';
-import { getUATUserName, batchResolveUserNamesAsUser } from './user-name-uat';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerMessageReadTools = registerMessageReadTools;
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
+const time_utils_1 = require("./time-utils.js");
+const format_messages_1 = require("./format-messages.js");
+const user_name_uat_1 = require("./user-name-uat.js");
 // ===========================================================================
 // Shared helpers
 // ===========================================================================
@@ -41,56 +43,56 @@ async function resolveP2PChatId(client, openId, log) {
 /** 解析时间参数，返回秒级时间戳字符串 */
 function resolveTimeRange(p, logInfo) {
     if (p.relative_time) {
-        const range = parseTimeRangeToSeconds(p.relative_time);
+        const range = (0, time_utils_1.parseTimeRangeToSeconds)(p.relative_time);
         logInfo(`relative_time="${p.relative_time}" → start=${range.start}, end=${range.end}`);
         return range;
     }
     return {
-        start: p.start_time ? dateTimeToSecondsString(p.start_time) : undefined,
-        end: p.end_time ? dateTimeToSecondsString(p.end_time) : undefined,
+        start: p.start_time ? (0, time_utils_1.dateTimeToSecondsString)(p.start_time) : undefined,
+        end: p.end_time ? (0, time_utils_1.dateTimeToSecondsString)(p.end_time) : undefined,
     };
 }
 /** 格式化 message.list 结果并返回 */
 async function formatAndReturn(res, config, log, client) {
     const items = res.data?.items ?? [];
-    const account = getFirstAccount(config);
-    const messages = await formatMessageList(items, account, (...args) => log.info(args.map(String).join(' ')), client);
+    const account = (0, helpers_1.getFirstAccount)(config);
+    const messages = await (0, format_messages_1.formatMessageList)(items, account, (...args) => log.info(args.map(String).join(' ')), client);
     const hasMore = res.data?.has_more ?? false;
     const pageToken = res.data?.page_token;
     log.info(`list: returned ${messages.length} messages, has_more=${hasMore}`);
-    return json({ messages, has_more: hasMore, page_token: pageToken });
+    return (0, helpers_1.json)({ messages, has_more: hasMore, page_token: pageToken });
 }
 // ===========================================================================
 // feishu_im_user_get_messages
 // ===========================================================================
-const GetMessagesSchema = Type.Object({
-    open_id: Type.Optional(Type.String({
+const GetMessagesSchema = typebox_1.Type.Object({
+    open_id: typebox_1.Type.Optional(typebox_1.Type.String({
         description: '用户 open_id（ou_xxx），获取与该用户的单聊消息。与 chat_id 互斥',
     })),
-    chat_id: Type.Optional(Type.String({
+    chat_id: typebox_1.Type.Optional(typebox_1.Type.String({
         description: '会话 ID（oc_xxx），支持单聊和群聊。与 open_id 互斥',
     })),
-    sort_rule: Type.Optional(StringEnum(['create_time_asc', 'create_time_desc'], {
+    sort_rule: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['create_time_asc', 'create_time_desc'], {
         description: '排序方式，默认 create_time_desc（最新消息在前）',
     })),
-    page_size: Type.Optional(Type.Number({ description: '每页消息数（1-50），默认 50', minimum: 1, maximum: 50 })),
-    page_token: Type.Optional(Type.String({ description: '分页标记，用于获取下一页' })),
-    relative_time: Type.Optional(Type.String({
+    page_size: typebox_1.Type.Optional(typebox_1.Type.Number({ description: '每页消息数（1-50），默认 50', minimum: 1, maximum: 50 })),
+    page_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '分页标记，用于获取下一页' })),
+    relative_time: typebox_1.Type.Optional(typebox_1.Type.String({
         description: '相对时间范围：today / yesterday / day_before_yesterday / this_week / last_week / this_month / last_month / last_{N}_{unit}（unit: minutes/hours/days）。与 start_time/end_time 互斥',
     })),
-    start_time: Type.Optional(Type.String({
+    start_time: typebox_1.Type.Optional(typebox_1.Type.String({
         description: '起始时间（ISO 8601 格式，如 2026-02-27T00:00:00+08:00）。与 relative_time 互斥',
     })),
-    end_time: Type.Optional(Type.String({
+    end_time: typebox_1.Type.Optional(typebox_1.Type.String({
         description: '结束时间（ISO 8601 格式，如 2026-02-27T23:59:59+08:00）。与 relative_time 互斥',
     })),
 });
 function registerGetMessages(api) {
     if (!api.config)
-        return;
+        return false;
     const config = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_im_user_get_messages');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_im_user_get_messages');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_im_user_get_messages',
         label: 'Feishu: Get IM Messages',
         description: '【以用户身份】获取群聊或单聊的历史消息。' +
@@ -109,13 +111,13 @@ function registerGetMessages(api) {
             const p = params;
             try {
                 if (p.open_id && p.chat_id) {
-                    return json({ error: 'cannot provide both open_id and chat_id, please provide only one' });
+                    return (0, helpers_1.json)({ error: 'cannot provide both open_id and chat_id, please provide only one' });
                 }
                 if (!p.open_id && !p.chat_id) {
-                    return json({ error: 'either open_id or chat_id is required' });
+                    return (0, helpers_1.json)({ error: 'either open_id or chat_id is required' });
                 }
                 if (p.relative_time && (p.start_time || p.end_time)) {
-                    return json({ error: 'cannot use both relative_time and start_time/end_time' });
+                    return (0, helpers_1.json)({ error: 'cannot use both relative_time and start_time/end_time' });
                 }
                 const client = toolClient();
                 let chatId = p.chat_id ?? '';
@@ -139,11 +141,11 @@ function registerGetMessages(api) {
                 }, opts), {
                     as: 'user',
                 });
-                assertLarkOk(res);
+                (0, helpers_1.assertLarkOk)(res);
                 return await formatAndReturn(res, config, log, client);
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, config);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, config);
             }
         },
     }, { name: 'feishu_im_user_get_messages' });
@@ -151,20 +153,20 @@ function registerGetMessages(api) {
 // ===========================================================================
 // feishu_im_user_get_thread_messages
 // ===========================================================================
-const GetThreadMessagesSchema = Type.Object({
-    thread_id: Type.String({ description: '话题 ID（omt_xxx 格式）' }),
-    sort_rule: Type.Optional(StringEnum(['create_time_asc', 'create_time_desc'], {
+const GetThreadMessagesSchema = typebox_1.Type.Object({
+    thread_id: typebox_1.Type.String({ description: '话题 ID（omt_xxx 格式）' }),
+    sort_rule: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['create_time_asc', 'create_time_desc'], {
         description: '排序方式，默认 create_time_desc（最新消息在前）',
     })),
-    page_size: Type.Optional(Type.Number({ description: '每页消息数（1-50），默认 50', minimum: 1, maximum: 50 })),
-    page_token: Type.Optional(Type.String({ description: '分页标记，用于获取下一页' })),
+    page_size: typebox_1.Type.Optional(typebox_1.Type.Number({ description: '每页消息数（1-50），默认 50', minimum: 1, maximum: 50 })),
+    page_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '分页标记，用于获取下一页' })),
 });
 function registerGetThreadMessages(api) {
     if (!api.config)
-        return;
+        return false;
     const config = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_im_user_get_thread_messages');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_im_user_get_thread_messages');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_im_user_get_thread_messages',
         label: 'Feishu: Get Thread Messages',
         description: '【以用户身份】获取话题（thread）内的消息列表。' +
@@ -191,11 +193,11 @@ function registerGetThreadMessages(api) {
                 }, opts), {
                     as: 'user',
                 });
-                assertLarkOk(res);
+                (0, helpers_1.assertLarkOk)(res);
                 return await formatAndReturn(res, config, log, client);
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, config);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, config);
             }
         },
     }, { name: 'feishu_im_user_get_thread_messages' });
@@ -203,33 +205,33 @@ function registerGetThreadMessages(api) {
 // ===========================================================================
 // feishu_im_user_search_messages
 // ===========================================================================
-const SearchMessagesSchema = Type.Object({
-    query: Type.Optional(Type.String({ description: '搜索关键词，匹配消息内容。可为空字符串表示不按内容过滤' })),
-    sender_ids: Type.Optional(Type.Array(Type.String({ description: '发送者的 open_id（ou_xxx）' }), {
+const SearchMessagesSchema = typebox_1.Type.Object({
+    query: typebox_1.Type.Optional(typebox_1.Type.String({ description: '搜索关键词，匹配消息内容。可为空字符串表示不按内容过滤' })),
+    sender_ids: typebox_1.Type.Optional(typebox_1.Type.Array(typebox_1.Type.String({ description: '发送者的 open_id（ou_xxx）' }), {
         description: '发送者 open_id 列表。如需根据用户名查找 open_id，请先使用 search_user 工具',
     })),
-    chat_id: Type.Optional(Type.String({ description: '限定搜索范围的会话 ID（oc_xxx）' })),
-    mention_ids: Type.Optional(Type.Array(Type.String({ description: '被@用户的 open_id（ou_xxx）' }), { description: '被@用户的 open_id 列表' })),
-    message_type: Type.Optional(StringEnum(['file', 'image', 'media'], {
+    chat_id: typebox_1.Type.Optional(typebox_1.Type.String({ description: '限定搜索范围的会话 ID（oc_xxx）' })),
+    mention_ids: typebox_1.Type.Optional(typebox_1.Type.Array(typebox_1.Type.String({ description: '被@用户的 open_id（ou_xxx）' }), { description: '被@用户的 open_id 列表' })),
+    message_type: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['file', 'image', 'media'], {
         description: '消息类型过滤：file / image / media。为空则搜索所有类型',
     })),
-    sender_type: Type.Optional(StringEnum(['user', 'bot', 'all'], {
+    sender_type: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['user', 'bot', 'all'], {
         description: '发送者类型：user / bot / all。默认 user',
     })),
-    chat_type: Type.Optional(StringEnum(['group', 'p2p'], {
+    chat_type: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['group', 'p2p'], {
         description: '会话类型：group（群聊）/ p2p（单聊）',
     })),
-    relative_time: Type.Optional(Type.String({
+    relative_time: typebox_1.Type.Optional(typebox_1.Type.String({
         description: '相对时间范围：today / yesterday / day_before_yesterday / this_week / last_week / this_month / last_month / last_{N}_{unit}（unit: minutes/hours/days）。与 start_time/end_time 互斥',
     })),
-    start_time: Type.Optional(Type.String({
+    start_time: typebox_1.Type.Optional(typebox_1.Type.String({
         description: '起始时间（ISO 8601 格式，如 2026-02-27T00:00:00+08:00）。与 relative_time 互斥',
     })),
-    end_time: Type.Optional(Type.String({
+    end_time: typebox_1.Type.Optional(typebox_1.Type.String({
         description: '结束时间（ISO 8601 格式，如 2026-02-27T23:59:59+08:00）。与 relative_time 互斥',
     })),
-    page_size: Type.Optional(Type.Number({ description: '每页消息数（1-50），默认 50', minimum: 1, maximum: 50 })),
-    page_token: Type.Optional(Type.String({ description: '分页标记，用于获取下一页' })),
+    page_size: typebox_1.Type.Optional(typebox_1.Type.Number({ description: '每页消息数（1-50），默认 50', minimum: 1, maximum: 50 })),
+    page_token: typebox_1.Type.Optional(typebox_1.Type.String({ description: '分页标记，用于获取下一页' })),
 });
 function buildSearchData(p, time) {
     const data = {
@@ -285,7 +287,7 @@ async function fetchChatContexts(client, chatIds, logInfo, logWarn) {
 async function resolveP2PTargetNames(chatMap, client, logFn) {
     const ids = [...new Set([...chatMap.values()].map((c) => c.p2p_target_id).filter((id) => !!id))];
     if (ids.length > 0) {
-        await batchResolveUserNamesAsUser({ client, openIds: ids, log: logFn });
+        await (0, user_name_uat_1.batchResolveUserNamesAsUser)({ client, openIds: ids, log: logFn });
     }
 }
 function enrichMessages(messages, items, chatMap, nameResolver) {
@@ -314,10 +316,10 @@ function enrichMessages(messages, items, chatMap, nameResolver) {
 }
 function registerSearchMessages(api) {
     if (!api.config)
-        return;
+        return false;
     const config = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_im_user_search_messages');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_im_user_search_messages');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_im_user_search_messages',
         label: 'Feishu: Search Messages',
         description: '【以用户身份】跨会话搜索飞书消息。' +
@@ -340,10 +342,10 @@ function registerSearchMessages(api) {
             const p = params;
             try {
                 if (p.relative_time && (p.start_time || p.end_time)) {
-                    return json({ error: 'cannot use both relative_time and start_time/end_time' });
+                    return (0, helpers_1.json)({ error: 'cannot use both relative_time and start_time/end_time' });
                 }
                 const client = toolClient();
-                const account = getFirstAccount(config);
+                const account = (0, helpers_1.getFirstAccount)(config);
                 const logFn = (...args) => log.info(args.map(String).join(' '));
                 // 1. 搜索消息 ID
                 const time = resolveTimeRange(p, log.info);
@@ -362,13 +364,13 @@ function registerSearchMessages(api) {
                 }, opts), {
                     as: 'user',
                 });
-                assertLarkOk(searchRes);
+                (0, helpers_1.assertLarkOk)(searchRes);
                 const messageIds = searchRes.data?.items ?? [];
                 const hasMore = searchRes.data?.has_more ?? false;
                 const pageToken = searchRes.data?.page_token;
                 log.info(`search: found ${messageIds.length} IDs, has_more=${hasMore}`);
                 if (messageIds.length === 0) {
-                    return json({ messages: [], has_more: hasMore, page_token: pageToken });
+                    return (0, helpers_1.json)({ messages: [], has_more: hasMore, page_token: pageToken });
                 }
                 // 2. 批量获取消息详情
                 const queryStr = messageIds.map((id) => `message_ids=${encodeURIComponent(id)}`).join('&');
@@ -387,17 +389,17 @@ function registerSearchMessages(api) {
                 const p2pChats = [...chatMap.entries()].filter(([, v]) => v.chat_mode === 'p2p');
                 log.info(`chats: ${chatMap.size}/${chatIds.length} resolved, p2p=${p2pChats.length}`);
                 // 4. 格式化消息（填充 sender 名字缓存，使用 UAT）
-                const messages = await formatMessageList(items, account, logFn, client);
+                const messages = await (0, format_messages_1.formatMessageList)(items, account, logFn, client);
                 // 5. 解析 p2p 对方用户名（使用 UAT）
                 await resolveP2PTargetNames(chatMap, client, logFn);
                 // 6. 拼装返回
-                const uatNameResolver = (id) => getUATUserName(account.accountId, id);
+                const uatNameResolver = (id) => (0, user_name_uat_1.getUATUserName)(account.accountId, id);
                 const result = enrichMessages(messages, items, chatMap, uatNameResolver);
                 log.info(`result: ${result.length} messages, has_more=${hasMore}`);
-                return json({ messages: result, has_more: hasMore, page_token: pageToken });
+                return (0, helpers_1.json)({ messages: result, has_more: hasMore, page_token: pageToken });
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, config);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, config);
             }
         },
     }, { name: 'feishu_im_user_search_messages' });
@@ -405,8 +407,13 @@ function registerSearchMessages(api) {
 // ===========================================================================
 // Unified registration
 // ===========================================================================
-export function registerMessageReadTools(api) {
-    registerGetMessages(api);
-    registerGetThreadMessages(api);
-    registerSearchMessages(api);
+function registerMessageReadTools(api) {
+    const registered = [];
+    if (registerGetMessages(api))
+        registered.push('feishu_im_user_get_messages');
+    if (registerGetThreadMessages(api))
+        registered.push('feishu_im_user_get_thread_messages');
+    if (registerSearchMessages(api))
+        registered.push('feishu_im_user_search_messages');
+    return registered;
 }

@@ -5,7 +5,7 @@
  * feishu_task_tasklist tool -- Manage Feishu task lists.
  *
  * P0 Actions: create, get, list, tasks
- * P1 Actions: patch, delete, add_members, remove_members
+ * P1 Actions: patch, add_members
  *
  * Uses the Feishu Task v2 API:
  *   - create: POST /open-apis/task/v2/tasklists
@@ -13,9 +13,7 @@
  *   - list:   GET  /open-apis/task/v2/tasklists
  *   - tasks:  GET  /open-apis/task/v2/tasklists/:tasklist_guid/tasks
  *   - patch:  PATCH /open-apis/task/v2/tasklists/:tasklist_guid
- *   - delete: DELETE /open-apis/task/v2/tasklists/:tasklist_guid
  *   - add_members: POST /open-apis/task/v2/tasklists/:tasklist_guid/add_members
- *   - remove_members: POST /open-apis/task/v2/tasklists/:tasklist_guid/remove_members
  */
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 export declare function registerFeishuTaskTasklistTool(api: OpenClawPluginApi): void;

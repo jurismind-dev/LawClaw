@@ -14,6 +14,10 @@
  * The message still flows through `tryFastAbortFromMessage()` for
  * authoritative handling.
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isAbortTrigger = isAbortTrigger;
+exports.isLikelyAbortText = isLikelyAbortText;
+exports.extractRawTextFromEvent = extractRawTextFromEvent;
 // ---------------------------------------------------------------------------
 // Trigger word list (synced with OpenClaw core abort.ts)
 // ---------------------------------------------------------------------------
@@ -78,7 +82,7 @@ function normalizeAbortTriggerText(text) {
 // Public API
 // ---------------------------------------------------------------------------
 /** Exact trigger-word match (same logic as OpenClaw core `isAbortTrigger`). */
-export function isAbortTrigger(text) {
+function isAbortTrigger(text) {
     if (!text)
         return false;
     const normalized = normalizeAbortTriggerText(text);
@@ -88,7 +92,7 @@ export function isAbortTrigger(text) {
  * Extended abort detection: matches both bare trigger words and the
  * `/stop` command form.  Used by the monitor fast-path.
  */
-export function isLikelyAbortText(text) {
+function isLikelyAbortText(text) {
     if (!text)
         return false;
     const trimmed = text.trim().toLowerCase();
@@ -106,7 +110,7 @@ export function isLikelyAbortText(text) {
  * In group chats, bot mention placeholders (`@_user_N`) are stripped so
  * a message like `@Bot stop` is detected as `stop`.
  */
-export function extractRawTextFromEvent(event) {
+function extractRawTextFromEvent(event) {
     if (!event.message || event.message.message_type !== 'text') {
         return undefined;
     }

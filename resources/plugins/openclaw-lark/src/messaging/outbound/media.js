@@ -10,17 +10,63 @@
  * sending image / file messages to chats.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import * as dns from 'node:dns/promises';
-import * as fs from 'node:fs';
-import * as net from 'node:net';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { Readable } from 'node:stream';
-import { LarkClient } from '../../core/lark-client';
-import { normalizeFeishuTarget, resolveReceiveIdType } from '../../core/targets';
-import { isLocalMediaPath, normalizeMediaUrlInput, resolveFileNameFromMediaUrl, safeFileUrlToPath, validateLocalMediaRoots, } from './media-url-utils';
-import { larkLogger } from '../../core/lark-logger';
-const log = larkLogger('outbound/media');
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.downloadMessageResourceFeishu = downloadMessageResourceFeishu;
+exports.uploadImageLark = uploadImageLark;
+exports.uploadFileLark = uploadFileLark;
+exports.sendImageLark = sendImageLark;
+exports.sendFileLark = sendFileLark;
+exports.sendVideoLark = sendVideoLark;
+exports.sendAudioLark = sendAudioLark;
+exports.detectFileType = detectFileType;
+exports.parseOggOpusDuration = parseOggOpusDuration;
+exports.parseMp4Duration = parseMp4Duration;
+exports.uploadAndSendMediaLark = uploadAndSendMediaLark;
+exports.fetchRemoteImageBuffer = fetchRemoteImageBuffer;
+const dns = __importStar(require("node:dns/promises"));
+const fs = __importStar(require("node:fs"));
+const net = __importStar(require("node:net"));
+const os = __importStar(require("node:os"));
+const path = __importStar(require("node:path"));
+const node_stream_1 = require("node:stream");
+const lark_client_1 = require("../../core/lark-client.js");
+const targets_1 = require("../../core/targets.js");
+const lark_logger_1 = require("../../core/lark-logger.js");
+const media_url_utils_1 = require("./media-url-utils.js");
+const log = (0, lark_logger_1.larkLogger)('outbound/media');
 // ---------------------------------------------------------------------------
 // Response extraction helpers
 // ---------------------------------------------------------------------------
@@ -148,9 +194,9 @@ async function* asyncIteratorToIterable(iterator) {
  * @param params.accountId - Optional account identifier.
  * @returns The resource buffer, content type, and file name.
  */
-export async function downloadMessageResourceFeishu(params) {
+async function downloadMessageResourceFeishu(params) {
     const { cfg, messageId, fileKey, type, accountId } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const response = await client.im.messageResource.get({
         path: {
             message_id: messageId,
@@ -190,10 +236,10 @@ export async function downloadMessageResourceFeishu(params) {
  * @param params.accountId - Optional account identifier.
  * @returns The assigned image_key.
  */
-export async function uploadImageLark(params) {
+async function uploadImageLark(params) {
     const { cfg, image, imageType = 'message', accountId } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
-    const imageStream = Buffer.isBuffer(image) ? Readable.from(image) : fs.createReadStream(image);
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
+    const imageStream = Buffer.isBuffer(image) ? node_stream_1.Readable.from(image) : fs.createReadStream(image);
     const response = await client.im.image.create({
         data: { image_type: imageType, image: imageStream },
     });
@@ -219,10 +265,10 @@ export async function uploadImageLark(params) {
  * @param params.accountId - Optional account identifier.
  * @returns The assigned file_key.
  */
-export async function uploadFileLark(params) {
+async function uploadFileLark(params) {
     const { cfg, file, fileName, fileType, duration, accountId } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
-    const fileStream = Buffer.isBuffer(file) ? Readable.from(file) : fs.createReadStream(file);
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
+    const fileStream = Buffer.isBuffer(file) ? node_stream_1.Readable.from(file) : fs.createReadStream(file);
     const response = await client.im.file.create({
         data: {
             file_type: fileType,
@@ -260,12 +306,12 @@ async function sendMediaMessage(params) {
             chatId: response?.data?.chat_id ?? '',
         };
     }
-    const target = normalizeFeishuTarget(to);
+    const target = (0, targets_1.normalizeFeishuTarget)(to);
     if (!target) {
         throw new Error(`[feishu-media] Cannot send ${msgType} message: "${to}" is not a valid target. ` +
             `Expected a chat_id (oc_*), open_id (ou_*), or user_id.`);
     }
-    const receiveIdType = resolveReceiveIdType(target);
+    const receiveIdType = (0, targets_1.resolveReceiveIdType)(target);
     const response = await client.im.message.create({
         params: { receive_id_type: receiveIdType },
         data: { receive_id: target, msg_type: msgType, content },
@@ -289,10 +335,10 @@ async function sendMediaMessage(params) {
  * @param params.accountId        - Optional account identifier.
  * @returns The send result.
  */
-export async function sendImageLark(params) {
+async function sendImageLark(params) {
     const { cfg, to, imageKey, replyToMessageId, replyInThread, accountId } = params;
     log.info(`sendImageLark: target=${to}, imageKey=${imageKey}`);
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const content = JSON.stringify({ image_key: imageKey });
     return sendMediaMessage({ client, to, content, msgType: 'image', replyToMessageId, replyInThread });
 }
@@ -310,10 +356,10 @@ export async function sendImageLark(params) {
  * @param params.accountId        - Optional account identifier.
  * @returns The send result.
  */
-export async function sendFileLark(params) {
+async function sendFileLark(params) {
     const { cfg, to, fileKey, replyToMessageId, replyInThread, accountId } = params;
     log.info(`sendFileLark: target=${to}, fileKey=${fileKey}`);
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const content = JSON.stringify({ file_key: fileKey });
     return sendMediaMessage({ client, to, content, msgType: 'file', replyToMessageId, replyInThread });
 }
@@ -334,10 +380,10 @@ export async function sendFileLark(params) {
  * @param params.accountId        - Optional account identifier.
  * @returns The send result.
  */
-export async function sendVideoLark(params) {
+async function sendVideoLark(params) {
     const { cfg, to, fileKey, replyToMessageId, replyInThread, accountId } = params;
     log.info(`sendVideoLark: target=${to}, fileKey=${fileKey}`);
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const content = JSON.stringify({ file_key: fileKey });
     return sendMediaMessage({ client, to, content, msgType: 'media', replyToMessageId, replyInThread });
 }
@@ -358,10 +404,10 @@ export async function sendVideoLark(params) {
  * @param params.accountId        - Optional account identifier.
  * @returns The send result.
  */
-export async function sendAudioLark(params) {
+async function sendAudioLark(params) {
     const { cfg, to, fileKey, replyToMessageId, replyInThread, accountId } = params;
     log.info(`sendAudioLark: target=${to}, fileKey=${fileKey}`);
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const content = JSON.stringify({ file_key: fileKey });
     return sendMediaMessage({ client, to, content, msgType: 'audio', replyToMessageId, replyInThread });
 }
@@ -397,7 +443,7 @@ const EXTENSION_TYPE_MAP = {
  * @param fileName - The file name (with extension).
  * @returns The detected file type.
  */
-export function detectFileType(fileName) {
+function detectFileType(fileName) {
     const ext = path.extname(fileName).toLowerCase();
     return EXTENSION_TYPE_MAP[ext] ?? 'stream';
 }
@@ -412,7 +458,7 @@ export function detectFileType(fileName) {
  * not actually OGG).  This is intentionally lenient so callers can fall
  * back gracefully.
  */
-export function parseOggOpusDuration(buffer) {
+function parseOggOpusDuration(buffer) {
     // OggS magic bytes: 0x4f 0x67 0x67 0x53
     const OGGS = Buffer.from('OggS');
     // Scan backwards for the last OggS sync word.
@@ -451,7 +497,7 @@ export function parseOggOpusDuration(buffer) {
  * Returns `undefined` when the buffer cannot be parsed (e.g. truncated,
  * `moov` at end of a huge file not fully buffered, or not actually MP4).
  */
-export function parseMp4Duration(buffer) {
+function parseMp4Duration(buffer) {
     // Locate `moov` among top-level boxes.
     const moovData = findBox(buffer, 0, buffer.length, 'moov');
     if (!moovData)
@@ -551,7 +597,7 @@ function isImageFileName(fileName) {
  * @param params.accountId        - Optional account identifier.
  * @returns The send result.
  */
-export async function uploadAndSendMediaLark(params) {
+async function uploadAndSendMediaLark(params) {
     const { cfg, to, mediaUrl, mediaBuffer, fileName, replyToMessageId, replyInThread, accountId, mediaLocalRoots } = params;
     log.info(`uploadAndSendMediaLark: target=${to}, ` +
         `source=${mediaBuffer ? 'buffer' : (mediaUrl ?? '(none)')}, fileName=${fileName ?? '(auto)'}`);
@@ -567,7 +613,7 @@ export async function uploadAndSendMediaLark(params) {
         log.debug(`fetched media: ${buffer.length} bytes from "${mediaUrl}"`);
         // Derive a file name from the URL if none was provided.
         if (!fileName) {
-            const derivedFileName = resolveFileNameFromMediaUrl(mediaUrl);
+            const derivedFileName = (0, media_url_utils_1.resolveFileNameFromMediaUrl)(mediaUrl);
             if (derivedFileName) {
                 resolvedFileName = derivedFileName;
             }
@@ -635,7 +681,7 @@ export async function uploadAndSendMediaLark(params) {
  * Fetch remote image bytes by URL (http/https only).
  * Local file access is denied. Includes SSRF protection.
  */
-export async function fetchRemoteImageBuffer(url) {
+async function fetchRemoteImageBuffer(url) {
     return fetchMediaBuffer(url, undefined);
 }
 // ---------------------------------------------------------------------------
@@ -724,13 +770,13 @@ async function validateRemoteUrl(raw) {
  *   by `localRoots` for path-traversal prevention)
  */
 async function fetchMediaBuffer(urlOrPath, localRoots) {
-    const raw = normalizeMediaUrlInput(urlOrPath);
+    const raw = (0, media_url_utils_1.normalizeMediaUrlInput)(urlOrPath);
     // Local file path (absolute or relative, or file:// URL).
-    if (isLocalMediaPath(raw)) {
-        const filePath = raw.startsWith('file://') ? safeFileUrlToPath(raw) : raw;
+    if ((0, media_url_utils_1.isLocalMediaPath)(raw)) {
+        const filePath = raw.startsWith('file://') ? (0, media_url_utils_1.safeFileUrlToPath)(raw) : raw;
         if (localRoots !== undefined) {
             // Explicit allowlist configured — enforce path restriction.
-            validateLocalMediaRoots(filePath, localRoots);
+            (0, media_url_utils_1.validateLocalMediaRoots)(filePath, localRoots);
         }
         else {
             // Deny by default: unconfigured mediaLocalRoots must not allow

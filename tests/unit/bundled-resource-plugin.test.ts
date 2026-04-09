@@ -32,7 +32,7 @@ describe('bundled resource plugin preparation', () => {
       join(sourceDir, 'package.json'),
       `${JSON.stringify({
         name: '@larksuite/openclaw-lark',
-        version: '2026.3.17',
+        version: '2026.4.7',
         dependencies: {},
       }, null, 2)}\n`,
       'utf-8'
@@ -50,7 +50,7 @@ describe('bundled resource plugin preparation', () => {
         packages: {
           '': {
             name: '@larksuite/openclaw-lark',
-            version: '2026.3.17',
+            version: '2026.4.7',
             dependencies: {},
           },
           'node_modules/@sinclair/typebox': {

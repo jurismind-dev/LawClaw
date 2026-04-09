@@ -3,7 +3,7 @@
  * Manages window creation, system tray, and IPC handlers
  */
 import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { GatewayManager } from '../gateway/manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { createTray } from './tray';
@@ -15,10 +15,12 @@ import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
 import { autoInstallCliIfNeeded } from '../utils/openclaw-cli';
 import { runProviderStartupMigration } from '../utils/provider-migration';
+import { runOpenClawConfigStartupMigration } from '../utils/openclaw-config-migration';
 import { runAgentPresetStartupMigration } from '../utils/agent-preset-migration';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
 import { ensureGlobalRuntimeShims } from '../utils/global-runtime-shims';
 import { ensureMacUninstallWatcher } from '../utils/mac-uninstall-watcher';
+import { cleanupStaleSingletonArtifacts } from '../utils/single-instance-lock';
 
 import { ClawHubService } from '../gateway/clawhub';
 import {
@@ -44,8 +46,20 @@ import {
 // set `"disable-hardware-acceleration": false` in the app config (future).
 app.disableHardwareAcceleration();
 
+const singleInstanceCleanup = cleanupStaleSingletonArtifacts(app.getPath('userData'));
+if (singleInstanceCleanup.removedArtifacts.length > 0) {
+  console.warn(
+    `[lawclaw] Removed stale Electron singleton artifacts for dead PID ${singleInstanceCleanup.stalePid}: ${singleInstanceCleanup.removedArtifacts
+      .map((artifactPath) => basename(artifactPath))
+      .join(', ')}`
+  );
+}
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
+  console.error(
+    `[lawclaw] Failed to acquire the single-instance lock for ${app.getPath('userData')}. Quit the existing LawClaw instance or remove stale Singleton* files and try again.`
+  );
   app.quit();
 }
 
@@ -176,6 +190,10 @@ async function initialize(): Promise<void> {
   // Set application menu
   createMenu();
 
+  // Normalize legacy provider/openclaw config before the renderer queries local state.
+  await runProviderStartupMigration();
+  await runOpenClawConfigStartupMigration();
+
   // Create the main window
   mainWindow = createWindow();
 
@@ -220,9 +238,6 @@ async function initialize(): Promise<void> {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-
-  // Startup migration for legacy moonshot_code_plan -> official kimi-coding semantics.
-  await runProviderStartupMigration();
 
   // Agent preset migration now runs before Gateway startup because upgrades are
   // deterministic local file comparisons and no longer depend on planner/LLM flows.

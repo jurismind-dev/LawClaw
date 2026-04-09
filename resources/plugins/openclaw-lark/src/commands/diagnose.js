@@ -10,21 +10,61 @@
  * a structured report that users can share with developers for
  * remote troubleshooting.
  */
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import { probeFeishu } from '../channel/probe';
-import { getLarkAccountIds, getLarkAccount, getEnabledLarkAccounts } from '../core/accounts';
-import { LarkClient } from '../core/lark-client';
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.runDiagnosis = runDiagnosis;
+exports.formatDiagReportText = formatDiagReportText;
+exports.traceByMessageId = traceByMessageId;
+exports.formatTraceOutput = formatTraceOutput;
+exports.analyzeTrace = analyzeTrace;
+exports.formatDiagReportCli = formatDiagReportCli;
+const fs = __importStar(require("node:fs/promises"));
+const path = __importStar(require("node:path"));
+const os = __importStar(require("node:os"));
+const probe_1 = require("../channel/probe.js");
+const accounts_1 = require("../core/accounts.js");
+const lark_client_1 = require("../core/lark-client.js");
 /**
  * Resolve the global config for cross-account operations.
  * See doctor.ts for rationale.
  */
 function resolveGlobalConfig(config) {
-    return LarkClient.globalConfig ?? config;
+    return lark_client_1.LarkClient.globalConfig ?? config;
 }
-import { assertLarkOk, formatLarkError } from '../core/api-error';
-import { resolveAnyEnabledToolsConfig } from '../core/tools-config';
+const api_error_1 = require("../core/api-error.js");
+const tools_config_1 = require("../core/tools-config.js");
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -76,7 +116,7 @@ async function extractRecentErrors(logPath) {
 async function checkAppScopes(client) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const res = await client.application.scope.list({});
-    assertLarkOk(res);
+    (0, api_error_1.assertLarkOk)(res);
     const scopes = res.data?.scopes ?? [];
     const granted = scopes.filter((s) => s.grant_status === 1);
     const pending = scopes.filter((s) => s.grant_status !== 1);
@@ -87,10 +127,10 @@ async function checkAppScopes(client) {
     };
 }
 function detectRegisteredTools(config) {
-    const accounts = getEnabledLarkAccounts(config);
+    const accounts = (0, accounts_1.getEnabledLarkAccounts)(config);
     if (accounts.length === 0)
         return [];
-    const toolsCfg = resolveAnyEnabledToolsConfig(accounts);
+    const toolsCfg = (0, tools_config_1.resolveAnyEnabledToolsConfig)(accounts);
     const tools = [];
     if (toolsCfg.doc)
         tools.push('feishu_doc');
@@ -142,7 +182,7 @@ async function diagnoseAccount(account) {
     }
     // A3: API connectivity via probe
     try {
-        const probeResult = await probeFeishu({
+        const probeResult = await (0, probe_1.probeFeishu)({
             accountId: account.accountId,
             appId: account.appId,
             appSecret: account.appSecret,
@@ -171,7 +211,7 @@ async function diagnoseAccount(account) {
     }
     // A5: App scopes
     try {
-        const client = LarkClient.fromAccount(account).sdk;
+        const client = lark_client_1.LarkClient.fromAccount(account).sdk;
         const scopesResult = await checkAppScopes(client);
         checks.push({
             name: '应用权限',
@@ -184,7 +224,7 @@ async function diagnoseAccount(account) {
         checks.push({
             name: '应用权限',
             status: 'warn',
-            message: `权限检查失败: ${formatLarkError(err)}`,
+            message: `权限检查失败: ${(0, api_error_1.formatLarkError)(err)}`,
         });
     }
     // A6: Brand
@@ -198,7 +238,7 @@ async function diagnoseAccount(account) {
 // ---------------------------------------------------------------------------
 // Core
 // ---------------------------------------------------------------------------
-export async function runDiagnosis(params) {
+async function runDiagnosis(params) {
     const { config } = params;
     // Use the global config to enumerate all accounts — the passed-in
     // config may be account-scoped (accounts map stripped).
@@ -213,7 +253,7 @@ export async function runDiagnosis(params) {
         details: nodeVer < 18 ? '建议升级到 Node.js 18+' : undefined,
     });
     // -- Account count --
-    const accountIds = getLarkAccountIds(globalCfg);
+    const accountIds = (0, accounts_1.getLarkAccountIds)(globalCfg);
     globalChecks.push({
         name: '飞书账户数量',
         status: accountIds.length > 0 ? 'pass' : 'fail',
@@ -237,7 +277,7 @@ export async function runDiagnosis(params) {
     // -- Per-account diagnosis (sequential to avoid rate limits) --
     const accountResults = [];
     for (const id of accountIds) {
-        const account = getLarkAccount(globalCfg, id);
+        const account = (0, accounts_1.getLarkAccount)(globalCfg, id);
         const result = await diagnoseAccount(account);
         accountResults.push(result);
     }
@@ -285,7 +325,7 @@ function formatCheck(c) {
     }
     return line;
 }
-export function formatDiagReportText(report) {
+function formatDiagReportText(report) {
     const lines = [];
     const sep = '====================================';
     lines.push(sep);
@@ -380,7 +420,7 @@ function formatCheckCli(c) {
  * Scans the last 1MB of the log file for lines containing `[msg:{messageId}]`.
  * Returns matching lines in chronological order.
  */
-export async function traceByMessageId(messageId) {
+async function traceByMessageId(messageId) {
     const logPath = path.join(os.homedir(), '.openclaw', 'logs', 'gateway.log');
     try {
         await fs.access(logPath);
@@ -411,7 +451,7 @@ export async function traceByMessageId(messageId) {
 /**
  * Format trace output for CLI display.
  */
-export function formatTraceOutput(lines, messageId) {
+function formatTraceOutput(lines, messageId) {
     const sep = '────────────────────────────────';
     if (lines.length === 0) {
         return [
@@ -520,7 +560,7 @@ function parseTraceLines(lines) {
 /**
  * Analyze trace log lines and produce a structured CLI report.
  */
-export function analyzeTrace(lines, _messageId) {
+function analyzeTrace(lines, _messageId) {
     const events = parseTraceLines(lines);
     if (events.length === 0) {
         return `无法解析日志行，请确认日志格式正确。`;
@@ -744,7 +784,7 @@ export function analyzeTrace(lines, _messageId) {
     out.push('');
     return out.join('\n');
 }
-export function formatDiagReportCli(report) {
+function formatDiagReportCli(report) {
     const lines = [];
     const sep = '====================================';
     lines.push(sep);

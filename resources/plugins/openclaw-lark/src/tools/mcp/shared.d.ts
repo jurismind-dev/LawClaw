@@ -56,4 +56,4 @@ export declare function callMcpTool(name: string, args: Record<string, unknown>,
 /**
  * 注册 MCP 工具的通用函数 (使用 invoke 机制进行权限检查)
  */
-export declare function registerMcpTool<T extends Record<string, unknown>>(api: OpenClawPluginApi, config: McpToolConfig<T>): void;
+export declare function registerMcpTool<T extends Record<string, unknown>>(api: OpenClawPluginApi, config: McpToolConfig<T>): boolean;

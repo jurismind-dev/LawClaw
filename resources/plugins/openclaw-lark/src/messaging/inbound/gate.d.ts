@@ -22,10 +22,26 @@
  *     - `"open"` → any sender; `"allowlist"` → check merged list;
  *       `"disabled"` → block all senders
  */
-import type { ClawdbotConfig, HistoryEntry } from 'openclaw/plugin-sdk';
+import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
+import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
 import type { MessageContext } from '../types';
-import type { FeishuConfig } from '../../core/types';
-import type { LarkAccount } from '../../core/types';
+import type { FeishuConfig, LarkAccount } from '../../core/types';
+/**
+ * Resolve the effective `respondToMentionAll` setting.
+ *
+ * Precedence: per-group > default ("*") group > global account config > false.
+ */
+export declare function resolveRespondToMentionAll(params: {
+    groupConfig?: {
+        respondToMentionAll?: boolean;
+    };
+    defaultConfig?: {
+        respondToMentionAll?: boolean;
+    };
+    accountFeishuCfg?: {
+        respondToMentionAll?: boolean;
+    };
+}): boolean;
 /**
  * Read the pairing allowFrom store for the Feishu channel via the SDK runtime.
  */

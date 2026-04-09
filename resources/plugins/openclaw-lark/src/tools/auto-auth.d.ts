@@ -29,6 +29,7 @@
  * - 任何步骤抛出异常
  */
 import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
+import type { ToolResult } from './helpers';
 /**
  * 处理 card.action.trigger 回调事件（由 monitor.ts 调用）。
  *
@@ -53,4 +54,4 @@ export declare function handleCardAction(data: unknown, cfg: ClawdbotConfig, acc
  * @param err - invoke() 或其他逻辑抛出的错误
  * @param cfg - OpenClaw 配置对象（从工具注册函数的闭包中获取）
  */
-export declare function handleInvokeErrorWithAutoAuth(err: unknown, cfg: ClawdbotConfig): Promise<any>;
+export declare function handleInvokeErrorWithAutoAuth(err: unknown, cfg: ClawdbotConfig): Promise<ToolResult>;

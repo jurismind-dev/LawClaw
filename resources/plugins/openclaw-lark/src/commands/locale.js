@@ -5,4 +5,4 @@
  *
  * Shared locale type for feishu command i18n.
  */
-export {};
+Object.defineProperty(exports, "__esModule", { value: true });

@@ -8,7 +8,9 @@
  * Drop-in replacement for `fetch()` that automatically injects
  * the User-Agent header.
  */
-import { getUserAgent } from './version';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.feishuFetch = feishuFetch;
+const version_1 = require("./version.js");
 /**
  * Drop-in replacement for `fetch()` that automatically injects
  * the User-Agent header.
@@ -17,10 +19,10 @@ import { getUserAgent } from './version';
  * User-Agent is transparently applied without changing every
  * call-site's signature.
  */
-export function feishuFetch(url, init) {
+function feishuFetch(url, init) {
     const headers = {
         ...init?.headers,
-        'User-Agent': getUserAgent(),
+        'User-Agent': (0, version_1.getUserAgent)(),
     };
     return fetch(url, { ...init, headers });
 }

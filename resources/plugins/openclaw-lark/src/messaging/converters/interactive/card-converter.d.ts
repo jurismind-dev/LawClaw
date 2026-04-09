@@ -2,7 +2,7 @@
  * Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
  * SPDX-License-Identifier: MIT
  */
-import type { Obj, RawCardContent, ConvertCardResult } from './types';
+import type { ConvertCardResult, Obj, RawCardContent } from './types';
 export declare const MODE: {
     readonly Concise: 0;
     readonly Detailed: 1;

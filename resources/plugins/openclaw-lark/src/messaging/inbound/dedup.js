@@ -16,6 +16,9 @@
  * - Periodic sweep leverages FIFO ordering: iterate from oldest and
  *   `break` at the first non-expired entry → O(expired), not O(n).
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MessageDedup = void 0;
+exports.isMessageExpired = isMessageExpired;
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const DEFAULT_MAX_ENTRIES = 5_000;
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -31,7 +34,7 @@ const DEFAULT_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
  * messages may be redelivered — this function lets callers discard them
  * before entering the full handling pipeline.
  */
-export function isMessageExpired(createTimeStr, expiryMs = DEFAULT_EXPIRY_MS) {
+function isMessageExpired(createTimeStr, expiryMs = DEFAULT_EXPIRY_MS) {
     if (!createTimeStr)
         return false;
     const createTime = parseInt(createTimeStr, 10);
@@ -42,7 +45,7 @@ export function isMessageExpired(createTimeStr, expiryMs = DEFAULT_EXPIRY_MS) {
 // ---------------------------------------------------------------------------
 // Message deduplication
 // ---------------------------------------------------------------------------
-export class MessageDedup {
+class MessageDedup {
     store = new Map();
     ttlMs;
     maxEntries;
@@ -115,3 +118,4 @@ export class MessageDedup {
         }
     }
 }
+exports.MessageDedup = MessageDedup;

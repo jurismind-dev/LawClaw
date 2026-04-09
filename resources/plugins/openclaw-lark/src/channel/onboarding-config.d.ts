@@ -8,7 +8,8 @@
  * to a ClawdbotConfig. Extracted from onboarding.ts for reuse
  * in CLI commands and other configuration flows.
  */
-import type { ClawdbotConfig, DmPolicy } from 'openclaw/plugin-sdk';
+import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
+import type { DmPolicy } from 'openclaw/plugin-sdk/setup';
 export declare function setFeishuDmPolicy(cfg: ClawdbotConfig, dmPolicy: DmPolicy): ClawdbotConfig;
 export declare function setFeishuAllowFrom(cfg: ClawdbotConfig, allowFrom: string[]): ClawdbotConfig;
 export declare function setFeishuGroupPolicy(cfg: ClawdbotConfig, groupPolicy: 'open' | 'allowlist' | 'disabled'): ClawdbotConfig;

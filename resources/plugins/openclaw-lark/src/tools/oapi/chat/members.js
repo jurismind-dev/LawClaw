@@ -8,33 +8,35 @@
  * 获取指定群组的成员信息，包括成员名字与 ID
  * 使用 sdk.im.v1.chatMembers.get 接口
  */
-import { Type } from '@sinclair/typebox';
-import { json, createToolContext, assertLarkOk, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registerChatMembersTool = registerChatMembersTool;
+const typebox_1 = require("@sinclair/typebox");
+const helpers_1 = require("../helpers.js");
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-const ChatMembersSchema = Type.Object({
-    chat_id: Type.String({
+const ChatMembersSchema = typebox_1.Type.Object({
+    chat_id: typebox_1.Type.String({
         description: '群 ID（格式如 oc_xxx）。' + '可以通过 feishu_chat_search 工具搜索获取',
     }),
-    member_id_type: Type.Optional(StringEnum(['open_id', 'union_id', 'user_id'])),
-    page_size: Type.Optional(Type.Integer({
+    member_id_type: typebox_1.Type.Optional((0, helpers_1.StringEnum)(['open_id', 'union_id', 'user_id'])),
+    page_size: typebox_1.Type.Optional(typebox_1.Type.Integer({
         description: '分页大小（默认20）',
         minimum: 1,
     })),
-    page_token: Type.Optional(Type.String({
+    page_token: typebox_1.Type.Optional(typebox_1.Type.String({
         description: '分页标记。首次请求无需填写',
     })),
 });
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-export function registerChatMembersTool(api) {
+function registerChatMembersTool(api) {
     if (!api.config)
-        return;
+        return false;
     const cfg = api.config;
-    const { toolClient, log } = createToolContext(api, 'feishu_chat_members');
-    registerTool(api, {
+    const { toolClient, log } = (0, helpers_1.createToolContext)(api, 'feishu_chat_members');
+    return (0, helpers_1.registerTool)(api, {
         name: 'feishu_chat_members',
         label: 'Feishu: Get Chat Members',
         description: '以用户的身份获取指定群组的成员列表。' +
@@ -62,12 +64,12 @@ export function registerChatMembersTool(api) {
                     },
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 }), { as: 'user' });
-                assertLarkOk(res);
+                (0, helpers_1.assertLarkOk)(res);
                 const data = res.data;
                 const memberCount = data?.items?.length ?? 0;
                 const memberTotal = data?.member_total ?? 0;
                 log.info(`chat_members: found ${memberCount} members (total: ${memberTotal})`);
-                return json({
+                return (0, helpers_1.json)({
                     items: data?.items,
                     has_more: data?.has_more ?? false,
                     page_token: data?.page_token,
@@ -75,7 +77,7 @@ export function registerChatMembersTool(api) {
                 });
             }
             catch (err) {
-                return await handleInvokeErrorWithAutoAuth(err, cfg);
+                return await (0, helpers_1.handleInvokeErrorWithAutoAuth)(err, cfg);
             }
         },
     }, { name: 'feishu_chat_members' });

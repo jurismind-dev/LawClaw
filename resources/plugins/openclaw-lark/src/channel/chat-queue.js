@@ -12,48 +12,57 @@
  * Ensures tasks targeting the same account+chat are executed serially.
  * Used by both websocket inbound messages and synthetic message paths.
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.threadScopedKey = threadScopedKey;
+exports.buildQueueKey = buildQueueKey;
+exports.registerActiveDispatcher = registerActiveDispatcher;
+exports.unregisterActiveDispatcher = unregisterActiveDispatcher;
+exports.getActiveDispatcher = getActiveDispatcher;
+exports.hasActiveTask = hasActiveTask;
+exports.enqueueFeishuChatTask = enqueueFeishuChatTask;
+exports._resetChatQueueState = _resetChatQueueState;
 const chatQueues = new Map();
 const activeDispatchers = new Map();
 /**
  * Append `:thread:{threadId}` suffix when threadId is present.
  * Consistent with the SDK's `:thread:` separator convention.
  */
-export function threadScopedKey(base, threadId) {
+function threadScopedKey(base, threadId) {
     return threadId ? `${base}:thread:${threadId}` : base;
 }
-export function buildQueueKey(accountId, chatId, threadId) {
+function buildQueueKey(accountId, chatId, threadId) {
     return threadScopedKey(`${accountId}:${chatId}`, threadId);
 }
-export function registerActiveDispatcher(key, entry) {
+function registerActiveDispatcher(key, entry) {
     activeDispatchers.set(key, entry);
 }
-export function unregisterActiveDispatcher(key) {
+function unregisterActiveDispatcher(key) {
     activeDispatchers.delete(key);
 }
-export function getActiveDispatcher(key) {
+function getActiveDispatcher(key) {
     return activeDispatchers.get(key);
 }
 /** Check whether the queue has an active task for the given key. */
-export function hasActiveTask(key) {
+function hasActiveTask(key) {
     return chatQueues.has(key);
 }
-export function enqueueFeishuChatTask(params) {
+function enqueueFeishuChatTask(params) {
     const { accountId, chatId, threadId, task } = params;
     const key = buildQueueKey(accountId, chatId, threadId);
     const prev = chatQueues.get(key) ?? Promise.resolve();
     const status = chatQueues.has(key) ? 'queued' : 'immediate';
-    const next = prev.then(task, task); // continue queue even if previous task failed
-    chatQueues.set(key, next);
+    const taskPromise = prev.then(task, task);
+    chatQueues.set(key, taskPromise);
     const cleanup = () => {
-        if (chatQueues.get(key) === next) {
+        if (chatQueues.get(key) === taskPromise) {
             chatQueues.delete(key);
         }
     };
-    next.then(cleanup, cleanup);
-    return { status, promise: next };
+    taskPromise.then(cleanup, cleanup);
+    return { status, promise: taskPromise };
 }
 /** @internal Test-only: reset all queue and dispatcher state. */
-export function _resetChatQueueState() {
+function _resetChatQueueState() {
     chatQueues.clear();
     activeDispatchers.clear();
 }

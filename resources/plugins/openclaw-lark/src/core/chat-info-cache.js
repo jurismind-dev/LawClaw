@@ -12,9 +12,19 @@
  * - `chat_mode`: "group" | "topic" | "p2p"
  * - `group_message_type`: "chat" | "thread" (only for chat_mode=group)
  */
-import { LarkClient } from './lark-client';
-import { larkLogger } from './lark-logger';
-const log = larkLogger('core/chat-info-cache');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.injectLarkClient = injectLarkClient;
+exports.clearChatInfoCache = clearChatInfoCache;
+exports.isThreadCapableGroup = isThreadCapableGroup;
+exports.getChatInfo = getChatInfo;
+exports.getChatTypeFeishu = getChatTypeFeishu;
+const lark_logger_1 = require("./lark-logger.js");
+let _LarkClient = null;
+/** @internal Called by lark-client.ts at module init time. */
+function injectLarkClient(cls) {
+    _LarkClient = cls;
+}
+const log = (0, lark_logger_1.larkLogger)('core/chat-info-cache');
 // ---------------------------------------------------------------------------
 // Cache implementation
 // ---------------------------------------------------------------------------
@@ -70,7 +80,7 @@ function getChatInfoCache(accountId) {
     return c;
 }
 /** Clear chat-info caches (called from LarkClient.clearCache). */
-export function clearChatInfoCache(accountId) {
+function clearChatInfoCache(accountId) {
     if (accountId !== undefined) {
         registry.get(accountId)?.clear();
         registry.delete(accountId);
@@ -92,7 +102,7 @@ export function clearChatInfoCache(accountId) {
  *
  * Results are cached per-account with a 1-hour TTL to minimise OAPI calls.
  */
-export async function isThreadCapableGroup(params) {
+async function isThreadCapableGroup(params) {
     const { cfg, chatId, accountId } = params;
     const info = await getChatInfo({ cfg, chatId, accountId });
     if (!info)
@@ -104,7 +114,7 @@ export async function isThreadCapableGroup(params) {
  *
  * Returns `undefined` when the API call fails (best-effort).
  */
-export async function getChatInfo(params) {
+async function getChatInfo(params) {
     const { cfg, chatId, accountId } = params;
     const effectiveAccountId = accountId ?? 'default';
     const cache = getChatInfoCache(effectiveAccountId);
@@ -112,7 +122,9 @@ export async function getChatInfo(params) {
     if (cached)
         return cached;
     try {
-        const sdk = LarkClient.fromCfg(cfg, accountId).sdk;
+        if (!_LarkClient)
+            throw new Error('LarkClient not injected — circular dependency broken?');
+        const sdk = _LarkClient.fromCfg(cfg, accountId).sdk;
         const response = await sdk.im.chat.get({
             path: { chat_id: chatId },
         });
@@ -144,7 +156,7 @@ export async function getChatInfo(params) {
  *
  * Falls back to "p2p" if the API call fails.
  */
-export async function getChatTypeFeishu(params) {
+async function getChatTypeFeishu(params) {
     const { cfg, chatId, accountId } = params;
     const info = await getChatInfo({ cfg, chatId, accountId });
     if (!info)

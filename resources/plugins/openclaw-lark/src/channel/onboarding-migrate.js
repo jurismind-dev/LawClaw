@@ -9,7 +9,9 @@
  * groupAllowFrom to the groups config, preserving the original
  * semantic of "allow this group for any sender".
  */
-import { setFeishuGroups, setFeishuGroupAllowFrom } from './onboarding-config';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.migrateLegacyGroupAllowFrom = migrateLegacyGroupAllowFrom;
+const onboarding_config_1 = require("./onboarding-config.js");
 /**
  * Detect and migrate legacy chat_id entries in groupAllowFrom.
  *
@@ -20,7 +22,7 @@ import { setFeishuGroups, setFeishuGroupAllowFrom } from './onboarding-config';
  * This function prompts the user and, if confirmed, moves chat_ids
  * to the groups config and keeps only sender IDs in groupAllowFrom.
  */
-export async function migrateLegacyGroupAllowFrom(params) {
+async function migrateLegacyGroupAllowFrom(params) {
     let next = params.cfg;
     const { prompter } = params;
     const existingGroupAllowFrom = next.channels?.feishu?.groupAllowFrom ?? [];
@@ -56,8 +58,8 @@ export async function migrateLegacyGroupAllowFrom(params) {
                 };
             }
         }
-        next = setFeishuGroups(next, migratedGroups);
-        next = setFeishuGroupAllowFrom(next, senderAllowFrom);
+        next = (0, onboarding_config_1.setFeishuGroups)(next, migratedGroups);
+        next = (0, onboarding_config_1.setFeishuGroupAllowFrom)(next, senderAllowFrom);
         await prompter.note(`✅ Migrated: ${legacyChatIds.length} chat_id(s) moved to groups, ` +
             `${senderAllowFrom.length} sender(s) kept in groupAllowFrom`, 'Migration complete');
     }

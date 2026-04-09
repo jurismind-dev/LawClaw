@@ -13,8 +13,10 @@
  *   const log = larkLogger("card/streaming");
  *   log.info("created entity", { cardId, sequence });
  */
-import { LarkClient } from './lark-client';
-import { getTicket } from './lark-ticket';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.larkLogger = larkLogger;
+const lark_ticket_1 = require("./lark-ticket.js");
+const runtime_store_1 = require("./runtime-store.js");
 // ---------------------------------------------------------------------------
 // Console fallback (with ANSI colors)
 // ---------------------------------------------------------------------------
@@ -40,7 +42,10 @@ function consoleFallback(subsystem) {
 // ---------------------------------------------------------------------------
 function resolveRuntimeLogger(subsystem) {
     try {
-        return LarkClient.runtime.logging.getChildLogger({
+        const runtime = (0, runtime_store_1.tryGetLarkRuntime)();
+        if (!runtime)
+            return null;
+        return runtime.logging.getChildLogger({
             subsystem: `feishu/${subsystem}`,
         });
     }
@@ -52,7 +57,7 @@ function resolveRuntimeLogger(subsystem) {
 // LarkTicket enrichment
 // ---------------------------------------------------------------------------
 function getTraceMeta() {
-    const ctx = getTicket();
+    const ctx = (0, lark_ticket_1.getTicket)();
     if (!ctx)
         return null;
     const trace = {
@@ -80,7 +85,7 @@ function enrichMeta(meta) {
  * across the old and new logging systems.
  */
 function buildTracePrefix() {
-    const ctx = getTicket();
+    const ctx = (0, lark_ticket_1.getTicket)();
     if (!ctx)
         return 'feishu:';
     return `feishu[${ctx.accountId}][msg:${ctx.messageId}]:`;
@@ -103,7 +108,7 @@ function formatMessage(message, meta) {
         return `${prefix} ${message}`;
     const parts = Object.entries(meta)
         .map(([k, v]) => {
-        if (v === undefined || v === null)
+        if (v === undefined || v == null)
             return null;
         if (typeof v === 'object')
             return `${k}=${JSON.stringify(v)}`;
@@ -150,6 +155,6 @@ function createLarkLogger(subsystem) {
 // ---------------------------------------------------------------------------
 // Public factory
 // ---------------------------------------------------------------------------
-export function larkLogger(subsystem) {
+function larkLogger(subsystem) {
     return createLarkLogger(subsystem);
 }

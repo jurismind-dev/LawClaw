@@ -2,10 +2,17 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtimeMocks = vi.hoisted(() => ({
+  migrateLegacyOpenClawWebToolConfig: vi.fn(),
   spawn: vi.fn(),
   syncGatewayTokenToConfig: vi.fn(),
   syncBrowserConfigToOpenClaw: vi.fn(),
   syncJurismindWebSearchConfig: vi.fn(),
+  repairInstalledWeixinPluginIfNeeded: vi.fn(async () => ({
+    repaired: false,
+    reason: 'healthy',
+    pluginDir: '/tmp/.openclaw/extensions/openclaw-weixin',
+    installedVersion: '2.1.7',
+  })),
 }));
 
 const secureStorageMocks = vi.hoisted(() => ({
@@ -90,9 +97,14 @@ vi.mock('@electron/utils/provider-registry', () => ({
 }));
 
 vi.mock('@electron/utils/openclaw-auth', () => ({
+  migrateLegacyOpenClawWebToolConfig: runtimeMocks.migrateLegacyOpenClawWebToolConfig,
   syncGatewayTokenToConfig: runtimeMocks.syncGatewayTokenToConfig,
   syncBrowserConfigToOpenClaw: runtimeMocks.syncBrowserConfigToOpenClaw,
   syncJurismindWebSearchConfig: runtimeMocks.syncJurismindWebSearchConfig,
+}));
+
+vi.mock('@electron/utils/weixin-onboarding', () => ({
+  repairInstalledWeixinPluginIfNeeded: runtimeMocks.repairInstalledWeixinPluginIfNeeded,
 }));
 
 vi.mock('@electron/gateway/protocol', () => ({
@@ -173,9 +185,16 @@ describe('gateway start pre-sync', () => {
     vi.clearAllMocks();
     electronMocks.app.isPackaged = false;
     runtimeMocks.spawn.mockImplementation(() => createFakeChildProcess());
+    runtimeMocks.migrateLegacyOpenClawWebToolConfig.mockImplementation(() => false);
     runtimeMocks.syncGatewayTokenToConfig.mockResolvedValue(undefined);
     runtimeMocks.syncBrowserConfigToOpenClaw.mockResolvedValue(undefined);
     runtimeMocks.syncJurismindWebSearchConfig.mockImplementation(() => undefined);
+    runtimeMocks.repairInstalledWeixinPluginIfNeeded.mockResolvedValue({
+      repaired: false,
+      reason: 'healthy',
+      pluginDir: '/tmp/.openclaw/extensions/openclaw-weixin',
+      installedVersion: '2.1.7',
+    });
     secureStorageMocks.getApiKey.mockResolvedValue(null);
     secureStorageMocks.getDefaultProvider.mockResolvedValue(undefined);
     secureStorageMocks.getProvider.mockResolvedValue(null);
@@ -199,6 +218,8 @@ describe('gateway start pre-sync', () => {
 
     expect(runtimeMocks.syncGatewayTokenToConfig).toHaveBeenCalledWith('gw-token');
     expect(runtimeMocks.syncBrowserConfigToOpenClaw).toHaveBeenCalledTimes(1);
+    expect(runtimeMocks.repairInstalledWeixinPluginIfNeeded).toHaveBeenCalledTimes(1);
+    expect(runtimeMocks.migrateLegacyOpenClawWebToolConfig).toHaveBeenCalledTimes(1);
     expect(runtimeMocks.spawn).toHaveBeenCalledTimes(1);
   });
 

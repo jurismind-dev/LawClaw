@@ -9,7 +9,12 @@
  * members (add, remove, list) using the IM Chat API.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { LarkClient } from '../../core/lark-client';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.updateChatFeishu = updateChatFeishu;
+exports.addChatMembersFeishu = addChatMembersFeishu;
+exports.removeChatMembersFeishu = removeChatMembersFeishu;
+exports.listChatMembersFeishu = listChatMembersFeishu;
+const lark_client_1 = require("../../core/lark-client.js");
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -27,9 +32,9 @@ function assertLarkOk(res, context) {
 /**
  * Update chat settings such as name or avatar.
  */
-export async function updateChatFeishu(params) {
+async function updateChatFeishu(params) {
     const { cfg, chatId, name, avatar, accountId } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const body = {};
     if (name)
         body.name = name;
@@ -47,9 +52,9 @@ export async function updateChatFeishu(params) {
 /**
  * Add members to a chat by their open_id list.
  */
-export async function addChatMembersFeishu(params) {
+async function addChatMembersFeishu(params) {
     const { cfg, chatId, memberIds, accountId } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const res = await client.im.v1.chatMembers.create({
         path: { chat_id: chatId },
         data: { id_list: memberIds },
@@ -63,9 +68,9 @@ export async function addChatMembersFeishu(params) {
 /**
  * Remove members from a chat by their open_id list.
  */
-export async function removeChatMembersFeishu(params) {
+async function removeChatMembersFeishu(params) {
     const { cfg, chatId, memberIds, accountId } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const res = await client.im.v1.chatMembers.delete({
         path: { chat_id: chatId },
         data: { id_list: memberIds },
@@ -83,9 +88,9 @@ export async function removeChatMembersFeishu(params) {
  * overhead for large groups.  Use the returned `pageToken` to fetch
  * subsequent pages when needed.
  */
-export async function listChatMembersFeishu(params) {
+async function listChatMembersFeishu(params) {
     const { cfg, chatId, accountId, pageToken } = params;
-    const client = LarkClient.fromCfg(cfg, accountId).sdk;
+    const client = lark_client_1.LarkClient.fromCfg(cfg, accountId).sdk;
     const response = await client.im.v1.chatMembers.get({
         path: { chat_id: chatId },
         params: {

@@ -31,8 +31,8 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
 import type { ConfiguredLarkAccount } from './types';
 import { type ToolActionKey } from './scope-manager';
-import { LARK_ERROR, NeedAuthorizationError, AppScopeCheckFailedError, AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError } from './auth-errors';
-import type { ScopeErrorInfo, AuthHint, TryInvokeResult } from './auth-errors';
+import { AppScopeCheckFailedError, AppScopeMissingError, LARK_ERROR, NeedAuthorizationError, UserAuthRequiredError, UserScopeInsufficientError } from './auth-errors';
+import type { AuthHint, ScopeErrorInfo, TryInvokeResult } from './auth-errors';
 export { LARK_ERROR, NeedAuthorizationError, AppScopeCheckFailedError, AppScopeMissingError, UserAuthRequiredError, UserScopeInsufficientError, };
 export type { ScopeErrorInfo, AuthHint, TryInvokeResult };
 /** Per-request options returned by `Lark.withUserAccessToken()`. */

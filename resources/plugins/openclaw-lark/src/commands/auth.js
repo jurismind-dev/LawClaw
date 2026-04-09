@@ -8,15 +8,18 @@
  * 直接复用 onboarding-auth.ts 的 triggerOnboarding() 函数。
  * 注意：此命令仅限应用 owner 执行（与 onboarding 逻辑一致）
  */
-import { triggerOnboarding } from '../tools/onboarding-auth';
-import { getTicket } from '../core/lark-ticket';
-import { getLarkAccount } from '../core/accounts';
-import { LarkClient } from '../core/lark-client';
-import { getAppInfo, getAppGrantedScopes } from '../core/app-scope-checker';
-import { getStoredToken, tokenStatus } from '../core/token-store';
-import { filterSensitiveScopes } from '../core/tool-scopes';
-import { assertOwnerAccessStrict, OwnerAccessDeniedError } from '../core/owner-policy';
-import { openPlatformDomain } from '../core/domains';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.runFeishuAuth = runFeishuAuth;
+exports.runFeishuAuthI18n = runFeishuAuthI18n;
+const onboarding_auth_1 = require("../tools/onboarding-auth.js");
+const lark_ticket_1 = require("../core/lark-ticket.js");
+const accounts_1 = require("../core/accounts.js");
+const lark_client_1 = require("../core/lark-client.js");
+const app_scope_checker_1 = require("../core/app-scope-checker.js");
+const token_store_1 = require("../core/token-store.js");
+const tool_scopes_1 = require("../core/tool-scopes.js");
+const owner_policy_1 = require("../core/owner-policy.js");
+const domains_1 = require("../core/domains.js");
 // ---------------------------------------------------------------------------
 // I18n text map
 // ---------------------------------------------------------------------------
@@ -74,21 +77,21 @@ function formatAuthResult(result, locale) {
  * Returns a discriminated result that can be formatted into any locale.
  */
 async function executeFeishuAuth(config) {
-    const ticket = getTicket();
+    const ticket = (0, lark_ticket_1.getTicket)();
     const senderOpenId = ticket?.senderOpenId;
     if (!senderOpenId) {
         return { kind: 'no_identity' };
     }
     // 提前检查 owner 身份，给出明确提示
-    const acct = getLarkAccount(config, ticket.accountId);
+    const acct = (0, accounts_1.getLarkAccount)(config, ticket.accountId);
     if (!acct.configured) {
         return { kind: 'account_incomplete', accountId: ticket.accountId };
     }
-    const sdk = LarkClient.fromAccount(acct).sdk;
+    const sdk = lark_client_1.LarkClient.fromAccount(acct).sdk;
     const { appId } = acct;
-    const openDomain = openPlatformDomain(acct.brand);
+    const openDomain = (0, domains_1.openPlatformDomain)(acct.brand);
     try {
-        await getAppInfo(sdk, appId);
+        await (0, app_scope_checker_1.getAppInfo)(sdk, appId);
     }
     catch {
         const link = `${openDomain}/app/${appId}/auth?q=application:application:self_manage&op_from=feishu-openclaw&token_type=tenant`;
@@ -96,10 +99,10 @@ async function executeFeishuAuth(config) {
     }
     // Owner 检查（fail-close: 授权命令安全优先）
     try {
-        await assertOwnerAccessStrict(acct, sdk, senderOpenId);
+        await (0, owner_policy_1.assertOwnerAccessStrict)(acct, sdk, senderOpenId);
     }
     catch (err) {
-        if (err instanceof OwnerAccessDeniedError) {
+        if (err instanceof owner_policy_1.OwnerAccessDeniedError) {
             return { kind: 'owner_only' };
         }
         throw err;
@@ -107,31 +110,31 @@ async function executeFeishuAuth(config) {
     // 预检：是否还有未授权的 scope
     let appScopes;
     try {
-        appScopes = await getAppGrantedScopes(sdk, appId, 'user');
+        appScopes = await (0, app_scope_checker_1.getAppGrantedScopes)(sdk, appId, 'user');
     }
     catch {
         const link = `${openDomain}/app/${appId}/auth?q=application:application:self_manage&op_from=feishu-openclaw&token_type=tenant`;
         return { kind: 'missing_self_manage', link };
     }
     // offline_access 预检 — OAuth 必须的前提权限
-    const allScopes = await getAppGrantedScopes(sdk, appId);
+    const allScopes = await (0, app_scope_checker_1.getAppGrantedScopes)(sdk, appId);
     if (allScopes.length > 0 && !allScopes.includes('offline_access')) {
         const link = `${openDomain}/app/${appId}/auth?q=offline_access&op_from=feishu-openclaw&token_type=user`;
         return { kind: 'missing_offline_access', link };
     }
-    appScopes = filterSensitiveScopes(appScopes);
+    appScopes = (0, tool_scopes_1.filterSensitiveScopes)(appScopes);
     if (appScopes.length === 0) {
         return { kind: 'no_user_scopes' };
     }
-    const existing = await getStoredToken(appId, senderOpenId);
-    const tokenValid = existing && tokenStatus(existing) !== 'expired';
+    const existing = await (0, token_store_1.getStoredToken)(appId, senderOpenId);
+    const tokenValid = existing && (0, token_store_1.tokenStatus)(existing) !== 'expired';
     const grantedScopes = new Set(tokenValid ? (existing.scope?.split(/\s+/).filter(Boolean) ?? []) : []);
     const missingScopes = appScopes.filter((s) => !grantedScopes.has(s));
     if (missingScopes.length === 0) {
         return { kind: 'all_authorized', count: appScopes.length };
     }
     // 调用 triggerOnboarding 执行批量授权（副作用，只执行一次）
-    await triggerOnboarding({
+    await (0, onboarding_auth_1.triggerOnboarding)({
         cfg: config,
         userOpenId: senderOpenId,
         accountId: ticket.accountId,
@@ -145,7 +148,7 @@ async function executeFeishuAuth(config) {
  * 执行飞书用户权限批量授权命令
  * 直接调用 triggerOnboarding()，包含 owner 检查
  */
-export async function runFeishuAuth(config, locale = 'zh_cn') {
+async function runFeishuAuth(config, locale = 'zh_cn') {
     const result = await executeFeishuAuth(config);
     return formatAuthResult(result, locale);
 }
@@ -153,7 +156,7 @@ export async function runFeishuAuth(config, locale = 'zh_cn') {
  * 运行飞书授权命令，同时生成中英双语结果。
  * 副作用（triggerOnboarding）只执行一次，结果格式化为双语文本。
  */
-export async function runFeishuAuthI18n(config) {
+async function runFeishuAuthI18n(config) {
     const result = await executeFeishuAuth(config);
     return {
         zh_cn: formatAuthResult(result, 'zh_cn'),

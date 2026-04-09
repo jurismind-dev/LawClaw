@@ -8,8 +8,10 @@
  * Preserves structure as Markdown: links as `[text](href)`,
  * images as `![image](key)`, code blocks, and mention resolution.
  */
-import { resolveMentions } from './content-converter';
-import { safeParse } from './utils';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertPost = void 0;
+const content_converter_helpers_1 = require("./content-converter-helpers.js");
+const utils_1 = require("./utils.js");
 /** Preferred locale order for multi-language post unwrapping. */
 const LOCALE_PRIORITY = ['zh_cn', 'en_us', 'ja_jp'];
 /**
@@ -38,8 +40,8 @@ function unwrapLocale(parsed) {
     }
     return undefined;
 }
-export const convertPost = (raw, ctx) => {
-    const rawParsed = safeParse(raw);
+const convertPost = (raw, ctx) => {
+    const rawParsed = (0, utils_1.safeParse)(raw);
     if (rawParsed == null || typeof rawParsed !== 'object') {
         return { content: '[rich text message]', resources: [] };
     }
@@ -64,9 +66,10 @@ export const convertPost = (raw, ctx) => {
         lines.push(line);
     }
     let content = lines.join('\n').trim() || '[rich text message]';
-    content = resolveMentions(content, ctx);
+    content = (0, content_converter_helpers_1.resolveMentions)(content, ctx);
     return { content, resources };
 };
+exports.convertPost = convertPost;
 function renderElement(el, ctx, resources) {
     switch (el.tag) {
         case 'text': {

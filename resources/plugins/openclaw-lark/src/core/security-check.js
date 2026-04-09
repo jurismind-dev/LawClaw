@@ -9,7 +9,16 @@
  * belonging to different tenants (different appId) share the default agent
  * without proper isolation via agents + bindings.
  */
-import { getEnabledLarkAccounts } from './accounts';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.checkMultiAccountIsolation = checkMultiAccountIsolation;
+exports.needsDmScopeFix = needsDmScopeFix;
+exports.getDmScopeFixCommand = getDmScopeFixCommand;
+exports.formatIsolationWarning = formatIsolationWarning;
+exports.generateIsolationFixCommands = generateIsolationFixCommands;
+exports.generateSharedAgentCommands = generateSharedAgentCommands;
+exports.collectIsolationWarnings = collectIsolationWarnings;
+exports.emitSecurityWarnings = emitSecurityWarnings;
+const accounts_1 = require("./accounts.js");
 // ---------------------------------------------------------------------------
 // Check logic
 // ---------------------------------------------------------------------------
@@ -17,8 +26,8 @@ import { getEnabledLarkAccounts } from './accounts';
  * Diagnose whether multiple enabled accounts from different tenants
  * are properly isolated via agent bindings.
  */
-export function checkMultiAccountIsolation(cfg) {
-    const accounts = getEnabledLarkAccounts(cfg);
+function checkMultiAccountIsolation(cfg) {
+    const accounts = (0, accounts_1.getEnabledLarkAccounts)(cfg);
     if (accounts.length <= 1)
         return { mode: 'not-applicable' };
     const appIds = new Set(accounts.map((a) => (a.configured ? a.appId : undefined)).filter((id) => !!id));
@@ -50,7 +59,7 @@ function accountNames(accounts) {
     return accounts.map((a) => a.name ?? a.accountId).join('、');
 }
 function isMultiTenant(cfg) {
-    const accounts = getEnabledLarkAccounts(cfg);
+    const accounts = (0, accounts_1.getEnabledLarkAccounts)(cfg);
     if (accounts.length <= 1)
         return false;
     const appIds = new Set(accounts.map((a) => (a.configured ? a.appId : undefined)).filter((id) => !!id));
@@ -66,14 +75,14 @@ const RECOMMENDED_DM_SCOPE = 'per-account-channel-peer';
  * Without this setting, different bots talking to the same user share
  * the same session — even if agent bindings are configured.
  */
-export function needsDmScopeFix(cfg) {
+function needsDmScopeFix(cfg) {
     if (!isMultiTenant(cfg))
         return false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return cfg.session?.dmScope !== RECOMMENDED_DM_SCOPE;
 }
 /** Return the fix command string, or null if not needed. */
-export function getDmScopeFixCommand(cfg) {
+function getDmScopeFixCommand(cfg) {
     if (!needsDmScopeFix(cfg))
         return null;
     return `openclaw config set session.dmScope "${RECOMMENDED_DM_SCOPE}"`;
@@ -91,7 +100,7 @@ function formatDmScopeWarning() {
  * Generate a combined warning block for doctor / start.
  * Returns null when everything is fine.
  */
-export function formatIsolationWarning(status, cfg) {
+function formatIsolationWarning(status, cfg) {
     const sections = [];
     // Agent sharing warning
     if (status.mode === 'shared-implicit') {
@@ -116,7 +125,7 @@ export function formatIsolationWarning(status, cfg) {
 /**
  * Generate `openclaw config set` commands for per-account isolation.
  */
-export function generateIsolationFixCommands(cfg) {
+function generateIsolationFixCommands(cfg) {
     const status = checkMultiAccountIsolation(cfg);
     if (status.mode !== 'shared-implicit')
         return null;
@@ -142,7 +151,7 @@ export function generateIsolationFixCommands(cfg) {
 /**
  * Generate commands for explicitly sharing the same agent across accounts.
  */
-export function generateSharedAgentCommands(cfg) {
+function generateSharedAgentCommands(cfg) {
     const status = checkMultiAccountIsolation(cfg);
     if (status.mode !== 'shared-implicit')
         return null;
@@ -163,13 +172,13 @@ export function generateSharedAgentCommands(cfg) {
 // ---------------------------------------------------------------------------
 // collectWarnings adapter (for SDK security.collectWarnings)
 // ---------------------------------------------------------------------------
-export function collectIsolationWarnings(_cfg) {
+function collectIsolationWarnings(_cfg) {
     // TODO: 产品明确多账号隔离方案后再透出告警
     return [];
 }
 // ---------------------------------------------------------------------------
 // Startup log
 // ---------------------------------------------------------------------------
-export function emitSecurityWarnings(_cfg, _logger) {
+function emitSecurityWarnings(_cfg, _logger) {
     // TODO: 产品明确多账号隔离方案后再透出告警
 }

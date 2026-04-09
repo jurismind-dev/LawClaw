@@ -1,10 +1,10 @@
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { homedir } from 'os';
 import { createRequire } from 'module';
 import { EventEmitter } from 'events';
 import { existsSync, mkdirSync, rmSync } from 'fs';
-import { deflateSync } from 'zlib';
 import { getOpenClawDir, getOpenClawResolvedDir } from './paths';
+import { renderQrPngBase64 } from './qr-code';
 
 const require = createRequire(import.meta.url);
 
@@ -13,40 +13,103 @@ const openclawPath = getOpenClawDir();
 const openclawResolvedPath = getOpenClawResolvedDir();
 const openclawRequire = createRequire(join(openclawResolvedPath, 'package.json'));
 
+type DisconnectReasonMap = {
+    loggedOut?: number;
+} & Record<string, number | undefined>;
+
+type PinoFactory = (...args: unknown[]) => {
+    trace: () => void;
+    debug: () => void;
+    info: () => void;
+    warn: () => void;
+    error: () => void;
+    fatal: () => void;
+    child: () => ReturnType<PinoFactory>;
+};
+
+type BaileysSocket = {
+    ev: {
+        on: (eventName: string, listener: (...args: unknown[]) => void | Promise<void>) => void;
+        removeAllListeners: (eventName?: string) => void;
+    };
+    end: (error?: unknown) => void;
+    ws?: {
+        close: () => void;
+    };
+};
+
+type MakeWASocket = (options: {
+    version: unknown;
+    auth: unknown;
+    printQRInTerminal: boolean;
+    logger: ReturnType<PinoFactory>;
+    connectTimeoutMs: number;
+}) => BaileysSocket;
+
+type InitAuth = (authDir: string) => Promise<{
+    state: unknown;
+    saveCreds: () => Promise<void>;
+}>;
+
+type FetchLatestBaileysVersion = () => Promise<{ version: unknown }>;
+
+type BaileysModule = {
+    default: MakeWASocket;
+    useMultiFileAuthState: InitAuth;
+    DisconnectReason: DisconnectReasonMap;
+    fetchLatestBaileysVersion: FetchLatestBaileysVersion;
+};
+
+type WhatsAppRuntime = {
+    makeWASocket: MakeWASocket;
+    initAuth: InitAuth;
+    DisconnectReason: DisconnectReasonMap;
+    fetchLatestBaileysVersion: FetchLatestBaileysVersion;
+    baileysRequire: NodeRequire;
+};
+
+type WhatsAppRuntimeError = Error & {
+    code?: string;
+};
+
+let cachedWhatsAppRuntime: WhatsAppRuntime | null = null;
+let cachedWhatsAppRuntimeError: WhatsAppRuntimeError | null = null;
+
+function createMissingWhatsAppRuntimeError(reason: string, cause?: unknown): WhatsAppRuntimeError {
+    const error = new Error(
+        `WhatsApp login is unavailable because its optional runtime dependencies could not be loaded. ${reason}`,
+        { cause }
+    ) as WhatsAppRuntimeError;
+    error.code = 'WHATSAPP_RUNTIME_MISSING';
+    return error;
+}
+
+function isMissingWhatsAppRuntimeError(error: unknown): error is WhatsAppRuntimeError {
+    return error instanceof Error && (error as WhatsAppRuntimeError).code === 'WHATSAPP_RUNTIME_MISSING';
+}
+
 function resolveOpenClawPackageJson(packageName: string): string {
     const specifier = `${packageName}/package.json`;
     try {
         return openclawRequire.resolve(specifier);
-    } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        throw new Error(
-            `Failed to resolve "${packageName}" from OpenClaw context. ` +
-            `openclawPath=${openclawPath}, resolvedPath=${openclawResolvedPath}. ${reason}`,
-            { cause: err }
-        );
+    } catch (openclawError) {
+        try {
+            return require.resolve(specifier);
+        } catch (rootError) {
+            const openclawReason = openclawError instanceof Error ? openclawError.message : String(openclawError);
+            const rootReason = rootError instanceof Error ? rootError.message : String(rootError);
+            throw createMissingWhatsAppRuntimeError(
+                `Failed to resolve "${packageName}". openclawPath=${openclawPath}, ` +
+                `resolvedPath=${openclawResolvedPath}. openclawRequire: ${openclawReason}. rootRequire: ${rootReason}`,
+                rootError
+            );
+        }
     }
 }
 
-const baileysPath = dirname(resolveOpenClawPackageJson('@whiskeysockets/baileys'));
-const qrcodeTerminalPath = dirname(resolveOpenClawPackageJson('qrcode-terminal'));
-
-// Load Baileys dependencies dynamically
-const {
-    default: makeWASocket,
-    useMultiFileAuthState: initAuth, // Rename to avoid React hook linter error
-    DisconnectReason,
-    fetchLatestBaileysVersion
-} = require(baileysPath);
-
-// Load QRCode dependencies dynamically
-const QRCodeModule = require(join(qrcodeTerminalPath, 'vendor', 'QRCode', 'index.js'));
-const QRErrorCorrectLevelModule = require(join(qrcodeTerminalPath, 'vendor', 'QRCode', 'QRErrorCorrectLevel.js'));
-
-// Types from Baileys (approximate since we don't have types for dynamic require)
 interface BaileysError extends Error {
     output?: { statusCode?: number };
 }
-type BaileysSocket = ReturnType<typeof makeWASocket>;
 type ConnectionState = {
     connection: 'close' | 'open' | 'connecting';
     lastDisconnect?: {
@@ -55,124 +118,37 @@ type ConnectionState = {
     qr?: string;
 };
 
-// --- QR Generation Logic (Adapted from OpenClaw) ---
-
-const QRCode = QRCodeModule;
-const QRErrorCorrectLevel = QRErrorCorrectLevelModule;
-
-function createQrMatrix(input: string) {
-    const qr = new QRCode(-1, QRErrorCorrectLevel.L);
-    qr.addData(input);
-    qr.make();
-    return qr;
-}
-
-function fillPixel(
-    buf: Buffer,
-    x: number,
-    y: number,
-    width: number,
-    r: number,
-    g: number,
-    b: number,
-    a = 255,
-) {
-    const idx = (y * width + x) * 4;
-    buf[idx] = r;
-    buf[idx + 1] = g;
-    buf[idx + 2] = b;
-    buf[idx + 3] = a;
-}
-
-function crcTable() {
-    const table = new Uint32Array(256);
-    for (let i = 0; i < 256; i += 1) {
-        let c = i;
-        for (let k = 0; k < 8; k += 1) {
-            c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-        }
-        table[i] = c >>> 0;
+function loadWhatsAppRuntime(): WhatsAppRuntime {
+    if (cachedWhatsAppRuntime) {
+        return cachedWhatsAppRuntime;
     }
-    return table;
-}
-
-const CRC_TABLE = crcTable();
-
-function crc32(buf: Buffer) {
-    let crc = 0xffffffff;
-    for (let i = 0; i < buf.length; i += 1) {
-        crc = CRC_TABLE[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
-    }
-    return (crc ^ 0xffffffff) >>> 0;
-}
-
-function pngChunk(type: string, data: Buffer) {
-    const typeBuf = Buffer.from(type, 'ascii');
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length, 0);
-    const crc = crc32(Buffer.concat([typeBuf, data]));
-    const crcBuf = Buffer.alloc(4);
-    crcBuf.writeUInt32BE(crc, 0);
-    return Buffer.concat([len, typeBuf, data, crcBuf]);
-}
-
-function encodePngRgba(buffer: Buffer, width: number, height: number) {
-    const stride = width * 4;
-    const raw = Buffer.alloc((stride + 1) * height);
-    for (let row = 0; row < height; row += 1) {
-        const rawOffset = row * (stride + 1);
-        raw[rawOffset] = 0; // filter: none
-        buffer.copy(raw, rawOffset + 1, row * stride, row * stride + stride);
-    }
-    const compressed = deflateSync(raw);
-
-    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    const ihdr = Buffer.alloc(13);
-    ihdr.writeUInt32BE(width, 0);
-    ihdr.writeUInt32BE(height, 4);
-    ihdr[8] = 8; // bit depth
-    ihdr[9] = 6; // color type RGBA
-    ihdr[10] = 0; // compression
-    ihdr[11] = 0; // filter
-    ihdr[12] = 0; // interlace
-
-    return Buffer.concat([
-        signature,
-        pngChunk('IHDR', ihdr),
-        pngChunk('IDAT', compressed),
-        pngChunk('IEND', Buffer.alloc(0)),
-    ]);
-}
-
-async function renderQrPngBase64(
-    input: string,
-    opts: { scale?: number; marginModules?: number } = {},
-): Promise<string> {
-    const { scale = 6, marginModules = 4 } = opts;
-    const qr = createQrMatrix(input);
-    const modules = qr.getModuleCount();
-    const size = (modules + marginModules * 2) * scale;
-
-    const buf = Buffer.alloc(size * size * 4, 255);
-    for (let row = 0; row < modules; row += 1) {
-        for (let col = 0; col < modules; col += 1) {
-            if (!qr.isDark(row, col)) {
-                continue;
-            }
-            const startX = (col + marginModules) * scale;
-            const startY = (row + marginModules) * scale;
-            for (let y = 0; y < scale; y += 1) {
-                const pixelY = startY + y;
-                for (let x = 0; x < scale; x += 1) {
-                    const pixelX = startX + x;
-                    fillPixel(buf, pixelX, pixelY, size, 0, 0, 0, 255);
-                }
-            }
-        }
+    if (cachedWhatsAppRuntimeError) {
+        throw cachedWhatsAppRuntimeError;
     }
 
-    const png = encodePngRgba(buf, size, size);
-    return png.toString('base64');
+    try {
+        const baileysPackageJsonPath = resolveOpenClawPackageJson('@whiskeysockets/baileys');
+        const baileysRequire = createRequire(baileysPackageJsonPath);
+        const baileysModule = baileysRequire('@whiskeysockets/baileys') as BaileysModule;
+
+        cachedWhatsAppRuntime = {
+            makeWASocket: baileysModule.default,
+            initAuth: baileysModule.useMultiFileAuthState,
+            DisconnectReason: baileysModule.DisconnectReason,
+            fetchLatestBaileysVersion: baileysModule.fetchLatestBaileysVersion,
+            baileysRequire,
+        };
+
+        return cachedWhatsAppRuntime;
+    } catch (error) {
+        cachedWhatsAppRuntimeError = isMissingWhatsAppRuntimeError(error)
+            ? error
+            : createMissingWhatsAppRuntimeError(
+                error instanceof Error ? error.message : String(error),
+                error
+            );
+        throw cachedWhatsAppRuntimeError;
+    }
 }
 
 // --- WhatsApp Login Manager ---
@@ -208,8 +184,10 @@ export class WhatsAppLoginManager extends EventEmitter {
         if (this.active && this.accountId === accountId) {
             // Already running for this account, emit current QR if available
             if (this.qr) {
-                const base64 = await renderQrPngBase64(this.qr);
-                this.emit('qr', { qr: base64, raw: this.qr });
+                const base64 = renderQrPngBase64(this.qr);
+                if (base64) {
+                    this.emit('qr', { qr: base64, raw: this.qr });
+                }
             }
             return;
         }
@@ -231,6 +209,14 @@ export class WhatsAppLoginManager extends EventEmitter {
         if (!this.active) return;
 
         try {
+            const {
+                makeWASocket,
+                initAuth,
+                DisconnectReason,
+                fetchLatestBaileysVersion,
+                baileysRequire,
+            } = loadWhatsAppRuntime();
+
             // Path where OpenClaw expects WhatsApp credentials
             const authDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp', accountId);
 
@@ -245,7 +231,6 @@ export class WhatsAppLoginManager extends EventEmitter {
             let pino: (...args: unknown[]) => Record<string, unknown>;
             try {
                 // Try to resolve pino from baileys context since it's a dependency of baileys
-                const baileysRequire = createRequire(join(baileysPath, 'package.json'));
                 pino = baileysRequire('pino');
             } catch (e) {
                 console.warn('[WhatsAppLogin] Could not load pino from baileys, trying root', e);
@@ -307,8 +292,10 @@ export class WhatsAppLoginManager extends EventEmitter {
                     if (qr) {
                         this.qr = qr;
                         console.log('[WhatsAppLogin] QR received');
-                        const base64 = await renderQrPngBase64(qr);
-                        if (this.active) this.emit('qr', { qr: base64, raw: qr });
+                        const base64 = renderQrPngBase64(qr);
+                        if (base64 && this.active) {
+                            this.emit('qr', { qr: base64, raw: qr });
+                        }
                     }
 
                     if (connection === 'close') {
@@ -370,6 +357,11 @@ export class WhatsAppLoginManager extends EventEmitter {
 
         } catch (error) {
             console.error('[WhatsAppLogin] Fatal Connect Error:', error);
+            if (isMissingWhatsAppRuntimeError(error)) {
+                this.active = false;
+                this.emit('error', error.message);
+                return;
+            }
             if (this.active && this.retryCount < this.maxRetries) {
                 this.retryCount++;
                 setTimeout(() => this.connectToWhatsApp(accountId), 2000);

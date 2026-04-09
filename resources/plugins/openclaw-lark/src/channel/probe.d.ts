@@ -2,8 +2,8 @@
  * Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
  * SPDX-License-Identifier: MIT
  */
-import type { FeishuProbeResult } from './types';
 import { type LarkClientCredentials } from '../core/lark-client';
+import type { FeishuProbeResult } from './types';
 /**
  * Probe the Feishu bot connection by calling the bot/v3/info API.
  *

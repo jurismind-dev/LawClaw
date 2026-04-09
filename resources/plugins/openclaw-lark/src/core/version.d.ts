@@ -13,13 +13,19 @@
  */
 export declare function getPluginVersion(): string;
 /**
+ * 获取当前运行平台名称
+ *
+ * @returns `mac` | `linux` | `windows`
+ */
+export declare function getPlatform(): string;
+/**
  * 生成 User-Agent 字符串
  *
- * @returns User-Agent 字符串，格式：`openclaw-lark/{version}`
+ * @returns User-Agent 字符串，格式：`openclaw-lark/{version}/{platform}`
  *
  * @example
  * ```typescript
- * getUserAgent() // => "openclaw-lark/2026.2.28.5"
+ * getUserAgent() // => "openclaw-lark/2026.2.28.5/mac"
  * ```
  */
 export declare function getUserAgent(): string;

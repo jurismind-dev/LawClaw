@@ -9,8 +9,11 @@
  * the content converter phase, and builds the payload object spread
  * into the agent envelope.
  */
-import { LarkClient } from '../../core/lark-client';
-import { downloadMessageResourceFeishu } from '../outbound/media';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.downloadResources = downloadResources;
+exports.buildFeishuMediaPayload = buildFeishuMediaPayload;
+const lark_client_1 = require("../../core/lark-client.js");
+const media_1 = require("../outbound/media.js");
 // ---------------------------------------------------------------------------
 // Resource-descriptor-based download
 // ---------------------------------------------------------------------------
@@ -18,16 +21,16 @@ import { downloadMessageResourceFeishu } from '../outbound/media';
  * Download media files based on pre-extracted ResourceDescriptors from
  * the converter phase.
  */
-export async function downloadResources(params) {
+async function downloadResources(params) {
     const { cfg, messageId, resources, maxBytes, log, accountId } = params;
     if (resources.length === 0)
         return [];
     const out = [];
-    const core = LarkClient.runtime;
+    const core = lark_client_1.LarkClient.runtime;
     for (const res of resources) {
         try {
             const resourceType = res.type === 'image' ? 'image' : 'file';
-            const result = await downloadMessageResourceFeishu({
+            const result = await (0, media_1.downloadMessageResourceFeishu)({
                 cfg,
                 messageId,
                 fileKey: res.fileKey,
@@ -73,7 +76,7 @@ function inferPlaceholderFromType(type) {
 // ---------------------------------------------------------------------------
 // Media payload builder
 // ---------------------------------------------------------------------------
-export function buildFeishuMediaPayload(mediaList) {
+function buildFeishuMediaPayload(mediaList) {
     const first = mediaList[0];
     const mediaPaths = mediaList.map((m) => m.path);
     const mediaTypes = mediaList.map((m) => m.contentType).filter(Boolean);

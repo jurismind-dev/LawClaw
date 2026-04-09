@@ -9,6 +9,11 @@
  * agent tools (document access, wiki queries, drive operations, etc.) is
  * enabled for a given account.
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_TOOLS_CONFIG = void 0;
+exports.resolveToolsConfig = resolveToolsConfig;
+exports.resolveAnyEnabledToolsConfig = resolveAnyEnabledToolsConfig;
+exports.shouldRegisterTool = shouldRegisterTool;
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
@@ -20,7 +25,7 @@
  * permissions is a privileged operation that admins should opt into
  * explicitly.
  */
-export const DEFAULT_TOOLS_CONFIG = {
+exports.DEFAULT_TOOLS_CONFIG = {
     doc: true,
     wiki: true,
     drive: true,
@@ -39,18 +44,18 @@ export const DEFAULT_TOOLS_CONFIG = {
  * Fields present in the input take precedence; anything absent falls back
  * to the default value.
  */
-export function resolveToolsConfig(cfg) {
+function resolveToolsConfig(cfg) {
     if (!cfg)
-        return { ...DEFAULT_TOOLS_CONFIG };
+        return { ...exports.DEFAULT_TOOLS_CONFIG };
     return {
-        doc: cfg.doc ?? DEFAULT_TOOLS_CONFIG.doc,
-        wiki: cfg.wiki ?? DEFAULT_TOOLS_CONFIG.wiki,
-        drive: cfg.drive ?? DEFAULT_TOOLS_CONFIG.drive,
-        perm: cfg.perm ?? DEFAULT_TOOLS_CONFIG.perm,
-        scopes: cfg.scopes ?? DEFAULT_TOOLS_CONFIG.scopes,
-        mail: cfg.mail ?? DEFAULT_TOOLS_CONFIG.mail,
-        sheets: cfg.sheets ?? DEFAULT_TOOLS_CONFIG.sheets,
-        okr: cfg.okr ?? DEFAULT_TOOLS_CONFIG.okr,
+        doc: cfg.doc ?? exports.DEFAULT_TOOLS_CONFIG.doc,
+        wiki: cfg.wiki ?? exports.DEFAULT_TOOLS_CONFIG.wiki,
+        drive: cfg.drive ?? exports.DEFAULT_TOOLS_CONFIG.drive,
+        perm: cfg.perm ?? exports.DEFAULT_TOOLS_CONFIG.perm,
+        scopes: cfg.scopes ?? exports.DEFAULT_TOOLS_CONFIG.scopes,
+        mail: cfg.mail ?? exports.DEFAULT_TOOLS_CONFIG.mail,
+        sheets: cfg.sheets ?? exports.DEFAULT_TOOLS_CONFIG.sheets,
+        okr: cfg.okr ?? exports.DEFAULT_TOOLS_CONFIG.okr,
     };
 }
 // ---------------------------------------------------------------------------
@@ -62,7 +67,7 @@ export function resolveToolsConfig(cfg) {
  * 工具注册是全局的（启动时注册一次），只要任意一个账户启用了某工具，
  * 该工具就应被注册。执行时由 LarkTicket 路由到具体账户。
  */
-export function resolveAnyEnabledToolsConfig(accounts) {
+function resolveAnyEnabledToolsConfig(accounts) {
     const merged = {
         doc: false,
         wiki: false,
@@ -126,7 +131,7 @@ function matchesAnyPattern(value, patterns) {
  * shouldRegisterTool(cfg, "feishu_task_task")        // true
  * ```
  */
-export function shouldRegisterTool(cfg, toolName) {
+function shouldRegisterTool(cfg, toolName) {
     const feishuConfig = cfg.channels?.feishu;
     const denyList = feishuConfig?.['tools']?.['deny'];
     if (Array.isArray(denyList) && denyList.length > 0) {

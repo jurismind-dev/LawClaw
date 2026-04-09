@@ -29,20 +29,23 @@
  * - 账号未配置（!acct.configured）
  * - 任何步骤抛出异常
  */
-import { getTicket } from '../core/lark-ticket';
-import { larkLogger } from '../core/lark-logger';
-const log = larkLogger('tools/auto-auth');
-import { getLarkAccount } from '../core/accounts';
-import { UserAuthRequiredError, UserScopeInsufficientError, AppScopeMissingError } from '../core/tool-client';
-import { invalidateAppScopeCache, getAppGrantedScopes, isAppScopeSatisfied } from '../core/app-scope-checker';
-import { LarkClient } from '../core/lark-client';
-import { createCardEntity, sendCardByCardId, updateCardKitCardForAuth } from '../card/cardkit';
-import { executeAuthorize } from './oauth';
-import { formatLarkError, json } from './oapi/helpers';
-import { OwnerAccessDeniedError } from '../core/owner-policy';
-import { enqueueFeishuChatTask } from '../channel/chat-queue';
-import { handleFeishuMessage } from '../messaging/inbound/handler';
-import { withTicket } from '../core/lark-ticket';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.handleCardAction = handleCardAction;
+exports.handleInvokeErrorWithAutoAuth = handleInvokeErrorWithAutoAuth;
+const lark_ticket_1 = require("../core/lark-ticket.js");
+const lark_logger_1 = require("../core/lark-logger.js");
+const log = (0, lark_logger_1.larkLogger)('tools/auto-auth');
+const api_error_1 = require("../core/api-error.js");
+const accounts_1 = require("../core/accounts.js");
+const tool_client_1 = require("../core/tool-client.js");
+const app_scope_checker_1 = require("../core/app-scope-checker.js");
+const lark_client_1 = require("../core/lark-client.js");
+const cardkit_1 = require("../card/cardkit.js");
+const owner_policy_1 = require("../core/owner-policy.js");
+const synthetic_message_1 = require("../messaging/inbound/synthetic-message.js");
+const oauth_1 = require("./oauth.js");
+const helpers_1 = require("./helpers.js");
+const json = helpers_1.formatToolResult;
 /**
  * 防抖缓冲区 Map。
  *
@@ -490,7 +493,7 @@ async function sendAppScopeCard(params) {
         }
         else {
             try {
-                await updateCardKitCardForAuth({
+                await (0, cardkit_1.updateCardKitCardForAuth)({
                     cfg,
                     cardId: activeFlow.cardId,
                     card,
@@ -520,7 +523,7 @@ async function sendAppScopeCard(params) {
     const operationId = Date.now().toString(36) + Math.random().toString(36).slice(2);
     const card = buildAppScopeMissingCard({ missingScopes, appId, operationId, brand: account.brand });
     // 创建 CardKit 卡片实体
-    const cardId = await createCardEntity({ cfg, card, accountId });
+    const cardId = await (0, cardkit_1.createCardEntity)({ cfg, card, accountId });
     if (!cardId) {
         log.warn('createCardEntity failed for app-scope card, falling back');
         return json({
@@ -528,12 +531,14 @@ async function sendAppScopeCard(params) {
             missing_scopes: missingScopes,
             message: `应用缺少以下权限：${missingScopes.join(', ')}，` +
                 `请管理员在开放平台开通后重试。` +
-                (appId ? `\n权限管理：${account.brand === 'lark' ? 'https://open.larksuite.com' : 'https://open.feishu.cn'}/app/${appId}/permission` : ''),
+                (appId
+                    ? `\n权限管理：${account.brand === 'lark' ? 'https://open.larksuite.com' : 'https://open.feishu.cn'}/app/${appId}/permission`
+                    : ''),
         });
     }
     // 发送到当前会话
     const replyToMsgId = ticket.messageId?.startsWith('om_') ? ticket.messageId : undefined;
-    await sendCardByCardId({
+    await (0, cardkit_1.sendCardByCardId)({
         cfg,
         to: chatId,
         cardId,
@@ -578,7 +583,7 @@ async function sendAppScopeCard(params) {
  * 注意：函数体内的主要逻辑通过 setImmediate + fire-and-forget 异步执行，
  * 确保 Feishu card.action.trigger 回调在 3 秒内返回。
  */
-export async function handleCardAction(data, cfg, accountId) {
+async function handleCardAction(data, cfg, accountId) {
     let action;
     let operationId;
     let senderOpenId;
@@ -600,17 +605,17 @@ export async function handleCardAction(data, cfg, accountId) {
     }
     log.info(`app_auth_done clicked by ${senderOpenId}, operationId=${operationId}`);
     // scope 校验在同步路径完成（3 秒内返回 toast response）
-    invalidateAppScopeCache(flow.appId);
-    const acct = getLarkAccount(flow.cfg, flow.accountId);
+    (0, app_scope_checker_1.invalidateAppScopeCache)(flow.appId);
+    const acct = (0, accounts_1.getLarkAccount)(flow.cfg, flow.accountId);
     if (!acct.configured) {
         log.warn(`account ${flow.accountId} not configured, skipping OAuth`);
         return;
     }
-    const sdk = LarkClient.fromAccount(acct).sdk;
+    const sdk = lark_client_1.LarkClient.fromAccount(acct).sdk;
     let grantedScopes = [];
     try {
         // 使用与原始 AppScopeMissingError 相同的 tokenType，保证校验逻辑完全一致
-        grantedScopes = await getAppGrantedScopes(sdk, flow.appId, flow.tokenType);
+        grantedScopes = await (0, app_scope_checker_1.getAppGrantedScopes)(sdk, flow.appId, flow.tokenType);
     }
     catch (err) {
         log.warn(`failed to re-check app scopes: ${err}, proceeding anyway`);
@@ -619,7 +624,7 @@ export async function handleCardAction(data, cfg, accountId) {
     //   - scopeNeedType "all" → 全部必须有
     //   - 默认"one" → 交集非空即可
     //   - grantedScopes 为空 → 视为满足（API 失败退回服务端判断）
-    if (!isAppScopeSatisfied(grantedScopes, flow.requiredScopes, flow.scopeNeedType)) {
+    if (!(0, app_scope_checker_1.isAppScopeSatisfied)(grantedScopes, flow.requiredScopes, flow.scopeNeedType)) {
         log.warn(`app scopes still missing after user confirmation: [${flow.requiredScopes.join(', ')}]`);
         return {
             toast: {
@@ -651,7 +656,7 @@ export async function handleCardAction(data, cfg, accountId) {
         try {
             // 通过 API 再次更新卡片（确保所有查看者都看到更新，不只是点击者）
             try {
-                await updateCardKitCardForAuth({
+                await (0, cardkit_1.updateCardKitCardForAuth)({
                     cfg,
                     cardId: flow.cardId,
                     card: successCard,
@@ -688,51 +693,26 @@ export async function handleCardAction(data, cfg, accountId) {
                 // 重试时工具会自然发现需要用户授权并发起正确的 OAuth 流程。
                 log.info('no business scopes to authorize after app auth, sending synthetic message for retry');
                 const syntheticMsgId = `${flow.ticket.messageId}:app-auth-complete`;
-                const syntheticEvent = {
-                    sender: { sender_id: { open_id: flow.ticket.senderOpenId } },
-                    message: {
-                        message_id: syntheticMsgId,
-                        chat_id: flow.ticket.chatId,
-                        chat_type: flow.ticket.chatType ?? 'p2p',
-                        message_type: 'text',
-                        content: JSON.stringify({ text: '应用权限已开通，请继续执行之前的操作。' }),
-                        thread_id: flow.ticket.threadId,
-                    },
-                };
                 const syntheticRuntime = {
                     log: (msg) => log.info(msg),
                     error: (msg) => log.error(msg),
                 };
-                const { promise } = enqueueFeishuChatTask({
+                await (0, synthetic_message_1.dispatchSyntheticTextMessage)({
+                    cfg: flow.cfg,
                     accountId: flow.accountId,
                     chatId: flow.ticket.chatId,
+                    senderOpenId: flow.ticket.senderOpenId,
+                    text: '应用权限已开通，请继续执行之前的操作。',
+                    syntheticMessageId: syntheticMsgId,
+                    replyToMessageId: flow.ticket.messageId,
+                    chatType: flow.ticket.chatType,
                     threadId: flow.ticket.threadId,
-                    task: async () => {
-                        await withTicket({
-                            messageId: syntheticMsgId,
-                            chatId: flow.ticket.chatId,
-                            accountId: flow.accountId,
-                            startTime: Date.now(),
-                            senderOpenId: flow.ticket.senderOpenId,
-                            chatType: flow.ticket.chatType,
-                            threadId: flow.ticket.threadId,
-                        }, () => handleFeishuMessage({
-                            cfg: flow.cfg,
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            event: syntheticEvent,
-                            accountId: flow.accountId,
-                            forceMention: true,
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            runtime: syntheticRuntime,
-                            replyToMessageId: flow.ticket.messageId,
-                        }));
-                    },
+                    runtime: syntheticRuntime,
                 });
-                await promise;
                 log.info('synthetic message dispatched after app-auth-only completion');
             }
             else {
-                await executeAuthorize({
+                await (0, oauth_1.executeAuthorize)({
                     account: acct,
                     senderOpenId: flow.ticket.senderOpenId,
                     scope: [...mergedScopes].join(' '),
@@ -773,10 +753,13 @@ export async function handleCardAction(data, cfg, accountId) {
  * @param err - invoke() 或其他逻辑抛出的错误
  * @param cfg - OpenClaw 配置对象（从工具注册函数的闭包中获取）
  */
-export async function handleInvokeErrorWithAutoAuth(err, cfg) {
-    const ticket = getTicket();
+async function handleInvokeErrorWithAutoAuth(err, cfg) {
+    // `cfg` is the closure-captured snapshot from plugin registration and may be
+    // stale after a hot-reload.  Use getResolvedConfig() to always get the live config.
+    cfg = (0, helpers_1.getResolvedConfig)(cfg);
+    const ticket = (0, lark_ticket_1.getTicket)();
     // --- Path 0：Owner 访问拒绝 → 直接返回友好提示 ---
-    if (err instanceof OwnerAccessDeniedError) {
+    if (err instanceof owner_policy_1.OwnerAccessDeniedError) {
         return json({
             error: 'permission_denied',
             message: '当前应用仅限所有者（App Owner）使用。您没有权限使用相关功能。',
@@ -789,10 +772,10 @@ export async function handleInvokeErrorWithAutoAuth(err, cfg) {
         // --- Path 1：用户授权类错误 → 防抖合并后发起 OAuth ---
         if (senderOpenId) {
             // 1a. 用户未授权或 token scope 不足（且 app scope 已验证）
-            if (err instanceof UserAuthRequiredError && err.appScopeVerified) {
+            if (err instanceof tool_client_1.UserAuthRequiredError && err.appScopeVerified) {
                 const scopes = err.requiredScopes;
                 try {
-                    const acct = getLarkAccount(cfg, ticket.accountId);
+                    const acct = (0, accounts_1.getLarkAccount)(cfg, ticket.accountId);
                     if (acct.configured) {
                         // ★ 延迟检查：如果同一消息有未完成的应用权限流程，
                         //   将用户授权 scope 收集到延迟队列，等应用授权完成后统一发起 OAuth
@@ -817,7 +800,7 @@ export async function handleInvokeErrorWithAutoAuth(err, cfg) {
                             if (appEntry?.resultPromise) {
                                 await appEntry.resultPromise.catch(() => { });
                             }
-                            return executeAuthorize({
+                            return (0, oauth_1.executeAuthorize)({
                                 account: acct,
                                 senderOpenId,
                                 scope: mergedScopes.join(' '),
@@ -833,10 +816,10 @@ export async function handleInvokeErrorWithAutoAuth(err, cfg) {
                 }
             }
             // 1b. 用户 token 存在但 scope 不足（服务端 LARK_ERROR.USER_SCOPE_INSUFFICIENT / 99991679）
-            if (err instanceof UserScopeInsufficientError) {
+            if (err instanceof tool_client_1.UserScopeInsufficientError) {
                 const scopes = err.missingScopes;
                 try {
-                    const acct = getLarkAccount(cfg, ticket.accountId);
+                    const acct = (0, accounts_1.getLarkAccount)(cfg, ticket.accountId);
                     if (acct.configured) {
                         // ★ 延迟检查：同 Path 1a
                         if (hasActiveAppAuthForMessage(ticket)) {
@@ -860,7 +843,7 @@ export async function handleInvokeErrorWithAutoAuth(err, cfg) {
                             if (appEntry?.resultPromise) {
                                 await appEntry.resultPromise.catch(() => { });
                             }
-                            return executeAuthorize({
+                            return (0, oauth_1.executeAuthorize)({
                                 account: acct,
                                 senderOpenId,
                                 scope: mergedScopes.join(' '),
@@ -880,11 +863,11 @@ export async function handleInvokeErrorWithAutoAuth(err, cfg) {
             log.error(`senderOpenId not found ${err}`);
         }
         // --- Path 2：应用权限缺失 → 防抖合并后发送引导卡片 ---
-        if (err instanceof AppScopeMissingError && ticket.chatId) {
+        if (err instanceof tool_client_1.AppScopeMissingError && ticket.chatId) {
             // 捕获当前错误的附加信息，供 flushFn 使用
             const appScopeErr = err;
             try {
-                const acct = getLarkAccount(cfg, ticket.accountId);
+                const acct = (0, accounts_1.getLarkAccount)(cfg, ticket.accountId);
                 if (acct.configured) {
                     // ★ 将工具的全部所需 scope 加入延迟用户授权队列。
                     // 应用权限完成后 handleCardAction 会消费这些 scope，
@@ -915,6 +898,6 @@ export async function handleInvokeErrorWithAutoAuth(err, cfg) {
         log.error(`ticket not found ${err}`);
     }
     return json({
-        error: formatLarkError(err),
+        error: (0, api_error_1.formatLarkError)(err),
     });
 }

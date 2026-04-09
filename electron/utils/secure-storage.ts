@@ -45,7 +45,7 @@ export interface ProviderConfig {
     | 'siliconflow'
     | 'minimax-portal'
     | 'minimax-portal-cn'
-    | 'qwen-portal'
+    | 'qwen'
     | 'ollama'
     | 'custom';
   baseUrl?: string;

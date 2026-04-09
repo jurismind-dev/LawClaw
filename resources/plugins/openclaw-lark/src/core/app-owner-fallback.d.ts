@@ -7,6 +7,7 @@
  * 所有 owner 判定统一使用 {@link getAppInfo} 返回的 `effectiveOwnerOpenId`。
  * 不维护独立缓存，完全依赖 app-scope-checker 的 30s 缓存。
  */
+import type * as Lark from '@larksuiteoapi/node-sdk';
 import type { ConfiguredLarkAccount } from './types';
 /**
  * 获取应用的 effectiveOwnerOpenId。
@@ -18,4 +19,4 @@ import type { ConfiguredLarkAccount } from './types';
  * @param sdk - 飞书 SDK 实例（必须已初始化 TAT）
  * @returns 应用所有者的 open_id，如果查询失败则返回 undefined
  */
-export declare function getAppOwnerFallback(account: ConfiguredLarkAccount, sdk: any): Promise<string | undefined>;
+export declare function getAppOwnerFallback(account: ConfiguredLarkAccount, sdk: Lark.Client): Promise<string | undefined>;

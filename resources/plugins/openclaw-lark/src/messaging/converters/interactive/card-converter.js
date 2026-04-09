@@ -3,10 +3,12 @@
  * Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
  * SPDX-License-Identifier: MIT
  */
-import { EMOJI_MAP, CHART_TYPE_NAMES } from './types';
-import { escapeAttr, formatMillisecondsToISO8601, normalizeTimeFormat } from './card-utils';
-import { safeParse } from '../utils';
-export const MODE = { Concise: 0, Detailed: 1 };
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CardConverter = exports.MODE = void 0;
+const utils_1 = require("../utils.js");
+const types_1 = require("./types.js");
+const card_utils_1 = require("./card-utils.js");
+exports.MODE = { Concise: 0, Detailed: 1 };
 const elementConverters = new Map([
     ['plain_text', (c, _elem, prop) => c.convertPlainText(prop)],
     ['markdown', (c, _elem, prop) => c.convertMarkdown(prop)],
@@ -64,19 +66,19 @@ const elementConverters = new Map([
     ['custom_icon', () => ''],
     ['standard_icon', () => ''],
 ]);
-export class CardConverter {
+class CardConverter {
     mode;
     attachment;
     constructor(mode) {
         this.mode = mode;
     }
     convert(input) {
-        const card = safeParse(input.json_card);
+        const card = (0, utils_1.safeParse)(input.json_card);
         if (!card) {
             return { content: '<card>\n[无法解析卡片内容]\n</card>', schema: 0 };
         }
         if (input.json_attachment) {
-            this.attachment = safeParse(input.json_attachment);
+            this.attachment = (0, utils_1.safeParse)(input.json_attachment);
         }
         let schema = input.card_schema ?? 0;
         if (schema === 0) {
@@ -87,7 +89,7 @@ export class CardConverter {
         const title = header ? this.extractHeaderTitle(header, schema) : '';
         const body = this.extractBody(card, schema);
         const bodyContent = body ? this.convertBody(body, schema) : '';
-        let out = title ? `<card title="${escapeAttr(title)}">\n` : '<card>\n';
+        let out = title ? `<card title="${(0, card_utils_1.escapeAttr)(title)}">\n` : '<card>\n';
         if (bodyContent)
             out += bodyContent + '\n';
         out += '</card>';
@@ -133,7 +135,7 @@ export class CardConverter {
     convertElements(elements, depth) {
         const results = [];
         for (const elem of elements) {
-            if (typeof elem !== 'object' || elem === null)
+            if (typeof elem !== 'object' || elem == null)
                 continue;
             const result = this.convertElement(elem, depth);
             if (result)
@@ -185,7 +187,7 @@ export class CardConverter {
         if (Array.isArray(elements) && elements.length > 0) {
             const texts = [];
             for (const elem of elements) {
-                if (typeof elem === 'object' && elem !== null) {
+                if (typeof elem === 'object' && elem != null) {
                     const t = this.extractTextContent(elem);
                     if (t)
                         texts.push(t);
@@ -229,7 +231,7 @@ export class CardConverter {
     convertMarkdownElements(elements) {
         const parts = [];
         for (const elem of elements) {
-            if (typeof elem !== 'object' || elem === null)
+            if (typeof elem !== 'object' || elem == null)
                 continue;
             const result = this.convertElement(elem, 0);
             if (result)
@@ -249,7 +251,7 @@ export class CardConverter {
         if (Array.isArray(fields) && fields.length > 0) {
             const fieldTexts = [];
             for (const field of fields) {
-                if (typeof field !== 'object' || field === null)
+                if (typeof field !== 'object' || field == null)
                     continue;
                 const fm = field;
                 const te = fm.text;
@@ -276,7 +278,7 @@ export class CardConverter {
             return '';
         const texts = [];
         for (const elem of elements) {
-            if (typeof elem !== 'object' || elem === null)
+            if (typeof elem !== 'object' || elem == null)
                 continue;
             const text = this.convertElement(elem, 0);
             if (text)
@@ -299,13 +301,13 @@ export class CardConverter {
     }
     convertEmoji(prop) {
         const key = prop.key || '';
-        return EMOJI_MAP[key] ?? `:${key}:`;
+        return types_1.EMOJI_MAP[key] ?? `:${key}:`;
     }
     convertLocalDatetime(prop) {
         const milliseconds = prop.milliseconds;
         const fallbackText = prop.fallbackText;
         if (milliseconds) {
-            const formatted = formatMillisecondsToISO8601(milliseconds);
+            const formatted = (0, card_utils_1.formatMillisecondsToISO8601)(milliseconds);
             if (formatted)
                 return formatted;
         }
@@ -317,7 +319,7 @@ export class CardConverter {
             return '';
         const lines = [];
         for (const item of items) {
-            if (typeof item !== 'object' || item === null)
+            if (typeof item !== 'object' || item == null)
                 continue;
             const im = item;
             const level = im.level || 0;
@@ -357,13 +359,13 @@ export class CardConverter {
         const contents = prop.contents;
         if (Array.isArray(contents)) {
             for (const line of contents) {
-                if (typeof line !== 'object' || line === null)
+                if (typeof line !== 'object' || line == null)
                     continue;
                 const lm = line;
                 const lineContents = lm.contents;
                 if (Array.isArray(lineContents)) {
                     for (const c of lineContents) {
-                        if (typeof c !== 'object' || c === null)
+                        if (typeof c !== 'object' || c == null)
                             continue;
                         const cm = c;
                         if (typeof cm.content === 'string')
@@ -435,7 +437,7 @@ export class CardConverter {
     }
     convertUnknown(prop, tag) {
         if (!prop) {
-            if (this.mode === MODE.Detailed)
+            if (this.mode === exports.MODE.Detailed)
                 return `[未知内容](tag:${tag})`;
             return '[未知内容]';
         }
@@ -451,7 +453,7 @@ export class CardConverter {
         if (Array.isArray(elements) && elements.length > 0) {
             return this.convertElements(elements, 0);
         }
-        if (this.mode === MODE.Detailed)
+        if (this.mode === exports.MODE.Detailed)
             return `[未知内容](tag:${tag})`;
         return '[未知内容]';
     }
@@ -461,7 +463,7 @@ export class CardConverter {
             return '';
         const results = [];
         for (const col of columns) {
-            if (typeof col !== 'object' || col === null)
+            if (typeof col !== 'object' || col == null)
                 continue;
             const result = this.convertElement(col, depth + 1);
             if (result)
@@ -496,7 +498,7 @@ export class CardConverter {
                     title = t;
             }
         }
-        const shouldExpand = expanded || this.mode === MODE.Detailed;
+        const shouldExpand = expanded || this.mode === exports.MODE.Detailed;
         if (shouldExpand) {
             let out = `▼ ${title}\n`;
             const elements = prop.elements;
@@ -529,8 +531,8 @@ export class CardConverter {
         }
         let out = '<clickable';
         if (url)
-            out += ` url="${escapeAttr(url)}"`;
-        if (this.mode === MODE.Detailed && _id)
+            out += ` url="${(0, card_utils_1.escapeAttr)(url)}"`;
+        if (this.mode === exports.MODE.Detailed && _id)
             out += ` id="${_id}"`;
         out += '>\n';
         const elements = prop.elements;
@@ -556,13 +558,13 @@ export class CardConverter {
         if (!buttonText)
             buttonText = '按钮';
         const disabled = prop.disabled === true;
-        if (disabled && this.mode === MODE.Concise) {
+        if (disabled && this.mode === exports.MODE.Concise) {
             return `[${buttonText} ✗]`;
         }
         const actions = prop.actions;
         if (Array.isArray(actions)) {
             for (const action of actions) {
-                if (typeof action !== 'object' || action === null)
+                if (typeof action !== 'object' || action == null)
                     continue;
                 const am = action;
                 if (am.type === 'open_url') {
@@ -575,7 +577,7 @@ export class CardConverter {
                 }
             }
         }
-        if (disabled && this.mode === MODE.Detailed) {
+        if (disabled && this.mode === exports.MODE.Detailed) {
             let result = `[${buttonText} ✗]`;
             const tips = prop.disabledTips;
             if (tips && typeof tips === 'object') {
@@ -593,7 +595,7 @@ export class CardConverter {
             return '';
         const results = [];
         for (const action of actions) {
-            if (typeof action !== 'object' || action === null)
+            if (typeof action !== 'object' || action == null)
                 continue;
             const result = this.convertElement(action, 0);
             if (result)
@@ -630,7 +632,7 @@ export class CardConverter {
         const optionTexts = [];
         let hasSelected = false;
         for (const opt of options) {
-            if (typeof opt !== 'object' || opt === null)
+            if (typeof opt !== 'object' || opt == null)
                 continue;
             const om = opt;
             let optText = '';
@@ -663,7 +665,7 @@ export class CardConverter {
             optionTexts[optionTexts.length - 1] += ' ▼';
         }
         let result = `{${optionTexts.join(' / ')}}`;
-        if (this.mode === MODE.Detailed) {
+        if (this.mode === exports.MODE.Detailed) {
             const attrs = [];
             if (isMulti)
                 attrs.push('multi');
@@ -749,7 +751,7 @@ export class CardConverter {
                 emoji = '📅';
         }
         if (value)
-            value = normalizeTimeFormat(value);
+            value = (0, card_utils_1.normalizeTimeFormat)(value);
         if (!value) {
             let placeholder = '选择';
             const phElem = prop.placeholder;
@@ -771,7 +773,7 @@ export class CardConverter {
             text = this.extractTextContent(textElem);
         }
         let result = `${checkMark} ${text}`;
-        if (this.mode === MODE.Detailed && _id) {
+        if (this.mode === exports.MODE.Detailed && _id) {
             result += `(id:${_id})`;
         }
         return result;
@@ -782,7 +784,7 @@ export class CardConverter {
             return '';
         const optTexts = [];
         for (const opt of options) {
-            if (typeof opt !== 'object' || opt === null)
+            if (typeof opt !== 'object' || opt == null)
                 continue;
             const om = opt;
             const textElem = om.text;
@@ -817,11 +819,11 @@ export class CardConverter {
             }
         }
         if (personName) {
-            if (this.mode === MODE.Detailed)
+            if (this.mode === exports.MODE.Detailed)
                 return `@${personName}(open_id:${userID})`;
             return `@${personName}`;
         }
-        if (this.mode === MODE.Detailed)
+        if (this.mode === exports.MODE.Detailed)
             return `@用户(open_id:${userID})`;
         return `@${userID}`;
     }
@@ -842,11 +844,11 @@ export class CardConverter {
             }
         }
         if (personName) {
-            if (this.mode === MODE.Detailed)
+            if (this.mode === exports.MODE.Detailed)
                 return `@${personName}(open_id:${userID})`;
             return `@${personName}`;
         }
-        if (this.mode === MODE.Detailed)
+        if (this.mode === exports.MODE.Detailed)
             return `@用户(open_id:${userID})`;
         return `@${userID}`;
     }
@@ -856,12 +858,12 @@ export class CardConverter {
             return '';
         const names = [];
         for (const person of persons) {
-            if (typeof person !== 'object' || person === null)
+            if (typeof person !== 'object' || person == null)
                 continue;
             const pm = person;
             const personID = pm.id || '';
             const name = '用户';
-            if (this.mode === MODE.Detailed && personID) {
+            if (this.mode === exports.MODE.Detailed && personID) {
                 names.push(`@${name}(id:${personID})`);
             }
             else {
@@ -873,7 +875,7 @@ export class CardConverter {
     convertAvatar(prop, _id) {
         const userID = prop.userID || '';
         let result = '👤';
-        if (this.mode === MODE.Detailed && userID) {
+        if (this.mode === exports.MODE.Detailed && userID) {
             result += `(id:${userID})`;
         }
         return result;
@@ -899,14 +901,14 @@ export class CardConverter {
             }
         }
         if (userName) {
-            if (this.mode === MODE.Detailed) {
+            if (this.mode === exports.MODE.Detailed) {
                 if (actualUserID)
                     return `@${userName}(user_id:${actualUserID})`;
                 return `@${userName}(open_id:${userID})`;
             }
             return `@${userName}`;
         }
-        if (this.mode === MODE.Detailed) {
+        if (this.mode === exports.MODE.Detailed) {
             if (actualUserID)
                 return `@用户(user_id:${actualUserID})`;
             return `@用户(open_id:${userID})`;
@@ -928,7 +930,7 @@ export class CardConverter {
                 alt = titleText;
         }
         let result = `🖼️ ${alt}`;
-        if (this.mode === MODE.Detailed) {
+        if (this.mode === exports.MODE.Detailed) {
             const imageID = prop.imageID;
             if (imageID) {
                 const token = this.getImageToken(imageID);
@@ -947,10 +949,10 @@ export class CardConverter {
         if (!Array.isArray(imgList) || imgList.length === 0)
             return '';
         let result = `🖼️ ${imgList.length}张图片`;
-        if (this.mode === MODE.Detailed) {
+        if (this.mode === exports.MODE.Detailed) {
             const keys = [];
             for (const img of imgList) {
-                if (typeof img !== 'object' || img === null)
+                if (typeof img !== 'object' || img == null)
                     continue;
                 const im = img;
                 const imageID = im.imageID;
@@ -976,7 +978,7 @@ export class CardConverter {
             const ct = chartSpec.type;
             if (ct) {
                 chartType = ct;
-                const typeName = CHART_TYPE_NAMES[chartType];
+                const typeName = types_1.CHART_TYPE_NAMES[chartType];
                 if (typeName)
                     title = `${title}${typeName}`;
             }
@@ -1016,7 +1018,7 @@ export class CardConverter {
         }
         const parts = [];
         for (const v of values) {
-            if (typeof v !== 'object' || v === null)
+            if (typeof v !== 'object' || v == null)
                 continue;
             const vm = v;
             parts.push(`${vm[xField]}:${vm[yField]}`);
@@ -1031,7 +1033,7 @@ export class CardConverter {
         }
         const parts = [];
         for (const v of values) {
-            if (typeof v !== 'object' || v === null)
+            if (typeof v !== 'object' || v == null)
                 continue;
             const vm = v;
             parts.push(`${vm[categoryField]}:${vm[valueField]}`);
@@ -1043,7 +1045,7 @@ export class CardConverter {
     }
     convertAudio(prop, _id) {
         let result = '🎵 音频';
-        if (this.mode === MODE.Detailed) {
+        if (this.mode === exports.MODE.Detailed) {
             const fileID = prop.fileID || prop.audioID || '';
             if (fileID)
                 result += `(key:${fileID})`;
@@ -1052,7 +1054,7 @@ export class CardConverter {
     }
     convertVideo(prop, _id) {
         let result = '🎬 视频';
-        if (this.mode === MODE.Detailed) {
+        if (this.mode === exports.MODE.Detailed) {
             const fileID = prop.fileID || prop.videoID || '';
             if (fileID)
                 result += `(key:${fileID})`;
@@ -1067,7 +1069,7 @@ export class CardConverter {
         const colNames = [];
         const colKeys = [];
         for (const col of columns) {
-            if (typeof col !== 'object' || col === null)
+            if (typeof col !== 'object' || col == null)
                 continue;
             const cm = col;
             let displayName = cm.displayName || '';
@@ -1081,7 +1083,7 @@ export class CardConverter {
         lines.push('| ' + colNames.join(' | ') + ' |');
         lines.push('|' + colNames.map(() => '------|').join(''));
         for (const row of rows) {
-            if (typeof row !== 'object' || row === null)
+            if (typeof row !== 'object' || row == null)
                 continue;
             const rm = row;
             const cells = [];
@@ -1107,7 +1109,7 @@ export class CardConverter {
         if (Array.isArray(data)) {
             const texts = [];
             for (const item of data) {
-                if (typeof item === 'object' && item !== null) {
+                if (typeof item === 'object' && item != null) {
                     const im = item;
                     if (typeof im.text === 'string')
                         texts.push(`「${im.text}」`);
@@ -1115,7 +1117,7 @@ export class CardConverter {
             }
             return texts.join(' ');
         }
-        if (typeof data === 'object' && data !== null) {
+        if (typeof data === 'object' && data != null) {
             return this.extractTextContent(data);
         }
         return '';
@@ -1172,3 +1174,4 @@ export class CardConverter {
         return imageInfo.token || '';
     }
 }
+exports.CardConverter = CardConverter;

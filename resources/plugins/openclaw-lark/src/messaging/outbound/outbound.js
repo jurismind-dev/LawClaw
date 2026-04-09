@@ -1,10 +1,13 @@
 "use strict";
 // SPDX-License-Identifier: MIT
-import { LarkClient } from '../../core/lark-client';
-import { sendTextLark, sendMediaLark, sendCardLark } from './deliver';
-import { larkLogger } from '../../core/lark-logger';
-import { parseFeishuRouteTarget } from '../../core/targets';
-const log = larkLogger('outbound/outbound');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.feishuOutbound = void 0;
+const lark_client_1 = require("../../core/lark-client.js");
+const lark_logger_1 = require("../../core/lark-logger.js");
+const targets_1 = require("../../core/targets.js");
+const comment_target_1 = require("../../core/comment-target.js");
+const deliver_1 = require("./deliver.js");
+const log = (0, lark_logger_1.larkLogger)('outbound/outbound');
 /**
  * Map adapter-level parameters to internal send context.
  *
@@ -12,7 +15,7 @@ const log = larkLogger('outbound/outbound');
  * Slack (`sendSlackOutboundMessage`) to centralise parameter mapping.
  */
 function resolveFeishuSendContext(params) {
-    const routeTarget = parseFeishuRouteTarget(params.to);
+    const routeTarget = (0, targets_1.parseFeishuRouteTarget)(params.to);
     const explicitThreadId = params.threadId != null && String(params.threadId).trim() !== '' ? String(params.threadId).trim() : undefined;
     const explicitReplyToId = params.replyToId?.trim() || undefined;
     const replyToMessageId = explicitReplyToId ?? routeTarget.replyToMessageId;
@@ -31,31 +34,49 @@ function resolveFeishuSendContext(params) {
 // ---------------------------------------------------------------------------
 // Adapter
 // ---------------------------------------------------------------------------
-export const feishuOutbound = {
+exports.feishuOutbound = {
     deliveryMode: 'direct',
-    chunker: (text, limit) => LarkClient.runtime.channel.text.chunkMarkdownText(text, limit),
+    chunker: (text, limit) => lark_client_1.LarkClient.runtime.channel.text.chunkMarkdownText(text, limit),
     chunkerMode: 'markdown',
     textChunkLimit: 15000,
     sendText: async ({ cfg, to, text, accountId, replyToId, threadId }) => {
         log.info(`sendText: target=${to}, textLength=${text.length}`);
+        // Comment thread routing — route replies through Drive comment API
+        if ((0, comment_target_1.isCommentTarget)(to)) {
+            log.info(`sendText: detected comment target, routing through Drive comment API`);
+            const result = await (0, deliver_1.sendCommentReplyLark)({ cfg, to, text, accountId: accountId ?? undefined });
+            return { channel: 'feishu', ...result };
+        }
         const ctx = resolveFeishuSendContext({ cfg, to, accountId, replyToId, threadId });
-        const result = await sendTextLark({ ...ctx, to: ctx.to, text });
+        const result = await (0, deliver_1.sendTextLark)({ ...ctx, to: ctx.to, text });
         return { channel: 'feishu', ...result };
     },
     sendMedia: async ({ cfg, to, text, mediaUrl, mediaLocalRoots, accountId, replyToId, threadId }) => {
         log.info(`sendMedia: target=${to}, ` + `hasText=${Boolean(text?.trim())}, mediaUrl=${mediaUrl ?? '(none)'}`);
+        // Comment thread routing — send text (with media URL appended) via Drive comment API
+        if ((0, comment_target_1.isCommentTarget)(to)) {
+            log.info(`sendMedia: detected comment target, routing through Drive comment API`);
+            const parts = [];
+            if (text?.trim())
+                parts.push(text.trim());
+            if (mediaUrl)
+                parts.push(`📎 ${mediaUrl}`);
+            const combinedText = parts.join('\n') || '(media)';
+            const result = await (0, deliver_1.sendCommentReplyLark)({ cfg, to, text: combinedText, accountId: accountId ?? undefined });
+            return { channel: 'feishu', ...result };
+        }
         const ctx = resolveFeishuSendContext({ cfg, to, accountId, replyToId, threadId });
         // Feishu media messages do not support inline captions — send text first.
         if (text?.trim()) {
-            await sendTextLark({ ...ctx, to: ctx.to, text });
+            await (0, deliver_1.sendTextLark)({ ...ctx, to: ctx.to, text });
         }
         // No mediaUrl — text-only fallback.
         if (!mediaUrl) {
             log.info('sendMedia: no mediaUrl provided, falling back to text-only');
-            const result = await sendTextLark({ ...ctx, to: ctx.to, text: text ?? '' });
+            const result = await (0, deliver_1.sendTextLark)({ ...ctx, to: ctx.to, text: text ?? '' });
             return { channel: 'feishu', ...result };
         }
-        const result = await sendMediaLark({ ...ctx, to: ctx.to, mediaUrl, mediaLocalRoots });
+        const result = await (0, deliver_1.sendMediaLark)({ ...ctx, to: ctx.to, mediaUrl, mediaLocalRoots });
         return {
             channel: 'feishu',
             messageId: result.messageId,
@@ -78,12 +99,12 @@ export const feishuOutbound = {
         // text and media must be sent as separate messages around the card.
         if (feishuData?.card) {
             if (text.trim()) {
-                await sendTextLark({ ...ctx, to: ctx.to, text });
+                await (0, deliver_1.sendTextLark)({ ...ctx, to: ctx.to, text });
             }
-            const cardResult = await sendCardLark({ ...ctx, to: ctx.to, card: feishuData.card });
+            const cardResult = await (0, deliver_1.sendCardLark)({ ...ctx, to: ctx.to, card: feishuData.card });
             const warnings = [];
             for (const mediaUrl of mediaUrls) {
-                const mediaResult = await sendMediaLark({ ...ctx, to: ctx.to, mediaUrl, mediaLocalRoots });
+                const mediaResult = await (0, deliver_1.sendMediaLark)({ ...ctx, to: ctx.to, mediaUrl, mediaLocalRoots });
                 if (mediaResult.warning) {
                     warnings.push(mediaResult.warning);
                 }
@@ -98,17 +119,17 @@ export const feishuOutbound = {
         // --- Standard text + media orchestration (no card) ---
         // No media: text-only
         if (mediaUrls.length === 0) {
-            const result = await sendTextLark({ ...ctx, to: ctx.to, text });
+            const result = await (0, deliver_1.sendTextLark)({ ...ctx, to: ctx.to, text });
             return { channel: 'feishu', ...result };
         }
         // Has media: send leading text, then loop media URLs
         if (text.trim()) {
-            await sendTextLark({ ...ctx, to: ctx.to, text });
+            await (0, deliver_1.sendTextLark)({ ...ctx, to: ctx.to, text });
         }
         const warnings = [];
         let lastResult;
         for (const mediaUrl of mediaUrls) {
-            lastResult = await sendMediaLark({ ...ctx, to: ctx.to, mediaUrl, mediaLocalRoots });
+            lastResult = await (0, deliver_1.sendMediaLark)({ ...ctx, to: ctx.to, mediaUrl, mediaLocalRoots });
             if (lastResult.warning) {
                 warnings.push(lastResult.warning);
             }

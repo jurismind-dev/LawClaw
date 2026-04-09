@@ -8,9 +8,14 @@
  * Provides both config-based (offline) and live API directory
  * lookups so the outbound subsystem and UI can resolve targets.
  */
-import { getLarkAccount } from '../core/accounts';
-import { LarkClient } from '../core/lark-client';
-import { normalizeFeishuTarget } from '../core/targets';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.listFeishuDirectoryPeers = listFeishuDirectoryPeers;
+exports.listFeishuDirectoryGroups = listFeishuDirectoryGroups;
+exports.listFeishuDirectoryPeersLive = listFeishuDirectoryPeersLive;
+exports.listFeishuDirectoryGroupsLive = listFeishuDirectoryGroupsLive;
+const accounts_1 = require("../core/accounts.js");
+const lark_client_1 = require("../core/lark-client.js");
+const targets_1 = require("../core/targets.js");
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
@@ -33,8 +38,8 @@ function applyLimitSlice(items, limit) {
  * Does not make any API calls -- useful when the bot is not yet
  * connected or when credentials are unavailable.
  */
-export async function listFeishuDirectoryPeers(params) {
-    const account = getLarkAccount(params.cfg, params.accountId);
+async function listFeishuDirectoryPeers(params) {
+    const account = (0, accounts_1.getLarkAccount)(params.cfg, params.accountId);
     const feishuCfg = account.config;
     const q = params.query?.trim().toLowerCase() || '';
     const ids = new Set();
@@ -55,7 +60,7 @@ export async function listFeishuDirectoryPeers(params) {
     const peers = Array.from(ids)
         .map((raw) => raw.trim())
         .filter(Boolean)
-        .map((raw) => normalizeFeishuTarget(raw) ?? raw)
+        .map((raw) => (0, targets_1.normalizeFeishuTarget)(raw) ?? raw)
         .filter((id) => matchesQuery(id, undefined, q))
         .map((id) => ({ kind: 'user', id }));
     return applyLimitSlice(peers, params.limit);
@@ -63,8 +68,8 @@ export async function listFeishuDirectoryPeers(params) {
 /**
  * List groups known from the channel config (groups + groupAllowFrom).
  */
-export async function listFeishuDirectoryGroups(params) {
-    const account = getLarkAccount(params.cfg, params.accountId);
+async function listFeishuDirectoryGroups(params) {
+    const account = (0, accounts_1.getLarkAccount)(params.cfg, params.accountId);
     const feishuCfg = account.config;
     const q = params.query?.trim().toLowerCase() || '';
     const ids = new Set();
@@ -98,13 +103,13 @@ export async function listFeishuDirectoryGroups(params) {
  * Falls back to config-based listing when credentials are missing or
  * the API call fails.
  */
-export async function listFeishuDirectoryPeersLive(params) {
-    const account = getLarkAccount(params.cfg, params.accountId);
+async function listFeishuDirectoryPeersLive(params) {
+    const account = (0, accounts_1.getLarkAccount)(params.cfg, params.accountId);
     if (!account.configured) {
         return listFeishuDirectoryPeers(params);
     }
     try {
-        const client = LarkClient.fromAccount(account).sdk;
+        const client = lark_client_1.LarkClient.fromAccount(account).sdk;
         const peers = [];
         const limit = params.limit ?? 50;
         if (limit <= 0)
@@ -147,13 +152,13 @@ export async function listFeishuDirectoryPeersLive(params) {
  * Falls back to config-based listing when credentials are missing or
  * the API call fails.
  */
-export async function listFeishuDirectoryGroupsLive(params) {
-    const account = getLarkAccount(params.cfg, params.accountId);
+async function listFeishuDirectoryGroupsLive(params) {
+    const account = (0, accounts_1.getLarkAccount)(params.cfg, params.accountId);
     if (!account.configured) {
         return listFeishuDirectoryGroups(params);
     }
     try {
-        const client = LarkClient.fromAccount(account).sdk;
+        const client = lark_client_1.LarkClient.fromAccount(account).sdk;
         const groups = [];
         const limit = params.limit ?? 50;
         if (limit <= 0)

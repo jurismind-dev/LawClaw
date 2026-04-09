@@ -149,6 +149,92 @@ describe('openclaw auth - provider config apiKey markers', () => {
     expect(next.models?.providers?.openai?.apiKey).toBe('OPENAI_API_KEY');
   });
 
+  it('canonicalizes legacy qwen provider entries when syncing provider config', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-provider-config-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          models: {
+            providers: {
+              'qwen-portal': {
+                baseUrl: 'https://portal.qwen.ai/v1',
+                api: 'openai-completions',
+                models: [{ id: 'coder-model', name: 'coder-model' }],
+              },
+            },
+          },
+          plugins: {
+            entries: {
+              'qwen-portal-auth': {
+                enabled: true,
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    await mod.syncProviderConfigToOpenClaw('qwen', 'qwen3.5-plus', {
+      baseUrl: 'https://coding-intl.dashscope.aliyuncs.com/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'QWEN_API_KEY',
+    });
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      models?: {
+        providers?: Record<string, { baseUrl?: string; models?: Array<{ id?: string }> }>;
+      };
+      plugins?: {
+        entries?: Record<string, unknown>;
+      };
+    };
+
+    expect(next.models?.providers?.qwen?.baseUrl).toBe('https://coding-intl.dashscope.aliyuncs.com/v1');
+    expect(next.models?.providers?.qwen?.models).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'qwen3.5-plus' })])
+    );
+    expect(next.models?.providers?.['qwen-portal']).toBeUndefined();
+    expect(next.plugins?.entries?.['qwen-portal-auth']).toBeUndefined();
+  });
+
+  it('uses minimax-portal-auth for minimax cn provider sync', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-provider-config-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(configPath, JSON.stringify({}, null, 2), 'utf-8');
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    await mod.syncProviderConfigToOpenClaw('minimax-portal-cn', 'MiniMax-M2.7', {
+      baseUrl: 'https://api.minimaxi.com/anthropic',
+      api: 'anthropic-messages',
+      apiKeyEnv: 'MINIMAX_CN_API_KEY',
+    });
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      plugins?: {
+        entries?: Record<string, { enabled?: boolean }>;
+      };
+    };
+
+    expect(next.plugins?.entries?.['minimax-portal-auth']).toMatchObject({
+      enabled: true,
+    });
+    expect(next.plugins?.entries?.['minimax-portal-cn-auth']).toBeUndefined();
+  });
+
   it('removes stale jurismind env markers when refreshing agent model config', async () => {
     const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);

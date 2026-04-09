@@ -8,10 +8,10 @@
  * structures (message bodies, envelope payloads, inbound context) but
  * never perform I/O, send messages, or mutate external state.
  */
-import type { HistoryEntry } from 'openclaw/plugin-sdk';
+import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
 import type { MessageContext } from '../types';
+import type { LarkClient } from '../../core/lark-client';
 import type { DispatchContext } from './dispatch-context';
-import { LarkClient } from '../../core/lark-client';
 /**
  * Build a `[System: ...]` mention annotation when the message @-mentions
  * non-bot users.  Returns `undefined` when there are no user mentions.

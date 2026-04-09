@@ -5,20 +5,24 @@
  *
  * Converter for "share_chat" and "share_user" message types.
  */
-import { safeParse } from './utils';
-export const convertShareChat = (raw) => {
-    const parsed = safeParse(raw);
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertShareUser = exports.convertShareChat = void 0;
+const utils_1 = require("./utils.js");
+const convertShareChat = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const chatId = parsed?.chat_id ?? '';
     return {
         content: `<group_card id="${chatId}"/>`,
         resources: [],
     };
 };
-export const convertShareUser = (raw) => {
-    const parsed = safeParse(raw);
+exports.convertShareChat = convertShareChat;
+const convertShareUser = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const userId = parsed?.user_id ?? '';
     return {
         content: `<contact_card id="${userId}"/>`,
         resources: [],
     };
 };
+exports.convertShareUser = convertShareUser;

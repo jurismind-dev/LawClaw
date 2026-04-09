@@ -12,22 +12,14 @@
  * This module is a general-purpose message parsing utility — usable
  * from inbound handling, outbound formatting, and skills.
  */
-import { converters } from './index';
-import { escapeRegExp } from './utils';
-import { getUserNameCache } from '../inbound/user-name-cache';
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-/** 从 mention 的 id 字段提取 open_id（兼容事件推送的对象格式和 API 响应的字符串格式） */
-export function extractMentionOpenId(id) {
-    if (typeof id === 'string')
-        return id;
-    if (id != null && typeof id === 'object' && 'open_id' in id) {
-        const openId = id.open_id;
-        return typeof openId === 'string' ? openId : '';
-    }
-    return '';
-}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveMentions = exports.extractMentionOpenId = exports.buildConvertContextFromItem = void 0;
+exports.convertMessageContent = convertMessageContent;
+const index_1 = require("./index.js");
+var content_converter_helpers_1 = require("./content-converter-helpers.js");
+Object.defineProperty(exports, "buildConvertContextFromItem", { enumerable: true, get: function () { return content_converter_helpers_1.buildConvertContextFromItem; } });
+Object.defineProperty(exports, "extractMentionOpenId", { enumerable: true, get: function () { return content_converter_helpers_1.extractMentionOpenId; } });
+Object.defineProperty(exports, "resolveMentions", { enumerable: true, get: function () { return content_converter_helpers_1.resolveMentions; } });
 // ---------------------------------------------------------------------------
 // Convert
 // ---------------------------------------------------------------------------
@@ -38,70 +30,11 @@ export function extractMentionOpenId(id) {
  * Returns a Promise because some converters (e.g. merge_forward) perform
  * async operations. Synchronous converters are awaited transparently.
  */
-export async function convertMessageContent(raw, messageType, ctx) {
-    const fn = converters.get(messageType) ?? converters.get('unknown');
+async function convertMessageContent(raw, messageType, ctx) {
+    const fn = index_1.converters.get(messageType) ?? index_1.converters.get('unknown');
     if (!fn) {
         return { content: raw, resources: [] };
     }
-    return fn(raw, ctx);
-}
-// ---------------------------------------------------------------------------
-// ConvertContext from API item
-// ---------------------------------------------------------------------------
-/**
- * Build a {@link ConvertContext} from a raw Feishu API message item.
- *
- * Extracts the `mentions` array that the IM API returns on each message
- * item and maps it into the key→MentionInfo / openId→MentionInfo
- * structures the converter system expects.
- */
-export function buildConvertContextFromItem(item, fallbackMessageId, accountId) {
-    const mentions = new Map();
-    const mentionsByOpenId = new Map();
-    for (const m of item.mentions ?? []) {
-        const openId = extractMentionOpenId(m.id);
-        if (!openId)
-            continue;
-        const info = {
-            key: m.key,
-            openId,
-            name: m.name ?? '',
-            isBot: false,
-        };
-        mentions.set(m.key, info);
-        mentionsByOpenId.set(openId, info);
-    }
-    return {
-        mentions,
-        mentionsByOpenId,
-        messageId: item.message_id ?? fallbackMessageId,
-        accountId,
-        resolveUserName: accountId ? (openId) => getUserNameCache(accountId).get(openId) : undefined,
-    };
-}
-// ---------------------------------------------------------------------------
-// Mention resolution helper
-// ---------------------------------------------------------------------------
-/**
- * Resolve mention placeholders in text.
- *
- * - Bot mentions: remove the placeholder key and any preceding `@botName`
- *   entirely (with trailing whitespace).
- * - Non-bot mentions: replace the placeholder key with readable `@name`.
- */
-export function resolveMentions(text, ctx) {
-    if (ctx.mentions.size === 0)
-        return text;
-    let result = text;
-    for (const [key, info] of ctx.mentions) {
-        if (info.isBot && ctx.stripBotMentions) {
-            // 仅在事件推送场景才删除 bot mention
-            result = result.replace(new RegExp(`@${escapeRegExp(info.name)}\\s*`, 'g'), '').trim();
-            result = result.replace(new RegExp(escapeRegExp(key) + '\\s*', 'g'), '').trim();
-        }
-        else {
-            result = result.replace(new RegExp(escapeRegExp(key), 'g'), `@${info.name}`);
-        }
-    }
-    return result;
+    const nextCtx = ctx.convertMessageContent ? ctx : { ...ctx, convertMessageContent };
+    return fn(raw, nextCtx);
 }

@@ -1,15 +1,41 @@
 {
   "name": "@larksuite/openclaw-lark",
-  "version": "2026.3.17",
+  "version": "2026.4.7",
   "description": "OpenClaw Lark/Feishu channel plugin",
-  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      }
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "openclaw-lark": "bin/openclaw-lark.js"
   },
   "files": [
     "**/*"
   ],
-  "dependencies": {},
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.60.0",
+    "@sinclair/typebox": "0.34.48",
+    "image-size": "^2.0.2",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.22"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
   "openclaw": {
     "extensions": [
       "./index.js"
@@ -28,18 +54,9 @@
       "quickstartAllowFrom": true
     },
     "install": {
-      "npmSpec": "@larksuite/openclaw-lark@2026.3.17",
+      "npmSpec": "@larksuite/openclaw-lark@2026.4.7",
       "localPath": "extensions/feishu",
       "defaultChoice": "npm"
-    }
-  },
-  "main": "index.js",
-  "types": "index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./index.d.ts",
-      "import": "./index.js",
-      "default": "./index.js"
     }
   }
 }

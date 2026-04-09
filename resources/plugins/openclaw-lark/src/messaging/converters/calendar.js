@@ -8,15 +8,17 @@
  * - calendar
  * - general_calendar
  */
-import { safeParse, millisToDatetime } from './utils';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertGeneralCalendar = exports.convertCalendar = exports.convertShareCalendarEvent = void 0;
+const utils_1 = require("./utils.js");
 function formatCalendarContent(parsed) {
     const summary = parsed?.summary ?? '';
     const parts = [];
     if (summary) {
         parts.push(`📅 ${summary}`);
     }
-    const start = parsed?.start_time ? millisToDatetime(parsed.start_time) : '';
-    const end = parsed?.end_time ? millisToDatetime(parsed.end_time) : '';
+    const start = parsed?.start_time ? (0, utils_1.millisToDatetime)(parsed.start_time) : '';
+    const end = parsed?.end_time ? (0, utils_1.millisToDatetime)(parsed.end_time) : '';
     if (start && end) {
         parts.push(`🕙 ${start} ~ ${end}`);
     }
@@ -25,27 +27,30 @@ function formatCalendarContent(parsed) {
     }
     return parts.join('\n') || '[calendar event]';
 }
-export const convertShareCalendarEvent = (raw) => {
-    const parsed = safeParse(raw);
+const convertShareCalendarEvent = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const inner = formatCalendarContent(parsed);
     return {
         content: `<calendar_share>${inner}</calendar_share>`,
         resources: [],
     };
 };
-export const convertCalendar = (raw) => {
-    const parsed = safeParse(raw);
+exports.convertShareCalendarEvent = convertShareCalendarEvent;
+const convertCalendar = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const inner = formatCalendarContent(parsed);
     return {
         content: `<calendar_invite>${inner}</calendar_invite>`,
         resources: [],
     };
 };
-export const convertGeneralCalendar = (raw) => {
-    const parsed = safeParse(raw);
+exports.convertCalendar = convertCalendar;
+const convertGeneralCalendar = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     const inner = formatCalendarContent(parsed);
     return {
         content: `<calendar>${inner}</calendar>`,
         resources: [],
     };
 };
+exports.convertGeneralCalendar = convertGeneralCalendar;

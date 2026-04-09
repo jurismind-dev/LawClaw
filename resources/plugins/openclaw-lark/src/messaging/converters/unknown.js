@@ -5,9 +5,11 @@
  *
  * Fallback converter for unsupported message types.
  */
-import { safeParse } from './utils';
-export const convertUnknown = (raw) => {
-    const parsed = safeParse(raw);
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertUnknown = void 0;
+const utils_1 = require("./utils.js");
+const convertUnknown = (raw) => {
+    const parsed = (0, utils_1.safeParse)(raw);
     if (parsed != null && typeof parsed === 'object' && 'text' in parsed) {
         const text = parsed.text;
         if (typeof text === 'string')
@@ -15,3 +17,4 @@ export const convertUnknown = (raw) => {
     }
     return { content: '[unsupported message]', resources: [] };
 };
+exports.convertUnknown = convertUnknown;

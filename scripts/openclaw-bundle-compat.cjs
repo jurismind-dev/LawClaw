@@ -6,6 +6,7 @@ const DOUBAO_DEFAULT_MODEL = 'doubao';
 const WINDOWS_SPAWN_PATCH_MARKER = 'lawclaw windows spawn patch v1';
 const JURISMIND_DOUBAO_PLUGIN_ID = 'jurismind-doubao';
 const JURISMIND_DOUBAO_PATCH_MARKER = 'lawclaw jurismind doubao plugin v1';
+const LRU_CACHE_COMPAT_MARKER = 'lawclaw lru-cache interop patch v1';
 const REMOVED_OPENCLAW_EXTENSION_IDS = ['qqbot'];
 
 function isPlainObject(value) {
@@ -68,6 +69,63 @@ function patchRequireCompatiblePackage(nodeModulesDir, packageName, entry = './d
 
   writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
   return true;
+}
+
+function patchLegacyLruCacheInterop(nodeModulesDir) {
+  const packageJsonPath = join(nodeModulesDir, 'lru-cache', 'package.json');
+  if (!existsSync(packageJsonPath)) return false;
+
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+  } catch {
+    return false;
+  }
+
+  const version = typeof pkg.version === 'string' ? pkg.version.trim() : '';
+  const major = Number.parseInt(version.split('.')[0] || '', 10);
+  if (!Number.isFinite(major) || major >= 10) {
+    return false;
+  }
+
+  let changed = false;
+  const cjsEntryPath = join(nodeModulesDir, 'lru-cache', typeof pkg.main === 'string' ? pkg.main : 'index.js');
+  if (existsSync(cjsEntryPath)) {
+    const original = readFileSync(cjsEntryPath, 'utf8');
+    if (!original.includes(LRU_CACHE_COMPAT_MARKER) && original.includes('module.exports = LRUCache')) {
+      const patched = original.replace(
+        'module.exports = LRUCache',
+        `module.exports = LRUCache
+module.exports.LRUCache = LRUCache
+module.exports.default = LRUCache
+module.exports.__esModule = true
+// ${LRU_CACHE_COMPAT_MARKER}`
+      );
+      if (patched !== original) {
+        writeFileSync(cjsEntryPath, patched, 'utf8');
+        changed = true;
+      }
+    }
+  }
+
+  const esmEntryPath = join(nodeModulesDir, 'lru-cache', 'index.mjs');
+  if (existsSync(esmEntryPath)) {
+    const original = readFileSync(esmEntryPath, 'utf8');
+    if (!original.includes(LRU_CACHE_COMPAT_MARKER) && original.includes('export default LRUCache')) {
+      const patched = original.replace(
+        'export default LRUCache',
+        `export default LRUCache
+export { LRUCache }
+// ${LRU_CACHE_COMPAT_MARKER}`
+      );
+      if (patched !== original) {
+        writeFileSync(esmEntryPath, patched, 'utf8');
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
 }
 
 function replaceRequired(content, filePath, label, before, after) {
@@ -1033,6 +1091,13 @@ function patchOpenClawBundleCompat(nodeModulesDir) {
   // only if the package exports map explicitly allows require/default.
   if (patchRequireCompatiblePackage(nodeModulesDir, 'https-proxy-agent')) {
     patchedPackages.push('https-proxy-agent');
+  }
+
+  // LawClaw's flat OpenClaw bundle currently keeps only one root lru-cache
+  // version. Older CJS releases expose the constructor as the default export,
+  // while newer deps like hosted-git-info/path-scurry require { LRUCache }.
+  if (patchLegacyLruCacheInterop(nodeModulesDir)) {
+    patchedPackages.push('lru-cache');
   }
 
   return patchedPackages;

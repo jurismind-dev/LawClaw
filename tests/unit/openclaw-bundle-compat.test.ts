@@ -1,4 +1,5 @@
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -12,6 +13,18 @@ function createPackageFixture(rootDir: string, packageJson: object) {
   const packageDir = join(rootDir, 'node_modules', 'https-proxy-agent');
   mkdirSync(packageDir, { recursive: true });
   writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8');
+  return packageDir;
+}
+
+function createNamedPackageFixture(rootDir: string, packageName: string, packageJson: object, files: Record<string, string>) {
+  const packageDir = join(rootDir, 'node_modules', ...packageName.split('/'));
+  mkdirSync(packageDir, { recursive: true });
+  writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8');
+  for (const [relativePath, content] of Object.entries(files)) {
+    const fullPath = join(packageDir, relativePath);
+    mkdirSync(join(fullPath, '..'), { recursive: true });
+    writeFileSync(fullPath, content, 'utf8');
+  }
   return packageDir;
 }
 
@@ -110,6 +123,54 @@ describe('openclaw bundle compatibility patches', () => {
 
     expect(patchedPackages).toEqual([]);
     expect(readFileSync(packageJsonPath, 'utf8')).toBe(before);
+  });
+
+  it('patches legacy lru-cache bundles to expose the constructor via named exports', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-bundle-'));
+    tempDirs.push(tempRoot);
+
+    createNamedPackageFixture(
+      tempRoot,
+      'lru-cache',
+      {
+        name: 'lru-cache',
+        version: '7.18.3',
+        main: './index.js',
+        exports: {
+          '.': {
+            import: {
+              default: './index.mjs',
+            },
+            require: {
+              default: './index.js',
+            },
+          },
+        },
+      },
+      {
+        'index.js': `'use strict';\nclass LRUCache {}\nmodule.exports = LRUCache\n`,
+        'index.mjs': `class LRUCache {}\nexport default LRUCache\n`,
+      }
+    );
+
+    const { patchOpenClawBundleCompat } = await loadCompatTools();
+    const patchedPackages = patchOpenClawBundleCompat(join(tempRoot, 'node_modules'));
+
+    expect(patchedPackages).toEqual(['lru-cache']);
+
+    const requireFromTemp = createRequire(join(tempRoot, 'package.json'));
+    const cjsModule = requireFromTemp('lru-cache') as { LRUCache?: unknown; default?: unknown };
+    expect(typeof cjsModule).toBe('function');
+    expect(cjsModule.LRUCache).toBe(cjsModule);
+    expect(cjsModule.default).toBe(cjsModule);
+
+    const esmModule = await import(pathToFileURL(join(tempRoot, 'node_modules', 'lru-cache', 'index.mjs')).href) as {
+      default?: unknown;
+      LRUCache?: unknown;
+    };
+    expect(esmModule.LRUCache).toBe(esmModule.default);
+
+    expect(patchOpenClawBundleCompat(join(tempRoot, 'node_modules'))).toEqual([]);
   });
 
   it('installs a bundled Jurismind doubao extension for modern OpenClaw layouts', async () => {

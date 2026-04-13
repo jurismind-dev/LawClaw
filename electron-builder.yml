@@ -100,6 +100,10 @@ mac:
     NSCameraUsageDescription: LawClaw requires camera access for video features
 
 dmg:
+  # OpenClaw + bundled runtimes make the signed app large enough that
+  # electron-builder's auto-sized writable image can run out of space while
+  # copying files into /Volumes/... during dmg creation.
+  size: 2g
   background: resources/dmg-background.png
   icon: resources/icons/icon.icns
   iconSize: 100

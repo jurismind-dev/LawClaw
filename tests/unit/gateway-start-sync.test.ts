@@ -284,4 +284,50 @@ describe('gateway start pre-sync', () => {
       electronMocks.app.isPackaged = false;
     }
   });
+
+  it('defers reconnect startup when another start flow is already in progress', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const { GatewayManager } = await import('@electron/gateway/manager');
+      const manager = new GatewayManager({
+        baseDelay: 10,
+        maxDelay: 20,
+      });
+
+      (manager as unknown as { status: { state: string; port: number } }).status = {
+        state: 'stopped',
+        port: 4317,
+      };
+
+      const findExistingGateway = vi.fn(async () => null);
+      const startProcess = vi.fn(async () => undefined);
+      const waitForReady = vi.fn(async () => undefined);
+      const connect = vi.fn(async () => undefined);
+      const startHealthCheck = vi.fn();
+
+      (manager as unknown as { findExistingGateway: () => Promise<null> }).findExistingGateway = findExistingGateway;
+      (manager as unknown as { startProcess: () => Promise<void> }).startProcess = startProcess;
+      (manager as unknown as { waitForReady: () => Promise<void> }).waitForReady = waitForReady;
+      (manager as unknown as { connect: () => Promise<void> }).connect = connect;
+      (manager as unknown as { startHealthCheck: () => void }).startHealthCheck = startHealthCheck;
+      (manager as unknown as { startLock: boolean }).startLock = true;
+
+      (manager as unknown as { scheduleReconnect: () => void }).scheduleReconnect();
+
+      await vi.advanceTimersByTimeAsync(10);
+      expect(startProcess).not.toHaveBeenCalled();
+
+      (manager as unknown as { startLock: boolean }).startLock = false;
+      await vi.advanceTimersByTimeAsync(20);
+
+      expect(findExistingGateway).toHaveBeenCalledTimes(1);
+      expect(startProcess).toHaveBeenCalledTimes(1);
+      expect(waitForReady).toHaveBeenCalledTimes(1);
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect(startHealthCheck).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

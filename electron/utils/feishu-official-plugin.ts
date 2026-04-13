@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
@@ -30,4 +30,24 @@ export function findBundledFeishuOfficialPluginDir(options: {
 
   return getBundledFeishuOfficialPluginDirCandidates(options)
     .find((candidate) => pathExists(candidate));
+}
+
+export function getFeishuOfficialPluginVersionFromDir(packageDir: string): string | null {
+  const manifestPath = join(packageDir, 'package.json');
+  if (!existsSync(manifestPath)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: unknown };
+    return typeof parsed.version === 'string' && parsed.version.trim()
+      ? parsed.version.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getInstalledFeishuOfficialPluginVersion(openClawConfigDir: string): string | null {
+  return getFeishuOfficialPluginVersionFromDir(join(openClawConfigDir, 'extensions', FEISHU_OFFICIAL_PLUGIN_ID));
 }

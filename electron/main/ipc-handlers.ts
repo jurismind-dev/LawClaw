@@ -71,6 +71,7 @@ import {
   detectPluginInstallationState,
   finalizeBundledPluginConfigAfterInstall,
   isAlreadyInstalledErrorMessage,
+  publishPreparedPluginInstallDir,
 } from '../utils/openclaw-plugin-install';
 import { PresetInstaller, type PresetInstallPhase } from '../utils/preset-installer';
 import { forceSetup } from './index';
@@ -1117,35 +1118,47 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
         }
       }
 
-      const installResult = await runOpenClawCli(['plugins', 'install', installPath]);
-      if (!installResult.success) {
-        const installErrorText = [
-          installResult.error,
-          installResult.stderr,
-          installResult.stdout,
-        ]
-          .filter((item): item is string => typeof item === 'string' && item.length > 0)
-          .join('\n');
+      const trustedBundledInstall =
+        Array.isArray(options?.allowedBundledPluginIds)
+        && options.allowedBundledPluginIds.includes(pluginId);
 
-        if (isAlreadyInstalledErrorMessage(installErrorText)) {
-          const detectionAfterFailedInstall = detectPluginInstalled(pluginId);
-          if (detectionAfterFailedInstall.installed) {
-            applyBundledPluginPostInstallConfig(pluginId, openclawConfigDir, configPath);
-            return {
-              success: true,
-              installed: true,
-              skipped: true,
-              reason: 'already-installed',
-              source: detectionAfterFailedInstall.source,
-            };
+      if (trustedBundledInstall) {
+        publishPreparedPluginInstallDir(
+          installPath,
+          join(openclawConfigDir, 'extensions'),
+          pluginId
+        );
+      } else {
+        const installResult = await runOpenClawCli(['plugins', 'install', installPath]);
+        if (!installResult.success) {
+          const installErrorText = [
+            installResult.error,
+            installResult.stderr,
+            installResult.stdout,
+          ]
+            .filter((item): item is string => typeof item === 'string' && item.length > 0)
+            .join('\n');
+
+          if (isAlreadyInstalledErrorMessage(installErrorText)) {
+            const detectionAfterFailedInstall = detectPluginInstalled(pluginId);
+            if (detectionAfterFailedInstall.installed) {
+              applyBundledPluginPostInstallConfig(pluginId, openclawConfigDir, configPath);
+              return {
+                success: true,
+                installed: true,
+                skipped: true,
+                reason: 'already-installed',
+                source: detectionAfterFailedInstall.source,
+              };
+            }
           }
-        }
 
-        return {
-          success: false,
-          error: installResult.error || `Failed to install plugin: ${pluginId}`,
-          details: installResult.stderr || installResult.stdout,
-        };
+          return {
+            success: false,
+            error: installResult.error || `Failed to install plugin: ${pluginId}`,
+            details: installResult.stderr || installResult.stdout,
+          };
+        }
       }
 
       const detectionAfterInstall = detectPluginInstalled(pluginId);
@@ -1153,7 +1166,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
         return {
           success: false,
           error: 'Plugin install command finished but install state could not be detected',
-          details: installResult.stdout,
+          details: installPath,
         };
       }
 

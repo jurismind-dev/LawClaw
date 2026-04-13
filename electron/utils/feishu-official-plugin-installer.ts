@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import {
   FEISHU_OFFICIAL_PLUGIN_ID,
   FEISHU_OFFICIAL_PLUGIN_NPM_SPEC,
+  FEISHU_OFFICIAL_PLUGIN_VERSION,
   findBundledFeishuOfficialPluginDir,
+  getInstalledFeishuOfficialPluginVersion,
   getBundledFeishuOfficialPluginDirCandidates,
 } from './feishu-official-plugin';
 import { sanitizePluginPackageManifestForLocalInstall } from './openclaw-plugin-install';
@@ -336,8 +338,9 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
     };
   }
 
+  const installedVersion = getInstalledFeishuOfficialPluginVersion(options.openClawConfigDir);
   const missingPaths = getFeishuOfficialPluginMissingRuntimePaths(pluginDir);
-  if (missingPaths.length === 0) {
+  if (missingPaths.length === 0 && installedVersion === FEISHU_OFFICIAL_PLUGIN_VERSION) {
     return {
       repaired: false,
       reason: 'healthy',
@@ -369,15 +372,29 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
     rmSync(pluginDir, { recursive: true, force: true });
     cpSync(stageDir, pluginDir, { recursive: true, dereference: true });
 
+    const installedVersionAfterRepair = getInstalledFeishuOfficialPluginVersion(options.openClawConfigDir);
     const missingAfterRepair = getFeishuOfficialPluginMissingRuntimePaths(pluginDir);
-    if (missingAfterRepair.length > 0) {
+    if (
+      installedVersionAfterRepair !== FEISHU_OFFICIAL_PLUGIN_VERSION
+      || missingAfterRepair.length > 0
+    ) {
+      const details = [];
+      if (installedVersionAfterRepair !== FEISHU_OFFICIAL_PLUGIN_VERSION) {
+        details.push(
+          `expected version ${FEISHU_OFFICIAL_PLUGIN_VERSION}, got ${installedVersionAfterRepair || 'unknown'}`
+        );
+      }
+      if (missingAfterRepair.length > 0) {
+        details.push(formatMissingRuntimePaths(missingAfterRepair));
+      }
+
       return {
         repaired: false,
         reason: 'failed',
         pluginDir,
         missingPaths: missingAfterRepair,
-        error: 'Feishu official plugin repair completed but runtime files are still missing',
-        details: formatMissingRuntimePaths(missingAfterRepair),
+        error: 'Feishu official plugin repair completed but validation failed',
+        details: details.join('\n'),
       };
     }
 

@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
 
@@ -115,6 +116,41 @@ export function removeInstalledPluginDir(extensionsDir: string, pluginId: string
 
   rmSync(installDir, { recursive: true, force: true });
   return true;
+}
+
+export function publishPreparedPluginInstallDir(
+  packageDir: string,
+  extensionsDir: string,
+  pluginId: string
+): { installDir: string } {
+  const manifestPath = join(packageDir, 'openclaw.plugin.json');
+  if (!existsSync(manifestPath)) {
+    throw new Error(`Plugin manifest not found: ${manifestPath}`);
+  }
+
+  const manifestRaw = readFileSync(manifestPath, 'utf-8');
+  const manifest = asObject(JSON.parse(manifestRaw));
+  const manifestId = typeof manifest?.id === 'string' ? manifest.id.trim() : '';
+  if (!manifestId) {
+    throw new Error(`Plugin manifest is missing "id": ${manifestPath}`);
+  }
+  if (manifestId !== pluginId) {
+    throw new Error(`Plugin manifest ID mismatch: expected "${pluginId}", got "${manifestId}"`);
+  }
+
+  const publishTempDir = mkdtempSync(join(tmpdir(), 'lawclaw-plugin-publish-'));
+  const stageDir = join(publishTempDir, pluginId);
+  const installDir = join(extensionsDir, pluginId);
+
+  try {
+    mkdirSync(extensionsDir, { recursive: true });
+    cpSync(packageDir, stageDir, { recursive: true, dereference: true });
+    rmSync(installDir, { recursive: true, force: true });
+    cpSync(stageDir, installDir, { recursive: true, dereference: true });
+    return { installDir };
+  } finally {
+    rmSync(publishTempDir, { recursive: true, force: true });
+  }
 }
 
 export function finalizeBundledPluginConfigAfterInstall(

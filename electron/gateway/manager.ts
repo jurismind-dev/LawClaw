@@ -286,8 +286,10 @@ export class GatewayManager extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.startLock) {
-      logger.debug('Gateway start ignored because a start flow is already in progress');
-      return;
+      logger.debug('Gateway start waiting for an in-flight startup flow to finish');
+      while (this.startLock) {
+        await this.delay(50);
+      }
     }
 
     if (this.status.state === 'running') {
@@ -1650,10 +1652,28 @@ export class GatewayManager extends EventEmitter {
     
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
+      if (this.startLock) {
+        logger.debug('Gateway reconnect deferred because a start flow is already in progress');
+        this.scheduleReconnect();
+        return;
+      }
+
+      this.startLock = true;
       try {
+        if (!this.shouldReconnect || this.status.state === 'stopped') {
+          logger.debug('Gateway reconnect aborted before startup because auto-reconnect is disabled');
+          return;
+        }
+
+        await this.initDeviceIdentity();
+
         // Try to find existing Gateway first
         const existing = await this.findExistingGateway();
         if (existing) {
+          if (!this.shouldReconnect || this.status.state === 'stopped') {
+            logger.debug('Gateway reconnect aborted after discovery because auto-reconnect is disabled');
+            return;
+          }
           await this.connect(existing.port, existing.externalToken);
           this.ownsProcess = false;
           this.setStatus({ pid: undefined });
@@ -1663,6 +1683,10 @@ export class GatewayManager extends EventEmitter {
         }
         
         // Otherwise restart the process
+        if (!this.shouldReconnect || this.status.state === 'stopped') {
+          logger.debug('Gateway reconnect aborted before process spawn because auto-reconnect is disabled');
+          return;
+        }
         await this.startProcess();
         await this.waitForReady();
         await this.connect(this.status.port);
@@ -1670,7 +1694,11 @@ export class GatewayManager extends EventEmitter {
         this.startHealthCheck();
       } catch (error) {
         logger.error('Gateway reconnection attempt failed:', error);
-        this.scheduleReconnect();
+        if (this.shouldReconnect) {
+          this.scheduleReconnect();
+        }
+      } finally {
+        this.startLock = false;
       }
     }, delay);
   }

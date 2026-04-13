@@ -1342,14 +1342,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadHistory: async (quiet = false) => {
     const { currentSessionKey } = get();
+    const requestedSessionKey = currentSessionKey;
     if (!quiet) set({ loading: true, error: null });
 
     try {
       const result = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'chat.history',
-        { sessionKey: currentSessionKey, limit: 200 }
+        { sessionKey: requestedSessionKey, limit: 200 }
       ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+
+      if (get().currentSessionKey !== requestedSessionKey) {
+        return;
+      }
 
       if (result.success && result.result) {
         const data = result.result;
@@ -1387,7 +1392,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         set({ messages: finalMessages, thinkingLevel, loading: false });
 
-        if (!currentSessionKey.endsWith(':main')) {
+        if (!requestedSessionKey.endsWith(':main')) {
           const firstUserMessage = finalMessages.find((message) => message.role === 'user');
           if (firstUserMessage) {
             const labelText = getMessageText(firstUserMessage.content).trim();
@@ -1396,7 +1401,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               set((state) => ({
                 sessionLabels: {
                   ...state.sessionLabels,
-                  [currentSessionKey]: truncated,
+                  [requestedSessionKey]: truncated,
                 },
               }));
             }
@@ -1409,7 +1414,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set((state) => ({
             sessionLastActivity: {
               ...state.sessionLastActivity,
-              [currentSessionKey]: lastActivityAt,
+              [requestedSessionKey]: lastActivityAt,
             },
           }));
         }
@@ -1417,6 +1422,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Async: load missing image previews from disk (updates in background)
         loadMissingPreviews(finalMessages).then((updated) => {
           if (updated) {
+            if (get().currentSessionKey !== requestedSessionKey) {
+              return;
+            }
             // Create new object references so React.memo detects changes.
             // loadMissingPreviews mutates AttachedFileMeta in place, so we
             // must produce fresh message + file references for each affected msg.
@@ -1462,12 +1470,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
             set({ sending: false, activeRunId: null, pendingFinal: false });
           }
         }
-      } else {
-        set({ messages: [], loading: false });
+      } else if (get().currentSessionKey === requestedSessionKey) {
+        set({
+          loading: false,
+          error: result.error || 'Failed to load chat history',
+        });
       }
     } catch (err) {
       console.warn('Failed to load chat history:', err);
-      set({ messages: [], loading: false });
+      if (get().currentSessionKey === requestedSessionKey) {
+        set({
+          loading: false,
+          error: String(err),
+        });
+      }
     }
   },
 
@@ -2044,8 +2060,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Refresh: reload history + sessions ──
 
   refresh: async () => {
-    const { loadHistory, loadSessions } = get();
-    await Promise.all([loadHistory(), loadSessions()]);
+    const { loadHistory, loadSessions, messages } = get();
+    const hadMessages = messages.length > 0;
+    await loadSessions();
+    await loadHistory(hadMessages);
   },
 
   clearError: () => set({ error: null }),

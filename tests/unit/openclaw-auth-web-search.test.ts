@@ -410,6 +410,56 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.plugins?.allow).toContain('custom-plugin');
   });
 
+  it('sanitizeOpenClawConfig removes stale openclaw-lark config when the plugin is not installed', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-feishu-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          channels: {
+            feishu: {
+              enabled: true,
+              appId: 'cli_xxx',
+              appSecret: 'secret',
+            },
+          },
+          plugins: {
+            allow: ['openclaw-lark', 'custom-plugin'],
+            entries: {
+              feishu: { enabled: true },
+              'openclaw-lark': { enabled: true },
+              'custom-plugin': { enabled: true },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    mod.sanitizeOpenClawConfig();
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      plugins?: {
+        allow?: string[];
+        entries?: Record<string, { enabled?: boolean }>;
+      };
+    };
+
+    expect(next.plugins?.allow).not.toContain('openclaw-lark');
+    expect(next.plugins?.allow).toContain('custom-plugin');
+    expect(next.plugins?.entries?.['openclaw-lark']).toBeUndefined();
+    expect(next.plugins?.entries?.feishu?.enabled).toBe(false);
+    expect(next.plugins?.entries?.['custom-plugin']?.enabled).toBe(true);
+  });
+
   it('sanitizeOpenClawConfig migrates legacy moonshot kimi search config into plugin config', async () => {
     const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
     tempHomes.push(homeDir);

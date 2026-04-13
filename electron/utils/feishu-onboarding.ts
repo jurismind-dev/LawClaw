@@ -6,24 +6,28 @@ import { app } from 'electron';
 import {
   FEISHU_OFFICIAL_PLUGIN_ID,
   FEISHU_OFFICIAL_PLUGIN_NPM_SPEC,
+  FEISHU_OFFICIAL_PLUGIN_VERSION,
   findBundledFeishuOfficialPluginDir,
+  getInstalledFeishuOfficialPluginVersion,
   getBundledFeishuOfficialPluginDirCandidates,
 } from './feishu-official-plugin';
 import { prepareFeishuOfficialPluginInstallDir } from './feishu-official-plugin-installer';
-import { ensureDir, getOpenClawConfigDir, getOpenClawStatus, getResourcesDir } from './paths';
+import { getOpenClawConfigDir, getResourcesDir } from './paths';
 import { logger } from './logger';
-import { applyOpenClawConfigEnvFallbacks } from './openclaw-config-env';
 import {
   readOpenClawConfig,
   type OpenClawConfig,
   upsertLawClawChannelBinding,
   writeOpenClawConfig,
 } from './channel-config';
-import { detectPluginInstallationState } from './openclaw-plugin-install';
+import {
+  detectPluginInstallationState,
+  publishPreparedPluginInstallDir,
+} from './openclaw-plugin-install';
 import { renderQrPngBase64 } from './qr-code';
 import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
-import { applyBundledNpmToCliEnv, getNodeExecForCli } from './openclaw-cli';
-import { parseJsonText, stripUtf8Bom } from './text-encoding';
+import { applyBundledNpmToCliEnv } from './openclaw-cli';
+import { parseJsonText } from './text-encoding';
 
 const FEISHU_REGISTRATION_URL = 'https://accounts.feishu.cn/oauth/v1/app/registration';
 const FEISHU_CONFLICT_EXTENSION_DIR = 'feishu';
@@ -499,8 +503,14 @@ class FeishuOnboardingManager extends EventEmitter {
 
   private async ensureOfficialPluginInstalled(reinstallPlugin: boolean): Promise<void> {
     await this.refreshStatus();
+    const openclawConfigDir = getOpenClawConfigDir();
+    const installedVersion = getInstalledFeishuOfficialPluginVersion(openclawConfigDir);
 
-    if (this.status.pluginInstalled && !reinstallPlugin) {
+    if (
+      this.status.pluginInstalled
+      && installedVersion === FEISHU_OFFICIAL_PLUGIN_VERSION
+      && !reinstallPlugin
+    ) {
       await this.normalizeOfficialPluginConfig({ seedDisabledWhenEmpty: !this.status.configured });
       this.status.pluginInstalled = true;
       return;
@@ -509,7 +519,12 @@ class FeishuOnboardingManager extends EventEmitter {
     if (this.officialPluginInstallPromise) {
       await this.officialPluginInstallPromise;
       await this.refreshStatus();
-      if (this.status.pluginInstalled && !reinstallPlugin) {
+      const resolvedInstalledVersion = getInstalledFeishuOfficialPluginVersion(openclawConfigDir);
+      if (
+        this.status.pluginInstalled
+        && resolvedInstalledVersion === FEISHU_OFFICIAL_PLUGIN_VERSION
+        && !reinstallPlugin
+      ) {
         await this.normalizeOfficialPluginConfig({ seedDisabledWhenEmpty: !this.status.configured });
         this.status.pluginInstalled = true;
         return;
@@ -517,6 +532,19 @@ class FeishuOnboardingManager extends EventEmitter {
     }
 
     const installPromise = (async () => {
+      const currentInstalledVersion = getInstalledFeishuOfficialPluginVersion(openclawConfigDir);
+      if (
+        this.status.pluginInstalled
+        && !reinstallPlugin
+        && currentInstalledVersion !== FEISHU_OFFICIAL_PLUGIN_VERSION
+      ) {
+        this.setStatus({
+          phase: 'installing',
+          lastMessage:
+            `检测到飞书插件版本 ${currentInstalledVersion || 'unknown'} 与内置版本 ${FEISHU_OFFICIAL_PLUGIN_VERSION} 不一致，正在升级...`,
+        });
+      }
+
       await this.preparePluginInstallState(reinstallPlugin || this.status.pluginInstalled);
 
       const prepared = await prepareFeishuOfficialPluginInstallDir({
@@ -531,17 +559,22 @@ class FeishuOnboardingManager extends EventEmitter {
       }
 
       try {
-        const installResult = await this.runOpenClawCli(['plugins', 'install', prepared.installPath]);
-        if (!installResult.success) {
-          const details = [installResult.error, installResult.stderr, installResult.stdout]
-            .filter(Boolean)
-            .join('\n');
-          throw new Error(details || '安装飞书官方插件失败');
-        }
+        publishPreparedPluginInstallDir(
+          prepared.installPath,
+          join(openclawConfigDir, 'extensions'),
+          FEISHU_OFFICIAL_PLUGIN_ID
+        );
       } finally {
         if (prepared.tempDir) {
           rmSync(prepared.tempDir, { recursive: true, force: true });
         }
+      }
+
+      const resolvedInstalledVersion = getInstalledFeishuOfficialPluginVersion(openclawConfigDir);
+      if (resolvedInstalledVersion !== FEISHU_OFFICIAL_PLUGIN_VERSION) {
+        throw new Error(
+          `飞书插件版本校验失败：期望 ${FEISHU_OFFICIAL_PLUGIN_VERSION}，实际 ${resolvedInstalledVersion || 'unknown'}`
+        );
       }
 
       await this.refreshStatus();
@@ -746,83 +779,6 @@ class FeishuOnboardingManager extends EventEmitter {
     }
 
     throw new Error('等待飞书扫码超时，请刷新二维码后重试');
-  }
-
-  private async runOpenClawCli(args: string[]): Promise<{
-    success: boolean;
-    stdout: string;
-    stderr: string;
-    error?: string;
-  }> {
-    const status = getOpenClawStatus();
-    if (!status.packageExists || !existsSync(status.entryPath)) {
-      return {
-        success: false,
-        stdout: '',
-        stderr: '',
-        error: `OpenClaw entry script not found at: ${status.entryPath}`,
-      };
-    }
-
-    const openclawConfigDir = getOpenClawConfigDir();
-    ensureDir(openclawConfigDir);
-
-    let cliEnv: NodeJS.ProcessEnv = {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-    };
-
-    try {
-      const configPath = join(openclawConfigDir, 'openclaw.json');
-      if (existsSync(configPath)) {
-        cliEnv = applyOpenClawConfigEnvFallbacks(stripUtf8Bom(readFileSync(configPath, 'utf-8')), cliEnv);
-      }
-    } catch (error) {
-      logger.warn('[FeishuOnboarding] Failed to apply OpenClaw config env fallbacks', error);
-    }
-
-    cliEnv = applyBundledNpmToCliEnv(cliEnv);
-
-    return await new Promise((resolve) => {
-      const child = spawn(getNodeExecForCli(), [status.entryPath, ...args], {
-        cwd: openclawConfigDir,
-        env: cliEnv,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      child.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      child.on('error', (error) => {
-        resolve({
-          success: false,
-          stdout,
-          stderr,
-          error: String(error),
-        });
-      });
-
-      child.on('close', (code) => {
-        if (code === 0) {
-          resolve({ success: true, stdout, stderr });
-          return;
-        }
-
-        resolve({
-          success: false,
-          stdout,
-          stderr,
-          error: stderr.trim() || stdout.trim() || `openclaw exited with code ${String(code)}`,
-        });
-      });
-    });
   }
 
   private async runCommand(

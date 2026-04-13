@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({
@@ -53,5 +55,15 @@ describe('feishu onboarding install behavior', () => {
         pathExists: () => false,
       })
     ).toThrow(/Bundled plugin directory not found/);
+  });
+
+  it('reinstalls the bundled feishu plugin when the installed version is outdated', () => {
+    const onboardingSource = readFileSync(
+      join(process.cwd(), 'electron', 'utils', 'feishu-onboarding.ts'),
+      'utf-8'
+    );
+
+    expect(onboardingSource).toContain('currentInstalledVersion !== FEISHU_OFFICIAL_PLUGIN_VERSION');
+    expect(onboardingSource).toContain('飞书插件版本校验失败：期望');
   });
 });

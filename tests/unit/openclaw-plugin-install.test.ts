@@ -6,6 +6,7 @@ import {
   detectPluginInstallationState,
   finalizeBundledPluginConfigAfterInstall,
   isAlreadyInstalledErrorMessage,
+  publishPreparedPluginInstallDir,
   removeInstalledPluginDir,
   sanitizePluginPackageManifestForLocalInstall,
 } from '../../electron/utils/openclaw-plugin-install';
@@ -155,6 +156,47 @@ describe('openclaw plugin install directory cleanup', () => {
     const removed = removeInstalledPluginDir(tempConfigDir, 'openclaw-weixin');
 
     expect(removed).toBe(false);
+  });
+});
+
+describe('trusted bundled plugin publishing', () => {
+  let tempConfigDir = '';
+
+  beforeEach(() => {
+    tempConfigDir = mkdtempSync(join(tmpdir(), 'clawx-plugin-publish-dir-'));
+  });
+
+  afterEach(() => {
+    if (tempConfigDir) {
+      rmSync(tempConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  it('publishes a prepared plugin payload into the extensions directory', () => {
+    const packageDir = join(tempConfigDir, 'package');
+    const extensionsDir = join(tempConfigDir, 'extensions');
+
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(join(packageDir, 'package.json'), '{"name":"@example/weather-bot"}\n', 'utf-8');
+    writeFileSync(join(packageDir, 'openclaw.plugin.json'), '{"id":"weather-bot"}\n', 'utf-8');
+    writeFileSync(join(packageDir, 'index.js'), 'export {};\n', 'utf-8');
+
+    const result = publishPreparedPluginInstallDir(packageDir, extensionsDir, 'weather-bot');
+
+    expect(result.installDir).toBe(join(extensionsDir, 'weather-bot'));
+    expect(readFileSync(join(result.installDir, 'openclaw.plugin.json'), 'utf-8')).toContain('"weather-bot"');
+  });
+
+  it('rejects a prepared payload whose manifest ID does not match the target plugin ID', () => {
+    const packageDir = join(tempConfigDir, 'package');
+    const extensionsDir = join(tempConfigDir, 'extensions');
+
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(join(packageDir, 'package.json'), '{"name":"@example/weather-bot"}\n', 'utf-8');
+    writeFileSync(join(packageDir, 'openclaw.plugin.json'), '{"id":"other-plugin"}\n', 'utf-8');
+
+    expect(() => publishPreparedPluginInstallDir(packageDir, extensionsDir, 'weather-bot'))
+      .toThrow('Plugin manifest ID mismatch');
   });
 });
 

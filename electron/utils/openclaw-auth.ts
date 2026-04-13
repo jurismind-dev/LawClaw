@@ -13,7 +13,7 @@ import {
   getProviderDefaultModel,
   getProviderEnvVar,
 } from './provider-registry';
-import { getOpenClawResolvedDir } from './paths';
+import { getOpenClawConfigDir, getOpenClawResolvedDir } from './paths';
 import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
 
 const AUTH_STORE_VERSION = 1;
@@ -1191,6 +1191,15 @@ function discoverBundledPlugins(): { all: Set<string>; enabledByDefault: string[
   return bundledPluginCache;
 }
 
+function isPluginInstalledInUserExtensions(pluginId: string): boolean {
+  return existsSync(join(getOpenClawConfigDir(), 'extensions', pluginId, 'openclaw.plugin.json'));
+}
+
+function isPluginAvailableForConfig(pluginId: string): boolean {
+  const bundled = discoverBundledPlugins();
+  return bundled.all.has(pluginId) || isPluginInstalledInUserExtensions(pluginId);
+}
+
 export function sanitizeOpenClawConfig(): boolean {
   const config = readOpenClawConfig();
   const models = isRecord(config.models) ? { ...config.models } : {};
@@ -1297,10 +1306,17 @@ export function sanitizeOpenClawConfig(): boolean {
       && pluginId !== '@larksuite/openclaw-lark'
       && !FEISHU_PLUGIN_ID_CANDIDATES.includes(pluginId as (typeof FEISHU_PLUGIN_ID_CANDIDATES)[number]);
   });
+  const feishuPluginAvailable = isPluginAvailableForConfig('openclaw-lark');
+  if (!feishuPluginAvailable && allow.length !== allowWithoutFeishuAliases.length) {
+    modified = true;
+  }
   if (
-    hasFeishuConfig
-    || existingFeishuEntry
-    || allow.length !== allowWithoutFeishuAliases.length
+    feishuPluginAvailable
+    && (
+      hasFeishuConfig
+      || existingFeishuEntry
+      || allow.length !== allowWithoutFeishuAliases.length
+    )
   ) {
     if (!allowWithoutFeishuAliases.includes('openclaw-lark')) {
       allowWithoutFeishuAliases.push('openclaw-lark');
@@ -1310,6 +1326,9 @@ export function sanitizeOpenClawConfig(): boolean {
       ...(isRecord(entries['openclaw-lark']) ? (entries['openclaw-lark'] as Record<string, unknown>) : {}),
       enabled: true,
     };
+    modified = true;
+  } else if (!feishuPluginAvailable && entries['openclaw-lark']) {
+    delete entries['openclaw-lark'];
     modified = true;
   }
   if (entries.feishu) {

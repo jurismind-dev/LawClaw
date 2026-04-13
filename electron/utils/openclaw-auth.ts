@@ -13,6 +13,7 @@ import {
   getProviderDefaultModel,
   getProviderEnvVar,
 } from './provider-registry';
+import { getOpenClawResolvedDir } from './paths';
 import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
 
 const AUTH_STORE_VERSION = 1;
@@ -20,12 +21,30 @@ const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const JURISMIND_WEB_SEARCH_PROVIDER = 'doubao';
 const LEGACY_JURISMIND_WEB_SEARCH_PROVIDER = 'perplexity';
 const JURISMIND_WEB_SEARCH_MODEL = 'doubao';
+const JURISMIND_WEB_SEARCH_PLUGIN_ID = 'jurismind-doubao';
 const OPENCLAW_SAFE_PROVIDER_API_KEY_ENV_MARKERS = new Set([
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
   'MOONSHOT_API_KEY',
   'MINIMAX_API_KEY',
 ]);
+const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
+const DEPRECATED_CHANNEL_IDS = ['dingtalk', 'qqbot'] as const;
+const DEPRECATED_CHANNEL_PLUGIN_IDS = ['dingtalk', 'qqbot', 'openclaw-qqbot'] as const;
+const BUILTIN_CHANNEL_IDS = new Set([
+  'discord',
+  'telegram',
+  'whatsapp',
+  'slack',
+  'signal',
+  'imessage',
+  'matrix',
+  'line',
+  'msteams',
+  'googlechat',
+  'mattermost',
+]);
+let bundledPluginCache: { all: Set<string>; enabledByDefault: string[] } | null = null;
 
 interface AuthProfileEntry {
   type: 'api_key';
@@ -58,6 +77,68 @@ interface RuntimeProviderConfigOverride {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isBindingRule(value: unknown): value is { match: { channel: string } } {
+  return isRecord(value) && isRecord(value.match) && typeof value.match.channel === 'string';
+}
+
+function normalizeChannelId(channelId: string): string {
+  return channelId.trim().toLowerCase();
+}
+
+function removePluginIdsFromList(pluginIds: string[], idsToRemove: readonly string[]): boolean {
+  const ids = new Set(idsToRemove);
+  const nextPluginIds = pluginIds.filter((pluginId) => !ids.has(pluginId));
+  if (nextPluginIds.length === pluginIds.length) {
+    return false;
+  }
+
+  pluginIds.splice(0, pluginIds.length, ...nextPluginIds);
+  return true;
+}
+
+function cleanupDeprecatedChannelState(config: Record<string, unknown>): boolean {
+  let modified = false;
+
+  if (isRecord(config.channels)) {
+    const nextChannels = { ...(config.channels as Record<string, unknown>) };
+    for (const channelId of DEPRECATED_CHANNEL_IDS) {
+      if (Object.prototype.hasOwnProperty.call(nextChannels, channelId)) {
+        delete nextChannels[channelId];
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      if (Object.keys(nextChannels).length > 0) {
+        config.channels = nextChannels;
+      } else {
+        delete config.channels;
+      }
+    }
+  }
+
+  if (Array.isArray(config.bindings)) {
+    const deprecatedChannels = new Set(DEPRECATED_CHANNEL_IDS.map((channelId) => normalizeChannelId(channelId)));
+    const nextBindings = config.bindings.filter((binding) => {
+      return !(
+        isBindingRule(binding)
+        && deprecatedChannels.has(normalizeChannelId(binding.match.channel))
+      );
+    });
+
+    if (nextBindings.length !== config.bindings.length) {
+      if (nextBindings.length > 0) {
+        config.bindings = nextBindings;
+      } else {
+        delete config.bindings;
+      }
+      modified = true;
+    }
+  }
+
+  return modified;
 }
 
 function shouldPersistOpenClawApiKeyEnvMarker(apiKeyEnv?: string): boolean {
@@ -864,6 +945,556 @@ function discoverAgentIds(): string[] {
   }
 }
 
+function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): boolean {
+  const tools = isRecord(config.tools) ? config.tools : null;
+  const web = tools && isRecord(tools.web) ? tools.web : null;
+  const search = web && isRecord(web.search) ? web.search : null;
+  if (!search || !('kimi' in search)) {
+    return false;
+  }
+
+  delete search.kimi;
+
+  if (Object.keys(search).length === 0) {
+    delete web.search;
+  }
+  if (web && Object.keys(web).length === 0) {
+    delete tools.web;
+  }
+  if (tools && Object.keys(tools).length === 0) {
+    delete config.tools;
+  }
+
+  return true;
+}
+
+function cleanupEmptySearchContainers(config: Record<string, unknown>): void {
+  const tools = isRecord(config.tools) ? config.tools : null;
+  const web = tools && isRecord(tools.web) ? tools.web : null;
+  const search = web && isRecord(web.search) ? web.search : null;
+
+  if (!search) {
+    return;
+  }
+
+  if (Object.keys(search).length === 0) {
+    delete web.search;
+  }
+  if (web && Object.keys(web).length === 0) {
+    delete tools.web;
+  }
+  if (tools && Object.keys(tools).length === 0) {
+    delete config.tools;
+  }
+}
+
+function getOpenClawPluginState(config: Record<string, unknown>): {
+  plugins: Record<string, unknown>;
+  entries: Record<string, unknown>;
+  allow: string[];
+  allowWasPresent: boolean;
+} {
+  const plugins = isRecord(config.plugins)
+    ? { ...config.plugins }
+    : Array.isArray(config.plugins)
+      ? { load: [...config.plugins] }
+      : {};
+
+  return {
+    plugins,
+    entries: isRecord(plugins.entries) ? { ...plugins.entries } : {},
+    allow: Array.isArray(plugins.allow)
+      ? plugins.allow.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+    allowWasPresent: Array.isArray(plugins.allow),
+  };
+}
+
+function applyOpenClawPluginState(
+  config: Record<string, unknown>,
+  state: {
+    plugins: Record<string, unknown>;
+    entries: Record<string, unknown>;
+    allow: string[];
+  }
+): void {
+  if (Object.keys(state.entries).length > 0) {
+    state.plugins.entries = state.entries;
+  } else if (state.plugins.entries) {
+    delete state.plugins.entries;
+  }
+
+  if (state.allow.length > 0) {
+    state.plugins.allow = state.allow;
+  } else if (state.plugins.allow) {
+    delete state.plugins.allow;
+  }
+
+  if (state.plugins.enabled === true && !state.plugins.allow && !state.plugins.entries) {
+    delete state.plugins.enabled;
+  }
+
+  if (Object.keys(state.plugins).length > 0) {
+    config.plugins = state.plugins;
+  } else if (config.plugins) {
+    delete config.plugins;
+  }
+}
+
+function upsertJurismindWebSearchPluginConfigEntry(
+  entries: Record<string, unknown>,
+  apiKey?: string,
+  seed?: Record<string, unknown>
+): boolean {
+  const previousEntry = isRecord(entries[JURISMIND_WEB_SEARCH_PLUGIN_ID])
+    ? (entries[JURISMIND_WEB_SEARCH_PLUGIN_ID] as Record<string, unknown>)
+    : null;
+  const previousSerialized = JSON.stringify(previousEntry);
+
+  const entry = previousEntry ? { ...previousEntry } : {};
+  const entryConfig = isRecord(entry.config) ? { ...(entry.config as Record<string, unknown>) } : {};
+  const currentWebSearch = isRecord(entryConfig.webSearch)
+    ? { ...(entryConfig.webSearch as Record<string, unknown>) }
+    : {};
+
+  const nextWebSearch = {
+    ...(seed || {}),
+    ...currentWebSearch,
+    baseUrl: resolveJurismindWebSearchBaseUrl(),
+    model: JURISMIND_WEB_SEARCH_MODEL,
+  } as Record<string, unknown>;
+
+  if (apiKey !== undefined) {
+    nextWebSearch.apiKey = apiKey;
+  }
+
+  entryConfig.webSearch = nextWebSearch;
+  entry.config = entryConfig;
+  entry.enabled = true;
+  entries[JURISMIND_WEB_SEARCH_PLUGIN_ID] = entry;
+
+  return previousSerialized !== JSON.stringify(entry);
+}
+
+function clearJurismindWebSearchPluginConfigEntry(entries: Record<string, unknown>): boolean {
+  const previousEntry = isRecord(entries[JURISMIND_WEB_SEARCH_PLUGIN_ID])
+    ? (entries[JURISMIND_WEB_SEARCH_PLUGIN_ID] as Record<string, unknown>)
+    : null;
+  if (!previousEntry) {
+    return false;
+  }
+
+  const previousSerialized = JSON.stringify(previousEntry);
+  const entry = { ...previousEntry };
+  const entryConfig = isRecord(entry.config) ? { ...(entry.config as Record<string, unknown>) } : {};
+  const webSearch = isRecord(entryConfig.webSearch)
+    ? { ...(entryConfig.webSearch as Record<string, unknown>) }
+    : null;
+
+  if (!webSearch) {
+    return false;
+  }
+
+  delete webSearch.apiKey;
+  delete webSearch.baseUrl;
+  delete webSearch.model;
+
+  if (Object.keys(webSearch).length > 0) {
+    entryConfig.webSearch = webSearch;
+  } else {
+    delete entryConfig.webSearch;
+  }
+
+  if (Object.keys(entryConfig).length > 0) {
+    entry.config = entryConfig;
+  } else {
+    delete entry.config;
+  }
+
+  if (Object.keys(entry).length > 0) {
+    entries[JURISMIND_WEB_SEARCH_PLUGIN_ID] = entry;
+  } else {
+    delete entries[JURISMIND_WEB_SEARCH_PLUGIN_ID];
+  }
+
+  return previousSerialized !== JSON.stringify(entries[JURISMIND_WEB_SEARCH_PLUGIN_ID] ?? null);
+}
+
+function upsertMoonshotWebSearchConfig(
+  config: Record<string, unknown>,
+  legacyKimi?: Record<string, unknown>
+): void {
+  const plugins = isRecord(config.plugins)
+    ? config.plugins
+    : Array.isArray(config.plugins)
+      ? { load: [...config.plugins] }
+      : {};
+  const entries = isRecord(plugins.entries) ? plugins.entries : {};
+  const moonshot = isRecord(entries.moonshot) ? entries.moonshot : {};
+  const moonshotConfig = isRecord(moonshot.config) ? moonshot.config : {};
+  const currentWebSearch = isRecord(moonshotConfig.webSearch) ? moonshotConfig.webSearch : {};
+
+  const nextWebSearch = {
+    ...(legacyKimi || {}),
+    ...currentWebSearch,
+  };
+  delete nextWebSearch.apiKey;
+  nextWebSearch.baseUrl = 'https://api.moonshot.cn/v1';
+
+  moonshotConfig.webSearch = nextWebSearch;
+  moonshot.config = moonshotConfig;
+  entries.moonshot = moonshot;
+  plugins.entries = entries;
+  config.plugins = plugins;
+}
+
+function discoverBundledPlugins(): { all: Set<string>; enabledByDefault: string[] } {
+  if (bundledPluginCache) {
+    return bundledPluginCache;
+  }
+
+  const all = new Set<string>();
+  const enabledByDefault: string[] = [];
+
+  try {
+    const extensionsDir = join(getOpenClawResolvedDir(), 'dist', 'extensions');
+    if (!existsSync(extensionsDir)) {
+      bundledPluginCache = { all, enabledByDefault };
+      return bundledPluginCache;
+    }
+
+    for (const entry of readdirSync(extensionsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = join(extensionsDir, entry.name, 'openclaw.plugin.json');
+      if (!existsSync(manifestPath)) continue;
+
+      try {
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as {
+          id?: unknown;
+          enabledByDefault?: unknown;
+        };
+        if (typeof manifest.id === 'string' && manifest.id.trim()) {
+          all.add(manifest.id.trim());
+          if (manifest.enabledByDefault === true) {
+            enabledByDefault.push(manifest.id.trim());
+          }
+        }
+      } catch {
+        // Ignore malformed bundled manifests.
+      }
+    }
+  } catch {
+    // Ignore missing bundled extensions dir.
+  }
+
+  bundledPluginCache = { all, enabledByDefault };
+  return bundledPluginCache;
+}
+
+export function sanitizeOpenClawConfig(): boolean {
+  const config = readOpenClawConfig();
+  const models = isRecord(config.models) ? { ...config.models } : {};
+  const providers = isRecord(models.providers) ? { ...models.providers } : {};
+  const {
+    plugins,
+    entries,
+    allow,
+    allowWasPresent,
+  } = getOpenClawPluginState(config);
+  plugins.entries = entries;
+  const auth = isRecord(config.auth) ? { ...config.auth } : {};
+  const authProfiles = isRecord(auth.profiles) ? { ...auth.profiles } : {};
+
+  let modified = false;
+
+  if (providers.moonshot) {
+    const tools = isRecord(config.tools) ? config.tools : null;
+    const web = tools && isRecord(tools.web) ? tools.web : null;
+    const search = web && isRecord(web.search) ? web.search : null;
+    const legacyKimi = search && isRecord(search.kimi) ? search.kimi : undefined;
+    const hadInlineApiKey = Boolean(legacyKimi && Object.prototype.hasOwnProperty.call(legacyKimi, 'apiKey'));
+
+    if (legacyKimi) {
+      upsertMoonshotWebSearchConfig({ plugins }, legacyKimi);
+      removeLegacyMoonshotKimiSearchConfig(config);
+      modified = true;
+    } else if (isRecord(plugins.entries) && isRecord(plugins.entries.moonshot)) {
+      const moonshotEntry = { ...(plugins.entries.moonshot as Record<string, unknown>) };
+      const moonshotConfig = isRecord(moonshotEntry.config)
+        ? { ...(moonshotEntry.config as Record<string, unknown>) }
+        : {};
+      const webSearch = isRecord(moonshotConfig.webSearch)
+        ? { ...(moonshotConfig.webSearch as Record<string, unknown>) }
+        : null;
+
+      if (webSearch && Object.prototype.hasOwnProperty.call(webSearch, 'apiKey')) {
+        delete webSearch.apiKey;
+        moonshotConfig.webSearch = webSearch;
+        moonshotEntry.config = moonshotConfig;
+        entries.moonshot = moonshotEntry;
+        modified = true;
+      }
+    }
+
+    if (hadInlineApiKey) {
+      console.log('[sanitize] Removing stale key "tools.web.search.kimi.apiKey" from openclaw.json');
+    } else if (legacyKimi) {
+      console.log('[sanitize] Migrated legacy "tools.web.search.kimi" to "plugins.entries.moonshot.config.webSearch"');
+    }
+  }
+
+  {
+    const tools = isRecord(config.tools) ? config.tools : null;
+    const web = tools && isRecord(tools.web) ? tools.web : null;
+    const search = web && isRecord(web.search) ? web.search : null;
+    const legacyDoubao = search && isRecord(search[JURISMIND_WEB_SEARCH_PROVIDER])
+      ? { ...(search[JURISMIND_WEB_SEARCH_PROVIDER] as Record<string, unknown>) }
+      : undefined;
+    const legacyCompat = search && isManagedJurismindWebSearchConfig(search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER])
+      ? { ...(search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER] as Record<string, unknown>) }
+      : undefined;
+    const currentProvider = search && typeof search.provider === 'string' ? search.provider.trim() : '';
+
+    if (legacyDoubao || legacyCompat) {
+      if (upsertJurismindWebSearchPluginConfigEntry(entries, undefined, {
+        ...(legacyCompat || {}),
+        ...(legacyDoubao || {}),
+      })) {
+        modified = true;
+      }
+      if (allowWasPresent && !allow.includes(JURISMIND_WEB_SEARCH_PLUGIN_ID)) {
+        allow.push(JURISMIND_WEB_SEARCH_PLUGIN_ID);
+        modified = true;
+      }
+      if (search && Object.prototype.hasOwnProperty.call(search, JURISMIND_WEB_SEARCH_PROVIDER)) {
+        delete search[JURISMIND_WEB_SEARCH_PROVIDER];
+        modified = true;
+      }
+      if (search && legacyCompat) {
+        delete search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
+        modified = true;
+      }
+      if (search && currentProvider === LEGACY_JURISMIND_WEB_SEARCH_PROVIDER) {
+        search.provider = JURISMIND_WEB_SEARCH_PROVIDER;
+        modified = true;
+      } else if (search && currentProvider.length === 0 && legacyDoubao && search.enabled === true) {
+        search.provider = JURISMIND_WEB_SEARCH_PROVIDER;
+        modified = true;
+      }
+      cleanupEmptySearchContainers(config);
+      console.log('[sanitize] Migrated legacy Jurismind doubao web search config to plugins.entries.jurismind-doubao.config.webSearch');
+    }
+  }
+
+  const existingFeishuEntry =
+    FEISHU_PLUGIN_ID_CANDIDATES
+      .map((pluginId) => (isRecord(entries[pluginId]) ? { ...(entries[pluginId] as Record<string, unknown>) } : null))
+      .find(Boolean)
+    ?? (isRecord(entries.feishu) ? { ...(entries.feishu as Record<string, unknown>) } : null);
+  const hasFeishuConfig = isRecord(config.channels) && isRecord(config.channels.feishu);
+  const allowWithoutFeishuAliases = allow.filter((pluginId) => {
+    return pluginId !== 'feishu'
+      && pluginId !== '@larksuite/openclaw-lark'
+      && !FEISHU_PLUGIN_ID_CANDIDATES.includes(pluginId as (typeof FEISHU_PLUGIN_ID_CANDIDATES)[number]);
+  });
+  if (
+    hasFeishuConfig
+    || existingFeishuEntry
+    || allow.length !== allowWithoutFeishuAliases.length
+  ) {
+    if (!allowWithoutFeishuAliases.includes('openclaw-lark')) {
+      allowWithoutFeishuAliases.push('openclaw-lark');
+    }
+    entries['openclaw-lark'] = {
+      ...(existingFeishuEntry || {}),
+      ...(isRecord(entries['openclaw-lark']) ? (entries['openclaw-lark'] as Record<string, unknown>) : {}),
+      enabled: true,
+    };
+    modified = true;
+  }
+  if (entries.feishu) {
+    const bareFeishuEntry = isRecord(entries.feishu) ? { ...(entries.feishu as Record<string, unknown>) } : {};
+    if (bareFeishuEntry.enabled !== false) {
+      entries.feishu = {
+        ...bareFeishuEntry,
+        enabled: false,
+      };
+      modified = true;
+    }
+  }
+  for (const legacyFeishuId of ['feishu-openclaw-plugin', '@larksuite/openclaw-lark']) {
+    if (entries[legacyFeishuId]) {
+      delete entries[legacyFeishuId];
+      modified = true;
+    }
+  }
+
+  const legacyWecomId = 'wecom-openclaw-plugin';
+  if (allowWithoutFeishuAliases.includes(legacyWecomId)) {
+    const nextAllow = allowWithoutFeishuAliases.filter((pluginId) => pluginId !== legacyWecomId);
+    if (!nextAllow.includes('wecom')) {
+      nextAllow.push('wecom');
+    }
+    allowWithoutFeishuAliases.splice(0, allowWithoutFeishuAliases.length, ...nextAllow);
+    modified = true;
+  }
+  if (entries[legacyWecomId]) {
+    if (!entries.wecom) {
+      entries.wecom = entries[legacyWecomId];
+    }
+    delete entries[legacyWecomId];
+    modified = true;
+  }
+
+  if (removePluginIdsFromList(allowWithoutFeishuAliases, DEPRECATED_CHANNEL_PLUGIN_IDS)) {
+    modified = true;
+  }
+
+  for (const deprecatedPluginId of DEPRECATED_CHANNEL_PLUGIN_IDS) {
+    if (entries[deprecatedPluginId]) {
+      delete entries[deprecatedPluginId];
+      modified = true;
+    }
+  }
+
+  if (cleanupDeprecatedChannelState(config)) {
+    modified = true;
+  }
+
+  if (entries.whatsapp) {
+    delete entries.whatsapp;
+    modified = true;
+  }
+
+  if (allowWithoutFeishuAliases.includes('qwen-portal-auth')) {
+    const nextAllow = allowWithoutFeishuAliases.filter((pluginId) => pluginId !== 'qwen-portal-auth');
+    allowWithoutFeishuAliases.splice(0, allowWithoutFeishuAliases.length, ...nextAllow);
+    modified = true;
+  }
+  if (entries['qwen-portal-auth']) {
+    delete entries['qwen-portal-auth'];
+    modified = true;
+  }
+  if (providers['qwen-portal']) {
+    delete providers['qwen-portal'];
+    modified = true;
+  }
+  if (authProfiles['qwen-portal']) {
+    delete authProfiles['qwen-portal'];
+    modified = true;
+  }
+
+  for (const agentId of discoverAgentIds()) {
+    const store = readAuthProfiles(agentId);
+    if (removeAuthProfile(store, 'qwen-portal')) {
+      writeAuthProfiles(store, agentId);
+    }
+  }
+
+  const configuredBuiltins = new Set<string>();
+  if (isRecord(config.channels)) {
+    for (const [channelId, section] of Object.entries(config.channels)) {
+      if (!BUILTIN_CHANNEL_IDS.has(channelId)) continue;
+      if (!isRecord(section) || section.enabled === false) continue;
+      if (Object.keys(section).length > 0) {
+        configuredBuiltins.add(channelId);
+      }
+    }
+  }
+
+  const bundled = discoverBundledPlugins();
+  const externalPluginIds = allowWithoutFeishuAliases.filter(
+    (pluginId) => !BUILTIN_CHANNEL_IDS.has(pluginId) && !bundled.all.has(pluginId),
+  );
+  let nextAllow = [...externalPluginIds];
+  if (externalPluginIds.length > 0) {
+    for (const channelId of configuredBuiltins) {
+      if (!nextAllow.includes(channelId)) {
+        nextAllow.push(channelId);
+        modified = true;
+      }
+    }
+    for (const pluginId of bundled.enabledByDefault) {
+      if (!nextAllow.includes(pluginId)) {
+        nextAllow.push(pluginId);
+        modified = true;
+      }
+    }
+  }
+
+  const channels = isRecord(config.channels) ? { ...config.channels } : {};
+  for (const [channelType, sectionValue] of Object.entries(channels)) {
+    if (!isRecord(sectionValue)) continue;
+    const section = { ...sectionValue };
+
+    const accounts = isRecord(section.accounts) ? section.accounts : {};
+    const defaultAccountId =
+      typeof section.defaultAccount === 'string' && section.defaultAccount.trim().length > 0
+        ? section.defaultAccount.trim()
+        : 'default';
+    const defaultAccountData = isRecord(accounts[defaultAccountId])
+      ? (accounts[defaultAccountId] as Record<string, unknown>)
+      : isRecord(accounts.default)
+        ? (accounts.default as Record<string, unknown>)
+        : null;
+    if (!defaultAccountData) {
+      channels[channelType] = section;
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(defaultAccountData)) {
+      if (!(key in section)) {
+        section[key] = value;
+        modified = true;
+      }
+    }
+    channels[channelType] = section;
+  }
+
+  models.providers = providers;
+  config.models = models;
+
+  if (Object.keys(authProfiles).length > 0) {
+    auth.profiles = authProfiles;
+    config.auth = auth;
+  } else if (isRecord(config.auth) && Object.prototype.hasOwnProperty.call(auth, 'profiles')) {
+    delete auth.profiles;
+    config.auth = Object.keys(auth).length > 0 ? auth : undefined;
+    modified = true;
+  }
+
+  if (Object.keys(entries).length > 0) {
+    plugins.entries = entries;
+  } else if (plugins.entries) {
+    delete plugins.entries;
+    modified = true;
+  }
+  if (nextAllow.length > 0) {
+    plugins.allow = nextAllow;
+  } else if (plugins.allow) {
+    delete plugins.allow;
+    modified = true;
+  }
+  if (plugins.enabled === true && !plugins.allow && !plugins.entries) {
+    delete plugins.enabled;
+    modified = true;
+  }
+  if (Object.keys(plugins).length > 0) {
+    config.plugins = plugins;
+  } else if (config.plugins) {
+    delete config.plugins;
+    modified = true;
+  }
+
+  config.channels = channels;
+
+  if (modified) {
+    writeOpenClawConfig(config);
+  }
+
+  return modified;
+}
+
 /**
  * Save OAuth tokens to OpenClaw auth-profiles for one/all agents.
  */
@@ -987,7 +1618,12 @@ export async function syncProviderConfigToOpenClaw(
     config.models = providersRoot;
   }
 
-  if (provider === 'minimax-portal' || provider === 'qwen-portal') {
+  if (provider === 'moonshot' && override.baseUrl) {
+    upsertMoonshotWebSearchConfig(config);
+    removeLegacyMoonshotKimiSearchConfig(config);
+  }
+
+  if (provider === 'minimax-portal') {
     const plugins = isRecord(config.plugins) ? { ...config.plugins } : {};
     const entries = isRecord(plugins.entries) ? { ...plugins.entries } : {};
     entries[`${provider}-auth`] = { enabled: true };
@@ -1018,6 +1654,8 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
       activeProviders.add(pluginId.replace(/-auth$/, ''));
     }
   }
+
+  activeProviders.delete('qwen-portal');
 
   return activeProviders;
 }
@@ -1079,8 +1717,9 @@ function isManagedJurismindWebSearchConfig(value: unknown): value is Record<stri
 
 /**
  * Sync LawClaw-managed Doubao web search config into openclaw.json.
- * LawClaw patches the bundled OpenClaw runtime to add a native doubao
- * web_search provider backed by the Jurismind Responses API endpoint.
+ * OpenClaw 4.9+ expects provider-owned web search config under the
+ * Jurismind bundled extension while tools.web.search only keeps the active
+ * provider selection and global search knobs.
  */
 export function syncJurismindWebSearchConfig(apiKey: string): void {
   const trimmedKey = String(apiKey || '').trim();
@@ -1089,28 +1728,40 @@ export function syncJurismindWebSearchConfig(apiKey: string): void {
   }
 
   const config = readOpenClawConfig();
-  const tools = isRecord(config.tools) ? { ...config.tools } : {};
-  const web = isRecord(tools.web) ? { ...tools.web } : {};
-  const search = isRecord(web.search) ? { ...web.search } : {};
+  const tools = isRecord(config.tools) ? config.tools : {};
+  const web = isRecord(tools.web) ? tools.web : {};
+  const search = isRecord(web.search) ? web.search : {};
   const transportConfig = isRecord(search[JURISMIND_WEB_SEARCH_PROVIDER])
     ? { ...(search[JURISMIND_WEB_SEARCH_PROVIDER] as Record<string, unknown>) }
-    : {};
+    : undefined;
+  const legacyTransportConfig = isManagedJurismindWebSearchConfig(search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER])
+    ? { ...(search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER] as Record<string, unknown>) }
+    : undefined;
+  const {
+    plugins,
+    entries,
+    allow,
+    allowWasPresent,
+  } = getOpenClawPluginState(config);
 
-  transportConfig.apiKey = trimmedKey;
-  transportConfig.baseUrl = resolveJurismindWebSearchBaseUrl();
-  transportConfig.model = JURISMIND_WEB_SEARCH_MODEL;
-
-  const legacyTransportConfig = search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
-  if (isManagedJurismindWebSearchConfig(legacyTransportConfig)) {
-    delete search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
+  upsertJurismindWebSearchPluginConfigEntry(entries, trimmedKey, {
+    ...(legacyTransportConfig || {}),
+    ...(transportConfig || {}),
+  });
+  if (allowWasPresent && !allow.includes(JURISMIND_WEB_SEARCH_PLUGIN_ID)) {
+    allow.push(JURISMIND_WEB_SEARCH_PLUGIN_ID);
   }
 
+  delete search[JURISMIND_WEB_SEARCH_PROVIDER];
+  if (legacyTransportConfig) {
+    delete search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
+  }
   search.enabled = true;
   search.provider = JURISMIND_WEB_SEARCH_PROVIDER;
-  search[JURISMIND_WEB_SEARCH_PROVIDER] = transportConfig;
   web.search = search;
   tools.web = web;
   config.tools = tools;
+  applyOpenClawPluginState(config, { plugins, entries, allow });
 
   writeOpenClawConfig(config);
   console.log('Synced Jurismind-backed Doubao web search config to OpenClaw');
@@ -1123,56 +1774,39 @@ export function syncJurismindWebSearchConfig(apiKey: string): void {
  */
 export function clearJurismindWebSearchConfig(): boolean {
   const config = readOpenClawConfig();
-  const tools = isRecord(config.tools) ? { ...config.tools } : {};
-  const web = isRecord(tools.web) ? { ...tools.web } : {};
-  const search = isRecord(web.search) ? { ...web.search } : {};
+  const tools = isRecord(config.tools) ? config.tools : {};
+  const web = isRecord(tools.web) ? tools.web : {};
+  const search = isRecord(web.search) ? web.search : {};
   const currentProvider = typeof search.provider === 'string' ? search.provider : '';
-  const existingTransportConfig = search[JURISMIND_WEB_SEARCH_PROVIDER];
-  const hasManagedConfig = isManagedJurismindWebSearchConfig(existingTransportConfig);
-  const legacyTransportConfig = search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
-  const hasManagedLegacyConfig = isManagedJurismindWebSearchConfig(legacyTransportConfig);
+  const hasLegacyTopLevelConfig = Object.prototype.hasOwnProperty.call(search, JURISMIND_WEB_SEARCH_PROVIDER);
+  const hasManagedLegacyConfig = isManagedJurismindWebSearchConfig(search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER]);
   const hasDifferentConfiguredProvider =
     currentProvider.length > 0
     && currentProvider !== JURISMIND_WEB_SEARCH_PROVIDER
     && currentProvider !== LEGACY_JURISMIND_WEB_SEARCH_PROVIDER;
+  const {
+    plugins,
+    entries,
+    allow,
+  } = getOpenClawPluginState(config);
 
   let changed = false;
 
-  if (hasManagedConfig) {
-    const nextTransportConfig = isRecord(existingTransportConfig)
-      ? { ...existingTransportConfig }
-      : {};
+  if (clearJurismindWebSearchPluginConfigEntry(entries)) {
+    changed = true;
+  }
 
-    delete nextTransportConfig.apiKey;
-    delete nextTransportConfig.baseUrl;
-    delete nextTransportConfig.model;
-
-    if (Object.keys(nextTransportConfig).length > 0) {
-      search[JURISMIND_WEB_SEARCH_PROVIDER] = nextTransportConfig;
-    } else {
-      delete search[JURISMIND_WEB_SEARCH_PROVIDER];
-    }
+  if (hasLegacyTopLevelConfig) {
+    delete search[JURISMIND_WEB_SEARCH_PROVIDER];
     changed = true;
   }
 
   if (hasManagedLegacyConfig) {
-    const nextLegacyTransportConfig = isRecord(legacyTransportConfig)
-      ? { ...legacyTransportConfig }
-      : {};
-
-    delete nextLegacyTransportConfig.apiKey;
-    delete nextLegacyTransportConfig.baseUrl;
-    delete nextLegacyTransportConfig.model;
-
-    if (Object.keys(nextLegacyTransportConfig).length > 0) {
-      search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER] = nextLegacyTransportConfig;
-    } else {
-      delete search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
-    }
+    delete search[LEGACY_JURISMIND_WEB_SEARCH_PROVIDER];
     changed = true;
   }
 
-  if (!hasDifferentConfiguredProvider && (hasManagedConfig || hasManagedLegacyConfig || currentProvider.length > 0)) {
+  if (!hasDifferentConfiguredProvider && (hasLegacyTopLevelConfig || hasManagedLegacyConfig || currentProvider.length > 0)) {
     delete search.provider;
     search.enabled = false;
     changed = true;
@@ -1185,6 +1819,8 @@ export function clearJurismindWebSearchConfig(): boolean {
   web.search = search;
   tools.web = web;
   config.tools = tools;
+  cleanupEmptySearchContainers(config);
+  applyOpenClawPluginState(config, { plugins, entries, allow });
   writeOpenClawConfig(config);
   console.log('Cleared Jurismind-backed Doubao web search config from OpenClaw');
   return true;

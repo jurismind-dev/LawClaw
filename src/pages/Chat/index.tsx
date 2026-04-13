@@ -11,11 +11,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
+import { useAgentsStore } from '@/stores/agents';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
+import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
+import { deriveTaskSteps } from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { useAgentPresetMigrationStore } from '@/stores/agent-preset-migration';
 import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
@@ -26,8 +29,12 @@ export function Chat() {
   const isGatewayRunning = gatewayStatus.state === 'running';
 
   const messages = useChatStore((s) => s.messages);
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const currentAgentId = useChatStore((s) => s.currentAgentId);
+  const sessionLabels = useChatStore((s) => s.sessionLabels);
   const loading = useChatStore((s) => s.loading);
   const sending = useChatStore((s) => s.sending);
+  const activeRunId = useChatStore((s) => s.activeRunId);
   const error = useChatStore((s) => s.error);
   const showThinking = useChatStore((s) => s.showThinking);
   const streamingMessage = useChatStore((s) => s.streamingMessage);
@@ -40,6 +47,7 @@ export function Chat() {
   const migrationStatus = useAgentPresetMigrationStore((s) => s.status);
   const isCurrentWarningVisible = useAgentPresetMigrationStore((s) => s.isCurrentWarningVisible);
   const dismissCurrentWarning = useAgentPresetMigrationStore((s) => s.dismissCurrentWarning);
+  const agents = useAgentsStore((s) => s.agents);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +68,7 @@ export function Chat() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingMessage, sending, pendingFinal]);
+  }, [messages, streamingMessage, sending, pendingFinal, activeRunId]);
 
   if (!isGatewayRunning) {
     return (
@@ -96,11 +104,56 @@ export function Chat() {
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
+  const isTaskRunning = sending || pendingFinal || activeRunId !== null;
   const shouldRenderStreaming =
-    sending &&
+    isTaskRunning &&
     (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
   const hasAnyStreamContent =
     hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
+  const nextUserMessageIndexes = new Array<number>(messages.length).fill(-1);
+  let nextUserMessageIndex = -1;
+  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+    nextUserMessageIndexes[idx] = nextUserMessageIndex;
+    if (messages[idx]?.role === 'user') {
+      nextUserMessageIndex = idx;
+    }
+  }
+
+  const userRunCards = messages.flatMap((message, idx) => {
+    if (message.role !== 'user') return [];
+
+    const nextUserIndex = nextUserMessageIndexes[idx];
+    const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
+    const segmentMessages = messages.slice(idx + 1, segmentEnd);
+    const replyIndexOffset = segmentMessages.findIndex((candidate) => candidate.role === 'assistant');
+    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
+    const isLatestOpenRun = nextUserIndex === -1 && (isTaskRunning || hasAnyStreamContent);
+    const steps = deriveTaskSteps({
+      messages: segmentMessages,
+      streamingMessage: isLatestOpenRun ? streamingMessage : null,
+      streamingTools: isLatestOpenRun ? streamingTools : [],
+      sending: isLatestOpenRun ? sending : false,
+      pendingFinal: isLatestOpenRun ? pendingFinal : false,
+      showThinking,
+    });
+
+    if (steps.length === 0) return [];
+
+    const segmentAgentLabel =
+      agents.find((agent) => agent.id === currentAgentId)?.name || currentAgentId;
+    const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
+
+    return [{
+      triggerIndex: idx,
+      replyIndex,
+      active: isLatestOpenRun,
+      agentLabel: segmentAgentLabel,
+      sessionLabel: segmentSessionLabel,
+      segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
+      steps,
+    }];
+  });
+  const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -129,17 +182,58 @@ export function Chat() {
 
       <div className="flex-1 overflow-y-auto px-3 py-2">
         <div className="w-full space-y-4">
-          {loading && !sending ? (
+          {loading && !isTaskRunning ? (
             <div className="flex h-full items-center justify-center py-20">
               <LoadingSpinner size="lg" />
             </div>
-          ) : messages.length === 0 && !sending ? (
+          ) : messages.length === 0 && !isTaskRunning ? (
             <WelcomeScreen />
           ) : (
             <>
-              {messages.map((msg, idx) => (
-                <ChatMessage key={msg.id || `msg-${idx}`} message={msg} showThinking={showThinking} />
-              ))}
+              {messages.map((msg, idx) => {
+                const suppressToolCards = userRunCards.some((card) =>
+                  idx > card.triggerIndex && idx <= card.segmentEnd,
+                );
+
+                return (
+                  <div
+                    key={msg.id || `msg-${idx}`}
+                    className="space-y-3"
+                    id={`chat-message-${idx}`}
+                    data-testid={`chat-message-${idx}`}
+                  >
+                    <ChatMessage
+                      message={msg}
+                      showThinking={showThinking}
+                      suppressToolCards={suppressToolCards}
+                    />
+                    {userRunCards
+                      .filter((card) => card.triggerIndex === idx)
+                      .map((card) => (
+                        <ExecutionGraphCard
+                          key={`graph-${idx}`}
+                          agentLabel={card.agentLabel}
+                          sessionLabel={card.sessionLabel}
+                          steps={card.steps}
+                          active={card.active}
+                          onJumpToTrigger={() => {
+                            document.getElementById(`chat-message-${card.triggerIndex}`)?.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'center',
+                            });
+                          }}
+                          onJumpToReply={() => {
+                            if (card.replyIndex == null) return;
+                            document.getElementById(`chat-message-${card.replyIndex}`)?.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'center',
+                            });
+                          }}
+                        />
+                      ))}
+                  </div>
+                );
+              })}
 
               {shouldRenderStreaming && (
                 <ChatMessage
@@ -164,11 +258,11 @@ export function Chat() {
                 />
               )}
 
-              {sending && pendingFinal && !shouldRenderStreaming && (
+              {isTaskRunning && pendingFinal && !shouldRenderStreaming && !hasActiveExecutionGraph && (
                 <ActivityIndicator phase="tool_processing" />
               )}
 
-              {sending && !pendingFinal && !hasAnyStreamContent && <TypingIndicator />}
+              {isTaskRunning && !pendingFinal && !hasAnyStreamContent && !hasActiveExecutionGraph && <TypingIndicator />}
             </>
           )}
 
@@ -193,7 +287,13 @@ export function Chat() {
         </div>
       )}
 
-      <ChatInput onSend={sendMessage} onStop={abortRun} disabled={!isGatewayRunning} sending={sending} />
+      <ChatInput
+        onSend={sendMessage}
+        onStop={abortRun}
+        disabled={!isGatewayRunning}
+        sending={sending}
+        taskRunning={isTaskRunning}
+      />
     </div>
   );
 }

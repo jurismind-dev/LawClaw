@@ -24,6 +24,7 @@ const {
   patchOpenClawBundleCompat,
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
+  removeBundledExtensions,
 } = compatTools;
 
 const ROOT = path.resolve(__dirname, '..');
@@ -148,6 +149,11 @@ if (patchedRuntimeFiles.length > 0) {
 const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(OUTPUT);
 if (patchedWindowsSpawnFiles.length > 0) {
   echo`   Patched OpenClaw Windows spawn runtime: ${patchedWindowsSpawnFiles.join(', ')}`;
+}
+
+const removedBundledExtensions = removeBundledExtensions(OUTPUT);
+if (removedBundledExtensions.length > 0) {
+  echo`   Removed bundled OpenClaw extensions: ${removedBundledExtensions.join(', ')}`;
 }
 
 // 4. Recursively collect ALL transitive dependencies via pnpm virtual store BFS

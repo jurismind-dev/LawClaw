@@ -22,7 +22,7 @@ describe('weixin channel integration', () => {
     const onboardingSource = readSource('electron/utils/weixin-onboarding.ts');
     const pluginInstallSource = readSource('electron/utils/openclaw-plugin-install.ts');
 
-    expect(stateSource).toContain("export const WEIXIN_PLUGIN_VERSION = '1.0.3'");
+    expect(stateSource).toContain("export const WEIXIN_PLUGIN_VERSION = '2.1.7'");
     expect(stateSource).toContain('`@tencent-weixin/openclaw-weixin@${WEIXIN_PLUGIN_VERSION}`');
     expect(onboardingSource).toContain('installedVersion === WEIXIN_PLUGIN_VERSION');
     expect(onboardingSource).toContain('removeExistingPluginInstallDir');

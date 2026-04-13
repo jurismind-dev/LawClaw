@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { getOpenClawConfigDir } from './paths';
 
 export const WEIXIN_CHANNEL_ID = 'openclaw-weixin';
-export const WEIXIN_PLUGIN_VERSION = '1.0.3';
+export const WEIXIN_PLUGIN_VERSION = '2.1.7';
 export const WEIXIN_PLUGIN_NPM_SPEC = `@tencent-weixin/openclaw-weixin@${WEIXIN_PLUGIN_VERSION}`;
 export const WEIXIN_DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com';
 export const WEIXIN_DEFAULT_CDN_BASE_URL = 'https://novac2c.cdn.weixin.qq.com/c2c';

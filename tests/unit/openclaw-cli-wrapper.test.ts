@@ -96,7 +96,11 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(windowsPython).not.toContain('for /f "usebackq delims="');
     expect(windowsPython).toContain('PYTHONUTF8=1');
     expect(windowsPythonBridge).toContain('& $UvExe python find 3.12');
-    expect(windowsPythonBridge).toContain('& $uvExe python install 3.12');
+    expect(windowsPythonBridge).toContain('& $UvExe python install 3.12');
+    expect(windowsPythonBridge).toContain('Test-IsWindowsMinorLinkError');
+    expect(windowsPythonBridge).toContain('Get-WindowsMinorLinkCleanupPaths');
+    expect(windowsPythonBridge).toContain('Invoke-ManagedPythonInstall');
+    expect(windowsPythonBridge).toContain('Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop');
     expect(windowsPythonBridge).toContain("return Join-Path $HOME '.LawClaw\\support\\managed-python\\3.12\\win32'");
     expect(windowsPythonBridge).toContain('& $uvExe venv --no-project --clear --python $basePythonExe (Get-ManagedPythonVenvRoot)');
     expect(windowsPythonBridge).toContain('& $uvExe pip install --python $pythonExe --strict python-docx openpyxl lxml defusedxml pywin32');

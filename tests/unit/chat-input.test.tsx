@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import i18n from '@/i18n';
 import { ChatInput } from '@/pages/Chat/ChatInput';
@@ -11,6 +11,8 @@ describe('ChatInput', () => {
   });
 
   afterEach(async () => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
     await act(async () => {
       await i18n.changeLanguage('en');
     });
@@ -34,5 +36,24 @@ describe('ChatInput', () => {
     render(<ChatInput onSend={() => {}} />);
 
     expect(screen.getByText('本地化运行，内容由AI生成，请仔细甄别')).toBeInTheDocument();
+  });
+
+  it('shows a dynamic generating placeholder while a task is running', async () => {
+    vi.useFakeTimers();
+    render(<ChatInput onSend={() => {}} taskRunning />);
+
+    expect(screen.getByPlaceholderText('生成中...')).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.getByPlaceholderText('生成中.')).toBeInTheDocument();
+  });
+
+  it('keeps the stop button visible while a task is still running', () => {
+    render(<ChatInput onSend={() => {}} onStop={() => {}} taskRunning />);
+
+    expect(screen.getByTitle('停止')).toBeInTheDocument();
   });
 });

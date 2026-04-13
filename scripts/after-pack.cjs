@@ -25,6 +25,7 @@ const {
   patchOpenClawBundleCompat,
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
+  removeBundledExtensions,
 } = require('./openclaw-bundle-compat.cjs');
 const { prepareBundledFeishuResourcePlugin } = require('./bundled-resource-plugin.cjs');
 
@@ -530,6 +531,13 @@ exports.default = async function afterPack(context) {
     );
   }
 
+  const removedBundledExtensions = removeBundledExtensions(openclawRoot);
+  if (removedBundledExtensions.length > 0) {
+    console.log(
+      `[after-pack] ✅ Removed bundled OpenClaw extensions: ${removedBundledExtensions.join(', ')}.`
+    );
+  }
+
   const requireCompatPackages = patchOpenClawBundleCompat(dest);
   if (requireCompatPackages.length > 0) {
     console.log(
@@ -542,9 +550,7 @@ exports.default = async function afterPack(context) {
   //     - electron-builder silently skips extraResources entries whose source
   //       directory doesn't exist (build/openclaw-plugins/ may not be pre-generated)
   //     - node_modules/ is excluded by .gitignore so the deps copy must be manual
-  const BUNDLED_PLUGINS = [
-    { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
-  ];
+  const BUNDLED_PLUGINS = [];
 
   if (!existsSync(nodeModulesRoot)) {
     console.warn(`[after-pack] ⚠️  node_modules not found at ${nodeModulesRoot}, skipping plugin bundling.`);

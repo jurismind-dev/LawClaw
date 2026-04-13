@@ -12,6 +12,7 @@ const MANAGED_PYTHON_BASE_PACKAGES = ['python-docx', 'openpyxl', 'lxml', 'defuse
 const MANAGED_PYTHON_WINDOWS_PACKAGES = ['pywin32'];
 const MANAGED_PYTHON_BASE_IMPORTS = ['docx', 'openpyxl', 'lxml', 'defusedxml'];
 const MANAGED_PYTHON_WINDOWS_IMPORTS = ['pythoncom', 'win32com.client'];
+const WINDOWS_MINOR_LINK_ERROR_MARKERS = ['python minor version link directory', 'os error 4390', 'not a reparse point'];
 
 function getManagedPythonPackages(platform = process.platform): string[] {
   return platform === 'win32'
@@ -125,7 +126,7 @@ function resolveUvBin(): { bin: string; source: 'bundled' | 'path' | 'bundled-fa
 function findUvInPathSync(): boolean {
   try {
     const cmd = process.platform === 'win32' ? 'where.exe uv' : 'which uv';
-    execSync(cmd, { stdio: 'ignore', timeout: 5000 });
+    execSync(cmd, { stdio: 'ignore', timeout: 5000, windowsHide: true });
     return true;
   } catch {
     return false;
@@ -168,6 +169,7 @@ async function findManagedPythonPath(uvBin: string, env: Record<string, string |
       {
         shell: useShell,
         env,
+        windowsHide: true,
       }
     );
 
@@ -229,6 +231,7 @@ async function verifyManagedPythonDependencies(pythonExe: string): Promise<void>
         PYTHONIOENCODING: process.env.PYTHONIOENCODING || 'utf-8',
         PYTHONUTF8: process.env.PYTHONUTF8 || '1',
       },
+      windowsHide: true,
     });
 
     child.stdout?.on('data', (data) => {
@@ -291,6 +294,7 @@ async function ensureManagedPythonVenv(
       {
         shell: useShell,
         env,
+        windowsHide: true,
       }
     );
 
@@ -395,6 +399,7 @@ async function runPythonInstall(
       {
         shell: useShell,
         env,
+        windowsHide: true,
       }
     );
 
@@ -463,6 +468,7 @@ async function runPythonPackageInstall(
       {
         shell: useShell,
         env,
+        windowsHide: true,
       }
     );
 
@@ -517,11 +523,11 @@ async function runPythonPackageInstall(
 }
 
 async function runWithMirrorRetry<T>(
+  baseEnv: Record<string, string | undefined>,
   uvEnv: Record<string, string | undefined>,
   action: (env: Record<string, string | undefined>, label: string) => Promise<T>,
   description: string
 ): Promise<T> {
-  const baseEnv: Record<string, string | undefined> = { ...process.env };
   const hasMirror = Object.keys(uvEnv).length > 0;
 
   try {
@@ -539,6 +545,60 @@ async function runWithMirrorRetry<T>(
     } catch (secondError) {
       logger.error(`${description} attempt 2 (no-mirror) also failed:`, secondError);
       throw secondError;
+    }
+  }
+}
+
+function isWindowsMinorLinkError(error: unknown): boolean {
+  if (process.platform !== 'win32') {
+    return false;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  const lowerMessage = message.toLowerCase();
+  return WINDOWS_MINOR_LINK_ERROR_MARKERS.every((marker) => lowerMessage.includes(marker));
+}
+
+function formatManagedPythonInstallError(error: unknown): Error {
+  if (!isWindowsMinorLinkError(error)) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(
+    `${message}\n` +
+      `  diagnosis: Detected a corrupted uv Windows Python version link/junction.\n` +
+      `  note: LawClaw now retries after clearing the stale uv Python link directories reported by uv.`
+  );
+}
+
+function extractWindowsMinorLinkCleanupPaths(error: unknown): string[] {
+  if (!isWindowsMinorLinkError(error)) {
+    return [];
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  const match = message.match(/minor version link directory at (.+?) from (.+?)(?:\r?\n|$)/i);
+  if (!match) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      match
+        .slice(1)
+        .map((value) => value.trim().replace(/^"+|"+$/g, ''))
+        .filter((value) => /^[a-z]:\\/i.test(value)),
+    ),
+  );
+}
+
+function clearWindowsMinorLinkPaths(paths: string[]): void {
+  for (const target of paths) {
+    try {
+      rmSync(target, { recursive: true, force: true });
+    } catch (error) {
+      logger.debug(`Failed to clear stale uv Python path ${target}:`, error);
     }
   }
 }
@@ -562,22 +622,51 @@ export async function setupManagedPython(): Promise<void> {
 
   clearManagedPythonReadyMarker(platform);
 
-  await runWithMirrorRetry(
-    uvEnv,
-    async (env, label) => {
-      await runPythonInstall(uvBin, env, label);
-    },
-    'Python install'
-  );
+  try {
+    await runWithMirrorRetry(
+      { ...process.env },
+      uvEnv,
+      async (env, label) => {
+        await runPythonInstall(uvBin, env, label);
+      },
+      'Python install'
+    );
+  } catch (error) {
+    if (!isWindowsMinorLinkError(error)) {
+      throw error;
+    }
+
+    const cleanupPaths = extractWindowsMinorLinkCleanupPaths(error);
+    logger.warn(
+      `Detected corrupted uv-managed Python link metadata on Windows, clearing stale uv Python paths and retrying once...`,
+      error
+    );
+    if (cleanupPaths.length > 0) {
+      clearWindowsMinorLinkPaths(cleanupPaths);
+    }
+
+    try {
+      await runWithMirrorRetry(
+        { ...process.env },
+        uvEnv,
+        async (env, label) => {
+          await runPythonInstall(uvBin, env, `${label}-after-reset`);
+        },
+        'Python install'
+      );
+    } catch (retryError) {
+      throw formatManagedPythonInstallError(retryError);
+    }
+  }
 
   const basePythonExe = await findManagedPythonPath(uvBin, { ...process.env });
   const venvPythonExe = await ensureManagedPythonVenv(uvBin, basePythonExe, { ...process.env }, 'default');
 
   await runWithMirrorRetry(
+    { ...process.env },
     uvEnv,
     async (env, label) => {
-      const pythonExe = await ensureManagedPythonVenv(uvBin, basePythonExe, env, label);
-      await runPythonPackageInstall(uvBin, pythonExe, env, label);
+      await runPythonPackageInstall(uvBin, venvPythonExe, env, label);
     },
     'Python package install'
   );

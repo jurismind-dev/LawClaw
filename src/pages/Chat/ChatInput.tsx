@@ -33,6 +33,7 @@ interface ChatInputProps {
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
+  taskRunning?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -79,12 +80,19 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function ChatInput({ onSend, onStop, disabled = false, sending = false }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  onStop,
+  disabled = false,
+  sending = false,
+  taskRunning = sending,
+}: ChatInputProps) {
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [generatingDotCount, setGeneratingDotCount] = useState(3);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
@@ -111,6 +119,21 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
     }
   }, [input]);
+
+  useEffect(() => {
+    if (!taskRunning) {
+      setGeneratingDotCount(3);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setGeneratingDotCount((count) => (count % 3) + 1);
+    }, 450);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [taskRunning]);
 
   useEffect(() => {
     if (!targetAgentId) return;
@@ -268,8 +291,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   }, []);
 
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
-  const canSend = (input.trim() || attachments.length > 0) && allReady && !disabled && !sending;
-  const canStop = sending && !disabled && !!onStop;
+  const canSend = (input.trim() || attachments.length > 0) && allReady && !disabled && !taskRunning;
+  const canStop = taskRunning && !disabled && !!onStop;
+  const animatedGeneratingDots = '.'.repeat(generatingDotCount);
+  const inputPlaceholder = disabled
+    ? t('inputDisabledPlaceholder')
+    : taskRunning
+      ? t('inputGenerating', { dots: animatedGeneratingDots })
+      : t('inputPlaceholder');
 
   const handleSend = useCallback(() => {
     if (!canSend) return;
@@ -411,7 +440,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
               size="icon"
               className="shrink-0 h-[44px] w-[44px] rounded-full"
               onClick={pickFiles}
-              disabled={disabled || sending}
+              disabled={disabled || taskRunning}
               title={t('composer.attachFiles')}
             >
               <Paperclip className="h-4 w-4" />
@@ -427,7 +456,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                     (pickerOpen || selectedTarget) && 'bg-primary/10 text-primary hover:bg-primary/20',
                   )}
                   onClick={() => setPickerOpen((open) => !open)}
-                  disabled={disabled || sending}
+                  disabled={disabled || taskRunning}
                   title={t('composer.pickAgent')}
                 >
                   <AtSign className="h-4 w-4" />
@@ -479,7 +508,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                   isComposingRef.current = false;
                 }}
                 onPaste={handlePaste}
-                placeholder={disabled ? t('inputDisabledPlaceholder') : t('inputPlaceholder')}
+                placeholder={inputPlaceholder}
                 disabled={disabled}
                 className="min-h-[44px] max-h-[200px] resize-none border-0 bg-transparent pr-4 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                 rows={1}
@@ -488,14 +517,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
             {/* Send Button */}
             <Button
-              onClick={sending ? handleStop : handleSend}
-              disabled={sending ? !canStop : !canSend}
+              onClick={taskRunning ? handleStop : handleSend}
+              disabled={taskRunning ? !canStop : !canSend}
               size="icon"
               className="shrink-0 h-[44px] w-[44px] rounded-full"
-              variant={sending ? 'destructive' : 'default'}
-              title={sending ? t('composer.stop') : t('composer.send')}
+              variant={taskRunning ? 'destructive' : 'default'}
+              title={taskRunning ? t('composer.stop') : t('composer.send')}
             >
-              {sending ? (
+              {taskRunning ? (
                 <Square className="h-4 w-4" />
               ) : (
                 <Send className="h-4 w-4" />

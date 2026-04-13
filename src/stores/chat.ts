@@ -130,6 +130,9 @@ let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Timer for delayed error finalization when the Gateway may still recover.
 let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
+const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
+const _chatEventDedupe = new Map<string, number>();
 
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
@@ -143,6 +146,69 @@ function clearHistoryPoll(): void {
     clearTimeout(_historyPollTimer);
     _historyPollTimer = null;
   }
+}
+
+function pruneChatEventDedupe(now: number): void {
+  for (const [key, ts] of _chatEventDedupe.entries()) {
+    if (now - ts > CHAT_EVENT_DEDUPE_TTL_MS) {
+      _chatEventDedupe.delete(key);
+    }
+  }
+}
+
+function serializeChatEventPayload(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? '';
+  } catch {
+    return String(value);
+  }
+}
+
+function buildChatEventDedupeKey(eventState: string, event: Record<string, unknown>): string | null {
+  const runId = event.runId != null ? String(event.runId) : '';
+  const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
+  const seq = event.seq != null ? String(event.seq) : '';
+  const errorMessage = event.errorMessage != null ? String(event.errorMessage) : '';
+  const phase = event.phase != null ? String(event.phase) : '';
+
+  if (seq) {
+    return ['seq', runId, sessionKey, seq, eventState].join('|');
+  }
+
+  if (event.message !== undefined) {
+    const serializedMessage = serializeChatEventPayload(event.message);
+    if (serializedMessage) {
+      return ['message', runId, sessionKey, eventState, serializedMessage].join('|');
+    }
+  }
+
+  if (errorMessage) {
+    return ['error', runId, sessionKey, eventState, errorMessage].join('|');
+  }
+
+  if (runId || sessionKey || phase || eventState) {
+    return ['event', runId, sessionKey, phase, eventState].join('|');
+  }
+
+  return null;
+}
+
+function isDuplicateChatEvent(eventState: string, event: Record<string, unknown>): boolean {
+  const key = buildChatEventDedupeKey(eventState, event);
+  if (!key) return false;
+
+  const now = Date.now();
+  pruneChatEventDedupe(now);
+  if (_chatEventDedupe.has(key)) {
+    return true;
+  }
+
+  _chatEventDedupe.set(key, now);
+  return false;
+}
+
+function isRecoverableChatSendTimeout(error: string): boolean {
+  return error.includes('RPC timeout: chat.send');
 }
 
 const DEFAULT_CANONICAL_PREFIX = 'agent:lawclaw-main';
@@ -952,7 +1018,9 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (Array.isArray(content)) {
     for (const block of content as ContentBlock[]) {
       if (block.type === 'text' && block.text && block.text.trim()) return true;
-      if (block.type === 'thinking' && block.thinking && block.thinking.trim()) return true;
+      // Thinking/tool-use turns are intermediate agent work, not the final
+      // assistant answer. Treat only user-visible text/image output as a
+      // terminal reply so tool execution does not clear the running state.
       if (block.type === 'image') return true;
     }
   }
@@ -1507,7 +1575,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const pollHistory = () => {
       const state = get();
       if (!state.sending) { clearHistoryPoll(); return; }
-      if (state.streamingMessage) {
+      if (Date.now() - _lastChatEventAt < HISTORY_POLL_SILENCE_WINDOW_MS) {
         _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
         return;
       }
@@ -1588,20 +1656,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
             deliver: false,
             idempotencyKey,
           },
+          120_000,
         ) as { success: boolean; result?: { runId?: string }; error?: string };
       }
 
       console.log(`[sendMessage] RPC result: success=${result.success}, runId=${result.result?.runId || 'none'}`);
 
       if (!result.success) {
-        clearHistoryPoll();
-        set({ error: result.error || 'Failed to send message', sending: false });
+        const errorMsg = result.error || 'Failed to send message';
+        if (isRecoverableChatSendTimeout(errorMsg)) {
+          console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errorMsg}`);
+          set({ error: errorMsg });
+        } else {
+          clearHistoryPoll();
+          set({ error: errorMsg, sending: false });
+        }
       } else if (result.result?.runId) {
         set({ activeRunId: result.result.runId });
       }
     } catch (err) {
-      clearHistoryPoll();
-      set({ error: String(err), sending: false });
+      const errStr = String(err);
+      if (isRecoverableChatSendTimeout(errStr)) {
+        console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errStr}`);
+        set({ error: errStr });
+      } else {
+        clearHistoryPoll();
+        set({ error: errStr, sending: false });
+      }
     }
   },
 
@@ -1639,8 +1720,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Only process events for the active run (or if no active run set)
     if (activeRunId && runId && runId !== activeRunId) return;
 
-    _lastChatEventAt = Date.now();
-
     // Defensive: if state is missing but we have a message, try to infer state.
     let resolvedState = eventState;
     if (!resolvedState && event.message && typeof event.message === 'object') {
@@ -1652,6 +1731,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         resolvedState = 'delta';
       }
     }
+
+    if (isDuplicateChatEvent(resolvedState, event)) return;
+
+    _lastChatEventAt = Date.now();
 
     if (isHiddenHeartbeatMessage(event.message)) {
       const state = get();
@@ -1679,7 +1762,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const hasUsefulData = resolvedState === 'delta' || resolvedState === 'final'
       || resolvedState === 'error' || resolvedState === 'aborted';
     if (hasUsefulData) {
-      clearHistoryPoll();
       // Adopt run started from another client (e.g. console at 127.0.0.1:18789):
       // show loading/streaming in the app when this session has an active run.
       const { sending } = get();
@@ -1704,6 +1786,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // stale error banner so the user sees the live stream again.
         if (_errorRecoveryTimer) {
           clearErrorRecoveryTimer();
+        }
+        if (get().error) {
           set({ error: null });
         }
         const updates = collectToolUpdates(event.message, resolvedState);
@@ -1712,6 +1796,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             if (event.message && typeof event.message === 'object') {
               const msgRole = (event.message as RawMessage).role;
               if (isToolResultRole(msgRole)) return s.streamingMessage;
+              const msgObj = event.message as RawMessage;
+              if (s.streamingMessage && msgObj.content === undefined) {
+                return s.streamingMessage;
+              }
             }
             return event.message ?? s.streamingMessage;
           })(),

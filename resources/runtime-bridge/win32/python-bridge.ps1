@@ -60,6 +60,69 @@ function Find-ManagedPythonPath {
   return $null
 }
 
+function Test-IsWindowsMinorLinkError {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Message
+  )
+
+  $normalized = $Message.ToLowerInvariant()
+  return $normalized.Contains('python minor version link directory') -and $normalized.Contains('os error 4390') -and $normalized.Contains('not a reparse point')
+}
+
+function Get-WindowsMinorLinkCleanupPaths {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Message
+  )
+
+  $match = [regex]::Match($Message, 'minor version link directory at (.+?) from (.+?)(?:\r?\n|$)', 'IgnoreCase')
+  if (-not $match.Success) {
+    return @()
+  }
+
+  return @(
+    $match.Groups[1].Value.Trim().Trim('"'),
+    $match.Groups[2].Value.Trim().Trim('"')
+  ) | Where-Object { $_ -match '^[A-Za-z]:\\' } | Select-Object -Unique
+}
+
+function Invoke-ManagedPythonInstall {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$UvExe
+  )
+
+  $lines = & $UvExe python install 3.12 2>&1
+  $output = (@($lines) | ForEach-Object { "$_" }) -join [Environment]::NewLine
+  if ($LASTEXITCODE -eq 0) {
+    return $true
+  }
+
+  if (Test-IsWindowsMinorLinkError -Message $output) {
+    $cleanupPaths = Get-WindowsMinorLinkCleanupPaths -Message $output
+    foreach ($path in $cleanupPaths) {
+      try {
+        Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+      } catch {
+        # best-effort cleanup
+      }
+    }
+
+    $lines = & $UvExe python install 3.12 2>&1
+    $output = (@($lines) | ForEach-Object { "$_" }) -join [Environment]::NewLine
+    if ($LASTEXITCODE -eq 0) {
+      return $true
+    }
+  }
+
+  if ($output) {
+    [Console]::Error.WriteLine($output)
+  }
+
+  return $false
+}
+
 function Get-ManagedPythonVenvRoot {
   return Join-Path $HOME '.LawClaw\support\managed-python\3.12\win32'
 }
@@ -118,9 +181,8 @@ if ((Test-Path -LiteralPath $pythonExe) -and (Test-ManagedPythonDependencies -Py
 if (-not (Test-Path -LiteralPath $pythonExe)) {
   $basePythonExe = Find-ManagedPythonPath -UvExe $uvExe
   if (-not $basePythonExe) {
-    & $uvExe python install 3.12
-    if ($LASTEXITCODE -ne 0) {
-      exit $LASTEXITCODE
+    if (-not (Invoke-ManagedPythonInstall -UvExe $uvExe)) {
+      exit 1
     }
 
     $basePythonExe = Find-ManagedPythonPath -UvExe $uvExe

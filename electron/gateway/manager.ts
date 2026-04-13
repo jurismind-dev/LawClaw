@@ -23,6 +23,7 @@ import { getSetting } from '../utils/store';
 import { getAllProviders, getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
 import {
+  sanitizeOpenClawConfig,
   syncBrowserConfigToOpenClaw,
   syncGatewayTokenToConfig,
   syncJurismindWebSearchConfig,
@@ -43,6 +44,7 @@ import {
 } from '../utils/device-identity';
 import { repairInstalledFeishuOfficialPluginIfNeeded } from '../utils/feishu-official-plugin-installer';
 import { selectGatewayRuntime } from './runtime-selection';
+import { getGatewayStartupRecoveryAction } from './startup-recovery';
 
 /**
  * Gateway connection status
@@ -187,6 +189,7 @@ export class GatewayManager extends EventEmitter {
   private shouldReconnect = true;
   private startLock = false;
   private lastSpawnSummary: string | null = null;
+  private startupStderrLines: string[] = [];
   private pendingRequests: Map<string, {
     resolve: (value: unknown) => void;
     reject: (error: Error) => void;
@@ -244,6 +247,26 @@ export class GatewayManager extends EventEmitter {
     return { level: 'warn', normalized: msg };
   }
 
+  private resetStartupStderrLines(): void {
+    this.startupStderrLines = [];
+  }
+
+  private getStartupStderrLines(): string[] {
+    return [...this.startupStderrLines];
+  }
+
+  private rememberStartupStderrLine(line: string): void {
+    if (!line) return;
+    this.startupStderrLines.push(line);
+    if (this.startupStderrLines.length > 200) {
+      this.startupStderrLines.shift();
+    }
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   /**
    * Get current Gateway status
    */
@@ -292,47 +315,78 @@ export class GatewayManager extends EventEmitter {
     this.setStatus({ state: 'starting', reconnectAttempts: 0 });
     
     try {
-      // Check if Python environment is ready (self-healing) asynchronously
-      void isPythonReady().then(pythonReady => {
-        if (!pythonReady) {
-          logger.info('Python environment missing or incomplete, attempting background repair...');
-          // We don't await this to avoid blocking Gateway startup, 
-          // as uv run will handle it if needed, but this pre-warms it.
-          void setupManagedPython().catch(err => {
-            logger.error('Background Python repair failed:', err);
-          });
-        }
-      }).catch(err => {
-        logger.error('Failed to check Python environment:', err);
-      });
+      let configRepairAttempted = false;
+      let startAttempts = 0;
+      const maxStartAttempts = 3;
 
-      // Check if Gateway is already running
-      logger.debug('Checking for existing Gateway...');
-      const existing = await this.findExistingGateway();
-      if (existing) {
-        logger.debug(`Found existing Gateway on port ${existing.port}`);
-        await this.connect(existing.port, existing.externalToken);
-        this.ownsProcess = false;
-        this.setStatus({ pid: undefined });
-        this.startHealthCheck();
-        return;
+      while (true) {
+        startAttempts++;
+        this.resetStartupStderrLines();
+
+        try {
+          // Check if Python environment is ready (self-healing) asynchronously
+          void isPythonReady().then(pythonReady => {
+            if (!pythonReady) {
+              logger.info('Python environment missing or incomplete, attempting background repair...');
+              // We don't await this to avoid blocking Gateway startup,
+              // as uv run will handle it if needed, but this pre-warms it.
+              void setupManagedPython().catch(err => {
+                logger.error('Background Python repair failed:', err);
+              });
+            }
+          }).catch(err => {
+            logger.error('Failed to check Python environment:', err);
+          });
+
+          logger.debug('Checking for existing Gateway...');
+          const existing = await this.findExistingGateway();
+          if (existing) {
+            logger.debug(`Found existing Gateway on port ${existing.port}`);
+            await this.connect(existing.port, existing.externalToken);
+            this.ownsProcess = false;
+            this.setStatus({ pid: undefined });
+            this.startHealthCheck();
+            return;
+          }
+
+          logger.debug('No existing Gateway found, starting new process...');
+
+          await this.startProcess();
+          await this.waitForReady();
+          await this.connect(this.status.port);
+
+          this.startHealthCheck();
+          logger.debug('Gateway started successfully');
+          return;
+        } catch (error) {
+          const recoveryAction = getGatewayStartupRecoveryAction({
+            startupError: error,
+            startupStderrLines: this.getStartupStderrLines(),
+            configRepairAttempted,
+            attempt: startAttempts,
+            maxAttempts: maxStartAttempts,
+          });
+
+          if (recoveryAction === 'repair') {
+            configRepairAttempted = true;
+            logger.warn('Detected invalid OpenClaw config during Gateway startup; running doctor repair before retry');
+            const repaired = await this.runOpenClawDoctorRepair();
+            if (repaired) {
+              logger.info('OpenClaw doctor repair completed; retrying Gateway startup');
+              continue;
+            }
+            logger.error('OpenClaw doctor repair failed; not retrying Gateway startup');
+          }
+
+          if (recoveryAction === 'retry') {
+            logger.warn(`Transient start error: ${String(error)}. Retrying... (${startAttempts}/${maxStartAttempts})`);
+            await this.delay(1000);
+            continue;
+          }
+
+          throw error;
+        }
       }
-      
-      logger.debug('No existing Gateway found, starting new process...');
-      
-      // Start new Gateway process
-      await this.startProcess();
-      
-      // Wait for Gateway to be ready
-      await this.waitForReady();
-      
-      // Connect WebSocket
-      await this.connect(this.status.port);
-      
-      // Start health monitoring
-      this.startHealthCheck();
-      logger.debug('Gateway started successfully');
-      
     } catch (error) {
       logger.error(
         `Gateway start failed (port=${this.status.port}, reconnectAttempts=${this.reconnectAttempts}, spawn=${this.lastSpawnSummary ?? 'n/a'})`,
@@ -739,6 +793,15 @@ export class GatewayManager extends EventEmitter {
     // Get or generate gateway token
     const gatewayToken = await getSetting('gatewayToken');
 
+    try {
+      const sanitized = sanitizeOpenClawConfig();
+      if (sanitized) {
+        logger.info('Sanitized openclaw.json before Gateway start');
+      }
+    } catch (err) {
+      logger.warn('Failed to sanitize openclaw.json before Gateway start:', err);
+    }
+
     // Write our token into openclaw.json before starting the process.
     // Without --dev the gateway authenticates using the token in
     // openclaw.json; if that file has a stale token (e.g. left by the
@@ -981,6 +1044,7 @@ export class GatewayManager extends EventEmitter {
         for (const line of raw.split(/\r?\n/)) {
           const classified = this.classifyStderrMessage(line);
           if (classified.level === 'drop') continue;
+          this.rememberStartupStderrLine(classified.normalized);
           if (classified.level === 'debug') {
             logger.debug(`[Gateway stderr] ${classified.normalized}`);
             continue;
@@ -1052,6 +1116,88 @@ export class GatewayManager extends EventEmitter {
     
     logger.error(`Gateway failed to become ready after ${retries} attempts on port ${this.status.port}`);
     throw new Error(`Gateway failed to start after ${retries} retries (port ${this.status.port})`);
+  }
+
+  private async runOpenClawDoctorRepair(): Promise<boolean> {
+    const openclawDir = getOpenClawDir();
+    const entryScript = getOpenClawEntryPath();
+    if (!existsSync(entryScript)) {
+      logger.error(`Cannot run OpenClaw doctor repair: entry script not found at ${entryScript}`);
+      return false;
+    }
+
+    const doctorArgs = [entryScript, 'doctor', '--fix', '--yes', '--non-interactive'];
+    const uvEnv = await getUvMirrorEnv();
+    const baseEnv = applyBundledRuntimeToEnv({
+      ...process.env,
+      ...uvEnv,
+      OPENCLAW_NO_RESPAWN: '1',
+      ELECTRON_RUN_AS_NODE: '1',
+    }, {
+      nodeExecutablePath: getNodeExecutablePath(),
+    });
+    const spawnEnv = applyBundledNpmToCliEnv(baseEnv);
+
+    logger.info(
+      `Running OpenClaw doctor repair (command="${getNodeExecutablePath()}", args="${doctorArgs.join(' ')}", cwd="${openclawDir}")`
+    );
+
+    return await new Promise<boolean>((resolve) => {
+      const child = spawn(getNodeExecutablePath(), doctorArgs, {
+        cwd: openclawDir,
+        env: spawnEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+
+      const timeout = setTimeout(() => {
+        logger.error('OpenClaw doctor repair timed out after 120000ms');
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+        finish(false);
+      }, 120000);
+
+      child.on('error', (err) => {
+        clearTimeout(timeout);
+        logger.error('Failed to spawn OpenClaw doctor repair process:', err);
+        finish(false);
+      });
+
+      child.stdout?.on('data', (data) => {
+        for (const line of data.toString().split(/\r?\n/)) {
+          const normalized = line.trim();
+          if (!normalized) continue;
+          logger.debug(`[Gateway doctor stdout] ${normalized}`);
+        }
+      });
+
+      child.stderr?.on('data', (data) => {
+        for (const line of data.toString().split(/\r?\n/)) {
+          const normalized = line.trim();
+          if (!normalized) continue;
+          logger.warn(`[Gateway doctor stderr] ${normalized}`);
+        }
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          finish(true);
+          return;
+        }
+        logger.warn(`OpenClaw doctor repair exited with code ${String(code)}`);
+        finish(false);
+      });
+    });
   }
 
   private async runCommand(

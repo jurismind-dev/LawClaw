@@ -25,6 +25,7 @@ const providerRegistryMock = vi.hoisted(() => ({
     if (providerId === 'jurismind') return 'jurismind/jurismind';
     if (providerId === 'openai') return 'openai/gpt-5.2';
     if (providerId === 'moonshot') return 'moonshot/kimi-k2.5';
+    if (providerId === 'modelstudio') return 'modelstudio/qwen3.5-plus';
     return undefined;
   }),
   getProviderEnvVar: vi.fn(),
@@ -201,9 +202,9 @@ describe('lawclaw provider selection helpers', () => {
     const mod = await import('@electron/utils/lawclaw-provider-selection');
 
     const available = await mod.isProviderAvailableForLawClaw({
-      id: 'qwen-portal',
-      type: 'qwen-portal',
-      name: 'Qwen',
+      id: 'minimax-portal',
+      type: 'minimax-portal',
+      name: 'MiniMax (Global)',
       enabled: true,
       createdAt: '2026-03-01T00:00:00.000Z',
       updatedAt: '2026-03-01T00:00:00.000Z',
@@ -212,12 +213,12 @@ describe('lawclaw provider selection helpers', () => {
     expect(available).toBe(true);
     expect(openclawAuthMock.getOAuthTokenFromOpenClaw).toHaveBeenNthCalledWith(
       1,
-      'qwen-portal',
+      'minimax-portal',
       'lawclaw-main'
     );
     expect(openclawAuthMock.getOAuthTokenFromOpenClaw).toHaveBeenNthCalledWith(
       2,
-      'qwen-portal',
+      'minimax-portal',
       'main'
     );
   });
@@ -233,9 +234,9 @@ describe('lawclaw provider selection helpers', () => {
         updatedAt: '2026-03-03T00:00:00.000Z',
       },
       {
-        id: 'provider-qwen',
-        type: 'qwen-portal',
-        name: 'Qwen',
+        id: 'provider-modelstudio',
+        type: 'modelstudio',
+        name: 'Model Studio',
         enabled: true,
         createdAt: '2026-03-01T00:00:00.000Z',
         updatedAt: '2026-03-05T00:00:00.000Z',
@@ -250,14 +251,13 @@ describe('lawclaw provider selection helpers', () => {
       },
     ]);
     secureStorageMock.getApiKey.mockImplementation(async (providerId: string) =>
-      providerId === 'provider-openai' ? 'sk-live' : null
+      providerId === 'provider-openai' || providerId === 'provider-modelstudio' ? 'sk-live' : null
     );
-    openclawAuthMock.getOAuthTokenFromOpenClaw.mockResolvedValue('oauth-token');
 
     const mod = await import('@electron/utils/lawclaw-provider-selection');
 
     const fallback = await mod.pickFallbackLawClawProvider(['provider-ollama']);
 
-    expect(fallback?.id).toBe('provider-qwen');
+    expect(fallback?.id).toBe('provider-modelstudio');
   });
 });

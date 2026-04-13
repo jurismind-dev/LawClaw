@@ -114,18 +114,24 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
             import('./chat')
               .then(({ useChatStore }) => {
                 const state = useChatStore.getState();
-                // Always reload history on agent completion, regardless of
-                // the `sending` flag. After a transient error the flag may
-                // already be false, but the Gateway may have retried and
-                // completed successfully in the background.
-                state.loadHistory(true);
-                if (state.sending) {
-                  useChatStore.setState({
-                    sending: false,
-                    activeRunId: null,
-                    pendingFinal: false,
-                    lastUserMessageAt: null,
-                  });
+                const resolvedSessionKey = sessionKey != null ? String(sessionKey) : null;
+                const shouldRefreshSessions = resolvedSessionKey != null && (
+                  resolvedSessionKey !== state.currentSessionKey
+                  || !state.sessions.some((session) => session.key === resolvedSessionKey)
+                );
+                if (shouldRefreshSessions) {
+                  void state.loadSessions();
+                }
+
+                const matchesCurrentSession =
+                  resolvedSessionKey == null || resolvedSessionKey === state.currentSessionKey;
+                const matchesActiveRun =
+                  runId != null && state.activeRunId != null && String(runId) === state.activeRunId;
+
+                if (matchesCurrentSession || matchesActiveRun) {
+                  // Let chat store/history recovery own the final transition so
+                  // the UI keeps the stop state until authoritative final data lands.
+                  void state.loadHistory(true);
                 }
               })
               .catch(() => {});

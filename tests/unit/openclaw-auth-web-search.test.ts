@@ -1,14 +1,31 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
 import { join } from 'path';
+
+const mockHomeState = vi.hoisted(() => ({
+  value: process.env.HOME || process.env.USERPROFILE || '/tmp',
+}));
+
+vi.mock('os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('os');
+  const mocked = {
+    ...actual,
+    homedir: () => mockHomeState.value,
+  };
+  return {
+    ...mocked,
+    default: mocked,
+  };
+});
 
 const tempHomes: string[] = [];
 const originalHome = process.env.HOME;
 const originalUserProfile = process.env.USERPROFILE;
+const TEST_TMPDIR = process.env.TMPDIR || '/tmp';
 
 async function loadOpenClawAuthWithHome(homeDir: string) {
   vi.resetModules();
+  mockHomeState.value = homeDir;
   process.env.HOME = homeDir;
   process.env.USERPROFILE = homeDir;
   return import('@electron/utils/openclaw-auth');
@@ -16,6 +33,7 @@ async function loadOpenClawAuthWithHome(homeDir: string) {
 
 afterEach(() => {
   vi.resetModules();
+  mockHomeState.value = originalHome || originalUserProfile || '/tmp';
   process.env.HOME = originalHome;
   process.env.USERPROFILE = originalUserProfile;
 
@@ -28,7 +46,7 @@ afterEach(() => {
 
 describe('openclaw auth - jurismind web search sync', () => {
   it('syncJurismindWebSearchConfig writes native doubao search config', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-web-search-'));
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
     tempHomes.push(homeDir);
 
     const openclawDir = join(homeDir, '.openclaw');
@@ -62,10 +80,20 @@ describe('openclaw auth - jurismind web search sync', () => {
             enabled?: boolean;
             provider?: string;
             maxResults?: number;
-            doubao?: {
-              apiKey?: string;
-              baseUrl?: string;
-              model?: string;
+            doubao?: unknown;
+          };
+        };
+      };
+      plugins?: {
+        entries?: {
+          'jurismind-doubao'?: {
+            enabled?: boolean;
+            config?: {
+              webSearch?: {
+                apiKey?: string;
+                baseUrl?: string;
+                model?: string;
+              };
             };
           };
         };
@@ -75,13 +103,15 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.tools?.web?.search?.enabled).toBe(true);
     expect(next.tools?.web?.search?.provider).toBe('doubao');
     expect(next.tools?.web?.search?.maxResults).toBe(8);
-    expect(next.tools?.web?.search?.doubao?.apiKey).toBe('sk-jurismind');
-    expect(next.tools?.web?.search?.doubao?.baseUrl).toBe('http://101.132.245.215:3001/v1');
-    expect(next.tools?.web?.search?.doubao?.model).toBe('doubao');
+    expect(next.tools?.web?.search?.doubao).toBeUndefined();
+    expect(next.plugins?.entries?.['jurismind-doubao']?.enabled).toBe(true);
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.apiKey).toBe('sk-jurismind');
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.baseUrl).toBe('http://101.132.245.215:3001/v1');
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.model).toBe('doubao');
   });
 
   it('syncJurismindWebSearchConfig migrates the legacy perplexity compatibility config', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-web-search-'));
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
     tempHomes.push(homeDir);
 
     const openclawDir = join(homeDir, '.openclaw');
@@ -123,10 +153,19 @@ describe('openclaw auth - jurismind web search sync', () => {
             provider?: string;
             maxResults?: number;
             perplexity?: unknown;
-            doubao?: {
-              apiKey?: string;
-              baseUrl?: string;
-              model?: string;
+            doubao?: unknown;
+          };
+        };
+      };
+      plugins?: {
+        entries?: {
+          'jurismind-doubao'?: {
+            config?: {
+              webSearch?: {
+                apiKey?: string;
+                baseUrl?: string;
+                model?: string;
+              };
             };
           };
         };
@@ -137,13 +176,14 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.tools?.web?.search?.provider).toBe('doubao');
     expect(next.tools?.web?.search?.maxResults).toBe(4);
     expect(next.tools?.web?.search?.perplexity).toBeUndefined();
-    expect(next.tools?.web?.search?.doubao?.apiKey).toBe('sk-jurismind');
-    expect(next.tools?.web?.search?.doubao?.baseUrl).toBe('http://101.132.245.215:3001/v1');
-    expect(next.tools?.web?.search?.doubao?.model).toBe('doubao');
+    expect(next.tools?.web?.search?.doubao).toBeUndefined();
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.apiKey).toBe('sk-jurismind');
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.baseUrl).toBe('http://101.132.245.215:3001/v1');
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.model).toBe('doubao');
   });
 
   it('clearJurismindWebSearchConfig removes managed doubao transport config and disables search', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-web-search-'));
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
     tempHomes.push(homeDir);
 
     const openclawDir = join(homeDir, '.openclaw');
@@ -189,6 +229,16 @@ describe('openclaw auth - jurismind web search sync', () => {
           };
         };
       };
+      plugins?: {
+        entries?: {
+          'jurismind-doubao'?: {
+            enabled?: boolean;
+            config?: {
+              webSearch?: unknown;
+            };
+          };
+        };
+      };
     };
 
     expect(changed).toBe(true);
@@ -197,5 +247,291 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.tools?.web?.search?.maxResults).toBe(6);
     expect(next.tools?.web?.search?.doubao).toBeUndefined();
     expect(next.tools?.web?.search?.gemini?.model).toBe('gemini-2.5-flash');
+    expect(next.plugins?.entries?.['jurismind-doubao']?.enabled).toBe(true);
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch).toBeUndefined();
+  });
+
+  it('sanitizeOpenClawConfig migrates legacy jurismind doubao search config into plugin config', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          tools: {
+            web: {
+              search: {
+                enabled: true,
+                provider: 'doubao',
+                maxResults: 5,
+                doubao: {
+                  apiKey: 'sk-legacy-jurismind',
+                  baseUrl: 'http://101.132.245.215:3001/v1',
+                  model: 'doubao',
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    mod.sanitizeOpenClawConfig();
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      tools?: {
+        web?: {
+          search?: {
+            enabled?: boolean;
+            provider?: string;
+            maxResults?: number;
+            doubao?: unknown;
+          };
+        };
+      };
+      plugins?: {
+        entries?: {
+          'jurismind-doubao'?: {
+            enabled?: boolean;
+            config?: {
+              webSearch?: {
+                apiKey?: string;
+                baseUrl?: string;
+                model?: string;
+              };
+            };
+          };
+        };
+      };
+    };
+
+    expect(next.tools?.web?.search?.enabled).toBe(true);
+    expect(next.tools?.web?.search?.provider).toBe('doubao');
+    expect(next.tools?.web?.search?.maxResults).toBe(5);
+    expect(next.tools?.web?.search?.doubao).toBeUndefined();
+    expect(next.plugins?.entries?.['jurismind-doubao']?.enabled).toBe(true);
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.apiKey).toBe('sk-legacy-jurismind');
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.baseUrl).toBe('http://101.132.245.215:3001/v1');
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.model).toBe('doubao');
+  });
+
+  it('sanitizeOpenClawConfig removes deprecated dingtalk and qqbot channel remnants', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          channels: {
+            qqbot: {
+              enabled: true,
+              appId: 'legacy-qq',
+            },
+            dingtalk: {
+              enabled: true,
+              appSecret: 'legacy-ding',
+            },
+            telegram: {
+              enabled: true,
+              token: 'keep-me',
+            },
+          },
+          bindings: [
+            {
+              agentId: 'lawclaw-main',
+              match: { channel: 'qqbot', accountId: '*' },
+            },
+            {
+              agentId: 'lawclaw-main',
+              match: { channel: 'dingtalk', accountId: '*' },
+            },
+            {
+              agentId: 'lawclaw-main',
+              match: { channel: 'telegram', accountId: '*' },
+            },
+          ],
+          plugins: {
+            allow: ['qqbot', 'openclaw-qqbot', 'dingtalk', 'custom-plugin'],
+            entries: {
+              qqbot: { enabled: true },
+              'openclaw-qqbot': { enabled: true },
+              dingtalk: { enabled: true },
+              'custom-plugin': { enabled: true },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    mod.sanitizeOpenClawConfig();
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      channels?: Record<string, { enabled?: boolean; token?: string }>;
+      bindings?: Array<{
+        agentId?: string;
+        match?: {
+          channel?: string;
+          accountId?: string;
+        };
+      }>;
+      plugins?: {
+        allow?: string[];
+        entries?: Record<string, { enabled?: boolean }>;
+      };
+    };
+
+    expect(next.channels?.qqbot).toBeUndefined();
+    expect(next.channels?.dingtalk).toBeUndefined();
+    expect(next.channels?.telegram?.token).toBe('keep-me');
+    expect(next.bindings?.map((binding) => binding.match?.channel)).toEqual(['telegram']);
+    expect(next.plugins?.entries?.qqbot).toBeUndefined();
+    expect(next.plugins?.entries?.['openclaw-qqbot']).toBeUndefined();
+    expect(next.plugins?.entries?.dingtalk).toBeUndefined();
+    expect(next.plugins?.entries?.['custom-plugin']?.enabled).toBe(true);
+    expect(next.plugins?.allow).not.toContain('qqbot');
+    expect(next.plugins?.allow).not.toContain('openclaw-qqbot');
+    expect(next.plugins?.allow).not.toContain('dingtalk');
+    expect(next.plugins?.allow).toContain('custom-plugin');
+  });
+
+  it('sanitizeOpenClawConfig migrates legacy moonshot kimi search config into plugin config', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          models: {
+            providers: {
+              moonshot: {
+                baseUrl: 'https://api.moonshot.cn/v1',
+                api: 'openai-completions',
+              },
+            },
+          },
+          tools: {
+            web: {
+              search: {
+                kimi: {
+                  apiKey: 'stale-inline-key',
+                  baseUrl: 'https://api.moonshot.cn/v1',
+                  model: 'kimi-k2.5',
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    mod.sanitizeOpenClawConfig();
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      tools?: {
+        web?: {
+          search?: {
+            kimi?: unknown;
+          };
+        };
+      };
+      plugins?: {
+        entries?: {
+          moonshot?: {
+            config?: {
+              webSearch?: {
+                apiKey?: string;
+                baseUrl?: string;
+                model?: string;
+              };
+            };
+          };
+        };
+      };
+    };
+
+    expect(next.tools?.web?.search?.kimi).toBeUndefined();
+    expect(next.plugins?.entries?.moonshot?.config?.webSearch?.apiKey).toBeUndefined();
+    expect(next.plugins?.entries?.moonshot?.config?.webSearch?.baseUrl).toBe('https://api.moonshot.cn/v1');
+    expect(next.plugins?.entries?.moonshot?.config?.webSearch?.model).toBe('kimi-k2.5');
+  });
+
+  it('syncProviderConfigToOpenClaw keeps moonshot web search config under plugins.entries', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          plugins: ['/tmp/custom-plugin.js'],
+          models: {
+            providers: {},
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    await mod.syncProviderConfigToOpenClaw('moonshot', 'kimi-k2.5', {
+      baseUrl: 'https://api.moonshot.cn/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'MOONSHOT_API_KEY',
+    });
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      tools?: {
+        web?: {
+          search?: {
+            kimi?: unknown;
+          };
+        };
+      };
+      plugins?: {
+        load?: string[];
+        entries?: {
+          moonshot?: {
+            config?: {
+              webSearch?: {
+                baseUrl?: string;
+              };
+            };
+          };
+        };
+      };
+    };
+
+    expect(next.tools?.web?.search?.kimi).toBeUndefined();
+    expect(next.plugins?.load).toEqual(['/tmp/custom-plugin.js']);
+    expect(next.plugins?.entries?.moonshot?.config?.webSearch?.baseUrl).toBe('https://api.moonshot.cn/v1');
   });
 });

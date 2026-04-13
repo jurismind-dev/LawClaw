@@ -18,7 +18,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'siliconflow',
   'minimax-portal',
   'minimax-portal-cn',
-  'qwen-portal',
+  'modelstudio',
   'ollama',
 ] as const;
 export type BuiltinProviderType = (typeof BUILTIN_PROVIDER_TYPES)[number];
@@ -75,7 +75,7 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   },
   openai: {
     envVar: 'OPENAI_API_KEY',
-    defaultModel: 'openai/gpt-5.2',
+    defaultModel: 'openai/gpt-5.4',
     providerConfig: {
       baseUrl: 'https://api.openai.com/v1',
       api: 'openai-responses',
@@ -84,7 +84,7 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   },
   google: {
     envVar: 'GEMINI_API_KEY',
-    defaultModel: 'google/gemini-3.1-pro-preview',
+    defaultModel: 'google/gemini-3-pro-preview',
     // google is built-in to OpenClaw's pi-ai catalog, no providerConfig needed.
     // Adding models.providers.google overrides the built-in and can break Gemini.
   },
@@ -140,7 +140,7 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   },
   'minimax-portal': {
     envVar: 'MINIMAX_API_KEY',
-    defaultModel: 'minimax-portal/MiniMax-M2.5',
+    defaultModel: 'minimax-portal/MiniMax-M2.7',
     providerConfig: {
       baseUrl: 'https://api.minimax.io/anthropic',
       api: 'anthropic-messages',
@@ -149,20 +149,20 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   },
   'minimax-portal-cn': {
     envVar: 'MINIMAX_CN_API_KEY',
-    defaultModel: 'minimax-portal/MiniMax-M2.5',
+    defaultModel: 'minimax-portal/MiniMax-M2.7',
     providerConfig: {
       baseUrl: 'https://api.minimaxi.com/anthropic',
       api: 'anthropic-messages',
       apiKeyEnv: 'MINIMAX_CN_API_KEY',
     },
   },
-  'qwen-portal': {
-    envVar: 'QWEN_API_KEY',
-    defaultModel: 'qwen-portal/coder-model',
+  modelstudio: {
+    envVar: 'MODELSTUDIO_API_KEY',
+    defaultModel: 'modelstudio/qwen3.5-plus',
     providerConfig: {
-      baseUrl: 'https://portal.qwen.ai/v1',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
       api: 'openai-completions',
-      apiKeyEnv: 'QWEN_API_KEY',
+      apiKeyEnv: 'MODELSTUDIO_API_KEY',
     },
   },
   custom: {

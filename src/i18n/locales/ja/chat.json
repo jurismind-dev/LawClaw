@@ -14,6 +14,7 @@
         "creativeTasksDesc": "ライティング、ブレスト、アイデア"
     },
     "inputPlaceholder": "契約書や案件資料をワークスペースに取り込むと、すぐに処理を開始できます。",
+    "inputGenerating": "生成中{{dots}}",
     "inputDisabledPlaceholder": "ゲートウェイ未接続...",
     "assistantNotice": "この内容はAIにより生成されています。十分にご確認ください。",
     "noLogs": "（ログはまだありません）",
@@ -33,6 +34,25 @@
         "targetChip": "{{agent}} に送信",
         "send": "送信",
         "stop": "停止"
+    },
+    "executionGraph": {
+        "eyebrow": "タスクフロー",
+        "title": "今回の実行トレース",
+        "branchLabel": "分岐",
+        "userTriggerHint": "この質問へ移動",
+        "agentRun": "{{agent}} を実行中",
+        "agentReplyHint": "この返信へ移動",
+        "status": {
+            "active": "進行中",
+            "previous": "完了済み"
+        }
+    },
+    "taskPanel": {
+        "stepStatus": {
+            "running": "実行中",
+            "completed": "完了",
+            "error": "エラー"
+        }
     },
     "historyBuckets": {
         "today": "今日",

@@ -27,6 +27,11 @@ const JURISMIND_LEGACY_MODELS = new Set([
   'kimi-k2.5',
 ]);
 const LAWCLAW_AGENT_ID = 'lawclaw-main';
+const LEGACY_QWEN_PROVIDER_TYPE = 'qwen-portal';
+const MODELSTUDIO_PROVIDER_TYPE = 'modelstudio';
+const MODELSTUDIO_PROVIDER_LABEL = 'Model Studio';
+const MODELSTUDIO_DEFAULT_BASE_URL = 'https://coding.dashscope.aliyuncs.com/v1';
+const MODELSTUDIO_DEFAULT_MODEL = 'qwen3.5-plus';
 
 export interface ProviderMigrationSummary {
   touchedProviders: number;
@@ -124,6 +129,40 @@ function normalizeJurismindProvider(
     next: {
       ...provider,
       model: JURISMIND_MANAGED_MODEL,
+      updatedAt: nowIso,
+    },
+  };
+}
+
+function normalizeQwenPortalProvider(
+  provider: ProviderConfig,
+  nowIso: string
+): { changed: boolean; next: ProviderConfig } {
+  if (provider.type !== LEGACY_QWEN_PROVIDER_TYPE) {
+    return { changed: false, next: provider };
+  }
+
+  const rawModel = provider.model?.trim();
+  let nextModel = rawModel;
+  if (!nextModel || nextModel === 'coder-model' || nextModel.startsWith('qwen-portal/')) {
+    nextModel = MODELSTUDIO_DEFAULT_MODEL;
+  } else if (nextModel.startsWith('modelstudio/')) {
+    nextModel = nextModel.slice('modelstudio/'.length);
+  }
+
+  const rawBaseUrl = provider.baseUrl?.trim();
+  const nextBaseUrl = !rawBaseUrl || rawBaseUrl.includes('portal.qwen.ai')
+    ? MODELSTUDIO_DEFAULT_BASE_URL
+    : rawBaseUrl;
+
+  return {
+    changed: true,
+    next: {
+      ...provider,
+      type: MODELSTUDIO_PROVIDER_TYPE,
+      name: MODELSTUDIO_PROVIDER_LABEL,
+      baseUrl: nextBaseUrl,
+      model: nextModel,
       updatedAt: nowIso,
     },
   };
@@ -245,6 +284,65 @@ export async function migrateJurismindProviderModel(
   };
 }
 
+export async function migrateQwenPortalProvider(
+  deps: ProviderMigrationDependencies = defaultDeps
+): Promise<ProviderMigrationSummary> {
+  const providers = await deps.getAllProviders();
+  const targetProviders = providers.filter((provider) => provider.type === LEGACY_QWEN_PROVIDER_TYPE);
+
+  let normalizedProviders = 0;
+  let syncedKeys = 0;
+  let rewroteDefaultModel = false;
+  const nowIso = new Date().toISOString();
+
+  for (const provider of targetProviders) {
+    const { changed, next } = normalizeQwenPortalProvider(provider, nowIso);
+    if (changed) {
+      await deps.saveProvider(next);
+      normalizedProviders += 1;
+    }
+
+    const apiKey = await deps.getApiKey(provider.id);
+    if (apiKey?.trim()) {
+      deps.saveProviderKeyToOpenClaw(MODELSTUDIO_PROVIDER_TYPE, apiKey.trim());
+      deps.saveProviderKeyToOpenClaw(MODELSTUDIO_PROVIDER_TYPE, apiKey.trim(), LAWCLAW_AGENT_ID);
+      syncedKeys += 1;
+    }
+  }
+
+  const defaultProviderId = await deps.getDefaultProvider();
+  if (defaultProviderId) {
+    const defaultProvider = providers.find((provider) => provider.id === defaultProviderId);
+    const currentPrimary = deps.getOpenClawAgentModelPrimary(LAWCLAW_AGENT_ID);
+    if (
+      defaultProvider?.type === LEGACY_QWEN_PROVIDER_TYPE
+      && (
+        !currentPrimary
+        || currentPrimary === 'coder-model'
+        || currentPrimary.startsWith('qwen-portal/')
+      )
+    ) {
+      deps.setOpenClawAgentModel(
+        LAWCLAW_AGENT_ID,
+        MODELSTUDIO_PROVIDER_TYPE,
+        MODELSTUDIO_DEFAULT_MODEL
+      );
+      rewroteDefaultModel = true;
+    }
+  }
+
+  return {
+    touchedProviders: targetProviders.length,
+    normalizedProviders,
+    syncedKeys,
+    cleanedLegacyProfiles: false,
+    rewroteDefaultModel,
+    removedStaleProviderEntries: deps.cleanupOpenClawProviderEntries(LEGACY_QWEN_PROVIDER_TYPE),
+    cleanedInvalidApiKeyConfig: false,
+    cleanedAuthProfileEncoding: false,
+  };
+}
+
 export async function runProviderStartupMigration(): Promise<void> {
   try {
     const moonshotResult = await migrateMoonshotCodePlanProvider();
@@ -256,6 +354,17 @@ export async function runProviderStartupMigration(): Promise<void> {
       logger.info('Kimi Coding provider migration completed:', moonshotResult);
     } else {
       logger.debug('Kimi Coding provider migration skipped (no legacy data found).');
+    }
+
+    const qwenResult = await migrateQwenPortalProvider();
+    if (
+      qwenResult.touchedProviders > 0
+      || qwenResult.rewroteDefaultModel
+      || qwenResult.removedStaleProviderEntries
+    ) {
+      logger.info('Qwen Portal provider migration completed:', qwenResult);
+    } else {
+      logger.debug('Qwen Portal provider migration skipped (no legacy data found).');
     }
 
     const jurismindResult = await migrateJurismindProviderModel();

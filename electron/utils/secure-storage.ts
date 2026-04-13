@@ -45,6 +45,7 @@ export interface ProviderConfig {
     | 'siliconflow'
     | 'minimax-portal'
     | 'minimax-portal-cn'
+    | 'modelstudio'
     | 'qwen-portal'
     | 'ollama'
     | 'custom';

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   migrateJurismindProviderModel,
   migrateMoonshotCodePlanProvider,
+  migrateQwenPortalProvider,
 } from '@electron/utils/provider-migration';
 
 describe('provider migration', () => {
@@ -230,5 +231,65 @@ describe('provider migration', () => {
     });
     expect(saveProvider).not.toHaveBeenCalled();
     expect(setOpenClawAgentModel).not.toHaveBeenCalled();
+  });
+
+  it('migrates qwen portal provider metadata to modelstudio semantics and rewrites the managed lawclaw model', async () => {
+    const savedProviders: Array<Record<string, unknown>> = [];
+    const saveProvider = vi.fn(async (config: Record<string, unknown>) => {
+      savedProviders.push(config);
+    });
+    const saveProviderKeyToOpenClaw = vi.fn();
+    const setOpenClawAgentModel = vi.fn();
+
+    const result = await migrateQwenPortalProvider({
+      getAllProviders: vi.fn(async () => [
+        {
+          id: 'qwen-portal',
+          type: 'qwen-portal' as const,
+          name: 'Qwen',
+          baseUrl: 'https://portal.qwen.ai/v1',
+          model: 'qwen-portal/coder-model',
+          enabled: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ]),
+      getApiKey: vi.fn(async () => 'sk-modelstudio'),
+      saveProvider,
+      getDefaultProvider: vi.fn(async () => 'qwen-portal'),
+      saveProviderKeyToOpenClaw,
+      cleanupLegacyProviderProfiles: vi.fn(() => false),
+      setOpenClawAgentModel,
+      cleanupOpenClawProviderEntries: vi.fn(() => true),
+      getOpenClawAgentModelPrimary: vi.fn(() => 'qwen-portal/coder-model'),
+      cleanupOpenClawProviderApiKeyConfig: vi.fn(() => false),
+      cleanupOpenClawAuthProfilesEncoding: vi.fn(() => false),
+    });
+
+    expect(result).toMatchObject({
+      touchedProviders: 1,
+      normalizedProviders: 1,
+      syncedKeys: 1,
+      rewroteDefaultModel: true,
+      removedStaleProviderEntries: true,
+    });
+    expect(savedProviders[0]).toMatchObject({
+      id: 'qwen-portal',
+      type: 'modelstudio',
+      name: 'Model Studio',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+      model: 'qwen3.5-plus',
+    });
+    expect(saveProviderKeyToOpenClaw).toHaveBeenCalledWith('modelstudio', 'sk-modelstudio');
+    expect(saveProviderKeyToOpenClaw).toHaveBeenCalledWith(
+      'modelstudio',
+      'sk-modelstudio',
+      'lawclaw-main'
+    );
+    expect(setOpenClawAgentModel).toHaveBeenCalledWith(
+      'lawclaw-main',
+      'modelstudio',
+      'qwen3.5-plus'
+    );
   });
 });

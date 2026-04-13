@@ -5,7 +5,7 @@
  *
  * Build a self-contained mirror of OpenClaw third-party plugins for packaging.
  * Current plugins:
- *   - @soimy/dingtalk -> build/openclaw-plugins/dingtalk
+ *   - none
  *
  * The output plugin directory contains:
  *   - plugin source files (index.ts, openclaw.plugin.json, package.json, ...)
@@ -40,9 +40,7 @@ function realpathSafe(p) {
   }
 }
 
-const PLUGINS = [
-  { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
-];
+const PLUGINS = [];
 
 function getVirtualStoreNodeModules(realPkgPath) {
   let dir = realPkgPath;

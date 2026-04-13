@@ -740,8 +740,10 @@ function registerGatewayHandlers(
 
       logger.info(`[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", attachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`);
 
-      // Use a longer timeout when images are present (120s vs default 30s)
-      const timeoutMs = imageAttachments.length > 0 ? 120000 : 30000;
+      // Attachment-assisted chats often keep the RPC open until the whole
+      // tool-use flow completes, so align them with the renderer's longer
+      // chat.send timeout instead of falling back to the default 30s window.
+      const timeoutMs = params.media && params.media.length > 0 ? 120000 : 30000;
       const result = await gatewayManager.rpc('chat.send', rpcParams, timeoutMs);
       logger.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
       return { success: true, result };

@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtimeMocks = vi.hoisted(() => ({
+  sanitizeOpenClawConfig: vi.fn(() => false),
   spawn: vi.fn(),
   syncGatewayTokenToConfig: vi.fn(),
   syncBrowserConfigToOpenClaw: vi.fn(),
@@ -90,6 +91,7 @@ vi.mock('@electron/utils/provider-registry', () => ({
 }));
 
 vi.mock('@electron/utils/openclaw-auth', () => ({
+  sanitizeOpenClawConfig: runtimeMocks.sanitizeOpenClawConfig,
   syncGatewayTokenToConfig: runtimeMocks.syncGatewayTokenToConfig,
   syncBrowserConfigToOpenClaw: runtimeMocks.syncBrowserConfigToOpenClaw,
   syncJurismindWebSearchConfig: runtimeMocks.syncJurismindWebSearchConfig,
@@ -173,6 +175,7 @@ describe('gateway start pre-sync', () => {
     vi.clearAllMocks();
     electronMocks.app.isPackaged = false;
     runtimeMocks.spawn.mockImplementation(() => createFakeChildProcess());
+    runtimeMocks.sanitizeOpenClawConfig.mockReturnValue(false);
     runtimeMocks.syncGatewayTokenToConfig.mockResolvedValue(undefined);
     runtimeMocks.syncBrowserConfigToOpenClaw.mockResolvedValue(undefined);
     runtimeMocks.syncJurismindWebSearchConfig.mockImplementation(() => undefined);
@@ -197,6 +200,7 @@ describe('gateway start pre-sync', () => {
 
     await (manager as unknown as { startProcess: () => Promise<void> }).startProcess();
 
+    expect(runtimeMocks.sanitizeOpenClawConfig).toHaveBeenCalledTimes(1);
     expect(runtimeMocks.syncGatewayTokenToConfig).toHaveBeenCalledWith('gw-token');
     expect(runtimeMocks.syncBrowserConfigToOpenClaw).toHaveBeenCalledTimes(1);
     expect(runtimeMocks.spawn).toHaveBeenCalledTimes(1);

@@ -90,7 +90,7 @@ LawClaw 是一款围绕中国法律服务场景定制的桌面 AI Agent 产品�
 - `siliconflow`
 - `minimax-portal`
 - `minimax-portal-cn`
-- `qwen-portal`
+- `modelstudio`
 - `ollama`
 - `custom`
 

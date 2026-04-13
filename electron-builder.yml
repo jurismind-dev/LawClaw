@@ -40,7 +40,7 @@ extraResources:
   # Runtime dependency for connector-runtime/index.js
   - from: node_modules/ws/
     to: connector-runtime/node_modules/ws/
-  # NOTE: OpenClaw plugin mirrors (dingtalk, etc.) are bundled by the
+  # NOTE: OpenClaw plugin mirrors are bundled by the
   # afterPack hook (after-pack.cjs) directly from node_modules, so they
   # don't need an extraResources entry here.
 

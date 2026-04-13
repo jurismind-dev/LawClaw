@@ -14,6 +14,7 @@
         "creativeTasksDesc": "合同起草与审查、法律意见书、函件、脱敏翻译…"
     },
     "inputPlaceholder": "将合同或案件材料导入工作区，即可开始处理",
+    "inputGenerating": "生成中{{dots}}",
     "inputDisabledPlaceholder": "网关未连接...",
     "assistantNotice": "本地化运行，内容由AI生成，请仔细甄别",
     "noLogs": "（暂无日志）",
@@ -33,6 +34,25 @@
         "targetChip": "发送给 {{agent}}",
         "send": "发送",
         "stop": "停止"
+    },
+    "executionGraph": {
+        "eyebrow": "任务过程",
+        "title": "本轮执行轨迹",
+        "branchLabel": "分支",
+        "userTriggerHint": "定位到本轮用户提问",
+        "agentRun": "{{agent}} 正在执行",
+        "agentReplyHint": "定位到本轮回复",
+        "status": {
+            "active": "进行中",
+            "previous": "已完成"
+        }
+    },
+    "taskPanel": {
+        "stepStatus": {
+            "running": "运行中",
+            "completed": "已完成",
+            "error": "错误"
+        }
     },
     "historyBuckets": {
         "today": "今天",

@@ -229,4 +229,46 @@ describe('uv managed python setup', () => {
     expect(childProcessMocks.spawn).toHaveBeenCalledTimes(1);
     expect(childProcessMocks.spawn.mock.calls[0]?.[1]).toEqual(['python', 'find', '3.12', '--managed-python']);
   });
+
+  it('repairs stale uv Python link paths and retries once on Windows minor-link corruption', async () => {
+    setPlatform('win32');
+    pathMocks.getClawXConfigDir.mockReturnValue('C:\\Users\\test\\.LawClaw');
+    const managedPython = 'C:\\Users\\test\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe';
+    const managedVenvRoot = join('C:\\Users\\test\\.LawClaw', 'support', 'managed-python', '3.12', 'win32');
+    const managedVenvPython = join(managedVenvRoot, 'Scripts', 'python.exe');
+    let venvExists = false;
+    fsMocks.existsSync.mockImplementation((value) => {
+      if (value === managedVenvPython) {
+        const current = venvExists;
+        venvExists = true;
+        return current;
+      }
+      return true;
+    });
+
+    queueSpawnResult({
+      code: 2,
+      stderr:
+        'error: Failed to create Python minor version link directory at C:\\Users\\test\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none from C:\\Users\\test\\AppData\\Roaming\\uv\\python\\cpython-3.12-windows-x86_64-none\nCaused by: The file or directory is not a reparse point. (os error 4390)',
+    });
+    queueSpawnResult({});
+    queueSpawnResult({ stdout: `${managedPython}\r\n` });
+    queueSpawnResult({});
+    queueSpawnResult({});
+    queueSpawnResult({});
+
+    const mod = await import('@electron/utils/uv-setup');
+    await mod.setupManagedPython();
+
+    expect(fsMocks.rmSync).toHaveBeenCalledWith('C:\\Users\\test\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none', {
+      recursive: true,
+      force: true,
+    });
+    expect(fsMocks.rmSync).toHaveBeenCalledWith('C:\\Users\\test\\AppData\\Roaming\\uv\\python\\cpython-3.12-windows-x86_64-none', {
+      recursive: true,
+      force: true,
+    });
+    expect(childProcessMocks.spawn.mock.calls[0]?.[1]).toEqual(['python', 'install', '3.12']);
+    expect(childProcessMocks.spawn.mock.calls[1]?.[1]).toEqual(['python', 'install', '3.12']);
+  });
 });

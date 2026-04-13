@@ -1,7 +1,7 @@
 /**
  * Device OAuth Manager
  *
- * Delegates MiniMax and Qwen OAuth to the OpenClaw extension oauth.ts functions
+ * Delegates MiniMax OAuth to the OpenClaw extension oauth.ts functions
  * imported directly from the bundled openclaw package at build time.
  *
  * This approach:
@@ -26,14 +26,10 @@ import {
     loginMiniMaxPortalOAuth,
     type MiniMaxOAuthToken,
     type MiniMaxRegion,
-} from '../../node_modules/openclaw/extensions/minimax-portal-auth/oauth';
-import {
-    loginQwenPortalOAuth,
-    type QwenOAuthToken,
-} from '../../node_modules/openclaw/extensions/qwen-portal-auth/oauth';
+} from '../../node_modules/openclaw/dist/extensions/minimax/oauth.js';
 import { saveOAuthTokenToOpenClaw } from './openclaw-auth';
 
-export type OAuthProviderType = 'minimax-portal' | 'minimax-portal-cn' | 'qwen-portal';
+export type OAuthProviderType = 'minimax-portal' | 'minimax-portal-cn';
 export type { MiniMaxRegion };
 
 // ─────────────────────────────────────────────────────────────
@@ -62,8 +58,6 @@ class DeviceOAuthManager extends EventEmitter {
             if (provider === 'minimax-portal' || provider === 'minimax-portal-cn') {
                 const actualRegion = provider === 'minimax-portal-cn' ? 'cn' : (region || 'global');
                 await this.runMiniMaxFlow(actualRegion, provider);
-            } else if (provider === 'qwen-portal') {
-                await this.runQwenFlow();
             } else {
                 throw new Error(`Unsupported OAuth provider type: ${provider}`);
             }
@@ -138,51 +132,6 @@ class DeviceOAuthManager extends EventEmitter {
     }
 
     // ─────────────────────────────────────────────────────────
-    // Qwen flow
-    // ─────────────────────────────────────────────────────────
-
-    private async runQwenFlow(): Promise<void> {
-        if (!isOpenClawPresent()) {
-            throw new Error('OpenClaw package not found');
-        }
-        const provider = this.activeProvider!;
-
-        const token: QwenOAuthToken = await loginQwenPortalOAuth({
-            openUrl: async (url) => {
-                logger.info(`[DeviceOAuth] Qwen opening browser: ${url}`);
-                shell.openExternal(url).catch((err) =>
-                    logger.warn(`[DeviceOAuth] Failed to open browser:`, err)
-                );
-            },
-            note: async (message, _title) => {
-                if (!this.active) return;
-                const { verificationUri, userCode } = this.parseNote(message);
-                if (verificationUri && userCode) {
-                    this.emitCode({ provider, verificationUri, userCode, expiresIn: 300 });
-                } else {
-                    logger.info(`[DeviceOAuth] Qwen note: ${message}`);
-                }
-            },
-            progress: {
-                update: (msg) => logger.info(`[DeviceOAuth] Qwen progress: ${msg}`),
-                stop: (msg) => logger.info(`[DeviceOAuth] Qwen progress done: ${msg ?? ''}`),
-            },
-        });
-
-        if (!this.active) return;
-
-        await this.onSuccess('qwen-portal', {
-            access: token.access,
-            refresh: token.refresh,
-            expires: token.expires,
-            // Qwen returns a per-account resourceUrl as the API base URL
-            resourceUrl: token.resourceUrl,
-            // Qwen uses OpenAI Completions API format
-            api: 'openai-completions',
-        });
-    }
-
-    // ─────────────────────────────────────────────────────────
     // Success handler
     // ─────────────────────────────────────────────────────────
 
@@ -203,7 +152,7 @@ class DeviceOAuthManager extends EventEmitter {
         //    We save both MiniMax providers to the generic "minimax-portal" profile
         //    so OpenClaw's gateway auto-refresher knows how to find it.
         try {
-            const tokenProviderId = providerType.startsWith('minimax-portal') ? 'minimax-portal' : providerType;
+            const tokenProviderId = 'minimax-portal';
             await saveOAuthTokenToOpenClaw(tokenProviderId, {
                 access: token.access,
                 refresh: token.refresh,
@@ -218,7 +167,7 @@ class DeviceOAuthManager extends EventEmitter {
         //    LawClaw should switch to it, and OpenClaw global defaults stay untouched.
         const defaultBaseUrl = providerType === 'minimax-portal'
             ? 'https://api.minimax.io/anthropic'
-            : (providerType === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
+            : 'https://api.minimaxi.com/anthropic';
 
         let baseUrl = token.resourceUrl || defaultBaseUrl;
 
@@ -230,11 +179,6 @@ class DeviceOAuthManager extends EventEmitter {
         // Ensure the base URL ends with /anthropic
         if (providerType.startsWith('minimax-portal') && baseUrl) {
             baseUrl = baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
-        } else if (providerType === 'qwen-portal' && baseUrl) {
-            // Ensure Qwen API gets /v1 at the end
-            if (!baseUrl.endsWith('/v1')) {
-                baseUrl = baseUrl.replace(/\/$/, '') + '/v1';
-            }
         }
 
 
@@ -243,7 +187,6 @@ class DeviceOAuthManager extends EventEmitter {
         const nameMap: Record<OAuthProviderType, string> = {
             'minimax-portal': 'MiniMax (Global)',
             'minimax-portal-cn': 'MiniMax (CN)',
-            'qwen-portal': 'Qwen',
         };
         const providerConfig: ProviderConfig = {
             id: providerType,

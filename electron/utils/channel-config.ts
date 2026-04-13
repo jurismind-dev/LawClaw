@@ -22,9 +22,24 @@ import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
 const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
+const REMOVED_CHANNEL_PLUGIN_IDS = new Set(['dingtalk', 'qqbot', 'openclaw-qqbot']);
 
 // Channels that are managed as plugins (config goes under plugins.entries, not channels)
-const PLUGIN_CHANNELS = ['whatsapp'];
+const PLUGIN_CHANNELS: string[] = [];
+const LEGACY_BUILTIN_CHANNEL_PLUGIN_IDS = new Set(['whatsapp']);
+const BUILTIN_CHANNEL_IDS = new Set([
+    'discord',
+    'telegram',
+    'whatsapp',
+    'slack',
+    'signal',
+    'imessage',
+    'matrix',
+    'line',
+    'msteams',
+    'googlechat',
+    'mattermost',
+]);
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -41,6 +56,8 @@ export interface ChannelConfigData {
 
 export interface PluginsConfig {
     entries?: Record<string, ChannelConfigData>;
+    allow?: string[];
+    enabled?: boolean;
     [key: string]: unknown;
 }
 
@@ -77,6 +94,110 @@ function isBindingRule(value: unknown): value is BindingRule {
 
 function normalizeChannelId(channelType: string): string {
     return channelType.trim().toLowerCase();
+}
+
+function removePluginRegistration(config: OpenClawConfig, pluginId: string): boolean {
+    if (!config.plugins) {
+        return false;
+    }
+
+    let modified = false;
+
+    if (config.plugins.entries?.[pluginId]) {
+        delete config.plugins.entries[pluginId];
+        if (Object.keys(config.plugins.entries).length === 0) {
+            delete config.plugins.entries;
+        }
+        modified = true;
+    }
+
+    if (Array.isArray(config.plugins.allow)) {
+        const nextAllow = config.plugins.allow.filter((entry) => entry !== pluginId);
+        if (nextAllow.length !== config.plugins.allow.length) {
+            modified = true;
+        }
+        if (nextAllow.length > 0) {
+            config.plugins.allow = nextAllow;
+        } else {
+            delete config.plugins.allow;
+        }
+    }
+
+    if (config.plugins.enabled !== undefined && !config.plugins.allow?.length && !config.plugins.entries) {
+        delete config.plugins.enabled;
+        modified = true;
+    }
+
+    if (Object.keys(config.plugins).length === 0) {
+        delete config.plugins;
+        modified = true;
+    }
+
+    return modified;
+}
+
+function cleanupLegacyBuiltInChannelPluginRegistration(
+    currentConfig: OpenClawConfig,
+    channelType: string
+): boolean {
+    if (!LEGACY_BUILTIN_CHANNEL_PLUGIN_IDS.has(channelType)) {
+        return false;
+    }
+
+    return removePluginRegistration(currentConfig, channelType);
+}
+
+function listConfiguredBuiltinChannels(
+    currentConfig: OpenClawConfig,
+    additionalChannelIds: string[] = []
+): string[] {
+    const configured = new Set<string>();
+    const channels = currentConfig.channels ?? {};
+
+    for (const [channelId, section] of Object.entries(channels)) {
+        if (!BUILTIN_CHANNEL_IDS.has(channelId)) continue;
+        if (!section || section.enabled === false) continue;
+        if (Object.keys(section).length > 0) {
+            configured.add(channelId);
+        }
+    }
+
+    for (const channelId of additionalChannelIds) {
+        if (BUILTIN_CHANNEL_IDS.has(channelId)) {
+            configured.add(channelId);
+        }
+    }
+
+    return Array.from(configured);
+}
+
+function syncBuiltinChannelsWithPluginAllowlist(
+    currentConfig: OpenClawConfig,
+    additionalBuiltinChannelIds: string[] = []
+): void {
+    const plugins = currentConfig.plugins;
+    if (!plugins || !Array.isArray(plugins.allow)) {
+        return;
+    }
+
+    const configuredBuiltins = new Set(listConfiguredBuiltinChannels(currentConfig, additionalBuiltinChannelIds));
+    const externalPluginIds = plugins.allow.filter(
+        (pluginId) => !BUILTIN_CHANNEL_IDS.has(pluginId) && !REMOVED_CHANNEL_PLUGIN_IDS.has(pluginId)
+    );
+
+    let nextAllow = [...externalPluginIds];
+    if (externalPluginIds.length > 0) {
+        nextAllow = [
+            ...nextAllow,
+            ...Array.from(configuredBuiltins).filter((channelId) => !nextAllow.includes(channelId)),
+        ];
+    }
+
+    if (nextAllow.length > 0) {
+        plugins.allow = nextAllow;
+    } else {
+        delete plugins.allow;
+    }
 }
 
 /**
@@ -205,35 +326,7 @@ export async function saveChannelConfig(
 ): Promise<void> {
     const currentConfig = await readOpenClawConfig();
 
-    // DingTalk is a channel plugin; make sure it's explicitly allowed.
-    // Newer OpenClaw versions may not load non-bundled plugins when allowlist is empty.
-    if (channelType === 'dingtalk') {
-        if (!currentConfig.plugins) {
-            currentConfig.plugins = {};
-        }
-        currentConfig.plugins.enabled = true;
-        const allow = Array.isArray(currentConfig.plugins.allow)
-            ? currentConfig.plugins.allow as string[]
-            : [];
-        if (!allow.includes('dingtalk')) {
-            currentConfig.plugins.allow = [...allow, 'dingtalk'];
-        }
-    }
-
-    // DingTalk is a channel plugin; make sure it's explicitly allowed.
-    // Newer OpenClaw versions may not load non-bundled plugins when allowlist is empty.
-    if (channelType === 'dingtalk') {
-        if (!currentConfig.plugins) {
-            currentConfig.plugins = {};
-        }
-        currentConfig.plugins.enabled = true;
-        const allow = Array.isArray(currentConfig.plugins.allow)
-            ? currentConfig.plugins.allow as string[]
-            : [];
-        if (!allow.includes('dingtalk')) {
-            currentConfig.plugins.allow = [...allow, 'dingtalk'];
-        }
-    }
+    cleanupLegacyBuiltInChannelPluginRegistration(currentConfig, channelType);
 
     // Plugin-based channels (e.g. WhatsApp) go under plugins.entries, not channels
     if (PLUGIN_CHANNELS.includes(channelType)) {
@@ -343,6 +436,8 @@ export async function saveChannelConfig(
         ...transformedConfig,
         enabled: transformedConfig.enabled ?? true,
     };
+
+    syncBuiltinChannelsWithPluginAllowlist(currentConfig, [channelType]);
 
     await writeOpenClawConfig(currentConfig);
     logger.info('Channel config saved', {
@@ -487,9 +582,11 @@ export async function deleteChannelConfig(
     }
 
     const currentConfig = await readOpenClawConfig();
+    cleanupLegacyBuiltInChannelPluginRegistration(currentConfig, channelType);
 
     if (currentConfig.channels?.[channelType]) {
         delete currentConfig.channels[channelType];
+        syncBuiltinChannelsWithPluginAllowlist(currentConfig);
         await writeOpenClawConfig(currentConfig);
         console.log(`Deleted channel config for ${channelType}`);
     } else if (PLUGIN_CHANNELS.includes(channelType)) {
@@ -501,6 +598,7 @@ export async function deleteChannelConfig(
             if (currentConfig.plugins && Object.keys(currentConfig.plugins).length === 0) {
                 delete currentConfig.plugins;
             }
+            syncBuiltinChannelsWithPluginAllowlist(currentConfig);
             await writeOpenClawConfig(currentConfig);
             console.log(`Deleted plugin channel config for ${channelType}`);
         }
@@ -567,6 +665,7 @@ export async function listConfiguredChannels(): Promise<string[]> {
 
 export async function setChannelEnabled(channelType: string, enabled: boolean): Promise<void> {
     const currentConfig = await readOpenClawConfig();
+    cleanupLegacyBuiltInChannelPluginRegistration(currentConfig, channelType);
 
     if (PLUGIN_CHANNELS.includes(channelType)) {
         if (!currentConfig.plugins) currentConfig.plugins = {};
@@ -581,6 +680,7 @@ export async function setChannelEnabled(channelType: string, enabled: boolean): 
     if (!currentConfig.channels) currentConfig.channels = {};
     if (!currentConfig.channels[channelType]) currentConfig.channels[channelType] = {};
     currentConfig.channels[channelType].enabled = enabled;
+    syncBuiltinChannelsWithPluginAllowlist(currentConfig, enabled ? [channelType] : []);
     await writeOpenClawConfig(currentConfig);
     console.log(`Set channel ${channelType} enabled: ${enabled}`);
 }
@@ -591,6 +691,65 @@ export interface ValidationResult {
     valid: boolean;
     errors: string[];
     warnings: string[];
+}
+
+const DOCTOR_PARSER_FALLBACK_HINT =
+    'Doctor output could not be confidently interpreted; falling back to local channel config checks.';
+
+type DoctorValidationParseResult = {
+    errors: string[];
+    warnings: string[];
+    undetermined: boolean;
+};
+
+export function parseDoctorValidationOutput(channelType: string, output: string): DoctorValidationParseResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    const normalizedChannelType = channelType.toLowerCase();
+    const normalizedOutput = output.trim();
+
+    if (!normalizedOutput) {
+        return {
+            errors,
+            warnings: [DOCTOR_PARSER_FALLBACK_HINT],
+            undetermined: true,
+        };
+    }
+
+    const lines = output
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const channelLines = lines.filter((line) => line.toLowerCase().includes(normalizedChannelType));
+    let classifiedCount = 0;
+
+    for (const line of channelLines) {
+        const lowerLine = line.toLowerCase();
+        if (lowerLine.includes('error') || lowerLine.includes('unrecognized key')) {
+            errors.push(line);
+            classifiedCount += 1;
+            continue;
+        }
+        if (lowerLine.includes('warning')) {
+            warnings.push(line);
+            classifiedCount += 1;
+        }
+    }
+
+    if (channelLines.length === 0 || classifiedCount === 0) {
+        warnings.push(DOCTOR_PARSER_FALLBACK_HINT);
+        return {
+            errors,
+            warnings,
+            undetermined: true,
+        };
+    }
+
+    return {
+        errors,
+        warnings,
+        undetermined: false,
+    };
 }
 
 export interface CredentialValidationResult {
@@ -722,6 +881,7 @@ async function validateTelegramCredentials(
 
 export async function validateChannelConfig(channelType: string): Promise<ValidationResult> {
     const { exec } = await import('child_process');
+    const resolvedChannelType = normalizeChannelId(channelType);
 
     const result: ValidationResult = { valid: true, errors: [], warnings: [] };
 
@@ -730,50 +890,57 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
 
         // Run openclaw doctor command to validate config (async to avoid
         // blocking the main thread).
-        const output = await new Promise<string>((resolve, reject) => {
-            exec(
-                `node openclaw.mjs doctor --json 2>&1`,
-                {
-                    cwd: openclawPath,
-                    encoding: 'utf-8',
-                    timeout: 30000,
-                },
-                (err, stdout) => {
-                    if (err) reject(err);
-                    else resolve(stdout);
-                },
-            );
-        });
+        const runDoctor = async (command: string): Promise<string> =>
+            await new Promise<string>((resolve, reject) => {
+                exec(
+                    command,
+                    {
+                        cwd: openclawPath,
+                        encoding: 'utf-8',
+                        timeout: 30000,
+                        windowsHide: true,
+                    },
+                    (err, stdout, stderr) => {
+                        const combined = `${stdout || ''}${stderr || ''}`;
+                        if (err) {
+                            reject(new Error(combined || err.message));
+                            return;
+                        }
+                        resolve(combined);
+                    },
+                );
+            });
 
-        const lines = output.split('\n');
-        for (const line of lines) {
-            const lowerLine = line.toLowerCase();
-            if (lowerLine.includes(channelType) && lowerLine.includes('error')) {
-                result.errors.push(line.trim());
-                result.valid = false;
-            } else if (lowerLine.includes(channelType) && lowerLine.includes('warning')) {
-                result.warnings.push(line.trim());
-            } else if (lowerLine.includes('unrecognized key') && lowerLine.includes(channelType)) {
-                result.errors.push(line.trim());
-                result.valid = false;
-            }
+        const output = await runDoctor(`node openclaw.mjs doctor 2>&1`);
+
+        const parsedDoctor = parseDoctorValidationOutput(resolvedChannelType, output);
+        result.errors.push(...parsedDoctor.errors);
+        result.warnings.push(...parsedDoctor.warnings);
+        if (parsedDoctor.errors.length > 0) {
+            result.valid = false;
+        }
+        if (parsedDoctor.undetermined) {
+            logger.warn('Doctor output parsing fell back to local channel checks', {
+                channelType: resolvedChannelType,
+                hint: DOCTOR_PARSER_FALLBACK_HINT,
+            });
         }
 
         const config = await readOpenClawConfig();
-        if (!config.channels?.[channelType]) {
-            result.errors.push(`Channel ${channelType} is not configured`);
+        if (!config.channels?.[resolvedChannelType]) {
+            result.errors.push(`Channel ${resolvedChannelType} is not configured`);
             result.valid = false;
-        } else if (!config.channels[channelType].enabled) {
-            result.warnings.push(`Channel ${channelType} is disabled`);
+        } else if (!config.channels[resolvedChannelType].enabled) {
+            result.warnings.push(`Channel ${resolvedChannelType} is disabled`);
         }
 
-        if (channelType === 'discord') {
+        if (resolvedChannelType === 'discord') {
             const discordConfig = config.channels?.discord;
             if (!discordConfig?.token) {
                 result.errors.push('Discord: Bot token is required');
                 result.valid = false;
             }
-        } else if (channelType === 'telegram') {
+        } else if (resolvedChannelType === 'telegram') {
             const telegramConfig = config.channels?.telegram;
             if (!telegramConfig?.botToken) {
                 result.errors.push('Telegram: Bot token is required');
@@ -802,10 +969,10 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
         } else {
             console.warn('Doctor command failed:', errorMessage);
             const config = await readOpenClawConfig();
-            if (config.channels?.[channelType]) {
+            if (config.channels?.[resolvedChannelType]) {
                 result.valid = true;
             } else {
-                result.errors.push(`Channel ${channelType} is not configured`);
+                result.errors.push(`Channel ${resolvedChannelType} is not configured`);
                 result.valid = false;
             }
         }

@@ -70,6 +70,7 @@ build/
 .pnpm-store/
 .claude/
 .worktrees/
+.tmp/
 clawapp
 credits-service
 sso-web

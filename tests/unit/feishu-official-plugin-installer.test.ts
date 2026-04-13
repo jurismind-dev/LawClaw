@@ -30,7 +30,7 @@ describe('feishu official plugin installer', () => {
       join(bundledPluginDir, 'package.json'),
       `${JSON.stringify({
         name: '@larksuite/openclaw-lark',
-        version: '2026.3.17',
+        version: '2026.4.7',
         dependencies: {},
       }, null, 2)}\n`,
       'utf-8'
@@ -48,7 +48,7 @@ describe('feishu official plugin installer', () => {
         packages: {
           '': {
             name: '@larksuite/openclaw-lark',
-            version: '2026.3.17',
+            version: '2026.4.7',
             dependencies: {},
           },
           'node_modules/@sinclair/typebox': {

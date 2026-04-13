@@ -1,15 +1,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
 import { join } from 'path';
+
+const mockHomeState = vi.hoisted(() => ({
+  value: process.env.HOME || process.env.USERPROFILE || '/tmp',
+}));
+
+vi.mock('os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('os');
+  const mocked = {
+    ...actual,
+    homedir: () => mockHomeState.value,
+  };
+  return {
+    ...mocked,
+    default: mocked,
+  };
+});
 
 const tempHomes: string[] = [];
 const originalHome = process.env.HOME;
 const originalUserProfile = process.env.USERPROFILE;
 const originalPlatform = process.platform;
+const TEST_TMPDIR = process.env.TMPDIR || '/tmp';
 
 async function loadOpenClawAuthWithHome(homeDir: string) {
   vi.resetModules();
+  mockHomeState.value = homeDir;
   process.env.HOME = homeDir;
   process.env.USERPROFILE = homeDir;
   return import('@electron/utils/openclaw-auth');
@@ -17,6 +34,7 @@ async function loadOpenClawAuthWithHome(homeDir: string) {
 
 afterEach(() => {
   vi.resetModules();
+  mockHomeState.value = originalHome || originalUserProfile || '/tmp';
   process.env.HOME = originalHome;
   process.env.USERPROFILE = originalUserProfile;
   Object.defineProperty(process, 'platform', { value: originalPlatform, writable: true });
@@ -30,7 +48,7 @@ afterEach(() => {
 
 describe('openclaw auth - provider config apiKey markers', () => {
   it('writes OpenClaw auth-profiles.json without a UTF-8 BOM on Windows', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-provider-config-'));
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);
     Object.defineProperty(process, 'platform', { value: 'win32', writable: true });
 
@@ -59,7 +77,7 @@ describe('openclaw auth - provider config apiKey markers', () => {
   });
 
   it('cleanupOpenClawAuthProfilesEncoding strips a Windows UTF-8 BOM without losing keys', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-provider-config-'));
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);
 
     const authDir = join(homeDir, '.openclaw', 'agents', 'lawclaw-main', 'agent');
@@ -88,7 +106,7 @@ describe('openclaw auth - provider config apiKey markers', () => {
   });
 
   it('does not persist unsupported jurismind env markers into models.providers', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-provider-config-'));
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);
 
     const openclawDir = join(homeDir, '.openclaw');
@@ -121,7 +139,7 @@ describe('openclaw auth - provider config apiKey markers', () => {
   });
 
   it('keeps supported openai env markers in models.providers', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-provider-config-'));
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);
 
     const openclawDir = join(homeDir, '.openclaw');
@@ -150,7 +168,7 @@ describe('openclaw auth - provider config apiKey markers', () => {
   });
 
   it('removes stale jurismind env markers when refreshing agent model config', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-provider-config-'));
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);
 
     const openclawDir = join(homeDir, '.openclaw');
@@ -197,7 +215,7 @@ describe('openclaw auth - provider config apiKey markers', () => {
   });
 
   it('cleanupOpenClawProviderApiKeyConfig removes stale jurismind env markers from existing config', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-provider-config-'));
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);
 
     const openclawDir = join(homeDir, '.openclaw');

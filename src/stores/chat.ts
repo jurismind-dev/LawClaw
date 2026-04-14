@@ -15,6 +15,7 @@ export interface AttachedFileMeta {
   fileSize: number;
   preview: string | null;
   filePath?: string;
+  source?: 'user-upload' | 'tool-result' | 'message-ref';
 }
 
 /** Raw message from OpenClaw chat.history */
@@ -391,7 +392,10 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
  * Extract images from a content array (including nested tool_result content).
  * Converts them to AttachedFileMeta entries with preview set to data URL or remote URL.
  */
-function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
+function extractImagesAsAttachedFiles(
+  content: unknown,
+  source: AttachedFileMeta['source'] = 'tool-result',
+): AttachedFileMeta[] {
   if (!Array.isArray(content)) return [];
   const files: AttachedFileMeta[] = [];
 
@@ -408,6 +412,7 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
             mimeType,
             fileSize: 0,
             preview: `data:${mimeType};base64,${src.data}`,
+            source,
           });
         } else if (src.type === 'url' && src.url) {
           files.push({
@@ -415,6 +420,7 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
             mimeType,
             fileSize: 0,
             preview: src.url,
+            source,
           });
         }
       }
@@ -426,12 +432,13 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
           mimeType,
           fileSize: 0,
           preview: `data:${mimeType};base64,${block.data}`,
+          source,
         });
       }
     }
     // Recurse into tool_result content blocks
     if ((block.type === 'tool_result' || block.type === 'toolResult') && block.content) {
-      files.push(...extractImagesAsAttachedFiles(block.content));
+      files.push(...extractImagesAsAttachedFiles(block.content, source));
     }
   }
   return files;
@@ -440,11 +447,14 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
 /**
  * Build an AttachedFileMeta entry for a file ref, using cache if available.
  */
-function makeAttachedFile(ref: { filePath: string; mimeType: string }): AttachedFileMeta {
+function makeAttachedFile(
+  ref: { filePath: string; mimeType: string },
+  source: AttachedFileMeta['source'] = 'tool-result',
+): AttachedFileMeta {
   const cached = _imageCache.get(ref.filePath);
-  if (cached) return { ...cached, filePath: ref.filePath };
+  if (cached) return { ...cached, filePath: ref.filePath, source };
   const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
-  return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath };
+  return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath, source };
 }
 
 /**
@@ -548,7 +558,7 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
       const matchedPath = msg.toolCallId ? toolCallPaths.get(msg.toolCallId) : undefined;
 
       // 1. Image/file content blocks in the structured content array
-      const imageFiles = extractImagesAsAttachedFiles(msg.content);
+      const imageFiles = extractImagesAsAttachedFiles(msg.content, 'tool-result');
       if (matchedPath) {
         for (const f of imageFiles) {
           if (!f.filePath) {
@@ -565,12 +575,12 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
         const mediaRefs = extractMediaRefs(text);
         const mediaRefPaths = new Set(mediaRefs.map(r => r.filePath));
         for (const ref of mediaRefs) {
-          pending.push(makeAttachedFile(ref));
+          pending.push(makeAttachedFile(ref, 'tool-result'));
         }
         // 3. Raw file paths in tool result text (documents, audio, video, etc.)
         for (const ref of extractRawFilePaths(text)) {
           if (!mediaRefPaths.has(ref.filePath)) {
-            pending.push(makeAttachedFile(ref));
+            pending.push(makeAttachedFile(ref, 'tool-result'));
           }
         }
       }
@@ -647,9 +657,16 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
 
     const files: AttachedFileMeta[] = allRefs.map(ref => {
       const cached = _imageCache.get(ref.filePath);
-      if (cached) return { ...cached, filePath: ref.filePath };
+      if (cached) return { ...cached, filePath: ref.filePath, source: 'message-ref' };
       const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
-      return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath };
+      return {
+        fileName,
+        mimeType: ref.mimeType,
+        fileSize: 0,
+        preview: null,
+        filePath: ref.filePath,
+        source: 'message-ref',
+      };
     });
     return { ...msg, _attachedFiles: files };
   });
@@ -1577,6 +1594,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         fileSize: a.fileSize,
         preview: a.preview,
         filePath: a.stagedPath,
+        source: 'user-upload',
       })),
     };
     set((s) => ({
@@ -1868,9 +1886,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
               : undefined;
 
             // Mirror enrichWithToolResultFiles: collect images + file refs for next assistant msg
-            const toolFiles: AttachedFileMeta[] = [
-              ...extractImagesAsAttachedFiles(finalMsg.content),
-            ];
+            const toolFiles: AttachedFileMeta[] = extractImagesAsAttachedFiles(
+              finalMsg.content,
+              'tool-result',
+            );
             if (matchedPath) {
               for (const f of toolFiles) {
                 if (!f.filePath) {
@@ -1883,9 +1902,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             if (text) {
               const mediaRefs = extractMediaRefs(text);
               const mediaRefPaths = new Set(mediaRefs.map(r => r.filePath));
-              for (const ref of mediaRefs) toolFiles.push(makeAttachedFile(ref));
+              for (const ref of mediaRefs) toolFiles.push(makeAttachedFile(ref, 'tool-result'));
               for (const ref of extractRawFilePaths(text)) {
-                if (!mediaRefPaths.has(ref.filePath)) toolFiles.push(makeAttachedFile(ref));
+                if (!mediaRefPaths.has(ref.filePath)) {
+                  toolFiles.push(makeAttachedFile(ref, 'tool-result'));
+                }
               }
             }
             set((s) => {

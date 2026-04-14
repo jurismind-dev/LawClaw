@@ -22,6 +22,7 @@ import compatTools from './openclaw-bundle-compat.cjs';
 
 const {
   patchOpenClawBundleCompat,
+  patchOpenClawPluginSdkCompat,
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
   removeBundledExtensions,
@@ -149,6 +150,11 @@ if (patchedRuntimeFiles.length > 0) {
 const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(OUTPUT);
 if (patchedWindowsSpawnFiles.length > 0) {
   echo`   Patched OpenClaw Windows spawn runtime: ${patchedWindowsSpawnFiles.join(', ')}`;
+}
+
+const patchedPluginSdkCompatFiles = patchOpenClawPluginSdkCompat(OUTPUT);
+if (patchedPluginSdkCompatFiles.length > 0) {
+  echo`   Patched OpenClaw plugin-sdk compat/runtime guards: ${patchedPluginSdkCompatFiles.join(', ')}`;
 }
 
 const removedBundledExtensions = removeBundledExtensions(OUTPUT);

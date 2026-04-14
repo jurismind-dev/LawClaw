@@ -112,11 +112,18 @@ describe('bundled openclaw CLI wrappers', () => {
   it('patches bundled packages that still need require() compatibility', () => {
     const bundleScript = readRepoFile('scripts/bundle-openclaw.mjs');
     const afterPackScript = readRepoFile('scripts/after-pack.cjs');
+    const devScript = readRepoFile('scripts/dev.mjs');
+    const devSetupScript = readRepoFile('scripts/dev-setup.mjs');
     const compatScript = readRepoFile('scripts/openclaw-bundle-compat.cjs');
 
     expect(bundleScript).toContain('patchOpenClawBundleCompat');
+    expect(bundleScript).toContain('patchOpenClawPluginSdkCompat');
     expect(afterPackScript).toContain('patchOpenClawBundleCompat');
+    expect(afterPackScript).toContain('patchOpenClawPluginSdkCompat');
+    expect(devScript).toContain('patchOpenClawPluginSdkCompat');
+    expect(devSetupScript).toContain('patchOpenClawPluginSdkCompat');
     expect(compatScript).toContain('https-proxy-agent');
+    expect(compatScript).toContain('plugin-sdk compat patch v1');
   });
 
   it('routes mac builds through the unsigned electron-builder wrapper', () => {

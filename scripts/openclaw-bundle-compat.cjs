@@ -7,6 +7,8 @@ const WINDOWS_SPAWN_PATCH_MARKER = 'lawclaw windows spawn patch v1';
 const JURISMIND_DOUBAO_PLUGIN_ID = 'jurismind-doubao';
 const JURISMIND_DOUBAO_PATCH_MARKER = 'lawclaw jurismind doubao plugin v1';
 const LRU_CACHE_COMPAT_MARKER = 'lawclaw lru-cache interop patch v1';
+const PLUGIN_SDK_COMPAT_PATCH_MARKER = 'lawclaw plugin-sdk compat patch v1';
+const MESSAGE_ACTION_DISCOVERY_PATCH_MARKER = 'lawclaw message-action-discovery guard v1';
 const REMOVED_OPENCLAW_EXTENSION_IDS = ['qqbot'];
 
 function isPlainObject(value) {
@@ -157,6 +159,114 @@ function writeFileIfChanged(filePath, content) {
   mkdirSync(join(filePath, '..'), { recursive: true });
   writeFileSync(filePath, content, 'utf8');
   return true;
+}
+
+function findDistChunkByPattern(distDir, pattern) {
+  if (!existsSync(distDir)) {
+    return null;
+  }
+
+  const match = readdirSync(distDir).find((entry) => pattern.test(entry));
+  return match ? join(distDir, match) : null;
+}
+
+function patchOpenClawPluginSdkCompat(openClawDir) {
+  const patchedFiles = [];
+
+  const compatPath = join(openClawDir, 'dist', 'plugin-sdk', 'compat.js');
+  if (existsSync(compatPath)) {
+    const original = readFileSync(compatPath, 'utf8');
+    let content = original;
+    let changed = false;
+
+    if (!content.includes(PLUGIN_SDK_COMPAT_PATCH_MARKER)) {
+      const compatImports = [
+        `import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "./account-id.js";`,
+        `import { extractToolSend } from "./tool-send.js";`,
+        `import { jsonResult, readReactionParams, readStringParam } from "./channel-actions.js";`,
+        `import { addWildcardAllowFrom, formatDocsLink } from "./setup.js";`,
+        `import { resolveThreadSessionKeys } from "./routing.js";`,
+        `import { buildRandomTempFilePath } from "./temp-path.js";`,
+        `import { SILENT_REPLY_TOKEN } from "./reply-runtime.js";`,
+        `import { createReplyPrefixContext, createTypingCallbacks } from "./channel-reply-pipeline.js";`,
+        `import { logTypingFailure } from "./channel-feedback.js";`,
+        `import { resolveSenderCommandAuthorization } from "./command-auth.js";`,
+        `// ${PLUGIN_SDK_COMPAT_PATCH_MARKER}`,
+      ].join('\n');
+
+      const importMarker = '//#region src/plugin-sdk/compat.ts';
+      if (!content.includes(importMarker)) {
+        throw new Error(`[openclaw-runtime-patch] Missing plugin-sdk compat marker in ${compatPath}`);
+      }
+      content = content.replace(importMarker, `${compatImports}\n${importMarker}`);
+      changed = true;
+    }
+
+    const exportMatch = content.match(/export \{([\s\S]+?)\};/);
+    if (!exportMatch) {
+      throw new Error(`[openclaw-runtime-patch] Missing plugin-sdk compat export block in ${compatPath}`);
+    }
+
+    const requiredCompatExports = [
+      'DEFAULT_ACCOUNT_ID',
+      'SILENT_REPLY_TOKEN',
+      'addWildcardAllowFrom',
+      'buildRandomTempFilePath',
+      'createReplyPrefixContext',
+      'createTypingCallbacks',
+      'extractToolSend',
+      'formatDocsLink',
+      'jsonResult',
+      'logTypingFailure',
+      'normalizeAccountId',
+      'readReactionParams',
+      'readStringParam',
+      'resolveSenderCommandAuthorization',
+      'resolveThreadSessionKeys',
+    ];
+    const currentExports = exportMatch[1]
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    const mergedExports = Array.from(new Set([...requiredCompatExports, ...currentExports]));
+    const nextExportBlock = `export { ${mergedExports.join(', ')} };`;
+    if (nextExportBlock !== exportMatch[0]) {
+      content = content.replace(exportMatch[0], nextExportBlock);
+      changed = true;
+    }
+
+    if (writePatchedFile(compatPath, content, changed)) {
+      patchedFiles.push('dist/plugin-sdk/compat.js');
+    }
+  }
+
+  const distDir = join(openClawDir, 'dist');
+  const messageActionDiscoveryPath = findDistChunkByPattern(
+    distDir,
+    /^message-action-discovery-.*\.js$/,
+  );
+  if (messageActionDiscoveryPath && existsSync(messageActionDiscoveryPath)) {
+    const original = readFileSync(messageActionDiscoveryPath, 'utf8');
+    let content = original;
+    let changed = false;
+
+    if (!content.includes(MESSAGE_ACTION_DISCOVERY_PATCH_MARKER)) {
+      const before = `function describeMessageToolSafely(params) {\n\ttry {\n\t\treturn params.describeMessageTool(params.context) ?? null;`;
+      const after = `function describeMessageToolSafely(params) {\n\ttry {\n\t\tif (typeof params.describeMessageTool !== "function") return null;\n\t\t// ${MESSAGE_ACTION_DISCOVERY_PATCH_MARKER}\n\t\treturn params.describeMessageTool(params.context) ?? null;`;
+      const result = replaceRequired(content, messageActionDiscoveryPath, 'message-action-discovery describeMessageTool guard', before, after);
+      content = result.content;
+      changed = result.changed;
+    }
+
+    if (writePatchedFile(messageActionDiscoveryPath, content, changed)) {
+      const relativePath = messageActionDiscoveryPath
+        .slice(distDir.length + 1)
+        .replace(/\\/g, '/');
+      patchedFiles.push(`dist/${relativePath}`);
+    }
+  }
+
+  return patchedFiles;
 }
 
 function readOpenClawPackageVersion(openClawDir) {
@@ -1107,6 +1217,7 @@ module.exports = {
   patchRequireCompatiblePackage,
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
+  patchOpenClawPluginSdkCompat,
   patchOpenClawBundleCompat,
   removeBundledExtensions,
 };

@@ -23,6 +23,7 @@ const { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, 
 const { basename, dirname, join } = require('path');
 const {
   patchOpenClawBundleCompat,
+  patchOpenClawPluginSdkCompat,
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
   removeBundledExtensions,
@@ -528,6 +529,13 @@ exports.default = async function afterPack(context) {
   if (patchedWindowsSpawnFiles.length > 0) {
     console.log(
       `[after-pack] ✅ Patched OpenClaw Windows spawn runtime: ${patchedWindowsSpawnFiles.join(', ')}.`
+    );
+  }
+
+  const patchedPluginSdkCompatFiles = patchOpenClawPluginSdkCompat(openclawRoot);
+  if (patchedPluginSdkCompatFiles.length > 0) {
+    console.log(
+      `[after-pack] ✅ Patched OpenClaw plugin-sdk compat/runtime guards: ${patchedPluginSdkCompatFiles.join(', ')}.`
     );
   }
 

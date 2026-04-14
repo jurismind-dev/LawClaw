@@ -115,4 +115,56 @@ describe('chat bot avatar', () => {
     expect(avatar).toBeInTheDocument();
     expect(avatar).toHaveAttribute('src', botAvatar);
   });
+
+  it('hides duplicated thinking blocks when process cards already render the run details', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: '先整理工具输出。' },
+      ],
+      timestamp: Date.now(),
+    };
+
+    render(<ChatMessage message={message} showThinking suppressToolCards />);
+
+    expect(screen.queryByText('Thinking')).not.toBeInTheDocument();
+  });
+
+  it('hides tool-result attachments when process cards already own the assistant step', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: '处理完成，请查看结果。',
+      timestamp: Date.now(),
+      _attachedFiles: [
+        {
+          fileName: 'tool-output.pdf',
+          mimeType: 'application/pdf',
+          fileSize: 1024,
+          preview: null,
+          filePath: '/tmp/tool-output.pdf',
+          source: 'tool-result',
+        },
+        {
+          fileName: 'reply-reference.docx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          fileSize: 2048,
+          preview: null,
+          filePath: '/tmp/reply-reference.docx',
+          source: 'message-ref',
+        },
+      ],
+    };
+
+    render(
+      <ChatMessage
+        message={message}
+        showThinking
+        suppressToolCards
+        suppressProcessAttachments
+      />,
+    );
+
+    expect(screen.queryByText('tool-output.pdf')).not.toBeInTheDocument();
+    expect(screen.getByText('reply-reference.docx')).toBeInTheDocument();
+  });
 });

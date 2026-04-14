@@ -206,6 +206,7 @@ export function Chat() {
                       message={msg}
                       showThinking={showThinking}
                       suppressToolCards={suppressToolCards}
+                      suppressProcessAttachments={suppressToolCards}
                     />
                     {userRunCards
                       .filter((card) => card.triggerIndex === idx)

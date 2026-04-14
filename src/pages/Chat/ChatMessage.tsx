@@ -18,6 +18,7 @@ interface ChatMessageProps {
   message: RawMessage;
   showThinking: boolean;
   suppressToolCards?: boolean;
+  suppressProcessAttachments?: boolean;
   isStreaming?: boolean;
   streamingTools?: Array<{
     id?: string;
@@ -42,6 +43,7 @@ export const ChatMessage = memo(function ChatMessage({
   message,
   showThinking,
   suppressToolCards = false,
+  suppressProcessAttachments = false,
   isStreaming = false,
   streamingTools = [],
 }: ChatMessageProps) {
@@ -53,10 +55,15 @@ export const ChatMessage = memo(function ChatMessage({
   const thinking = extractThinking(message);
   const images = extractImages(message);
   const tools = extractToolUse(message);
-  const visibleThinking = showThinking ? thinking : null;
+  // When an execution graph is shown for this run segment, it already owns
+  // the intermediate reasoning/tool visualization. Hide duplicated thinking
+  // blocks in the message list to avoid stacked "Thinking" cards.
+  const visibleThinking = !suppressToolCards && showThinking ? thinking : null;
   const visibleTools = suppressToolCards ? [] : tools;
-
-  const attachedFiles = message._attachedFiles || [];
+  const hasProcessContent = hasText || (showThinking && !!thinking) || images.length > 0 || tools.length > 0;
+  const attachedFiles = suppressProcessAttachments && hasProcessContent
+    ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result')
+    : (message._attachedFiles || []);
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI

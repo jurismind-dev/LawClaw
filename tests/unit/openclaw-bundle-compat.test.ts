@@ -125,6 +125,68 @@ describe('openclaw bundle compatibility patches', () => {
     expect(readFileSync(packageJsonPath, 'utf8')).toBe(before);
   });
 
+  it('patches OpenClaw plugin-sdk compat exports for legacy channel plugins', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-runtime-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const pluginSdkDir = join(openclawDir, 'dist', 'plugin-sdk');
+    mkdirSync(pluginSdkDir, { recursive: true });
+    writeFileSync(
+      join(pluginSdkDir, 'compat.js'),
+      [
+        `import { n as emptyPluginConfigSchema } from "../config-schema.js";`,
+        `//#region src/plugin-sdk/compat.ts`,
+        `if (process.env.VITEST !== "true") process.emitWarning("compat");`,
+        `//#endregion`,
+        `export { emptyPluginConfigSchema };`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    writeFileSync(
+      join(openclawDir, 'dist', 'message-action-discovery-test.js'),
+      [
+        `function describeMessageToolSafely(params) {`,
+        `\ttry {`,
+        `\t\treturn params.describeMessageTool(params.context) ?? null;`,
+        `\t} catch (error) {`,
+        `\t\treturn null;`,
+        `\t}`,
+        `}`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { patchOpenClawPluginSdkCompat } = await loadCompatTools();
+    const patchedFiles = patchOpenClawPluginSdkCompat(openclawDir);
+
+    expect(patchedFiles).toEqual([
+      'dist/plugin-sdk/compat.js',
+      'dist/message-action-discovery-test.js',
+    ]);
+
+    const patchedCompat = readFileSync(join(pluginSdkDir, 'compat.js'), 'utf8');
+    expect(patchedCompat).toContain('lawclaw plugin-sdk compat patch v1');
+    expect(patchedCompat).toContain(`import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "./account-id.js";`);
+    expect(patchedCompat).toContain(`import { addWildcardAllowFrom, formatDocsLink } from "./setup.js";`);
+    expect(patchedCompat).toContain(`import { resolveSenderCommandAuthorization } from "./command-auth.js";`);
+    expect(patchedCompat).toContain('export { DEFAULT_ACCOUNT_ID, SILENT_REPLY_TOKEN');
+    expect(patchedCompat).toContain('normalizeAccountId');
+    expect(patchedCompat).toContain('createTypingCallbacks');
+
+    const patchedDiscovery = readFileSync(
+      join(openclawDir, 'dist', 'message-action-discovery-test.js'),
+      'utf8',
+    );
+    expect(patchedDiscovery).toContain('lawclaw message-action-discovery guard v1');
+    expect(patchedDiscovery).toContain('if (typeof params.describeMessageTool !== "function") return null;');
+
+    expect(patchOpenClawPluginSdkCompat(openclawDir)).toEqual([]);
+  });
+
   it('patches legacy lru-cache bundles to expose the constructor via named exports', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-bundle-'));
     tempDirs.push(tempRoot);

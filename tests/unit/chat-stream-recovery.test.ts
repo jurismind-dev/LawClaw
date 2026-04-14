@@ -210,4 +210,96 @@ describe('chat stream recovery', () => {
     expect(state.activeRunId).toBe('run-tool-only-history');
     expect(state.pendingFinal).toBe(true);
   });
+
+  it('does not end the running state when the latest assistant message still contains tool_use', async () => {
+    useChatStore.setState({
+      sending: true,
+      activeRunId: 'run-mixed-history',
+      pendingFinal: true,
+      lastUserMessageAt: 1_000,
+      messages: [
+        {
+          role: 'user',
+          content: '继续处理这个任务',
+          timestamp: 1,
+          id: 'user-1',
+        },
+      ],
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [
+              {
+                role: 'user',
+                content: '继续处理这个任务',
+                timestamp: 1,
+                id: 'user-1',
+              },
+              {
+                role: 'assistant',
+                timestamp: 2,
+                id: 'assistant-partial-answer',
+                content: [{ type: 'text', text: '我先查一下相关信息。' }],
+              },
+              {
+                role: 'assistant',
+                timestamp: 3,
+                id: 'assistant-still-running',
+                content: [
+                  { type: 'text', text: '已经定位到线索，继续调用工具。' },
+                  { type: 'tool_use', id: 'tool-2', name: 'web_search', input: { query: '继续处理' } },
+                ],
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadHistory(true);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-mixed-history');
+    expect(state.pendingFinal).toBe(true);
+  });
+
+  it('keeps the run active when a final assistant event still contains tool_use', () => {
+    useChatStore.setState({
+      sending: true,
+      activeRunId: 'run-final-tool-use',
+      pendingFinal: true,
+    });
+
+    useChatStore.getState().handleChatEvent({
+      state: 'final',
+      runId: 'run-final-tool-use',
+      message: {
+        role: 'assistant',
+        id: 'assistant-final-tool-use',
+        content: [
+          { type: 'text', text: '正在整理结果，继续调用工具。' },
+          { type: 'tool_use', id: 'tool-3', name: 'fetch_docs', input: { topic: 'contract' } },
+        ],
+      },
+    });
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-final-tool-use');
+    expect(state.pendingFinal).toBe(true);
+    expect(state.messages).toContainEqual({
+      role: 'assistant',
+      id: 'assistant-final-tool-use',
+      content: [
+        { type: 'text', text: '正在整理结果，继续调用工具。' },
+        { type: 'tool_use', id: 'tool-3', name: 'fetch_docs', input: { topic: 'contract' } },
+      ],
+    });
+  });
 });

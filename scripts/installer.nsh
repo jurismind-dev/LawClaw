@@ -8,6 +8,125 @@
 ; - AppData\Roaming\LawClaw / clawx
 ; Handles both per-user and per-machine (all users) installations.
 
+!ifndef nsProcess::FindProcess
+  !include "nsProcess.nsh"
+!endif
+
+!macro customHeader
+  ShowInstDetails show
+  ShowUninstDetails show
+!macroend
+
+!macro customCheckAppRunning
+  SetDetailsPrint both
+  DetailPrint "Preparing installation..."
+  DetailPrint "Extracting LawClaw runtime files. This can take a few minutes on slower disks or while antivirus scanning is active."
+
+  ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+
+  ${if} $R0 == 0
+    ${if} ${isUpdated}
+      DetailPrint `Waiting for "${PRODUCT_NAME}" to finish shutting down...`
+      Sleep 8000
+      ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+      ${if} $R0 != 0
+        nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
+        Pop $0
+        Pop $1
+        Goto done_killing
+      ${endIf}
+    ${endIf}
+    ${if} ${isUpdated}
+    ${else}
+      MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK doStopProcess
+      Quit
+    ${endIf}
+
+    doStopProcess:
+    DetailPrint `Closing running "${PRODUCT_NAME}"...`
+
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+    Pop $0
+    Pop $1
+
+    ${if} $0 != 0
+      nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+      Pop $0
+      Pop $1
+    ${endIf}
+
+    nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
+    Pop $0
+    Pop $1
+
+    Sleep 5000
+    DetailPrint "Processes terminated. Continuing installation..."
+
+    done_killing:
+      ${nsProcess::Unload}
+  ${endIf}
+
+  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+  Pop $0
+  Pop $1
+
+  nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
+  Pop $0
+  Pop $1
+
+  Sleep 2000
+  SetOutPath $TEMP
+
+  IfFileExists "$INSTDIR\" 0 _instdir_clean
+    StrCpy $R8 0
+  _find_free_stale:
+    IfFileExists "$INSTDIR._stale_$R8\" 0 _found_free_stale
+    IntOp $R8 $R8 + 1
+    Goto _find_free_stale
+
+  _found_free_stale:
+    ClearErrors
+    Rename "$INSTDIR" "$INSTDIR._stale_$R8"
+    IfErrors 0 _stale_moved
+      nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR"'
+      Pop $0
+      Pop $1
+      Sleep 2000
+      CreateDirectory "$INSTDIR"
+      Goto _instdir_clean
+  _stale_moved:
+    CreateDirectory "$INSTDIR"
+  _instdir_clean:
+
+  DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
+  DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
+  !ifdef UNINSTALL_REGISTRY_KEY_2
+    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
+    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
+    DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
+    DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
+  !endif
+!macroend
+
+!macro customUnInstallCheck
+  ${if} $R0 != 0
+    DetailPrint "Old uninstaller exited with code $R0. Continuing with overwrite install..."
+  ${endIf}
+  ClearErrors
+!macroend
+
+!macro customUnInstallCheckCurrentUser
+  ${if} $R0 != 0
+    DetailPrint "Old uninstaller (current user) exited with code $R0. Continuing..."
+  ${endIf}
+  ClearErrors
+!macroend
+
 !macro customInstall
   ; Keep a single LawClaw CLI entry in the current user's PATH so updates and
   ; reinstalls do not accumulate stale duplicates.

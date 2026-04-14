@@ -17,6 +17,7 @@ import { autoInstallCliIfNeeded } from '../utils/openclaw-cli';
 import { runProviderStartupMigration } from '../utils/provider-migration';
 import { syncLawClawDefaultProviderAtStartup } from '../utils/lawclaw-provider-selection';
 import { runAgentPresetStartupMigration } from '../utils/agent-preset-migration';
+import { runManagedChannelStartupReset } from '../utils/managed-channel-startup-reset';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
 import { ensureGlobalRuntimeShims } from '../utils/global-runtime-shims';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
@@ -45,6 +46,8 @@ import {
 // Users who want GPU acceleration can pass `--enable-gpu` on the CLI or
 // set `"disable-hardware-acceleration": false` in the app config (future).
 app.disableHardwareAcceleration();
+
+const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -184,6 +187,19 @@ async function initialize(): Promise<void> {
   logger.debug(
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}`
   );
+
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+  }
+
+  try {
+    const resetSummary = await runManagedChannelStartupReset({
+      appVersion: app.getVersion(),
+    });
+    logger.info('Managed channel startup reset result:', resetSummary);
+  } catch (error) {
+    logger.warn('Managed channel startup reset failed (non-blocking):', error);
+  }
 
   // Warm up network optimization (non-blocking)
   void warmupNetworkOptimization();

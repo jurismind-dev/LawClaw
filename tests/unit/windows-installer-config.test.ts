@@ -11,4 +11,14 @@ describe('windows installer config', () => {
     expect(source).toContain('allowToChangeInstallationDirectory: false');
     expect(source).not.toContain('allowToChangeInstallationDirectory: true');
   });
+
+  it('keeps the custom NSIS upgrade safety macros wired in', () => {
+    const source = readFileSync(join(process.cwd(), 'scripts/installer.nsh'), 'utf-8');
+
+    expect(source).toContain('!macro customCheckAppRunning');
+    expect(source).toContain('!macro customUnInstallCheck');
+    expect(source).toContain('!macro customUnInstallCheckCurrentUser');
+    expect(source).toContain('DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString');
+    expect(source).toContain('Rename "$INSTDIR" "$INSTDIR._stale_$R8"');
+  });
 });

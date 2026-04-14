@@ -820,6 +820,24 @@ function isToolOnlyMessage(message: RawMessage | undefined): boolean {
   return hasTool && !hasText && !hasNonToolContent;
 }
 
+function hasToolUseContent(message: RawMessage | undefined): boolean {
+  if (!message) return false;
+
+  const msg = message as unknown as Record<string, unknown>;
+  const toolCalls = msg.tool_calls ?? msg.toolCalls;
+  if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+    return true;
+  }
+
+  if (!Array.isArray(message.content)) {
+    return false;
+  }
+
+  return (message.content as ContentBlock[]).some((block) => {
+    return block.type === 'tool_use' || block.type === 'toolCall';
+  });
+}
+
 function isToolResultRole(role: unknown): boolean {
   if (!role) return false;
   const normalized = String(role).toLowerCase();
@@ -1052,6 +1070,10 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (typeof msg.text === 'string' && msg.text.trim()) return true;
 
   return false;
+}
+
+function hasTerminalAssistantOutput(message: RawMessage | undefined): boolean {
+  return hasNonToolAssistantContent(message) && !hasToolUseContent(message);
 }
 
 // ── Store ────────────────────────────────────────────────────────
@@ -1481,14 +1503,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        // If pendingFinal, check whether the AI produced a final text response.
+        // If pendingFinal, only end the run when the latest assistant turn after
+        // the user's prompt is truly terminal. Assistant text can now arrive in
+        // the same message as a later tool_use, which is not a completed answer.
         if (pendingFinal || get().pendingFinal) {
           const recentAssistant = [...filteredMessages].reverse().find((msg) => {
             if (msg.role !== 'assistant') return false;
-            if (!hasNonToolAssistantContent(msg)) return false;
             return isAfterUserMsg(msg);
           });
-          if (recentAssistant) {
+          if (hasTerminalAssistantOutput(recentAssistant)) {
             clearHistoryPoll();
             set({ sending: false, activeRunId: null, pendingFinal: false });
           }
@@ -1946,7 +1969,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             break;
           }
           const toolOnly = isToolOnlyMessage(finalMsg);
-          const hasOutput = hasNonToolAssistantContent(finalMsg);
+          const hasOutput = hasTerminalAssistantOutput(finalMsg);
           const msgId = finalMsg.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
           set((s) => {
             const nextTools = updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools;

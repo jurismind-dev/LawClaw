@@ -46,6 +46,7 @@ import { repairInstalledFeishuOfficialPluginIfNeeded } from '../utils/feishu-off
 import { applyOpenClawConfigEnvFallbacks } from '../utils/openclaw-config-env';
 import { stripUtf8Bom } from '../utils/text-encoding';
 import { repairInstalledWeixinPluginIfNeeded } from '../utils/weixin-plugin-installer';
+import { cleanupStalePluginInstallStageDirs } from '../utils/openclaw-plugin-install';
 import { selectGatewayRuntime } from './runtime-selection';
 import { getGatewayStartupRecoveryAction } from './startup-recovery';
 
@@ -807,6 +808,17 @@ export class GatewayManager extends EventEmitter {
     
     // Get or generate gateway token
     const gatewayToken = await getSetting('gatewayToken');
+
+    try {
+      const removedStageDirs = cleanupStalePluginInstallStageDirs(
+        path.join(getOpenClawConfigDir(), 'extensions')
+      );
+      if (removedStageDirs.length > 0) {
+        logger.info(`Removed ${removedStageDirs.length} stale plugin install stage dir(s) before Gateway start`);
+      }
+    } catch (err) {
+      logger.warn('Failed to clean stale plugin install stage dirs before Gateway start:', err);
+    }
 
     try {
       const sanitized = sanitizeOpenClawConfig();

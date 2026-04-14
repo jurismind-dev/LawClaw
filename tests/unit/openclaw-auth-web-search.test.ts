@@ -460,7 +460,7 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.plugins?.entries?.['custom-plugin']?.enabled).toBe(true);
   });
 
-  it('sanitizeOpenClawConfig migrates legacy weixin channel config into private state and removes invalid gateway fields', async () => {
+  it('sanitizeOpenClawConfig removes legacy weixin channel config and stale plugin entries', async () => {
     const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-weixin-'));
     tempHomes.push(homeDir);
 
@@ -523,40 +523,13 @@ describe('openclaw auth - jurismind web search sync', () => {
       };
     };
 
-    const settingsPath = join(openclawDir, 'openclaw-weixin', 'settings.json');
-    const accountsIndexPath = join(openclawDir, 'openclaw-weixin', 'accounts.json');
-    const alphaAccountPath = join(openclawDir, 'openclaw-weixin', 'accounts', 'bot-alpha.json');
-    const betaAccountPath = join(openclawDir, 'openclaw-weixin', 'accounts', 'account-beta.json');
-
     expect(next.channels?.['openclaw-weixin']).toBeUndefined();
     expect(next.plugins?.allow).not.toContain('openclaw-weixin');
     expect(next.plugins?.allow).toContain('custom-plugin');
     expect(next.plugins?.entries?.['openclaw-weixin']).toBeUndefined();
     expect(next.plugins?.entries?.['custom-plugin']?.enabled).toBe(true);
-    expect(next.bindings).toEqual([
-      {
-        agentId: 'lawclaw-main',
-        match: {
-          channel: 'openclaw-weixin',
-          accountId: '*',
-        },
-      },
-    ]);
-    expect(JSON.parse(readFileSync(settingsPath, 'utf-8'))).toMatchObject({
-      baseUrl: 'https://weixin.example/base',
-      cdnBaseUrl: 'https://weixin.example/cdn',
-      routeTag: '7',
-    });
-    expect(JSON.parse(readFileSync(accountsIndexPath, 'utf-8'))).toEqual(['bot-alpha', 'account-beta']);
-    expect(JSON.parse(readFileSync(alphaAccountPath, 'utf-8'))).toMatchObject({
-      token: 'account-token',
-      baseUrl: 'https://weixin.example/base',
-      userId: 'account-user',
-    });
-    expect(JSON.parse(readFileSync(betaAccountPath, 'utf-8'))).toMatchObject({
-      baseUrl: 'https://weixin.example/base',
-      userId: 'beta-user',
-    });
+    expect(next.bindings).toBeUndefined();
+    expect(existsSync(join(openclawDir, 'openclaw-weixin'))).toBe(false);
   });
 
   it('sanitizeOpenClawConfig does not create weixin migration state for fresh installs', async () => {
@@ -664,8 +637,7 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.channels?.feishu?.defaultAccount).toBeUndefined();
     expect(next.channels?.feishu?.legacyTopLevel).toBeUndefined();
     expect(next.channels?.feishu?.footer).toEqual({ status: true });
-    expect(next.channels?.feishu?.accounts?.default?.staleAccountFlag).toBeUndefined();
-    expect(next.channels?.feishu?.accounts?.default?.groups?.team?.legacyGroupFlag).toBeUndefined();
+    expect(next.channels?.feishu?.accounts).toBeUndefined();
   });
 
   it('sanitizeOpenClawConfig migrates legacy moonshot kimi search config into plugin config', async () => {

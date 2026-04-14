@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  cleanupStalePluginInstallStageDirs,
   detectPluginInstallationState,
   finalizeBundledPluginConfigAfterInstall,
   isAlreadyInstalledErrorMessage,
@@ -157,6 +158,19 @@ describe('openclaw plugin install directory cleanup', () => {
 
     expect(removed).toBe(false);
   });
+
+  it('removes stale plugin install stage directories from the extensions root', () => {
+    const stageDir = join(tempConfigDir, '.openclaw-install-stage-demo');
+    const keepDir = join(tempConfigDir, 'openclaw-lark');
+    mkdirSync(stageDir, { recursive: true });
+    mkdirSync(keepDir, { recursive: true });
+
+    const removed = cleanupStalePluginInstallStageDirs(tempConfigDir);
+
+    expect(removed).toEqual([stageDir]);
+    expect(() => readFileSync(join(stageDir, 'package.json'), 'utf-8')).toThrow();
+    expect(() => mkdirSync(keepDir, { recursive: true })).not.toThrow();
+  });
 });
 
 describe('trusted bundled plugin publishing', () => {
@@ -298,5 +312,50 @@ describe('bundled feishu plugin config finalizer', () => {
         },
       },
     });
+  });
+
+  it('collapses legacy feishu defaultAccount wrappers into a single stable channel config', () => {
+    const input = {
+      channels: {
+        feishu: {
+          defaultAccount: 'default',
+          legacyTopLevel: true,
+          accounts: {
+            default: {
+              appId: 'cli_xxx',
+              appSecret: 'secret',
+              enabled: true,
+              threadSession: false,
+              extraAccountFlag: true,
+            },
+          },
+        },
+      },
+      plugins: {
+        allow: ['feishu'],
+        entries: {
+          feishu: { enabled: true },
+        },
+      },
+    };
+
+    const result = finalizeBundledPluginConfigAfterInstall(input, 'openclaw-lark');
+
+    expect(result.config).toMatchObject({
+      channels: {
+        feishu: {
+          appId: 'cli_xxx',
+          appSecret: 'secret',
+          enabled: true,
+          threadSession: false,
+          requireMention: true,
+          footer: {
+            elapsed: true,
+            status: true,
+          },
+        },
+      },
+    });
+    expect((result.config as { channels?: { feishu?: Record<string, unknown> } }).channels?.feishu?.accounts).toBeUndefined();
   });
 });

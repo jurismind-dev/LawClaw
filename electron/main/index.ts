@@ -6,7 +6,7 @@ import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
 import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
 import { registerIpcHandlers } from './ipc-handlers';
-import { createTray } from './tray';
+import { createTray, destroyTray } from './tray';
 import { createMenu } from './menu';
 
 import { appUpdater, registerUpdateHandlers } from './updater';
@@ -157,6 +157,23 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
+function shouldHideWindowToTray(win: BrowserWindow): boolean {
+  if (isQuitting()) {
+    return false;
+  }
+
+  if (process.platform === 'win32' && app.isPackaged) {
+    // Windows installers commonly send a close request to the existing app
+    // while the window is hidden/inactive. Let that request terminate the app
+    // instead of swallowing it into tray-hide behavior.
+    if (!win.isVisible() || !win.isFocused()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /**
  * Initialize the application
  */
@@ -228,7 +245,7 @@ async function initialize(): Promise<void> {
 
   // Minimize to tray on close instead of quitting (macOS & Windows)
   mainWindow.on('close', (event) => {
-    if (!isQuitting()) {
+    if (shouldHideWindowToTray(mainWindow!)) {
       event.preventDefault();
       mainWindow?.hide();
     }
@@ -297,6 +314,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   setQuitting();
+  destroyTray();
   // Fire-and-forget: do not await gatewayManager.stop() here.
   // Awaiting inside before-quit can stall Electron's quit sequence.
   void gatewayManager.stop().catch((err) => {

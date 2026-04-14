@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
@@ -7,6 +7,7 @@ type JsonObject = Record<string, unknown>;
 
 const ALREADY_INSTALLED_REGEX = /(?:already\s+installed|already\s+exists|delete\s+it\s+first)/i;
 const FEISHU_OFFICIAL_PLUGIN_ID = 'openclaw-lark';
+const STALE_INSTALL_STAGE_DIR_RE = /^\.openclaw-install-stage-/i;
 
 export type PluginInstallSource = 'extensions' | 'plugins.installs' | 'plugins.load.paths';
 
@@ -116,6 +117,25 @@ export function removeInstalledPluginDir(extensionsDir: string, pluginId: string
 
   rmSync(installDir, { recursive: true, force: true });
   return true;
+}
+
+export function cleanupStalePluginInstallStageDirs(extensionsDir: string): string[] {
+  if (!existsSync(extensionsDir)) {
+    return [];
+  }
+
+  const removedPaths: string[] = [];
+  for (const entry of readdirSync(extensionsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !STALE_INSTALL_STAGE_DIR_RE.test(entry.name)) {
+      continue;
+    }
+
+    const installDir = join(extensionsDir, entry.name);
+    rmSync(installDir, { recursive: true, force: true });
+    removedPaths.push(installDir);
+  }
+
+  return removedPaths;
 }
 
 export function publishPreparedPluginInstallDir(

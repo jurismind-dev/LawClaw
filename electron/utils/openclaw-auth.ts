@@ -13,10 +13,10 @@ import {
   getProviderDefaultModel,
   getProviderEnvVar,
 } from './provider-registry';
-import { sanitizeFeishuChannelConfigShape } from './feishu-channel-defaults';
+import { sanitizeFeishuChannelConfigShape, stabilizeFeishuChannelConfig } from './feishu-channel-defaults';
 import { getOpenClawConfigDir, getOpenClawResolvedDir } from './paths';
 import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
-import { WEIXIN_CHANNEL_ID, migrateLegacyWeixinChannelStateSync } from './weixin-channel-state';
+import { WEIXIN_CHANNEL_ID } from './weixin-channel-state';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -97,37 +97,6 @@ function removePluginIdsFromList(pluginIds: string[], idsToRemove: readonly stri
   }
 
   pluginIds.splice(0, pluginIds.length, ...nextPluginIds);
-  return true;
-}
-
-function upsertLawClawManagedBinding(config: Record<string, unknown>, channelId: string): boolean {
-  const normalizedChannel = normalizeChannelId(channelId);
-  if (!normalizedChannel) {
-    return false;
-  }
-
-  const existingBindings = Array.isArray(config.bindings) ? config.bindings : [];
-  const nextBindings = existingBindings.filter((binding) => {
-    return !(
-      isBindingRule(binding)
-      && binding.agentId === 'lawclaw-main'
-      && normalizeChannelId(binding.match.channel) === normalizedChannel
-    );
-  });
-
-  nextBindings.push({
-    agentId: 'lawclaw-main',
-    match: {
-      channel: normalizedChannel,
-      accountId: '*',
-    },
-  });
-
-  if (JSON.stringify(existingBindings) === JSON.stringify(nextBindings)) {
-    return false;
-  }
-
-  config.bindings = nextBindings;
   return true;
 }
 
@@ -1415,11 +1384,9 @@ export function sanitizeOpenClawConfig(): boolean {
 
   const legacyWeixinSection = isRecord(config.channels) ? config.channels[WEIXIN_CHANNEL_ID] : undefined;
   if (legacyWeixinSection !== undefined) {
-    migrateLegacyWeixinChannelStateSync(legacyWeixinSection);
     delete (config.channels as Record<string, unknown>)[WEIXIN_CHANNEL_ID];
-    upsertLawClawManagedBinding(config, WEIXIN_CHANNEL_ID);
     modified = true;
-    console.log('[sanitize] Migrated legacy Weixin channel config into LawClaw private state');
+    console.log('[sanitize] Removed legacy Weixin channel config that is incompatible with current OpenClaw');
   }
 
   if (removePluginIdsFromList(allowWithoutFeishuAliases, [WEIXIN_CHANNEL_ID])) {
@@ -1495,6 +1462,14 @@ export function sanitizeOpenClawConfig(): boolean {
   for (const [channelType, sectionValue] of Object.entries(channels)) {
     if (!isRecord(sectionValue)) continue;
     let section = { ...sectionValue };
+
+    if (channelType === 'feishu') {
+      const stabilizedFeishu = stabilizeFeishuChannelConfig(section);
+      section = stabilizedFeishu.config;
+      if (stabilizedFeishu.changed) {
+        modified = true;
+      }
+    }
 
     const accounts = isRecord(section.accounts) ? section.accounts : {};
     const defaultAccountId =

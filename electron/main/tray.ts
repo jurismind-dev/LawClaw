@@ -4,6 +4,7 @@
  */
 import { Tray, Menu, BrowserWindow, app, nativeImage } from 'electron';
 import { join } from 'path';
+import { setQuitting } from './app-state';
 
 let tray: Tray | null = null;
 
@@ -146,6 +147,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
     {
       label: '退出劳有钳',
       click: () => {
+        setQuitting();
         app.quit();
       },
     },

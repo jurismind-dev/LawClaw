@@ -64,6 +64,10 @@ function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values));
 }
 
+function hasNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 const FEISHU_GROUP_ALLOWED_KEYS = new Set([
   'groupPolicy',
   'requireMention',
@@ -317,6 +321,67 @@ export function sanitizeFeishuChannelConfigShape(
   };
 }
 
+function hasConfiguredFeishuCredentials(config: JsonObject): boolean {
+  return hasNonEmptyString(config.appId) && hasNonEmptyString(config.appSecret);
+}
+
+function resolvePrimaryFeishuAccountId(rawConfig: JsonObject, accounts: JsonObject): string | undefined {
+  const preferredAccountId = hasNonEmptyString(rawConfig.defaultAccount) ? rawConfig.defaultAccount.trim() : '';
+  if (preferredAccountId && asObject(accounts[preferredAccountId])) {
+    return preferredAccountId;
+  }
+
+  if (asObject(accounts.default)) {
+    return 'default';
+  }
+
+  for (const [accountId, rawAccount] of Object.entries(accounts)) {
+    const account = asObject(rawAccount);
+    if (account && hasConfiguredFeishuCredentials(account)) {
+      return accountId;
+    }
+  }
+
+  return Object.keys(accounts)[0];
+}
+
+export function stabilizeFeishuChannelConfig(
+  channelConfig: JsonObject | undefined
+): { config: JsonObject; changed: boolean } {
+  const rawConfig = asObject(channelConfig) || {};
+  const sanitized = sanitizeFeishuChannelConfigShape(rawConfig);
+  const nextConfig: JsonObject = { ...sanitized.config };
+  const accounts = asObject(nextConfig.accounts) || {};
+  const hasLegacyDefaultAccount = Object.prototype.hasOwnProperty.call(rawConfig, 'defaultAccount');
+  const shouldCollapseAccounts =
+    hasLegacyDefaultAccount
+    || (!hasConfiguredFeishuCredentials(nextConfig) && Object.keys(accounts).length > 0);
+
+  if (!shouldCollapseAccounts || Object.keys(accounts).length === 0) {
+    return {
+      config: nextConfig,
+      changed: sanitized.changed,
+    };
+  }
+
+  const primaryAccountId = resolvePrimaryFeishuAccountId(rawConfig, accounts);
+  const primaryAccount = primaryAccountId ? asObject(accounts[primaryAccountId]) : null;
+  if (primaryAccount) {
+    for (const [key, value] of Object.entries(primaryAccount)) {
+      if (nextConfig[key] === undefined) {
+        nextConfig[key] = value;
+      }
+    }
+  }
+
+  delete nextConfig.accounts;
+
+  return {
+    config: nextConfig,
+    changed: true,
+  };
+}
+
 export interface FeishuOfficialCredentials {
   appId: string;
   appSecret: string;
@@ -332,8 +397,8 @@ export function applyFeishuChannelDefaults(
   channelConfig: JsonObject | undefined,
   options: ApplyFeishuChannelDefaultsOptions = {}
 ): { config: JsonObject; changed: boolean } {
-  const sourceSanitized = sanitizeFeishuChannelConfigShape(asObject(channelConfig) || {});
-  const fallbackSanitized = sanitizeFeishuChannelConfigShape(asObject(options.fallbackConfig) || {});
+  const sourceSanitized = stabilizeFeishuChannelConfig(asObject(channelConfig) || {});
+  const fallbackSanitized = stabilizeFeishuChannelConfig(asObject(options.fallbackConfig) || {});
   const source = sourceSanitized.config;
   const fallback = fallbackSanitized.config;
 
@@ -378,7 +443,7 @@ export function finalizeFeishuOfficialPluginConfig(
   const plugins = asObject(source.plugins) || {};
   const channels = asObject(source.channels) || {};
   const entries = asObject(plugins.entries) || {};
-  const existingChannel = sanitizeFeishuChannelConfigShape(asObject(channels.feishu) || {}).config;
+  const existingChannel = stabilizeFeishuChannelConfig(asObject(channels.feishu) || {}).config;
   const credentials = options.credentials;
 
   const allow = Array.isArray(plugins.allow)

@@ -21,6 +21,21 @@ const providerRegistryMocks = vi.hoisted(() => ({
   getKeyableProviderTypes: vi.fn(() => []),
 }));
 
+const pluginRepairMocks = vi.hoisted(() => ({
+  repairInstalledFeishuOfficialPluginIfNeeded: vi.fn(async () => ({
+    repaired: false,
+    reason: 'healthy',
+    pluginDir: '/tmp/.openclaw/extensions/openclaw-lark',
+    missingPaths: [],
+  })),
+  repairInstalledWeixinPluginIfNeeded: vi.fn(async () => ({
+    repaired: false,
+    reason: 'healthy',
+    pluginDir: '/tmp/.openclaw/extensions/openclaw-weixin',
+    missingPaths: [],
+  })),
+}));
+
 const electronMocks = vi.hoisted(() => ({
   app: {
     isPackaged: false,
@@ -145,6 +160,14 @@ vi.mock('@electron/gateway/runtime-selection', () => ({
   })),
 }));
 
+vi.mock('@electron/utils/feishu-official-plugin-installer', () => ({
+  repairInstalledFeishuOfficialPluginIfNeeded: pluginRepairMocks.repairInstalledFeishuOfficialPluginIfNeeded,
+}));
+
+vi.mock('@electron/utils/weixin-plugin-installer', () => ({
+  repairInstalledWeixinPluginIfNeeded: pluginRepairMocks.repairInstalledWeixinPluginIfNeeded,
+}));
+
 function createFakeChildProcess(): EventEmitter & {
   stdout: EventEmitter;
   stderr: EventEmitter;
@@ -188,6 +211,18 @@ describe('gateway start pre-sync', () => {
       return undefined;
     });
     providerRegistryMocks.getKeyableProviderTypes.mockReturnValue(['jurismind']);
+    pluginRepairMocks.repairInstalledFeishuOfficialPluginIfNeeded.mockResolvedValue({
+      repaired: false,
+      reason: 'healthy',
+      pluginDir: '/tmp/.openclaw/extensions/openclaw-lark',
+      missingPaths: [],
+    });
+    pluginRepairMocks.repairInstalledWeixinPluginIfNeeded.mockResolvedValue({
+      repaired: false,
+      reason: 'healthy',
+      pluginDir: '/tmp/.openclaw/extensions/openclaw-weixin',
+      missingPaths: [],
+    });
   });
 
   it('syncs token and browser config before spawning gateway', async () => {

@@ -290,9 +290,11 @@ export async function isWeixinPluginInstalledDirPresent(): Promise<boolean> {
   return fileExists(join(getOpenClawConfigDir(), 'extensions', WEIXIN_CHANNEL_ID));
 }
 
-export async function getInstalledWeixinPluginVersion(): Promise<string | null> {
+export async function getInstalledWeixinPluginVersion(
+  openClawConfigDir = getOpenClawConfigDir()
+): Promise<string | null> {
   const manifest = await readJsonFile<{ version?: unknown }>(
-    join(getOpenClawConfigDir(), 'extensions', WEIXIN_CHANNEL_ID, 'package.json')
+    join(openClawConfigDir, 'extensions', WEIXIN_CHANNEL_ID, 'package.json')
   );
 
   return typeof manifest?.version === 'string' && manifest.version.trim()

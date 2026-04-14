@@ -460,6 +460,86 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.plugins?.entries?.['custom-plugin']?.enabled).toBe(true);
   });
 
+  it('sanitizeOpenClawConfig prunes legacy feishu-only keys before gateway startup', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-feishu-shape-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          channels: {
+            feishu: {
+              enabled: true,
+              defaultAccount: 'default',
+              legacyTopLevel: true,
+              footer: {
+                status: true,
+                staleFooterFlag: true,
+              },
+              accounts: {
+                default: {
+                  appId: 'cli_account',
+                  appSecret: 'secret',
+                  staleAccountFlag: true,
+                  groups: {
+                    team: {
+                      enabled: true,
+                      requireMention: true,
+                      legacyGroupFlag: 'remove-me',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    mod.sanitizeOpenClawConfig();
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      channels?: {
+        feishu?: {
+          appId?: string;
+          appSecret?: string;
+          defaultAccount?: string;
+          legacyTopLevel?: boolean;
+          footer?: {
+            status?: boolean;
+            staleFooterFlag?: boolean;
+          };
+          accounts?: {
+            default?: {
+              staleAccountFlag?: boolean;
+              groups?: {
+                team?: {
+                  legacyGroupFlag?: string;
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+
+    expect(next.channels?.feishu?.appId).toBe('cli_account');
+    expect(next.channels?.feishu?.appSecret).toBe('secret');
+    expect(next.channels?.feishu?.defaultAccount).toBeUndefined();
+    expect(next.channels?.feishu?.legacyTopLevel).toBeUndefined();
+    expect(next.channels?.feishu?.footer).toEqual({ status: true });
+    expect(next.channels?.feishu?.accounts?.default?.staleAccountFlag).toBeUndefined();
+    expect(next.channels?.feishu?.accounts?.default?.groups?.team?.legacyGroupFlag).toBeUndefined();
+  });
+
   it('sanitizeOpenClawConfig migrates legacy moonshot kimi search config into plugin config', async () => {
     const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
     tempHomes.push(homeDir);

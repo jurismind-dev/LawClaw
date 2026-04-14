@@ -13,6 +13,7 @@ import {
   getProviderDefaultModel,
   getProviderEnvVar,
 } from './provider-registry';
+import { sanitizeFeishuChannelConfigShape } from './feishu-channel-defaults';
 import { getOpenClawConfigDir, getOpenClawResolvedDir } from './paths';
 import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
 
@@ -1444,7 +1445,7 @@ export function sanitizeOpenClawConfig(): boolean {
   const channels = isRecord(config.channels) ? { ...config.channels } : {};
   for (const [channelType, sectionValue] of Object.entries(channels)) {
     if (!isRecord(sectionValue)) continue;
-    const section = { ...sectionValue };
+    let section = { ...sectionValue };
 
     const accounts = isRecord(section.accounts) ? section.accounts : {};
     const defaultAccountId =
@@ -1456,17 +1457,23 @@ export function sanitizeOpenClawConfig(): boolean {
       : isRecord(accounts.default)
         ? (accounts.default as Record<string, unknown>)
         : null;
-    if (!defaultAccountData) {
-      channels[channelType] = section;
-      continue;
+    if (defaultAccountData) {
+      for (const [key, value] of Object.entries(defaultAccountData)) {
+        if (!(key in section)) {
+          section[key] = value;
+          modified = true;
+        }
+      }
     }
 
-    for (const [key, value] of Object.entries(defaultAccountData)) {
-      if (!(key in section)) {
-        section[key] = value;
+    if (channelType === 'feishu') {
+      const sanitizedFeishu = sanitizeFeishuChannelConfigShape(section);
+      section = sanitizedFeishu.config;
+      if (sanitizedFeishu.changed) {
         modified = true;
       }
     }
+
     channels[channelType] = section;
   }
 

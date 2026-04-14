@@ -134,6 +134,12 @@ const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
 const _chatEventDedupe = new Map<string, number>();
 
+function isTransientChatHistoryError(error: string): boolean {
+  return /chat\.history unavailable during gateway startup/i.test(error)
+    || /gateway not connected/i.test(error)
+    || /websocket not connected/i.test(error);
+}
+
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
     clearTimeout(_errorRecoveryTimer);
@@ -1471,17 +1477,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
       } else if (get().currentSessionKey === requestedSessionKey) {
+        const errorMessage = result.error || 'Failed to load chat history';
+        if (isTransientChatHistoryError(errorMessage)) {
+          set({ loading: false, error: null });
+          window.setTimeout(() => {
+            const state = get();
+            if (state.currentSessionKey === requestedSessionKey) {
+              void state.loadHistory(true);
+            }
+          }, 1000);
+          return;
+        }
+
         set({
           loading: false,
-          error: result.error || 'Failed to load chat history',
+          error: errorMessage,
         });
       }
     } catch (err) {
       console.warn('Failed to load chat history:', err);
       if (get().currentSessionKey === requestedSessionKey) {
+        const errorMessage = String(err);
+        if (isTransientChatHistoryError(errorMessage)) {
+          set({ loading: false, error: null });
+          window.setTimeout(() => {
+            const state = get();
+            if (state.currentSessionKey === requestedSessionKey) {
+              void state.loadHistory(true);
+            }
+          }, 1000);
+          return;
+        }
+
         set({
           loading: false,
-          error: String(err),
+          error: errorMessage,
         });
       }
     }

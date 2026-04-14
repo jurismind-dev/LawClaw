@@ -15,6 +15,7 @@ import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
 import { autoInstallCliIfNeeded } from '../utils/openclaw-cli';
 import { runProviderStartupMigration } from '../utils/provider-migration';
+import { syncLawClawDefaultProviderAtStartup } from '../utils/lawclaw-provider-selection';
 import { runAgentPresetStartupMigration } from '../utils/agent-preset-migration';
 import { jurismindConnectorManager } from '../utils/jurismind-connector';
 import { ensureGlobalRuntimeShims } from '../utils/global-runtime-shims';
@@ -245,6 +246,8 @@ async function initialize(): Promise<void> {
   await runAgentPresetStartupMigration({
     forceLawclawAgentPreset,
   });
+
+  await syncLawClawDefaultProviderAtStartup();
 
   // Start Gateway automatically
   try {

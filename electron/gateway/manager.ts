@@ -6,7 +6,7 @@ import { app } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
-import { existsSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import { 
@@ -34,7 +34,7 @@ import { logger } from '../utils/logger';
 import { applyBundledRuntimeToEnv, getBundledRuntimePathEntries } from '../utils/bundled-runtime';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
-import { applyBundledNpmToCliEnv } from '../utils/openclaw-cli';
+import { applyBundledNpmToCliEnv, getNodeExecForCli } from '../utils/openclaw-cli';
 import {
   loadOrCreateDeviceIdentity,
   signDevicePayload,
@@ -43,6 +43,9 @@ import {
   type DeviceIdentity,
 } from '../utils/device-identity';
 import { repairInstalledFeishuOfficialPluginIfNeeded } from '../utils/feishu-official-plugin-installer';
+import { applyOpenClawConfigEnvFallbacks } from '../utils/openclaw-config-env';
+import { stripUtf8Bom } from '../utils/text-encoding';
+import { repairInstalledWeixinPluginIfNeeded } from '../utils/weixin-plugin-installer';
 import { selectGatewayRuntime } from './runtime-selection';
 import { getGatewayStartupRecoveryAction } from './startup-recovery';
 
@@ -87,6 +90,12 @@ const DEFAULT_RECONNECT_CONFIG: ReconnectConfig = {
   baseDelay: 1000,
   maxDelay: 30000,
 };
+
+function isUnsupportedShutdownRpcError(error: unknown): boolean {
+  const message = String(error ?? '');
+  return /unknown method:\s*shutdown/i.test(message)
+    || /method not found/i.test(message);
+}
 
 /**
  * Get the Node.js-compatible executable path for spawning child processes.
@@ -418,7 +427,11 @@ export class GatewayManager extends EventEmitter {
       try {
         await this.rpc('shutdown', undefined, 5000);
       } catch (error) {
-        logger.warn('Failed to request shutdown for externally managed Gateway:', error);
+        if (isUnsupportedShutdownRpcError(error)) {
+          logger.debug('External Gateway does not support shutdown RPC; closing WebSocket only');
+        } else {
+          logger.warn('Failed to request shutdown for externally managed Gateway:', error);
+        }
       }
     }
 
@@ -842,6 +855,25 @@ export class GatewayManager extends EventEmitter {
     } catch (err) {
       logger.warn('Unexpected error while repairing installed Feishu official plugin before Gateway start:', err);
     }
+
+    try {
+      const repairResult = await repairInstalledWeixinPluginIfNeeded({
+        openClawConfigDir: getOpenClawConfigDir(),
+        runOpenClawCli: this.runOpenClawCliCommand.bind(this),
+      });
+
+      if (repairResult.repaired) {
+        logger.info(
+          `Repaired installed Weixin plugin before Gateway start (${repairResult.pluginDir})`
+        );
+      } else if (repairResult.reason === 'failed') {
+        logger.warn(
+          `Failed to repair installed Weixin plugin before Gateway start (${repairResult.pluginDir}): ${repairResult.error}${repairResult.details ? `\n${repairResult.details}` : ''}`
+        );
+      }
+    } catch (err) {
+      logger.warn('Unexpected error while repairing installed Weixin plugin before Gateway start:', err);
+    }
     
     let command: string;
     let args: string[];
@@ -1252,6 +1284,83 @@ export class GatewayManager extends EventEmitter {
           stdout,
           stderr,
           error: stderr.trim() || stdout.trim() || `${command} exited with code ${String(code)}`,
+        });
+      });
+    });
+  }
+
+  private async runOpenClawCliCommand(args: string[]): Promise<{
+    success: boolean;
+    stdout: string;
+    stderr: string;
+    error?: string;
+  }> {
+    const entryPath = getOpenClawEntryPath();
+    const openclawDir = getOpenClawDir();
+    if (!existsSync(entryPath)) {
+      return {
+        success: false,
+        stdout: '',
+        stderr: '',
+        error: `OpenClaw entry script not found at: ${entryPath}`,
+      };
+    }
+
+    let cliEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      OPENCLAW_NO_RESPAWN: '1',
+      OPENCLAW_EMBEDDED_IN: 'LawClaw',
+    };
+
+    try {
+      const configPath = path.join(getOpenClawConfigDir(), 'openclaw.json');
+      if (existsSync(configPath)) {
+        cliEnv = applyOpenClawConfigEnvFallbacks(
+          stripUtf8Bom(readFileSync(configPath, 'utf-8')),
+          cliEnv
+        );
+      }
+    } catch (error) {
+      logger.warn('Failed to apply OpenClaw config env fallbacks before plugin repair CLI run:', error);
+    }
+
+    cliEnv = applyBundledNpmToCliEnv(cliEnv);
+    const nodeExec = getNodeExecForCli();
+
+    return await new Promise((resolve) => {
+      const child = spawn(nodeExec, [entryPath, ...args], {
+        cwd: openclawDir,
+        env: cliEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (chunk: Buffer | string) => {
+        stdout += String(chunk);
+      });
+
+      child.stderr.on('data', (chunk: Buffer | string) => {
+        stderr += String(chunk);
+      });
+
+      child.on('error', (error) => {
+        resolve({
+          success: false,
+          stdout,
+          stderr,
+          error: String(error),
+        });
+      });
+
+      child.on('close', (code) => {
+        resolve({
+          success: code === 0,
+          stdout,
+          stderr,
+          ...(code === 0 ? {} : { error: `OpenClaw CLI exited with code ${code}` }),
         });
       });
     });

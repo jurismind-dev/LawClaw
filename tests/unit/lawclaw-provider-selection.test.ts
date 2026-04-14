@@ -223,6 +223,62 @@ describe('lawclaw provider selection helpers', () => {
     );
   });
 
+  it('syncs the migrated default provider during startup when lawclaw-main is still on the template fallback model', async () => {
+    secureStorageMock.getDefaultProvider.mockResolvedValue('jurismind');
+    secureStorageMock.getProvider.mockResolvedValue({
+      id: 'jurismind',
+      type: 'jurismind',
+      name: 'Jurismind',
+      enabled: true,
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+    secureStorageMock.getApiKey.mockResolvedValue('sk-jurismind');
+    openclawAuthMock.getOpenClawAgentModelPrimary.mockReturnValue('openai/gpt-5.4');
+
+    const mod = await import('@electron/utils/lawclaw-provider-selection');
+
+    await mod.syncLawClawDefaultProviderAtStartup();
+
+    expect(secureStorageMock.setDefaultProvider).toHaveBeenCalledWith('jurismind');
+    expect(openclawAuthMock.setOpenClawAgentModel).toHaveBeenCalledWith(
+      'lawclaw-main',
+      'jurismind',
+      undefined
+    );
+    expect(openclawAuthMock.saveProviderKeyToOpenClaw).toHaveBeenNthCalledWith(
+      1,
+      'jurismind',
+      'sk-jurismind'
+    );
+    expect(openclawAuthMock.saveProviderKeyToOpenClaw).toHaveBeenNthCalledWith(
+      2,
+      'jurismind',
+      'sk-jurismind',
+      'lawclaw-main'
+    );
+  });
+
+  it('does not overwrite a user-selected lawclaw-main model during startup sync', async () => {
+    secureStorageMock.getDefaultProvider.mockResolvedValue('jurismind');
+    secureStorageMock.getProvider.mockResolvedValue({
+      id: 'jurismind',
+      type: 'jurismind',
+      name: 'Jurismind',
+      enabled: true,
+      createdAt: '2026-03-01T00:00:00.000Z',
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+    openclawAuthMock.getOpenClawAgentModelPrimary.mockReturnValue('google/gemini-3.1-pro-preview');
+
+    const mod = await import('@electron/utils/lawclaw-provider-selection');
+
+    await mod.syncLawClawDefaultProviderAtStartup();
+
+    expect(secureStorageMock.setDefaultProvider).not.toHaveBeenCalled();
+    expect(openclawAuthMock.setOpenClawAgentModel).not.toHaveBeenCalled();
+  });
+
   it('picks the most recently updated available provider as fallback', async () => {
     secureStorageMock.getAllProviders.mockResolvedValue([
       {

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { finalizeFeishuOfficialPluginConfig } from '../../electron/utils/feishu-channel-defaults';
+import {
+  finalizeFeishuOfficialPluginConfig,
+  sanitizeFeishuChannelConfigShape,
+} from '../../electron/utils/feishu-channel-defaults';
 
 describe('finalizeFeishuOfficialPluginConfig', () => {
   it('writes official plugin config and channel credentials after QR onboarding', () => {
@@ -87,5 +90,61 @@ describe('finalizeFeishuOfficialPluginConfig', () => {
         },
       },
     });
+  });
+
+  it('drops legacy extra keys from feishu channel config recursively', () => {
+    const result = sanitizeFeishuChannelConfigShape({
+      enabled: true,
+      defaultAccount: 'default',
+      footer: {
+        status: true,
+        legacyStatusField: true,
+      },
+      tools: {
+        doc: true,
+        legacyTool: true,
+      },
+      accounts: {
+        default: {
+          appId: 'cli_app',
+          appSecret: 'secret',
+          staleKey: true,
+          groups: {
+            litigation: {
+              enabled: true,
+              requireMention: true,
+              obsolete: 'remove-me',
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.changed).toBe(true);
+    expect(result.config).toMatchObject({
+      enabled: true,
+      footer: {
+        status: true,
+      },
+      tools: {
+        doc: true,
+      },
+      accounts: {
+        default: {
+          appId: 'cli_app',
+          appSecret: 'secret',
+          groups: {
+            litigation: {
+              enabled: true,
+              requireMention: true,
+            },
+          },
+        },
+      },
+    });
+    expect(result.config).not.toHaveProperty('defaultAccount');
+    expect(result.config.footer).not.toHaveProperty('legacyStatusField');
+    expect(result.config.tools).not.toHaveProperty('legacyTool');
+    expect((result.config.accounts as Record<string, unknown>).default).not.toHaveProperty('staleKey');
   });
 });

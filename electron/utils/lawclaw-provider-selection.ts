@@ -28,6 +28,7 @@ const JURISMIND_MANAGED_MODELS = new Set([
   'jurismind/kimi-k2.5',
   'jurismind/jurismind',
 ]);
+const LEGACY_LAWCLAW_TEMPLATE_MODELS = new Set(['openai/gpt-5.4']);
 
 type SelectionSyncPolicy = 'always' | 'if-empty' | 'if-managed';
 
@@ -111,6 +112,15 @@ function getManagedModelCandidates(provider: ManagedProviderSnapshot): Set<strin
   }
 
   return candidates;
+}
+
+function isLawClawTemplateFallbackModel(model: string | undefined): boolean {
+  if (!hasModelValue(model)) {
+    return false;
+  }
+
+  const openAiDefaultModel = getProviderDefaultModel('openai');
+  return LEGACY_LAWCLAW_TEMPLATE_MODELS.has(model) || openAiDefaultModel === model;
 }
 
 async function resolveManagedProvider(
@@ -233,6 +243,33 @@ export async function clearLawClawProviderSelection(
     logger.info('Scheduling Gateway restart after clearing LawClaw provider selection');
     options.restartGateway();
   }
+}
+
+export async function syncLawClawDefaultProviderAtStartup(): Promise<void> {
+  const defaultProviderId = await getDefaultProvider();
+  if (!defaultProviderId) {
+    return;
+  }
+
+  const defaultProvider = await getProvider(defaultProviderId);
+  if (!defaultProvider) {
+    return;
+  }
+
+  const currentModel = getOpenClawAgentModelPrimary(LAWCLAW_MAIN_AGENT_ID);
+  if (hasModelValue(currentModel) && !isLawClawTemplateFallbackModel(currentModel)) {
+    return;
+  }
+
+  const isAvailable = await isProviderAvailableForLawClaw(defaultProvider);
+  if (!isAvailable) {
+    return;
+  }
+
+  logger.info(
+    `Syncing LawClaw dedicated agent model from default provider "${defaultProviderId}" during startup`
+  );
+  await applyLawClawProviderSelection(defaultProviderId, { syncPolicy: 'always' });
 }
 
 export async function isProviderAvailableForLawClaw(provider: ProviderConfig): Promise<boolean> {

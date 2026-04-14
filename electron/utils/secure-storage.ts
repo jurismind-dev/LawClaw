@@ -4,24 +4,132 @@
  * Keys are stored in plain text alongside provider configs in a single electron-store.
  */
 
+import { app } from 'electron';
+import { existsSync, readFileSync } from 'fs';
+import { dirname, join } from 'path';
+
 import { BUILTIN_PROVIDER_TYPES } from './provider-registry';
 import { getActiveOpenClawProviders } from './openclaw-auth';
+import { parseJsonText } from './text-encoding';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let providerStore: any = null;
 
+const PROVIDER_STORE_NAME = 'clawx-providers';
+const LEGACY_PROVIDER_STORE_FILENAMES = [`${PROVIDER_STORE_NAME}.json`, 'providers.json'];
+const LEGACY_PROVIDER_USER_DATA_DIRS = ['ClawX', 'OpenClaw'];
+
+const providerStoreDefaults = {
+  providers: {} as Record<string, ProviderConfig>,
+  apiKeys: {} as Record<string, string>,
+  defaultProvider: null as string | null,
+};
+
+interface ProviderStoreSnapshot {
+  providers: Record<string, ProviderConfig>;
+  apiKeys: Record<string, string>;
+  defaultProvider: string | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeProviderStoreSnapshot(value: unknown): ProviderStoreSnapshot {
+  const source = isRecord(value) ? value : {};
+  return {
+    providers: isRecord(source.providers)
+      ? (source.providers as Record<string, ProviderConfig>)
+      : {},
+    apiKeys: isRecord(source.apiKeys)
+      ? Object.fromEntries(
+          Object.entries(source.apiKeys).filter((entry): entry is [string, string] => {
+            return typeof entry[0] === 'string' && typeof entry[1] === 'string';
+          })
+        )
+      : {},
+    defaultProvider:
+      typeof source.defaultProvider === 'string' && source.defaultProvider.trim().length > 0
+        ? source.defaultProvider.trim()
+        : null,
+  };
+}
+
+function hasProviderStoreData(snapshot: ProviderStoreSnapshot): boolean {
+  return (
+    Object.keys(snapshot.providers).length > 0
+    || Object.keys(snapshot.apiKeys).length > 0
+    || typeof snapshot.defaultProvider === 'string'
+  );
+}
+
+function readLegacyProviderStoreSnapshot(legacyUserDataDir: string): ProviderStoreSnapshot | null {
+  for (const filename of LEGACY_PROVIDER_STORE_FILENAMES) {
+    const filePath = join(legacyUserDataDir, filename);
+    if (!existsSync(filePath)) {
+      continue;
+    }
+
+    try {
+      return normalizeProviderStoreSnapshot(parseJsonText(readFileSync(filePath, 'utf-8')));
+    } catch (error) {
+      console.warn(`Failed to read legacy provider store at ${filePath}:`, error);
+    }
+  }
+
+  return null;
+}
+
+function loadLegacyProviderStoreSnapshot(currentUserDataDir: string): ProviderStoreSnapshot | null {
+  const userDataParentDir = dirname(currentUserDataDir);
+
+  for (const legacyDirName of LEGACY_PROVIDER_USER_DATA_DIRS) {
+    const legacyUserDataDir = join(userDataParentDir, legacyDirName);
+    if (legacyUserDataDir === currentUserDataDir) {
+      continue;
+    }
+
+    const snapshot = readLegacyProviderStoreSnapshot(legacyUserDataDir);
+    if (snapshot && hasProviderStoreData(snapshot)) {
+      return snapshot;
+    }
+  }
+
+  return null;
+}
+
+async function migrateLegacyProviderStoreIfNeeded(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}) {
+  const currentSnapshot = normalizeProviderStoreSnapshot({
+    providers: store.get('providers'),
+    apiKeys: store.get('apiKeys'),
+    defaultProvider: store.get('defaultProvider'),
+  });
+  if (hasProviderStoreData(currentSnapshot)) {
+    return;
+  }
+
+  const legacySnapshot = loadLegacyProviderStoreSnapshot(app.getPath('userData'));
+  if (!legacySnapshot) {
+    return;
+  }
+
+  store.set('providers', legacySnapshot.providers);
+  store.set('apiKeys', legacySnapshot.apiKeys);
+  store.set('defaultProvider', legacySnapshot.defaultProvider);
+}
+
 async function getProviderStore() {
   if (!providerStore) {
     const Store = (await import('electron-store')).default;
     providerStore = new Store({
-      name: 'clawx-providers',
-      defaults: {
-        providers: {} as Record<string, ProviderConfig>,
-        apiKeys: {} as Record<string, string>,
-        defaultProvider: null as string | null,
-      },
+      name: PROVIDER_STORE_NAME,
+      defaults: providerStoreDefaults,
     });
+    await migrateLegacyProviderStoreIfNeeded(providerStore);
   }
   return providerStore;
 }

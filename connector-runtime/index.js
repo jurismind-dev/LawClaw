@@ -25,6 +25,7 @@ import {
   createPublicKey,
 } from 'crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { parseJsonFromMixedOutput } from './json-output.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -645,7 +646,7 @@ function runOpenClawCli(args) {
 
 async function listPendingDevicePairingRequests() {
   const result = await runOpenClawCli(['devices', 'list', '--json']);
-  const parsed = JSON.parse(String(result.stdout || '{}'));
+  const parsed = parseJsonFromMixedOutput(result.stdout || '{}', {});
   return Array.isArray(parsed?.pending) ? parsed.pending : [];
 }
 

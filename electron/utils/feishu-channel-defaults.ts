@@ -13,6 +13,11 @@ export interface ApplyFeishuChannelDefaultsOptions {
   seedDisabledWhenEmpty?: boolean;
 }
 
+interface SanitizedFieldResult<T = unknown> {
+  value: T | undefined;
+  changed: boolean;
+}
+
 function asObject(value: unknown): JsonObject | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -59,6 +64,259 @@ function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values));
 }
 
+const FEISHU_GROUP_ALLOWED_KEYS = new Set([
+  'groupPolicy',
+  'requireMention',
+  'tools',
+  'skills',
+  'enabled',
+  'allowFrom',
+  'systemPrompt',
+]);
+const FEISHU_TOOL_POLICY_ALLOWED_KEYS = new Set(['allow', 'deny']);
+const FEISHU_TOOLS_ALLOWED_KEYS = new Set(['doc', 'wiki', 'drive', 'perm', 'scopes']);
+const FEISHU_FOOTER_ALLOWED_KEYS = new Set(['status', 'elapsed']);
+const FEISHU_BLOCK_STREAMING_COALESCE_ALLOWED_KEYS = new Set(['minChars', 'maxChars', 'idleMs']);
+const FEISHU_MARKDOWN_ALLOWED_KEYS = new Set(['tables']);
+const FEISHU_HEARTBEAT_ALLOWED_KEYS = new Set([
+  'every',
+  'activeHours',
+  'target',
+  'to',
+  'prompt',
+  'accountId',
+]);
+const FEISHU_HEARTBEAT_ACTIVE_HOURS_ALLOWED_KEYS = new Set(['start', 'end', 'timezone']);
+const FEISHU_CAPABILITIES_ALLOWED_KEYS = new Set(['image', 'audio', 'video']);
+const FEISHU_DEDUP_ALLOWED_KEYS = new Set(['ttlMs', 'maxEntries']);
+const FEISHU_UAT_ALLOWED_KEYS = new Set(['enabled', 'allowedScopes', 'blockedScopes']);
+const FEISHU_DMS_ALLOWED_KEYS = new Set(['historyLimit']);
+const FEISHU_REPLY_MODE_ALLOWED_KEYS = new Set(['default', 'group', 'direct']);
+const FEISHU_ACCOUNT_ALLOWED_KEYS = new Set([
+  'appId',
+  'appSecret',
+  'encryptKey',
+  'verificationToken',
+  'name',
+  'enabled',
+  'domain',
+  'connectionMode',
+  'webhookPath',
+  'webhookPort',
+  'dmPolicy',
+  'allowFrom',
+  'groupPolicy',
+  'groupAllowFrom',
+  'requireMention',
+  'groups',
+  'historyLimit',
+  'dmHistoryLimit',
+  'dms',
+  'textChunkLimit',
+  'chunkMode',
+  'blockStreamingCoalesce',
+  'mediaMaxMb',
+  'heartbeat',
+  'replyMode',
+  'streaming',
+  'blockStreaming',
+  'tools',
+  'footer',
+  'markdown',
+  'configWrites',
+  'capabilities',
+  'dedup',
+  'reactionNotifications',
+  'threadSession',
+  'uat',
+]);
+const FEISHU_CHANNEL_ALLOWED_KEYS = new Set([...FEISHU_ACCOUNT_ALLOWED_KEYS, 'accounts']);
+
+function sanitizeJsonObjectShape(
+  value: unknown,
+  allowedKeys: Set<string>,
+  nestedSanitizers: Record<string, (value: unknown) => SanitizedFieldResult<unknown>> = {}
+): SanitizedFieldResult<JsonObject> {
+  const source = asObject(value);
+  if (!source) {
+    return {
+      value: undefined,
+      changed: value !== undefined,
+    };
+  }
+
+  let changed = false;
+  const next: JsonObject = {};
+
+  for (const [key, rawValue] of Object.entries(source)) {
+    if (!allowedKeys.has(key)) {
+      changed = true;
+      continue;
+    }
+
+    const sanitizeNestedValue = nestedSanitizers[key];
+    if (!sanitizeNestedValue) {
+      next[key] = rawValue;
+      continue;
+    }
+
+    const sanitized = sanitizeNestedValue(rawValue);
+    if (sanitized.changed) {
+      changed = true;
+    }
+    if (sanitized.value !== undefined) {
+      next[key] = sanitized.value;
+    } else {
+      changed = true;
+    }
+  }
+
+  return {
+    value: next,
+    changed,
+  };
+}
+
+function sanitizeNamedObjectMap(
+  value: unknown,
+  itemSanitizer: (value: unknown) => SanitizedFieldResult<JsonObject>
+): SanitizedFieldResult<JsonObject> {
+  const source = asObject(value);
+  if (!source) {
+    return {
+      value: undefined,
+      changed: value !== undefined,
+    };
+  }
+
+  let changed = false;
+  const next: JsonObject = {};
+
+  for (const [key, entry] of Object.entries(source)) {
+    const sanitized = itemSanitizer(entry);
+    if (sanitized.changed) {
+      changed = true;
+    }
+    if (sanitized.value !== undefined) {
+      next[key] = sanitized.value;
+    } else {
+      changed = true;
+    }
+  }
+
+  return {
+    value: next,
+    changed,
+  };
+}
+
+function sanitizeFeishuToolPolicyConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_TOOL_POLICY_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuFooterConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_FOOTER_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuBlockStreamingCoalesceConfig(
+  value: unknown
+): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_BLOCK_STREAMING_COALESCE_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuMarkdownConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_MARKDOWN_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuHeartbeatActiveHoursConfig(
+  value: unknown
+): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_HEARTBEAT_ACTIVE_HOURS_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuHeartbeatConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_HEARTBEAT_ALLOWED_KEYS, {
+    activeHours: sanitizeFeishuHeartbeatActiveHoursConfig,
+  });
+}
+
+function sanitizeFeishuCapabilitiesConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_CAPABILITIES_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuDedupConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_DEDUP_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuUatConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_UAT_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuDmsConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_DMS_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuReplyModeConfig(value: unknown): SanitizedFieldResult<unknown> {
+  if (typeof value === 'string') {
+    return {
+      value,
+      changed: false,
+    };
+  }
+
+  return sanitizeJsonObjectShape(value, FEISHU_REPLY_MODE_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuToolsConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_TOOLS_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuGroupConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_GROUP_ALLOWED_KEYS, {
+    tools: sanitizeFeishuToolPolicyConfig,
+  });
+}
+
+function sanitizeFeishuAccountConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_ACCOUNT_ALLOWED_KEYS, {
+    groups: (entry) => sanitizeNamedObjectMap(entry, sanitizeFeishuGroupConfig),
+    dms: sanitizeFeishuDmsConfig,
+    blockStreamingCoalesce: sanitizeFeishuBlockStreamingCoalesceConfig,
+    heartbeat: sanitizeFeishuHeartbeatConfig,
+    replyMode: sanitizeFeishuReplyModeConfig,
+    tools: sanitizeFeishuToolsConfig,
+    footer: sanitizeFeishuFooterConfig,
+    markdown: sanitizeFeishuMarkdownConfig,
+    capabilities: sanitizeFeishuCapabilitiesConfig,
+    dedup: sanitizeFeishuDedupConfig,
+    uat: sanitizeFeishuUatConfig,
+  });
+}
+
+export function sanitizeFeishuChannelConfigShape(
+  channelConfig: JsonObject | undefined
+): { config: JsonObject; changed: boolean } {
+  const sanitized = sanitizeJsonObjectShape(channelConfig, FEISHU_CHANNEL_ALLOWED_KEYS, {
+    groups: (entry) => sanitizeNamedObjectMap(entry, sanitizeFeishuGroupConfig),
+    dms: sanitizeFeishuDmsConfig,
+    blockStreamingCoalesce: sanitizeFeishuBlockStreamingCoalesceConfig,
+    heartbeat: sanitizeFeishuHeartbeatConfig,
+    replyMode: sanitizeFeishuReplyModeConfig,
+    tools: sanitizeFeishuToolsConfig,
+    footer: sanitizeFeishuFooterConfig,
+    markdown: sanitizeFeishuMarkdownConfig,
+    capabilities: sanitizeFeishuCapabilitiesConfig,
+    dedup: sanitizeFeishuDedupConfig,
+    uat: sanitizeFeishuUatConfig,
+    accounts: (entry) => sanitizeNamedObjectMap(entry, sanitizeFeishuAccountConfig),
+  });
+
+  return {
+    config: sanitized.value || {},
+    changed: sanitized.changed,
+  };
+}
+
 export interface FeishuOfficialCredentials {
   appId: string;
   appSecret: string;
@@ -74,8 +332,10 @@ export function applyFeishuChannelDefaults(
   channelConfig: JsonObject | undefined,
   options: ApplyFeishuChannelDefaultsOptions = {}
 ): { config: JsonObject; changed: boolean } {
-  const source = asObject(channelConfig) || {};
-  const fallback = asObject(options.fallbackConfig) || {};
+  const sourceSanitized = sanitizeFeishuChannelConfigShape(asObject(channelConfig) || {});
+  const fallbackSanitized = sanitizeFeishuChannelConfigShape(asObject(options.fallbackConfig) || {});
+  const source = sourceSanitized.config;
+  const fallback = fallbackSanitized.config;
 
   const sourceFooter = asObject(source.footer) || {};
   const fallbackFooter = asObject(fallback.footer) || {};
@@ -103,7 +363,10 @@ export function applyFeishuChannelDefaults(
 
   return {
     config: nextConfig,
-    changed: JSON.stringify(source) !== JSON.stringify(nextConfig),
+    changed:
+      sourceSanitized.changed
+      || fallbackSanitized.changed
+      || JSON.stringify(source) !== JSON.stringify(nextConfig),
   };
 }
 
@@ -115,7 +378,7 @@ export function finalizeFeishuOfficialPluginConfig(
   const plugins = asObject(source.plugins) || {};
   const channels = asObject(source.channels) || {};
   const entries = asObject(plugins.entries) || {};
-  const existingChannel = asObject(channels.feishu) || {};
+  const existingChannel = sanitizeFeishuChannelConfigShape(asObject(channels.feishu) || {}).config;
   const credentials = options.credentials;
 
   const allow = Array.isArray(plugins.allow)
@@ -190,12 +453,13 @@ export function finalizeFeishuOfficialPluginConfig(
     fallbackConfig: existingChannel,
     seedDisabledWhenEmpty: options.seedDisabledWhenEmpty,
   });
+  const sanitizedChannelDefaults = sanitizeFeishuChannelConfigShape(channelDefaults.config);
 
   const nextConfig: JsonObject = {
     ...source,
     channels: {
       ...channels,
-      feishu: channelDefaults.config,
+      feishu: sanitizedChannelDefaults.config,
     },
     plugins: {
       ...plugins,

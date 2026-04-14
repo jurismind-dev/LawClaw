@@ -68,34 +68,104 @@ function hasNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function readPositiveInteger(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  const normalized = Math.trunc(value);
+  if (normalized <= 0) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
+function sanitizeEnumString(
+  value: unknown,
+  allowedValues: readonly string[],
+  mappings: Record<string, string | undefined> = {}
+): SanitizedFieldResult<string> {
+  if (value === undefined) {
+    return {
+      value: undefined,
+      changed: false,
+    };
+  }
+
+  if (typeof value !== 'string') {
+    return {
+      value: undefined,
+      changed: true,
+    };
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return {
+      value: undefined,
+      changed: true,
+    };
+  }
+
+  const mapped = Object.prototype.hasOwnProperty.call(mappings, trimmed)
+    ? mappings[trimmed]
+    : trimmed;
+  if (!mapped || !allowedValues.includes(mapped)) {
+    return {
+      value: undefined,
+      changed: true,
+    };
+  }
+
+  return {
+    value: mapped,
+    changed: mapped !== trimmed,
+  };
+}
+
+const FEISHU_CONNECTION_MODE_VALUES = ['websocket', 'webhook'] as const;
+const FEISHU_DM_POLICY_VALUES = ['open', 'pairing', 'allowlist'] as const;
+const FEISHU_GROUP_POLICY_VALUES = ['open', 'allowlist', 'disabled'] as const;
+const FEISHU_CHUNK_MODE_VALUES = ['length', 'newline'] as const;
+const FEISHU_RENDER_MODE_VALUES = ['auto', 'raw', 'card'] as const;
+const FEISHU_REPLY_IN_THREAD_VALUES = ['disabled', 'enabled'] as const;
+const FEISHU_REACTION_NOTIFICATION_VALUES = ['off', 'own', 'all'] as const;
+const FEISHU_GROUP_SESSION_SCOPE_VALUES = [
+  'group',
+  'group_sender',
+  'group_topic',
+  'group_topic_sender',
+] as const;
+const FEISHU_TOPIC_SESSION_MODE_VALUES = ['disabled', 'enabled'] as const;
+const FEISHU_MARKDOWN_MODE_VALUES = ['native', 'escape', 'strip'] as const;
+const FEISHU_MARKDOWN_TABLE_MODE_VALUES = ['native', 'ascii', 'simple'] as const;
+const FEISHU_HEARTBEAT_VISIBILITY_VALUES = ['visible', 'hidden'] as const;
+
 const FEISHU_GROUP_ALLOWED_KEYS = new Set([
-  'groupPolicy',
   'requireMention',
   'tools',
   'skills',
   'enabled',
   'allowFrom',
   'systemPrompt',
+  'groupSessionScope',
+  'topicSessionMode',
+  'replyInThread',
 ]);
 const FEISHU_TOOL_POLICY_ALLOWED_KEYS = new Set(['allow', 'deny']);
-const FEISHU_TOOLS_ALLOWED_KEYS = new Set(['doc', 'wiki', 'drive', 'perm', 'scopes']);
-const FEISHU_FOOTER_ALLOWED_KEYS = new Set(['status', 'elapsed']);
-const FEISHU_BLOCK_STREAMING_COALESCE_ALLOWED_KEYS = new Set(['minChars', 'maxChars', 'idleMs']);
-const FEISHU_MARKDOWN_ALLOWED_KEYS = new Set(['tables']);
-const FEISHU_HEARTBEAT_ALLOWED_KEYS = new Set([
-  'every',
-  'activeHours',
-  'target',
-  'to',
-  'prompt',
-  'accountId',
+const FEISHU_TOOLS_ALLOWED_KEYS = new Set(['doc', 'chat', 'wiki', 'drive', 'perm', 'scopes']);
+const FEISHU_ACTIONS_ALLOWED_KEYS = new Set(['reactions']);
+const FEISHU_BLOCK_STREAMING_COALESCE_ALLOWED_KEYS = new Set(['enabled', 'minDelayMs', 'maxDelayMs']);
+const FEISHU_MARKDOWN_ALLOWED_KEYS = new Set(['mode', 'tableMode']);
+const FEISHU_HEARTBEAT_ALLOWED_KEYS = new Set(['visibility', 'intervalMs']);
+const FEISHU_DMS_ALLOWED_KEYS = new Set(['enabled', 'systemPrompt']);
+const FEISHU_DYNAMIC_AGENT_CREATION_ALLOWED_KEYS = new Set([
+  'enabled',
+  'workspaceTemplate',
+  'agentDirTemplate',
+  'maxAgents',
 ]);
-const FEISHU_HEARTBEAT_ACTIVE_HOURS_ALLOWED_KEYS = new Set(['start', 'end', 'timezone']);
-const FEISHU_CAPABILITIES_ALLOWED_KEYS = new Set(['image', 'audio', 'video']);
-const FEISHU_DEDUP_ALLOWED_KEYS = new Set(['ttlMs', 'maxEntries']);
-const FEISHU_UAT_ALLOWED_KEYS = new Set(['enabled', 'allowedScopes', 'blockedScopes']);
-const FEISHU_DMS_ALLOWED_KEYS = new Set(['historyLimit']);
-const FEISHU_REPLY_MODE_ALLOWED_KEYS = new Set(['default', 'group', 'direct']);
 const FEISHU_ACCOUNT_ALLOWED_KEYS = new Set([
   'appId',
   'appSecret',
@@ -106,11 +176,13 @@ const FEISHU_ACCOUNT_ALLOWED_KEYS = new Set([
   'domain',
   'connectionMode',
   'webhookPath',
+  'webhookHost',
   'webhookPort',
   'dmPolicy',
   'allowFrom',
   'groupPolicy',
   'groupAllowFrom',
+  'groupSenderAllowFrom',
   'requireMention',
   'groups',
   'historyLimit',
@@ -120,21 +192,28 @@ const FEISHU_ACCOUNT_ALLOWED_KEYS = new Set([
   'chunkMode',
   'blockStreamingCoalesce',
   'mediaMaxMb',
+  'httpTimeoutMs',
   'heartbeat',
-  'replyMode',
+  'renderMode',
   'streaming',
-  'blockStreaming',
   'tools',
-  'footer',
+  'actions',
+  'replyInThread',
   'markdown',
   'configWrites',
   'capabilities',
-  'dedup',
   'reactionNotifications',
-  'threadSession',
-  'uat',
+  'typingIndicator',
+  'resolveSenderNames',
+  'groupSessionScope',
+  'topicSessionMode',
 ]);
-const FEISHU_CHANNEL_ALLOWED_KEYS = new Set([...FEISHU_ACCOUNT_ALLOWED_KEYS, 'accounts']);
+const FEISHU_CHANNEL_ALLOWED_KEYS = new Set([
+  ...FEISHU_ACCOUNT_ALLOWED_KEYS,
+  'defaultAccount',
+  'dynamicAgentCreation',
+  'accounts',
+]);
 
 function sanitizeJsonObjectShape(
   value: unknown,
@@ -218,82 +297,318 @@ function sanitizeFeishuToolPolicyConfig(value: unknown): SanitizedFieldResult<Js
   return sanitizeJsonObjectShape(value, FEISHU_TOOL_POLICY_ALLOWED_KEYS);
 }
 
-function sanitizeFeishuFooterConfig(value: unknown): SanitizedFieldResult<JsonObject> {
-  return sanitizeJsonObjectShape(value, FEISHU_FOOTER_ALLOWED_KEYS);
-}
-
 function sanitizeFeishuBlockStreamingCoalesceConfig(
   value: unknown
 ): SanitizedFieldResult<JsonObject> {
-  return sanitizeJsonObjectShape(value, FEISHU_BLOCK_STREAMING_COALESCE_ALLOWED_KEYS);
-}
-
-function sanitizeFeishuMarkdownConfig(value: unknown): SanitizedFieldResult<JsonObject> {
-  return sanitizeJsonObjectShape(value, FEISHU_MARKDOWN_ALLOWED_KEYS);
-}
-
-function sanitizeFeishuHeartbeatActiveHoursConfig(
-  value: unknown
-): SanitizedFieldResult<JsonObject> {
-  return sanitizeJsonObjectShape(value, FEISHU_HEARTBEAT_ACTIVE_HOURS_ALLOWED_KEYS);
-}
-
-function sanitizeFeishuHeartbeatConfig(value: unknown): SanitizedFieldResult<JsonObject> {
-  return sanitizeJsonObjectShape(value, FEISHU_HEARTBEAT_ALLOWED_KEYS, {
-    activeHours: sanitizeFeishuHeartbeatActiveHoursConfig,
-  });
-}
-
-function sanitizeFeishuCapabilitiesConfig(value: unknown): SanitizedFieldResult<JsonObject> {
-  return sanitizeJsonObjectShape(value, FEISHU_CAPABILITIES_ALLOWED_KEYS);
-}
-
-function sanitizeFeishuDedupConfig(value: unknown): SanitizedFieldResult<JsonObject> {
-  return sanitizeJsonObjectShape(value, FEISHU_DEDUP_ALLOWED_KEYS);
-}
-
-function sanitizeFeishuUatConfig(value: unknown): SanitizedFieldResult<JsonObject> {
-  return sanitizeJsonObjectShape(value, FEISHU_UAT_ALLOWED_KEYS);
-}
-
-function sanitizeFeishuDmsConfig(value: unknown): SanitizedFieldResult<JsonObject> {
-  return sanitizeJsonObjectShape(value, FEISHU_DMS_ALLOWED_KEYS);
-}
-
-function sanitizeFeishuReplyModeConfig(value: unknown): SanitizedFieldResult<unknown> {
-  if (typeof value === 'string') {
+  const source = asObject(value);
+  if (!source) {
     return {
-      value,
-      changed: false,
+      value: undefined,
+      changed: value !== undefined,
     };
   }
 
-  return sanitizeJsonObjectShape(value, FEISHU_REPLY_MODE_ALLOWED_KEYS);
+  let changed = false;
+  const next: JsonObject = {};
+
+  if (typeof source.enabled === 'boolean') {
+    next.enabled = source.enabled;
+  }
+  const minDelayMs = readPositiveInteger(source.minDelayMs);
+  if (minDelayMs !== undefined) {
+    next.minDelayMs = minDelayMs;
+    if (minDelayMs !== source.minDelayMs) {
+      changed = true;
+    }
+  }
+  const maxDelayMs = readPositiveInteger(source.maxDelayMs);
+  if (maxDelayMs !== undefined) {
+    next.maxDelayMs = maxDelayMs;
+    if (maxDelayMs !== source.maxDelayMs) {
+      changed = true;
+    }
+  }
+
+  if (Object.keys(next).length === 0) {
+    const legacyIdleMs = readPositiveInteger(source.idleMs);
+    if (legacyIdleMs !== undefined) {
+      return {
+        value: {
+          enabled: true,
+          minDelayMs: legacyIdleMs,
+          maxDelayMs: legacyIdleMs,
+        },
+        changed: true,
+      };
+    }
+  }
+
+  for (const key of Object.keys(source)) {
+    if (!FEISHU_BLOCK_STREAMING_COALESCE_ALLOWED_KEYS.has(key)) {
+      changed = true;
+    }
+  }
+
+  return {
+    value: Object.keys(next).length > 0 ? next : undefined,
+    changed,
+  };
+}
+
+function sanitizeFeishuMarkdownConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  const source = asObject(value);
+  if (!source) {
+    return {
+      value: undefined,
+      changed: value !== undefined,
+    };
+  }
+
+  let changed = false;
+  const next: JsonObject = {};
+
+  const mode = sanitizeEnumString(source.mode, FEISHU_MARKDOWN_MODE_VALUES);
+  if (mode.changed) {
+    changed = true;
+  }
+  if (mode.value !== undefined) {
+    next.mode = mode.value;
+  }
+
+  const tableMode = sanitizeEnumString(source.tableMode, FEISHU_MARKDOWN_TABLE_MODE_VALUES);
+  if (tableMode.changed) {
+    changed = true;
+  }
+  if (tableMode.value !== undefined) {
+    next.tableMode = tableMode.value;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, 'tables')) {
+    const mappedTableMode = sanitizeEnumString(
+      typeof source.tables === 'string'
+        ? ({
+            off: 'native',
+            bullets: 'simple',
+            code: 'ascii',
+          } as Record<string, string | undefined>)[source.tables.trim()]
+        : undefined,
+      FEISHU_MARKDOWN_TABLE_MODE_VALUES
+    );
+    changed = true;
+    if (mappedTableMode.value !== undefined && next.tableMode === undefined) {
+      next.tableMode = mappedTableMode.value;
+    }
+  }
+
+  for (const key of Object.keys(source)) {
+    if (key !== 'tables' && !FEISHU_MARKDOWN_ALLOWED_KEYS.has(key)) {
+      changed = true;
+    }
+  }
+
+  return {
+    value: Object.keys(next).length > 0 ? next : undefined,
+    changed,
+  };
+}
+
+function sanitizeFeishuHeartbeatConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  const source = asObject(value);
+  if (!source) {
+    return {
+      value: undefined,
+      changed: value !== undefined,
+    };
+  }
+
+  let changed = false;
+  const next: JsonObject = {};
+
+  const visibility = sanitizeEnumString(source.visibility, FEISHU_HEARTBEAT_VISIBILITY_VALUES);
+  if (visibility.changed) {
+    changed = true;
+  }
+  if (visibility.value !== undefined) {
+    next.visibility = visibility.value;
+  }
+
+  const intervalMs = readPositiveInteger(source.intervalMs);
+  if (intervalMs !== undefined) {
+    next.intervalMs = intervalMs;
+    if (intervalMs !== source.intervalMs) {
+      changed = true;
+    }
+  } else if (Object.keys(next).length === 0) {
+    const legacyEvery =
+      typeof source.every === 'number'
+        ? readPositiveInteger(source.every)
+        : typeof source.every === 'string' && /^\d+$/.test(source.every.trim())
+          ? readPositiveInteger(Number.parseInt(source.every.trim(), 10))
+          : undefined;
+    if (legacyEvery !== undefined) {
+      next.intervalMs = legacyEvery;
+      changed = true;
+    }
+  }
+
+  for (const key of Object.keys(source)) {
+    if (!FEISHU_HEARTBEAT_ALLOWED_KEYS.has(key)) {
+      changed = true;
+    }
+  }
+
+  return {
+    value: Object.keys(next).length > 0 ? next : undefined,
+    changed,
+  };
+}
+
+function sanitizeFeishuCapabilitiesConfig(value: unknown): SanitizedFieldResult<string[]> {
+  if (Array.isArray(value)) {
+    const next = value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+
+    return {
+      value: next,
+      changed: next.length !== value.length || next.some((item, index) => item !== value[index]),
+    };
+  }
+
+  const source = asObject(value);
+  if (!source) {
+    return {
+      value: undefined,
+      changed: value !== undefined,
+    };
+  }
+
+  const next = Object.entries(source)
+    .filter(([, enabled]) => enabled === true)
+    .map(([key]) => key.trim())
+    .filter((key) => key.length > 0);
+
+  return {
+    value: next.length > 0 ? next : undefined,
+    changed: true,
+  };
+}
+
+function sanitizeFeishuDmConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_DMS_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuDmsConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  const source = asObject(value);
+  if (!source) {
+    return {
+      value: undefined,
+      changed: value !== undefined,
+    };
+  }
+
+  const looksLikeLegacySingleDmConfig = Object.keys(source).every((key) => FEISHU_DMS_ALLOWED_KEYS.has(key));
+  if (looksLikeLegacySingleDmConfig) {
+    return {
+      value: undefined,
+      changed: true,
+    };
+  }
+
+  const sanitized = sanitizeNamedObjectMap(source, sanitizeFeishuDmConfig);
+  const nextValue = sanitized.value && Object.keys(sanitized.value).length > 0
+    ? sanitized.value
+    : undefined;
+
+  return {
+    value: nextValue,
+    changed: sanitized.changed || nextValue === undefined,
+  };
 }
 
 function sanitizeFeishuToolsConfig(value: unknown): SanitizedFieldResult<JsonObject> {
   return sanitizeJsonObjectShape(value, FEISHU_TOOLS_ALLOWED_KEYS);
 }
 
+function sanitizeFeishuActionsConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_ACTIONS_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuDynamicAgentCreationConfig(value: unknown): SanitizedFieldResult<JsonObject> {
+  return sanitizeJsonObjectShape(value, FEISHU_DYNAMIC_AGENT_CREATION_ALLOWED_KEYS);
+}
+
+function sanitizeFeishuConnectionModeConfig(value: unknown): SanitizedFieldResult<string> {
+  return sanitizeEnumString(value, FEISHU_CONNECTION_MODE_VALUES);
+}
+
+function sanitizeFeishuDmPolicyConfig(value: unknown): SanitizedFieldResult<string> {
+  return sanitizeEnumString(value, FEISHU_DM_POLICY_VALUES, {
+    disabled: 'allowlist',
+  });
+}
+
+function sanitizeFeishuGroupPolicyConfig(value: unknown): SanitizedFieldResult<string> {
+  return sanitizeEnumString(value, FEISHU_GROUP_POLICY_VALUES, {
+    allowall: 'open',
+  });
+}
+
+function sanitizeFeishuChunkModeConfig(value: unknown): SanitizedFieldResult<string> {
+  return sanitizeEnumString(value, FEISHU_CHUNK_MODE_VALUES, {
+    paragraph: 'newline',
+  });
+}
+
+function sanitizeFeishuRenderModeConfig(value: unknown): SanitizedFieldResult<string> {
+  return sanitizeEnumString(value, FEISHU_RENDER_MODE_VALUES);
+}
+
+function sanitizeFeishuReplyInThreadConfig(value: unknown): SanitizedFieldResult<string> {
+  return sanitizeEnumString(value, FEISHU_REPLY_IN_THREAD_VALUES);
+}
+
+function sanitizeFeishuReactionNotificationsConfig(value: unknown): SanitizedFieldResult<string> {
+  return sanitizeEnumString(value, FEISHU_REACTION_NOTIFICATION_VALUES);
+}
+
+function sanitizeFeishuGroupSessionScopeConfig(value: unknown): SanitizedFieldResult<string> {
+  return sanitizeEnumString(value, FEISHU_GROUP_SESSION_SCOPE_VALUES);
+}
+
+function sanitizeFeishuTopicSessionModeConfig(value: unknown): SanitizedFieldResult<string> {
+  return sanitizeEnumString(value, FEISHU_TOPIC_SESSION_MODE_VALUES);
+}
+
 function sanitizeFeishuGroupConfig(value: unknown): SanitizedFieldResult<JsonObject> {
   return sanitizeJsonObjectShape(value, FEISHU_GROUP_ALLOWED_KEYS, {
     tools: sanitizeFeishuToolPolicyConfig,
+    groupSessionScope: sanitizeFeishuGroupSessionScopeConfig,
+    topicSessionMode: sanitizeFeishuTopicSessionModeConfig,
+    replyInThread: sanitizeFeishuReplyInThreadConfig,
   });
 }
 
 function sanitizeFeishuAccountConfig(value: unknown): SanitizedFieldResult<JsonObject> {
   return sanitizeJsonObjectShape(value, FEISHU_ACCOUNT_ALLOWED_KEYS, {
+    connectionMode: sanitizeFeishuConnectionModeConfig,
+    dmPolicy: sanitizeFeishuDmPolicyConfig,
+    groupPolicy: sanitizeFeishuGroupPolicyConfig,
     groups: (entry) => sanitizeNamedObjectMap(entry, sanitizeFeishuGroupConfig),
     dms: sanitizeFeishuDmsConfig,
     blockStreamingCoalesce: sanitizeFeishuBlockStreamingCoalesceConfig,
     heartbeat: sanitizeFeishuHeartbeatConfig,
-    replyMode: sanitizeFeishuReplyModeConfig,
+    chunkMode: sanitizeFeishuChunkModeConfig,
+    renderMode: sanitizeFeishuRenderModeConfig,
     tools: sanitizeFeishuToolsConfig,
-    footer: sanitizeFeishuFooterConfig,
+    actions: sanitizeFeishuActionsConfig,
+    replyInThread: sanitizeFeishuReplyInThreadConfig,
     markdown: sanitizeFeishuMarkdownConfig,
     capabilities: sanitizeFeishuCapabilitiesConfig,
-    dedup: sanitizeFeishuDedupConfig,
-    uat: sanitizeFeishuUatConfig,
+    reactionNotifications: sanitizeFeishuReactionNotificationsConfig,
+    groupSessionScope: sanitizeFeishuGroupSessionScopeConfig,
+    topicSessionMode: sanitizeFeishuTopicSessionModeConfig,
   });
 }
 
@@ -301,17 +616,24 @@ export function sanitizeFeishuChannelConfigShape(
   channelConfig: JsonObject | undefined
 ): { config: JsonObject; changed: boolean } {
   const sanitized = sanitizeJsonObjectShape(channelConfig, FEISHU_CHANNEL_ALLOWED_KEYS, {
+    connectionMode: sanitizeFeishuConnectionModeConfig,
+    dmPolicy: sanitizeFeishuDmPolicyConfig,
+    groupPolicy: sanitizeFeishuGroupPolicyConfig,
     groups: (entry) => sanitizeNamedObjectMap(entry, sanitizeFeishuGroupConfig),
     dms: sanitizeFeishuDmsConfig,
     blockStreamingCoalesce: sanitizeFeishuBlockStreamingCoalesceConfig,
     heartbeat: sanitizeFeishuHeartbeatConfig,
-    replyMode: sanitizeFeishuReplyModeConfig,
+    chunkMode: sanitizeFeishuChunkModeConfig,
+    renderMode: sanitizeFeishuRenderModeConfig,
     tools: sanitizeFeishuToolsConfig,
-    footer: sanitizeFeishuFooterConfig,
+    actions: sanitizeFeishuActionsConfig,
+    replyInThread: sanitizeFeishuReplyInThreadConfig,
     markdown: sanitizeFeishuMarkdownConfig,
     capabilities: sanitizeFeishuCapabilitiesConfig,
-    dedup: sanitizeFeishuDedupConfig,
-    uat: sanitizeFeishuUatConfig,
+    reactionNotifications: sanitizeFeishuReactionNotificationsConfig,
+    groupSessionScope: sanitizeFeishuGroupSessionScopeConfig,
+    topicSessionMode: sanitizeFeishuTopicSessionModeConfig,
+    dynamicAgentCreation: sanitizeFeishuDynamicAgentCreationConfig,
     accounts: (entry) => sanitizeNamedObjectMap(entry, sanitizeFeishuAccountConfig),
   });
 
@@ -352,33 +674,28 @@ export function stabilizeFeishuChannelConfig(
   const sanitized = sanitizeFeishuChannelConfigShape(rawConfig);
   const nextConfig: JsonObject = { ...sanitized.config };
   const accounts = asObject(nextConfig.accounts) || {};
-  const hasLegacyDefaultAccount = Object.prototype.hasOwnProperty.call(rawConfig, 'defaultAccount');
-  const shouldCollapseAccounts =
-    hasLegacyDefaultAccount
-    || (!hasConfiguredFeishuCredentials(nextConfig) && Object.keys(accounts).length > 0);
-
-  if (!shouldCollapseAccounts || Object.keys(accounts).length === 0) {
+  if (Object.keys(accounts).length === 0) {
     return {
       config: nextConfig,
       changed: sanitized.changed,
     };
   }
 
+  let changed = sanitized.changed;
   const primaryAccountId = resolvePrimaryFeishuAccountId(rawConfig, accounts);
   const primaryAccount = primaryAccountId ? asObject(accounts[primaryAccountId]) : null;
   if (primaryAccount) {
     for (const [key, value] of Object.entries(primaryAccount)) {
       if (nextConfig[key] === undefined) {
         nextConfig[key] = value;
+        changed = true;
       }
     }
   }
 
-  delete nextConfig.accounts;
-
   return {
     config: nextConfig,
-    changed: true,
+    changed,
   };
 }
 
@@ -402,20 +719,16 @@ export function applyFeishuChannelDefaults(
   const source = sourceSanitized.config;
   const fallback = fallbackSanitized.config;
 
-  const sourceFooter = asObject(source.footer) || {};
-  const fallbackFooter = asObject(fallback.footer) || {};
-
   const nextConfig: JsonObject = {
     ...source,
     streaming: readBooleanWithFallback(source.streaming, fallback.streaming, true),
-    footer: {
-      ...fallbackFooter,
-      ...sourceFooter,
-      elapsed: readBooleanWithFallback(sourceFooter.elapsed, fallbackFooter.elapsed, true),
-      status: readBooleanWithFallback(sourceFooter.status, fallbackFooter.status, true),
-    },
-    threadSession: readBooleanWithFallback(source.threadSession, fallback.threadSession, true),
     requireMention: readBooleanWithFallback(source.requireMention, fallback.requireMention, true),
+    typingIndicator: readBooleanWithFallback(source.typingIndicator, fallback.typingIndicator, true),
+    resolveSenderNames: readBooleanWithFallback(
+      source.resolveSenderNames,
+      fallback.resolveSenderNames,
+      true
+    ),
   };
 
   if (

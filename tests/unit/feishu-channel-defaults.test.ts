@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   finalizeFeishuOfficialPluginConfig,
   sanitizeFeishuChannelConfigShape,
+  stabilizeFeishuChannelConfig,
 } from '../../electron/utils/feishu-channel-defaults';
 
 describe('finalizeFeishuOfficialPluginConfig', () => {
@@ -38,12 +39,9 @@ describe('finalizeFeishuOfficialPluginConfig', () => {
           allowFrom: ['ou_123'],
           groupAllowFrom: [],
           streaming: true,
-          threadSession: true,
           requireMention: true,
-          footer: {
-            elapsed: true,
-            status: true,
-          },
+          typingIndicator: true,
+          resolveSenderNames: true,
         },
       },
       plugins: {
@@ -92,22 +90,64 @@ describe('finalizeFeishuOfficialPluginConfig', () => {
     });
   });
 
-  it('drops legacy extra keys from feishu channel config recursively', () => {
+  it('preserves multi-account config while projecting the default account onto top-level fields', () => {
+    const result = stabilizeFeishuChannelConfig({
+      defaultAccount: 'work',
+      accounts: {
+        work: {
+          appId: 'cli_work',
+          appSecret: 'secret_work',
+          groupPolicy: 'open',
+        },
+      },
+    });
+
+    expect(result.changed).toBe(true);
+    expect(result.config).toMatchObject({
+      defaultAccount: 'work',
+      appId: 'cli_work',
+      appSecret: 'secret_work',
+      groupPolicy: 'open',
+      accounts: {
+        work: {
+          appId: 'cli_work',
+          appSecret: 'secret_work',
+          groupPolicy: 'open',
+        },
+      },
+    });
+  });
+
+  it('drops or rewrites legacy feishu keys to the current OpenClaw schema', () => {
     const result = sanitizeFeishuChannelConfigShape({
       enabled: true,
       defaultAccount: 'default',
+      threadSession: true,
       footer: {
         status: true,
-        legacyStatusField: true,
+      },
+      markdown: {
+        tables: 'code',
+        legacyMode: true,
+      },
+      capabilities: {
+        image: true,
+        audio: false,
+        video: true,
+      },
+      dms: {
+        historyLimit: 20,
       },
       tools: {
         doc: true,
+        chat: true,
         legacyTool: true,
       },
       accounts: {
         default: {
           appId: 'cli_app',
           appSecret: 'secret',
+          threadSession: true,
           staleKey: true,
           groups: {
             litigation: {
@@ -123,11 +163,14 @@ describe('finalizeFeishuOfficialPluginConfig', () => {
     expect(result.changed).toBe(true);
     expect(result.config).toMatchObject({
       enabled: true,
-      footer: {
-        status: true,
+      defaultAccount: 'default',
+      markdown: {
+        tableMode: 'ascii',
       },
+      capabilities: ['image', 'video'],
       tools: {
         doc: true,
+        chat: true,
       },
       accounts: {
         default: {
@@ -142,9 +185,11 @@ describe('finalizeFeishuOfficialPluginConfig', () => {
         },
       },
     });
-    expect(result.config).not.toHaveProperty('defaultAccount');
-    expect(result.config.footer).not.toHaveProperty('legacyStatusField');
+    expect(result.config).not.toHaveProperty('footer');
+    expect(result.config).not.toHaveProperty('threadSession');
+    expect(result.config).not.toHaveProperty('dms');
     expect(result.config.tools).not.toHaveProperty('legacyTool');
     expect((result.config.accounts as Record<string, unknown>).default).not.toHaveProperty('staleKey');
+    expect((result.config.accounts as Record<string, unknown>).default).not.toHaveProperty('threadSession');
   });
 });

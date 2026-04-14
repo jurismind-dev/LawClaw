@@ -168,4 +168,58 @@ describe('channel config lawclaw binding io', () => {
       },
     });
   });
+
+  it('deleteChannelConfig clears legacy weixin config remnants and managed binding when the last account is removed', async () => {
+    const configPath = join(homeDir, '.openclaw', 'openclaw.json');
+    await mkdir(join(homeDir, '.openclaw', 'openclaw-weixin', 'accounts'), { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          channels: {
+            'openclaw-weixin': {
+              enabled: true,
+              baseUrl: 'https://weixin.example/base',
+            },
+          },
+          plugins: {
+            allow: ['openclaw-weixin'],
+            entries: {
+              'openclaw-weixin': {
+                enabled: true,
+              },
+            },
+          },
+          bindings: [
+            {
+              agentId: 'lawclaw-main',
+              match: { channel: 'openclaw-weixin', accountId: '*' },
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+    await writeFile(
+      join(homeDir, '.openclaw', 'openclaw-weixin', 'accounts.json'),
+      JSON.stringify(['default'], null, 2),
+      'utf-8'
+    );
+    await writeFile(
+      join(homeDir, '.openclaw', 'openclaw-weixin', 'accounts', 'default.json'),
+      JSON.stringify({ token: 'wx-token', baseUrl: 'https://weixin.example/base' }, null, 2),
+      'utf-8'
+    );
+
+    const mod = await import('@electron/utils/channel-config');
+    const result = await mod.deleteChannelConfig('openclaw-weixin');
+    expect(result).toEqual({ stillConfigured: false });
+
+    const next = await readConfig(homeDir);
+    expect(next.channels).toBeUndefined();
+    expect(next.plugins).toBeUndefined();
+    expect(next.bindings).toBeUndefined();
+  });
 });

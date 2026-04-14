@@ -535,33 +535,30 @@ async function deleteWeixinChannelConfig(accountId?: string): Promise<DeleteChan
     const normalizedAccountId = accountId ? normalizeWeixinAccountId(accountId) : undefined;
     const clearResult = await clearWeixinStoredState(normalizedAccountId);
     const stillConfigured = await hasStoredWeixinCredentials();
+    let configChanged = false;
 
-    const channelSection = currentConfig.channels?.[WEIXIN_CHANNEL_ID];
-    if (channelSection && !stillConfigured) {
-        delete currentConfig.channels?.[WEIXIN_CHANNEL_ID];
-    } else if (channelSection && normalizedAccountId && isRecord(channelSection)) {
-        const nextSection = { ...channelSection };
-        if (isRecord(nextSection.accounts)) {
-            const nextAccounts = { ...nextSection.accounts };
-            delete nextAccounts[normalizedAccountId];
-            if (Object.keys(nextAccounts).length > 0) {
-                nextSection.accounts = nextAccounts;
-            } else {
-                delete nextSection.accounts;
-            }
-        }
-        currentConfig.channels![WEIXIN_CHANNEL_ID] = nextSection;
+    if (currentConfig.channels?.[WEIXIN_CHANNEL_ID]) {
+        delete currentConfig.channels[WEIXIN_CHANNEL_ID];
+        configChanged = true;
     }
 
     if (currentConfig.channels && Object.keys(currentConfig.channels).length === 0) {
         delete currentConfig.channels;
+        configChanged = true;
     }
 
-    if (!stillConfigured) {
+    if (currentConfig.plugins?.entries?.[WEIXIN_CHANNEL_ID] || currentConfig.plugins?.allow?.includes(WEIXIN_CHANNEL_ID)) {
         cleanupPluginAllowEntry(currentConfig, WEIXIN_CHANNEL_ID);
+        configChanged = true;
     }
 
-    await writeOpenClawConfig(currentConfig);
+    if (!stillConfigured && removeLawClawChannelBinding(currentConfig, WEIXIN_CHANNEL_ID)) {
+        configChanged = true;
+    }
+
+    if (configChanged) {
+        await writeOpenClawConfig(currentConfig);
+    }
     console.log(
         normalizedAccountId
             ? `Deleted Weixin channel state for account ${normalizedAccountId}`

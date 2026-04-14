@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 const mockHomeState = vi.hoisted(() => ({
@@ -458,6 +458,134 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.plugins?.entries?.['openclaw-lark']).toBeUndefined();
     expect(next.plugins?.entries?.feishu?.enabled).toBe(false);
     expect(next.plugins?.entries?.['custom-plugin']?.enabled).toBe(true);
+  });
+
+  it('sanitizeOpenClawConfig migrates legacy weixin channel config into private state and removes invalid gateway fields', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-weixin-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          channels: {
+            'openclaw-weixin': {
+              enabled: true,
+              baseUrl: 'https://weixin.example/base',
+              cdnBaseUrl: 'https://weixin.example/cdn',
+              routeTag: 7,
+              defaultAccount: 'bot-alpha',
+              token: 'top-level-token',
+              userId: 'top-user',
+              accounts: {
+                'bot-alpha': {
+                  token: 'account-token',
+                  userId: 'account-user',
+                },
+                'Account Beta': {
+                  userId: 'beta-user',
+                },
+              },
+            },
+          },
+          plugins: {
+            allow: ['openclaw-weixin', 'custom-plugin'],
+            entries: {
+              'openclaw-weixin': { enabled: true },
+              'custom-plugin': { enabled: true },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    mod.sanitizeOpenClawConfig();
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      channels?: Record<string, unknown>;
+      bindings?: Array<{
+        agentId?: string;
+        match?: {
+          channel?: string;
+          accountId?: string;
+        };
+      }>;
+      plugins?: {
+        allow?: string[];
+        entries?: Record<string, { enabled?: boolean }>;
+      };
+    };
+
+    const settingsPath = join(openclawDir, 'openclaw-weixin', 'settings.json');
+    const accountsIndexPath = join(openclawDir, 'openclaw-weixin', 'accounts.json');
+    const alphaAccountPath = join(openclawDir, 'openclaw-weixin', 'accounts', 'bot-alpha.json');
+    const betaAccountPath = join(openclawDir, 'openclaw-weixin', 'accounts', 'account-beta.json');
+
+    expect(next.channels?.['openclaw-weixin']).toBeUndefined();
+    expect(next.plugins?.allow).not.toContain('openclaw-weixin');
+    expect(next.plugins?.allow).toContain('custom-plugin');
+    expect(next.plugins?.entries?.['openclaw-weixin']).toBeUndefined();
+    expect(next.plugins?.entries?.['custom-plugin']?.enabled).toBe(true);
+    expect(next.bindings).toEqual([
+      {
+        agentId: 'lawclaw-main',
+        match: {
+          channel: 'openclaw-weixin',
+          accountId: '*',
+        },
+      },
+    ]);
+    expect(JSON.parse(readFileSync(settingsPath, 'utf-8'))).toMatchObject({
+      baseUrl: 'https://weixin.example/base',
+      cdnBaseUrl: 'https://weixin.example/cdn',
+      routeTag: '7',
+    });
+    expect(JSON.parse(readFileSync(accountsIndexPath, 'utf-8'))).toEqual(['bot-alpha', 'account-beta']);
+    expect(JSON.parse(readFileSync(alphaAccountPath, 'utf-8'))).toMatchObject({
+      token: 'account-token',
+      baseUrl: 'https://weixin.example/base',
+      userId: 'account-user',
+    });
+    expect(JSON.parse(readFileSync(betaAccountPath, 'utf-8'))).toMatchObject({
+      baseUrl: 'https://weixin.example/base',
+      userId: 'beta-user',
+    });
+  });
+
+  it('sanitizeOpenClawConfig does not create weixin migration state for fresh installs', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-weixin-clean-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          channels: {
+            telegram: {
+              enabled: true,
+              token: 'keep-me',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    mod.sanitizeOpenClawConfig();
+    expect(existsSync(join(openclawDir, 'openclaw-weixin'))).toBe(false);
   });
 
   it('sanitizeOpenClawConfig prunes legacy feishu-only keys before gateway startup', async () => {

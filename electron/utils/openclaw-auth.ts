@@ -16,6 +16,7 @@ import {
 import { sanitizeFeishuChannelConfigShape } from './feishu-channel-defaults';
 import { getOpenClawConfigDir, getOpenClawResolvedDir } from './paths';
 import { hasUtf8Bom, parseJsonText, stringifyJsonText } from './text-encoding';
+import { WEIXIN_CHANNEL_ID, migrateLegacyWeixinChannelStateSync } from './weixin-channel-state';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -96,6 +97,37 @@ function removePluginIdsFromList(pluginIds: string[], idsToRemove: readonly stri
   }
 
   pluginIds.splice(0, pluginIds.length, ...nextPluginIds);
+  return true;
+}
+
+function upsertLawClawManagedBinding(config: Record<string, unknown>, channelId: string): boolean {
+  const normalizedChannel = normalizeChannelId(channelId);
+  if (!normalizedChannel) {
+    return false;
+  }
+
+  const existingBindings = Array.isArray(config.bindings) ? config.bindings : [];
+  const nextBindings = existingBindings.filter((binding) => {
+    return !(
+      isBindingRule(binding)
+      && binding.agentId === 'lawclaw-main'
+      && normalizeChannelId(binding.match.channel) === normalizedChannel
+    );
+  });
+
+  nextBindings.push({
+    agentId: 'lawclaw-main',
+    match: {
+      channel: normalizedChannel,
+      accountId: '*',
+    },
+  });
+
+  if (JSON.stringify(existingBindings) === JSON.stringify(nextBindings)) {
+    return false;
+  }
+
+  config.bindings = nextBindings;
   return true;
 }
 
@@ -1378,6 +1410,23 @@ export function sanitizeOpenClawConfig(): boolean {
   }
 
   if (cleanupDeprecatedChannelState(config)) {
+    modified = true;
+  }
+
+  const legacyWeixinSection = isRecord(config.channels) ? config.channels[WEIXIN_CHANNEL_ID] : undefined;
+  if (legacyWeixinSection !== undefined) {
+    migrateLegacyWeixinChannelStateSync(legacyWeixinSection);
+    delete (config.channels as Record<string, unknown>)[WEIXIN_CHANNEL_ID];
+    upsertLawClawManagedBinding(config, WEIXIN_CHANNEL_ID);
+    modified = true;
+    console.log('[sanitize] Migrated legacy Weixin channel config into LawClaw private state');
+  }
+
+  if (removePluginIdsFromList(allowWithoutFeishuAliases, [WEIXIN_CHANNEL_ID])) {
+    modified = true;
+  }
+  if (entries[WEIXIN_CHANNEL_ID]) {
+    delete entries[WEIXIN_CHANNEL_ID];
     modified = true;
   }
 

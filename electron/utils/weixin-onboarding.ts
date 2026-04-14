@@ -22,7 +22,6 @@ import { renderQrPngBase64 } from './qr-code';
 import { stripUtf8Bom } from './text-encoding';
 import {
   WEIXIN_CHANNEL_ID,
-  WEIXIN_DEFAULT_ACCOUNT_NAME,
   WEIXIN_DEFAULT_BASE_URL,
   WEIXIN_DEFAULT_BOT_TYPE,
   WEIXIN_DEFAULT_CDN_BASE_URL,
@@ -32,9 +31,12 @@ import {
   getPrimaryWeixinAccountId,
   hasStoredWeixinCredentials,
   isWeixinPluginInstalledDirPresent,
+  loadWeixinSettings,
   normalizeWeixinAccountId,
   registerWeixinAccountId,
   saveWeixinAccountData,
+  saveWeixinSettings,
+  type StoredWeixinSettings,
 } from './weixin-channel-state';
 
 type WeixinOnboardingPhase =
@@ -201,9 +203,9 @@ class WeixinOnboardingManager extends EventEmitter {
       await this.ensurePluginInstalled();
       this.ensureRunIsCurrent(currentRunToken);
 
-      const config = await readOpenClawConfig();
-      const baseUrl = this.resolveBaseUrl(config);
-      const routeTag = this.resolveRouteTag(config);
+      const settings = await loadWeixinSettings();
+      const baseUrl = this.resolveBaseUrl(settings);
+      const routeTag = this.resolveRouteTag(settings);
       const qrStart = await this.fetchQrCode(baseUrl, routeTag);
       this.ensureRunIsCurrent(currentRunToken);
 
@@ -299,22 +301,19 @@ class WeixinOnboardingManager extends EventEmitter {
     return this.getStatus();
   }
 
-  private resolveBaseUrl(config: OpenClawConfig): string {
-    const section = asObject(config.channels?.[WEIXIN_CHANNEL_ID]);
-    return trimString(section?.baseUrl) || WEIXIN_DEFAULT_BASE_URL;
+  private resolveBaseUrl(settings: StoredWeixinSettings | null | undefined): string {
+    return trimString(settings?.baseUrl) || WEIXIN_DEFAULT_BASE_URL;
   }
 
-  private resolveCdnBaseUrl(config: OpenClawConfig): string {
-    const section = asObject(config.channels?.[WEIXIN_CHANNEL_ID]);
-    return trimString(section?.cdnBaseUrl) || WEIXIN_DEFAULT_CDN_BASE_URL;
+  private resolveCdnBaseUrl(settings: StoredWeixinSettings | null | undefined): string {
+    return trimString(settings?.cdnBaseUrl) || WEIXIN_DEFAULT_CDN_BASE_URL;
   }
 
-  private resolveRouteTag(config: OpenClawConfig): string | undefined {
-    const section = asObject(config.channels?.[WEIXIN_CHANNEL_ID]);
-    if (typeof section?.routeTag === 'number') {
-      return String(section.routeTag);
+  private resolveRouteTag(settings: StoredWeixinSettings | null | undefined): string | undefined {
+    if (typeof settings?.routeTag === 'number') {
+      return String(settings.routeTag);
     }
-    return trimString(section?.routeTag);
+    return trimString(settings?.routeTag);
   }
 
   private cancelActiveFlow(): void {
@@ -581,54 +580,48 @@ class WeixinOnboardingManager extends EventEmitter {
       userId: payload.userId,
     });
     await registerWeixinAccountId(normalizedAccountId);
+    const settings = await loadWeixinSettings();
+    await saveWeixinSettings({
+      baseUrl: payload.baseUrl,
+      cdnBaseUrl: this.resolveCdnBaseUrl(settings),
+      routeTag: this.resolveRouteTag(settings),
+    });
 
     const config = await readOpenClawConfig();
-    const existingSection = asObject(config.channels?.[WEIXIN_CHANNEL_ID]) || {};
-    const existingAccounts = asObject(existingSection.accounts) || {};
-    const existingAccountSection = asObject(existingAccounts[normalizedAccountId]) || {};
-    const cdnBaseUrl = this.resolveCdnBaseUrl(config);
-
     const nextConfig: OpenClawConfig = {
       ...config,
-      channels: {
-        ...(config.channels || {}),
-        [WEIXIN_CHANNEL_ID]: {
-          ...existingSection,
-          enabled: true,
-          baseUrl: payload.baseUrl,
-          cdnBaseUrl,
-          accounts: {
-            ...existingAccounts,
-            [normalizedAccountId]: {
-              ...existingAccountSection,
-              enabled: true,
-              name: trimString(existingAccountSection.name) || WEIXIN_DEFAULT_ACCOUNT_NAME,
-              baseUrl: payload.baseUrl,
-              cdnBaseUrl,
-            },
-          },
-        },
-      },
-      plugins: {
-        ...(config.plugins || {}),
-        enabled: true,
-        allow: Array.from(
-          new Set([
-            ...(Array.isArray(config.plugins?.allow)
-              ? config.plugins.allow.filter((item): item is string => typeof item === 'string')
-              : []),
-            WEIXIN_CHANNEL_ID,
-          ])
-        ),
-        entries: {
-          ...(config.plugins?.entries || {}),
-          [WEIXIN_CHANNEL_ID]: {
-            ...(asObject(config.plugins?.entries?.[WEIXIN_CHANNEL_ID]) || {}),
-            enabled: true,
-          },
-        },
-      },
     };
+
+    if (nextConfig.channels?.[WEIXIN_CHANNEL_ID]) {
+      delete nextConfig.channels[WEIXIN_CHANNEL_ID];
+      if (Object.keys(nextConfig.channels).length === 0) {
+        delete nextConfig.channels;
+      }
+    }
+
+    const pluginEntries = asObject(nextConfig.plugins?.entries);
+    if (pluginEntries?.[WEIXIN_CHANNEL_ID]) {
+      delete pluginEntries[WEIXIN_CHANNEL_ID];
+      if (Object.keys(pluginEntries).length === 0 && nextConfig.plugins) {
+        delete nextConfig.plugins.entries;
+      }
+    }
+
+    if (Array.isArray(nextConfig.plugins?.allow)) {
+      const nextAllow = nextConfig.plugins.allow.filter((item) => item !== WEIXIN_CHANNEL_ID);
+      if (nextAllow.length > 0 && nextConfig.plugins) {
+        nextConfig.plugins.allow = nextAllow;
+      } else if (nextConfig.plugins) {
+        delete nextConfig.plugins.allow;
+      }
+    }
+
+    if (
+      nextConfig.plugins
+      && Object.keys(nextConfig.plugins).length === 0
+    ) {
+      delete nextConfig.plugins;
+    }
 
     upsertLawClawChannelBinding(nextConfig, WEIXIN_CHANNEL_ID);
     await writeOpenClawConfig(nextConfig);

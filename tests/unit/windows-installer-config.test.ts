@@ -15,6 +15,10 @@ describe('windows installer config', () => {
   it('keeps the custom NSIS upgrade safety macros wired in', () => {
     const source = readFileSync(join(process.cwd(), 'scripts/installer.nsh'), 'utf-8');
 
+    expect(source).toContain('ShowInstDetails hide');
+    expect(source).toContain('ShowUninstDetails hide');
+    expect(source).toContain('SetDetailsPrint none');
+    expect(source).not.toContain('SetDetailsPrint both');
     expect(source).toContain('!macro customCheckAppRunning');
     expect(source).toContain('!macro customUnInstallCheck');
     expect(source).toContain('!macro customUnInstallCheckCurrentUser');

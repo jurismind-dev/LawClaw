@@ -13,20 +13,19 @@
 !endif
 
 !macro customHeader
-  ShowInstDetails show
-  ShowUninstDetails show
+  ShowInstDetails hide
+  ShowUninstDetails hide
 !macroend
 
 !macro customCheckAppRunning
-  SetDetailsPrint both
-  DetailPrint "Preparing installation..."
-  DetailPrint "Extracting LawClaw runtime files. This can take a few minutes on slower disks or while antivirus scanning is active."
+  ; Keep installer internals silent for end users. We still run the same
+  ; upgrade safety steps, but without exposing file deletion/copy logs.
+  SetDetailsPrint none
 
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
 
   ${if} $R0 == 0
     ${if} ${isUpdated}
-      DetailPrint `Waiting for "${PRODUCT_NAME}" to finish shutting down...`
       Sleep 8000
       ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
       ${if} $R0 != 0
@@ -43,8 +42,6 @@
     ${endIf}
 
     doStopProcess:
-    DetailPrint `Closing running "${PRODUCT_NAME}"...`
-
     nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
     Pop $0
     Pop $1
@@ -60,7 +57,6 @@
     Pop $1
 
     Sleep 5000
-    DetailPrint "Processes terminated. Continuing installation..."
 
     done_killing:
       ${nsProcess::Unload}
@@ -114,16 +110,10 @@
 !macroend
 
 !macro customUnInstallCheck
-  ${if} $R0 != 0
-    DetailPrint "Old uninstaller exited with code $R0. Continuing with overwrite install..."
-  ${endIf}
   ClearErrors
 !macroend
 
 !macro customUnInstallCheckCurrentUser
-  ${if} $R0 != 0
-    DetailPrint "Old uninstaller (current user) exited with code $R0. Continuing..."
-  ${endIf}
   ClearErrors
 !macroend
 

@@ -42,6 +42,25 @@ function runJson(command, args, options = {}) {
   }
 }
 
+function runText(command, args, options = {}) {
+  console.log(`[after-sign] ${command} ${args.join(' ')}`);
+  try {
+    return execFileSync(command, args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      ...options,
+    });
+  } catch (error) {
+    if (typeof error?.stdout === 'string' && error.stdout) {
+      process.stdout.write(error.stdout);
+    }
+    if (typeof error?.stderr === 'string' && error.stderr) {
+      process.stderr.write(error.stderr);
+    }
+    throw error;
+  }
+}
+
 function resolveSubmissionId(result) {
   if (!result || typeof result !== 'object') {
     return '';
@@ -80,6 +99,22 @@ async function pollNotarization(submissionId, authArgs, timeoutMs, intervalMs) {
   }
 
   throw new Error(`Timed out waiting for Apple notarization after ${Math.round(timeoutMs / 60000)} minutes.`);
+}
+
+function validateNotarizationArchive(zipPath, appName) {
+  const unpackDir = mkdtempSync(join(os.tmpdir(), 'lawclaw-notary-unpack-'));
+
+  try {
+    runText('ditto', ['-x', '-k', zipPath, unpackDir]);
+    const unpackedAppPath = join(unpackDir, `${appName}.app`);
+    if (!existsSync(unpackedAppPath)) {
+      throw new Error(
+        `[after-sign] Notarization archive ${zipPath} did not unpack to ${appName}.app`
+      );
+    }
+  } finally {
+    rmSync(unpackDir, { recursive: true, force: true });
+  }
 }
 
 exports.default = async function afterSign(context) {
@@ -138,13 +173,12 @@ exports.default = async function afterSign(context) {
     run('ditto', [
       '-c',
       '-k',
-      '--sequesterRsrc',
       '--keepParent',
-      `${appName}.app`,
+      appPath,
       zipPath,
-    ], {
-      cwd: context.appOutDir,
-    });
+    ]);
+
+    validateNotarizationArchive(zipPath, appName);
 
     const submission = runJson('xcrun', [
       'notarytool',

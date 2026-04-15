@@ -4,7 +4,7 @@
  * via gateway:rpc IPC. The sidebar owns session creation/switching;
  * the toolbar keeps quick refresh and thinking controls.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { AlertCircle, ExternalLink, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
 import { BotAvatar } from '@/components/common/BotAvatar';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,6 +22,7 @@ import { deriveTaskSteps } from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { useAgentPresetMigrationStore } from '@/stores/agent-preset-migration';
 import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
+import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 
 export function Chat() {
   const { t } = useTranslation('chat');
@@ -48,8 +49,7 @@ export function Chat() {
   const isCurrentWarningVisible = useAgentPresetMigrationStore((s) => s.isCurrentWarningVisible);
   const dismissCurrentWarning = useAgentPresetMigrationStore((s) => s.dismissCurrentWarning);
   const agents = useAgentsStore((s) => s.agents);
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
 
   const handleOpenGatewaySlowStartGuide = async () => {
     try {
@@ -65,10 +65,6 @@ export function Chat() {
       cleanupEmptySession();
     };
   }, [cleanupEmptySession, isGatewayRunning]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingMessage, sending, pendingFinal, activeRunId]);
 
   if (!isGatewayRunning) {
     return (
@@ -180,94 +176,94 @@ export function Chat() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-3 py-2">
-        <div className="w-full space-y-4">
-          {loading && !isTaskRunning ? (
-            <div className="flex h-full items-center justify-center py-20">
-              <LoadingSpinner size="lg" />
-            </div>
-          ) : messages.length === 0 && !isTaskRunning ? (
-            <WelcomeScreen />
-          ) : (
-            <>
-              {messages.map((msg, idx) => {
-                const suppressToolCards = userRunCards.some((card) =>
-                  idx > card.triggerIndex && idx <= card.segmentEnd,
-                );
+      <div className="min-h-0 flex-1 overflow-hidden px-3 py-2">
+        <div ref={scrollRef} className="h-full min-h-0 overflow-y-auto">
+          <div ref={contentRef} className="w-full space-y-4">
+            {loading && !isTaskRunning ? (
+              <div className="flex h-full items-center justify-center py-20">
+                <LoadingSpinner size="lg" />
+              </div>
+            ) : messages.length === 0 && !isTaskRunning ? (
+              <WelcomeScreen />
+            ) : (
+              <>
+                {messages.map((msg, idx) => {
+                  const suppressToolCards = userRunCards.some((card) =>
+                    idx > card.triggerIndex && idx <= card.segmentEnd,
+                  );
 
-                return (
-                  <div
-                    key={msg.id || `msg-${idx}`}
-                    className="space-y-3"
-                    id={`chat-message-${idx}`}
-                    data-testid={`chat-message-${idx}`}
-                  >
-                    <ChatMessage
-                      message={msg}
-                      showThinking={showThinking}
-                      suppressToolCards={suppressToolCards}
-                      suppressProcessAttachments={suppressToolCards}
-                    />
-                    {userRunCards
-                      .filter((card) => card.triggerIndex === idx)
-                      .map((card) => (
-                        <ExecutionGraphCard
-                          key={`graph-${idx}`}
-                          agentLabel={card.agentLabel}
-                          sessionLabel={card.sessionLabel}
-                          steps={card.steps}
-                          active={card.active}
-                          onJumpToTrigger={() => {
-                            document.getElementById(`chat-message-${card.triggerIndex}`)?.scrollIntoView({
-                              behavior: 'smooth',
-                              block: 'center',
-                            });
-                          }}
-                          onJumpToReply={() => {
-                            if (card.replyIndex == null) return;
-                            document.getElementById(`chat-message-${card.replyIndex}`)?.scrollIntoView({
-                              behavior: 'smooth',
-                              block: 'center',
-                            });
-                          }}
-                        />
-                      ))}
-                  </div>
-                );
-              })}
+                  return (
+                    <div
+                      key={msg.id || `msg-${idx}`}
+                      className="space-y-3"
+                      id={`chat-message-${idx}`}
+                      data-testid={`chat-message-${idx}`}
+                    >
+                      <ChatMessage
+                        message={msg}
+                        showThinking={showThinking}
+                        suppressToolCards={suppressToolCards}
+                        suppressProcessAttachments={suppressToolCards}
+                      />
+                      {userRunCards
+                        .filter((card) => card.triggerIndex === idx)
+                        .map((card) => (
+                          <ExecutionGraphCard
+                            key={`graph-${idx}`}
+                            agentLabel={card.agentLabel}
+                            sessionLabel={card.sessionLabel}
+                            steps={card.steps}
+                            active={card.active}
+                            onJumpToTrigger={() => {
+                              document.getElementById(`chat-message-${card.triggerIndex}`)?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                              });
+                            }}
+                            onJumpToReply={() => {
+                              if (card.replyIndex == null) return;
+                              document.getElementById(`chat-message-${card.replyIndex}`)?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                              });
+                            }}
+                          />
+                        ))}
+                    </div>
+                  );
+                })}
 
-              {shouldRenderStreaming && (
-                <ChatMessage
-                  message={
-                    (streamMsg
-                      ? {
-                          ...(streamMsg as Record<string, unknown>),
-                          role: (typeof streamMsg.role === 'string'
-                            ? streamMsg.role
-                            : 'assistant') as RawMessage['role'],
-                          content: streamMsg.content ?? streamText,
-                          timestamp: streamMsg.timestamp,
-                        }
-                      : {
-                          role: 'assistant',
-                          content: streamText,
-                        }) as RawMessage
-                  }
-                  showThinking={showThinking}
-                  isStreaming
-                  streamingTools={streamingTools}
-                />
-              )}
+                {shouldRenderStreaming && (
+                  <ChatMessage
+                    message={
+                      (streamMsg
+                        ? {
+                            ...(streamMsg as Record<string, unknown>),
+                            role: (typeof streamMsg.role === 'string'
+                              ? streamMsg.role
+                              : 'assistant') as RawMessage['role'],
+                            content: streamMsg.content ?? streamText,
+                            timestamp: streamMsg.timestamp,
+                          }
+                        : {
+                            role: 'assistant',
+                            content: streamText,
+                          }) as RawMessage
+                    }
+                    showThinking={showThinking}
+                    isStreaming
+                    streamingTools={streamingTools}
+                  />
+                )}
 
-              {isTaskRunning && pendingFinal && !shouldRenderStreaming && !hasActiveExecutionGraph && (
-                <ActivityIndicator phase="tool_processing" />
-              )}
+                {isTaskRunning && pendingFinal && !shouldRenderStreaming && !hasActiveExecutionGraph && (
+                  <ActivityIndicator phase="tool_processing" />
+                )}
 
-              {isTaskRunning && !pendingFinal && !hasAnyStreamContent && !hasActiveExecutionGraph && <TypingIndicator />}
-            </>
-          )}
-
-          <div ref={messagesEndRef} />
+                {isTaskRunning && !pendingFinal && !hasAnyStreamContent && !hasActiveExecutionGraph && <TypingIndicator />}
+              </>
+            )}
+          </div>
         </div>
       </div>
 

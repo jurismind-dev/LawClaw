@@ -432,7 +432,10 @@ jobs:
           from datetime import datetime, timezone
           from pathlib import Path
 
+          import time
+
           import oss2
+          from oss2.exceptions import RequestError
 
           release_dir = Path("release")
           target_platform = os.environ["TARGET_PLATFORM"]
@@ -494,6 +497,24 @@ jobs:
             "x-oss-meta-release-date": release_date_iso,
           }
 
+          def upload_with_retry(object_key: str, artifact_path: Path, headers: dict[str, str]):
+            attempts = 5
+            delay_seconds = 2
+
+            for attempt in range(1, attempts + 1):
+              try:
+                return bucket.put_object_from_file(object_key, str(artifact_path), headers=headers)
+              except RequestError as error:
+                if attempt >= attempts:
+                  raise
+
+                print(
+                  f"Preview upload retry {attempt}/{attempts - 1} for {artifact_path.name} failed: {error}. "
+                  f"Sleeping {delay_seconds}s before retry."
+                )
+                time.sleep(delay_seconds)
+                delay_seconds *= 2
+
           uploaded_urls: list[str] = []
           for artifact in files:
             headers = dict(artifact_meta_headers)
@@ -501,7 +522,7 @@ jobs:
               headers.update(no_cache_headers)
 
             object_key = f"{object_prefix}{artifact.name}"
-            result = bucket.put_object_from_file(object_key, str(artifact), headers=headers)
+            result = upload_with_retry(object_key, artifact, headers)
             if result.status not in (200, 201):
               raise SystemExit(
                 f"Preview upload failed for oss://{bucket_name}/{object_key}, status={result.status}"
@@ -651,11 +672,13 @@ jobs:
 
           "${VENV_PYTHON}" - <<'PY'
           import hashlib
+          import time
           import os
           from datetime import datetime, timezone
           from pathlib import Path
 
           import oss2
+          from oss2.exceptions import RequestError
 
           root = Path("release-artifacts")
           files = sorted([p for p in root.rglob("*") if p.is_file()])
@@ -764,6 +787,24 @@ jobs:
             bucket.delete_object(key)
             print(f"Deleted legacy object oss://{bucket_name}/{key}")
 
+          def upload_with_retry(object_key: str, artifact_path: Path, headers: dict[str, str]):
+            attempts = 5
+            delay_seconds = 2
+
+            for attempt in range(1, attempts + 1):
+              try:
+                return bucket.put_object_from_file(object_key, str(artifact_path), headers=headers)
+              except RequestError as error:
+                if attempt >= attempts:
+                  raise
+
+                print(
+                  f"Release upload retry {attempt}/{attempts - 1} for {artifact_path.name} failed: {error}. "
+                  f"Sleeping {delay_seconds}s before retry."
+                )
+                time.sleep(delay_seconds)
+                delay_seconds *= 2
+
           for name, artifact in versioned_payloads:
             headers = {}
             if name.endswith(".yml"):
@@ -771,7 +812,7 @@ jobs:
             if name.endswith((".dmg", ".zip", ".exe")):
               headers.update(release_meta_headers)
             object_key = f"{release_channel}/{name}"
-            result = bucket.put_object_from_file(object_key, str(artifact), headers=headers)
+            result = upload_with_retry(object_key, artifact, headers)
             if result.status not in (200, 201):
               raise SystemExit(
                 f"Upload failed for oss://{bucket_name}/{object_key}, status={result.status}"
@@ -785,7 +826,7 @@ jobs:
               **release_meta_headers,
             }
             alias_key = f"{release_channel}/{alias_name}"
-            alias_result = bucket.put_object_from_file(alias_key, str(artifact), headers=alias_headers)
+            alias_result = upload_with_retry(alias_key, artifact, alias_headers)
             if alias_result.status not in (200, 201):
               raise SystemExit(
                 f"Upload failed for oss://{bucket_name}/{alias_key}, status={alias_result.status}"

@@ -38,6 +38,22 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 });
 
+class MockResizeObserver {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
+
+Object.defineProperty(window, 'ResizeObserver', {
+  writable: true,
+  value: MockResizeObserver,
+});
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  writable: true,
+  value: MockResizeObserver,
+});
+
 // Reset mocks after each test
 afterEach(() => {
   vi.clearAllMocks();

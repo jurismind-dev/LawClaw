@@ -2,7 +2,7 @@
  * Channels Page
  * Manage messaging channel connections with configuration UI
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus,
   Radio,
@@ -53,6 +53,8 @@ export function Channels() {
   const { t } = useTranslation('channels');
   const { channels, loading, error, fetchChannels, deleteChannel } = useChannelsStore();
   const gatewayStatus = useGatewayStore((state) => state.status);
+  const lastGatewayStateRef = useRef(gatewayStatus.state);
+  const convergenceRefreshTimersRef = useRef<number[]>([]);
   const lawclawAppUrl = 'https://lawclaw-app.jurismind.com';
 
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -90,23 +92,75 @@ export function Channels() {
     void fetchConfiguredTypes();
   }, [fetchConfiguredTypes]);
 
-  useEffect(() => {
-    if (gatewayStatus.state !== 'running') {
-      return;
-    }
-
-    void fetchChannels();
-    void fetchConfiguredTypes();
-  }, [gatewayStatus.state, fetchChannels, fetchConfiguredTypes]);
-
-  useEffect(() => {
-    const unsubscribe = window.electron.ipcRenderer.on('gateway:channel-status', () => {
-      fetchChannels();
-      fetchConfiguredTypes();
+  const clearConvergenceRefreshTimers = useCallback(() => {
+    convergenceRefreshTimersRef.current.forEach((timerId) => {
+      window.clearTimeout(timerId);
     });
+    convergenceRefreshTimersRef.current = [];
+  }, []);
+
+  const scheduleConvergenceRefresh = useCallback(() => {
+    clearConvergenceRefreshTimers();
+    [
+      { delay: 1200, probe: true },
+      { delay: 2600, probe: false },
+      { delay: 4500, probe: false },
+      { delay: 7000, probe: false },
+      { delay: 10500, probe: false },
+    ].forEach(({ delay, probe }) => {
+      const timerId = window.setTimeout(() => {
+        void fetchChannels({ probe });
+        void fetchConfiguredTypes();
+      }, delay);
+      convergenceRefreshTimersRef.current.push(timerId);
+    });
+  }, [clearConvergenceRefreshTimers, fetchChannels, fetchConfiguredTypes]);
+
+  useEffect(() => {
+    return () => {
+      clearConvergenceRefreshTimers();
+    };
+  }, [clearConvergenceRefreshTimers]);
+
+  useEffect(() => {
+    const previousGatewayState = lastGatewayStateRef.current;
+    lastGatewayStateRef.current = gatewayStatus.state;
+
+    if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
+      void fetchChannels();
+      void fetchConfiguredTypes();
+      scheduleConvergenceRefresh();
+    }
+  }, [gatewayStatus.state, fetchChannels, fetchConfiguredTypes, scheduleConvergenceRefresh]);
+
+  useEffect(() => {
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    let pending = false;
+
+    const unsubscribe = window.electron.ipcRenderer.on('gateway:channel-status', () => {
+      if (throttleTimer) {
+        pending = true;
+        return;
+      }
+
+      void fetchChannels();
+      void fetchConfiguredTypes();
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+        if (pending) {
+          pending = false;
+          void fetchChannels();
+          void fetchConfiguredTypes();
+        }
+      }, 2000);
+    });
+
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
+      }
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
       }
     };
   }, [fetchChannels, fetchConfiguredTypes]);
@@ -323,7 +377,10 @@ export function Channels() {
   // Connected/disconnected channel counts
   const connectedCount = channels.filter((channel) => channel.status === 'connected').length;
 
-  if (loading) {
+  const hasStableValue = channels.length > 0 || configuredTypes.length > 0;
+  const isUsingStableValue = hasStableValue && (loading || Boolean(error));
+
+  if (loading && !hasStableValue) {
     return (
       <div className="flex h-96 items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -345,11 +402,11 @@ export function Channels() {
           <Button
             variant="outline"
             onClick={() => {
-              fetchChannels();
-              fetchConfiguredTypes();
+              void fetchChannels({ probe: true });
+              void fetchConfiguredTypes();
             }}
           >
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className={cn('h-4 w-4 mr-2', isUsingStableValue && 'animate-spin')} />
             {t('refresh')}
           </Button>
           <Button onClick={() => setShowAddDialog(true)}>

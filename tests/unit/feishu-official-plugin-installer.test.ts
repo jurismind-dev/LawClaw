@@ -165,4 +165,291 @@ describe('feishu official plugin installer', () => {
     expect(installedManifest.version).toBe(FEISHU_OFFICIAL_PLUGIN_VERSION);
     expect(existsSync(join(installedPluginDir, 'stale.txt'))).toBe(false);
   });
+
+  it('repairs an installed feishu plugin when ESM runtime imports are extensionless', async () => {
+    const resourcesDir = join(tempRoot, 'resources');
+    const bundledPluginDir = join(resourcesDir, 'plugins', 'openclaw-lark');
+    const openclawConfigDir = join(tempRoot, '.openclaw');
+    const installedPluginDir = join(openclawConfigDir, 'extensions', 'openclaw-lark');
+
+    mkdirSync(join(bundledPluginDir, 'src', 'channel'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'src', 'core'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'node_modules', 'zod'), { recursive: true });
+
+    writeFileSync(
+      join(bundledPluginDir, 'package.json'),
+      `${JSON.stringify({
+        name: '@larksuite/openclaw-lark',
+        version: FEISHU_OFFICIAL_PLUGIN_VERSION,
+        type: 'module',
+      }, null, 2)}\n`,
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'openclaw.plugin.json'), '{"id":"openclaw-lark"}\n', 'utf-8');
+    writeFileSync(join(bundledPluginDir, 'index.js'), "export { monitorFeishuProvider } from './src/channel/monitor';\n", 'utf-8');
+    writeFileSync(
+      join(bundledPluginDir, 'src', 'channel', 'monitor.js'),
+      "import { getLarkAccount } from '../core/accounts';\nexport const monitorFeishuProvider = getLarkAccount;\n",
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'src', 'core', 'accounts.js'), 'export const getLarkAccount = () => true;\n', 'utf-8');
+    writeFileSync(join(bundledPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'), '{}\n', 'utf-8');
+    writeFileSync(
+      join(bundledPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs', 'index.js'),
+      'module.exports = {};\n',
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'node_modules', 'zod', 'package.json'), '{}\n', 'utf-8');
+
+    mkdirSync(join(installedPluginDir, 'src', 'channel'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'src', 'core'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', 'zod'), { recursive: true });
+    writeFileSync(
+      join(installedPluginDir, 'package.json'),
+      `${JSON.stringify({
+        name: '@larksuite/openclaw-lark',
+        version: FEISHU_OFFICIAL_PLUGIN_VERSION,
+        type: 'module',
+      }, null, 2)}\n`,
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'openclaw.plugin.json'), '{"id":"openclaw-lark"}\n', 'utf-8');
+    writeFileSync(join(installedPluginDir, 'index.js'), "export { monitorFeishuProvider } from './src/channel/monitor';\n", 'utf-8');
+    writeFileSync(
+      join(installedPluginDir, 'src', 'channel', 'monitor.js'),
+      "import { getLarkAccount } from '../core/accounts';\nexport const monitorFeishuProvider = getLarkAccount;\n",
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'src', 'core', 'accounts.js'), 'export const getLarkAccount = () => false;\n', 'utf-8');
+    writeFileSync(join(installedPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'), '{}\n', 'utf-8');
+    writeFileSync(
+      join(installedPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs', 'index.js'),
+      'module.exports = {};\n',
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'node_modules', 'zod', 'package.json'), '{}\n', 'utf-8');
+
+    const result = await repairInstalledFeishuOfficialPluginIfNeeded({
+      openClawConfigDir: openclawConfigDir,
+      isPackaged: false,
+      resourcesDir,
+      runCommand: vi.fn(async () => ({ success: true, stdout: '', stderr: '' })),
+    });
+
+    expect(result.repaired).toBe(true);
+    expect(result.reason).toBe('repaired');
+    expect(readFileSync(join(installedPluginDir, 'src', 'channel', 'monitor.js'), 'utf-8')).toContain(
+      "from '../core/accounts.js'"
+    );
+  });
+
+  it('repairs an installed feishu plugin when gateway startAccount uses dynamic monitor import', async () => {
+    const resourcesDir = join(tempRoot, 'resources');
+    const bundledPluginDir = join(resourcesDir, 'plugins', 'openclaw-lark');
+    const openclawConfigDir = join(tempRoot, '.openclaw');
+    const installedPluginDir = join(openclawConfigDir, 'extensions', 'openclaw-lark');
+
+    mkdirSync(join(bundledPluginDir, 'src', 'channel'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'node_modules', 'zod'), { recursive: true });
+
+    writeFileSync(
+      join(bundledPluginDir, 'package.json'),
+      `${JSON.stringify({
+        name: '@larksuite/openclaw-lark',
+        version: FEISHU_OFFICIAL_PLUGIN_VERSION,
+        type: 'module',
+      }, null, 2)}\n`,
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'openclaw.plugin.json'), '{"id":"openclaw-lark"}\n', 'utf-8');
+    writeFileSync(join(bundledPluginDir, 'index.js'), 'export {};\n', 'utf-8');
+    writeFileSync(
+      join(bundledPluginDir, 'src', 'channel', 'plugin.js'),
+      [
+        "import { FEISHU_CONFIG_JSON_SCHEMA } from '../core/config-schema.js';",
+        'export const feishuPlugin = {',
+        '  gateway: {',
+        '    startAccount: async () => {',
+        "      const { monitorFeishuProvider } = await import('./monitor.js');",
+        '      return monitorFeishuProvider;',
+        '    },',
+        '  },',
+        '  configSchema: { schema: FEISHU_CONFIG_JSON_SCHEMA },',
+        '};',
+        '',
+      ].join('\n'),
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'src', 'channel', 'monitor.js'), 'export const monitorFeishuProvider = true;\n', 'utf-8');
+    mkdirSync(join(bundledPluginDir, 'src', 'core'), { recursive: true });
+    writeFileSync(join(bundledPluginDir, 'src', 'core', 'config-schema.js'), 'export const FEISHU_CONFIG_JSON_SCHEMA = {};\n', 'utf-8');
+    writeFileSync(join(bundledPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'), '{}\n', 'utf-8');
+    writeFileSync(
+      join(bundledPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs', 'index.js'),
+      'module.exports = {};\n',
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'node_modules', 'zod', 'package.json'), '{}\n', 'utf-8');
+
+    mkdirSync(join(installedPluginDir, 'src', 'channel'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'src', 'core'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', 'zod'), { recursive: true });
+    writeFileSync(
+      join(installedPluginDir, 'package.json'),
+      `${JSON.stringify({
+        name: '@larksuite/openclaw-lark',
+        version: FEISHU_OFFICIAL_PLUGIN_VERSION,
+        type: 'module',
+      }, null, 2)}\n`,
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'openclaw.plugin.json'), '{"id":"openclaw-lark"}\n', 'utf-8');
+    writeFileSync(join(installedPluginDir, 'index.js'), 'export {};\n', 'utf-8');
+    writeFileSync(
+      join(installedPluginDir, 'src', 'channel', 'plugin.js'),
+      [
+        "import { FEISHU_CONFIG_JSON_SCHEMA } from '../core/config-schema.js';",
+        'export const feishuPlugin = {',
+        '  gateway: {',
+        '    startAccount: async () => {',
+        "      const { monitorFeishuProvider } = await import('./monitor.js');",
+        '      return monitorFeishuProvider;',
+        '    },',
+        '  },',
+        '  configSchema: { schema: FEISHU_CONFIG_JSON_SCHEMA },',
+        '};',
+        '',
+      ].join('\n'),
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'src', 'channel', 'monitor.js'), 'export const monitorFeishuProvider = false;\n', 'utf-8');
+    writeFileSync(join(installedPluginDir, 'src', 'core', 'config-schema.js'), 'export const FEISHU_CONFIG_JSON_SCHEMA = {};\n', 'utf-8');
+    writeFileSync(join(installedPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'), '{}\n', 'utf-8');
+    writeFileSync(
+      join(installedPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs', 'index.js'),
+      'module.exports = {};\n',
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'node_modules', 'zod', 'package.json'), '{}\n', 'utf-8');
+
+    const result = await repairInstalledFeishuOfficialPluginIfNeeded({
+      openClawConfigDir: openclawConfigDir,
+      isPackaged: false,
+      resourcesDir,
+      runCommand: vi.fn(async () => ({ success: true, stdout: '', stderr: '' })),
+    });
+
+    expect(result.repaired).toBe(true);
+    expect(result.reason).toBe('repaired');
+
+    const patchedPluginEntry = readFileSync(join(installedPluginDir, 'src', 'channel', 'plugin.js'), 'utf-8');
+    expect(patchedPluginEntry).toContain("import { monitorFeishuProvider } from './monitor.js';");
+    expect(patchedPluginEntry).not.toContain("await import('./monitor.js')");
+  });
+
+  it('repairs an installed feishu plugin when runtime files still import openclaw/plugin-sdk root entry', async () => {
+    const resourcesDir = join(tempRoot, 'resources');
+    const bundledPluginDir = join(resourcesDir, 'plugins', 'openclaw-lark');
+    const openclawConfigDir = join(tempRoot, '.openclaw');
+    const installedPluginDir = join(openclawConfigDir, 'extensions', 'openclaw-lark');
+
+    mkdirSync(join(bundledPluginDir, 'src', 'messaging', 'inbound'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs'), { recursive: true });
+    mkdirSync(join(bundledPluginDir, 'node_modules', 'zod'), { recursive: true });
+
+    writeFileSync(
+      join(bundledPluginDir, 'package.json'),
+      `${JSON.stringify({
+        name: '@larksuite/openclaw-lark',
+        version: FEISHU_OFFICIAL_PLUGIN_VERSION,
+        type: 'module',
+      }, null, 2)}\n`,
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'openclaw.plugin.json'), '{"id":"openclaw-lark"}\n', 'utf-8');
+    writeFileSync(join(bundledPluginDir, 'index.js'), 'export {};\n', 'utf-8');
+    writeFileSync(
+      join(bundledPluginDir, 'src', 'messaging', 'inbound', 'handler.js'),
+      [
+        "import { recordPendingHistoryEntryIfEnabled, DEFAULT_GROUP_HISTORY_LIMIT, resolveSenderCommandAuthorization, isNormalizedSenderAllowed, } from 'openclaw/plugin-sdk';",
+        'export const handler = {',
+        '  recordPendingHistoryEntryIfEnabled,',
+        '  DEFAULT_GROUP_HISTORY_LIMIT,',
+        '  resolveSenderCommandAuthorization,',
+        '  isNormalizedSenderAllowed,',
+        '};',
+        '',
+      ].join('\n'),
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'), '{}\n', 'utf-8');
+    writeFileSync(
+      join(bundledPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs', 'index.js'),
+      'module.exports = {};\n',
+      'utf-8'
+    );
+    writeFileSync(join(bundledPluginDir, 'node_modules', 'zod', 'package.json'), '{}\n', 'utf-8');
+
+    mkdirSync(join(installedPluginDir, 'src', 'messaging', 'inbound'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs'), { recursive: true });
+    mkdirSync(join(installedPluginDir, 'node_modules', 'zod'), { recursive: true });
+    writeFileSync(
+      join(installedPluginDir, 'package.json'),
+      `${JSON.stringify({
+        name: '@larksuite/openclaw-lark',
+        version: FEISHU_OFFICIAL_PLUGIN_VERSION,
+        type: 'module',
+      }, null, 2)}\n`,
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'openclaw.plugin.json'), '{"id":"openclaw-lark"}\n', 'utf-8');
+    writeFileSync(join(installedPluginDir, 'index.js'), 'export {};\n', 'utf-8');
+    writeFileSync(
+      join(installedPluginDir, 'src', 'messaging', 'inbound', 'handler.js'),
+      [
+        "import { recordPendingHistoryEntryIfEnabled, DEFAULT_GROUP_HISTORY_LIMIT, resolveSenderCommandAuthorization, isNormalizedSenderAllowed, } from 'openclaw/plugin-sdk';",
+        'export const handler = {',
+        '  recordPendingHistoryEntryIfEnabled,',
+        '  DEFAULT_GROUP_HISTORY_LIMIT,',
+        '  resolveSenderCommandAuthorization,',
+        '  isNormalizedSenderAllowed,',
+        '};',
+        '',
+      ].join('\n'),
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'), '{}\n', 'utf-8');
+    writeFileSync(
+      join(installedPluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs', 'index.js'),
+      'module.exports = {};\n',
+      'utf-8'
+    );
+    writeFileSync(join(installedPluginDir, 'node_modules', 'zod', 'package.json'), '{}\n', 'utf-8');
+
+    const result = await repairInstalledFeishuOfficialPluginIfNeeded({
+      openClawConfigDir: openclawConfigDir,
+      isPackaged: false,
+      resourcesDir,
+      runCommand: vi.fn(async () => ({ success: true, stdout: '', stderr: '' })),
+    });
+
+    expect(result.repaired).toBe(true);
+    expect(result.reason).toBe('repaired');
+
+    const patchedHandler = readFileSync(join(installedPluginDir, 'src', 'messaging', 'inbound', 'handler.js'), 'utf-8');
+    expect(patchedHandler).toContain("from 'openclaw/plugin-sdk/allow-from'");
+    expect(patchedHandler).toContain("from 'openclaw/plugin-sdk/command-auth'");
+    expect(patchedHandler).toContain("from 'openclaw/plugin-sdk/reply-history'");
+    expect(patchedHandler).not.toContain("from 'openclaw/plugin-sdk'");
+  });
 });

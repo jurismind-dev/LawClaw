@@ -795,12 +795,16 @@ export function finalizeFeishuOfficialPluginConfig(
     dmPolicy = 'allowlist';
     allowFrom = allowFrom.filter((item) => item !== '*');
     allowFrom.push(credentials.openId);
-  } else if (isManualCredentialBinding && appChanged) {
+  } else if (isManualCredentialBinding) {
     // Feishu open_id values are app-scoped. Reusing an allowlist from a
     // previously bound app would silently block all DMs after switching apps.
+    // LawClaw's "bind existing app" flow should always land on an open DM
+    // policy, because the user has not completed an in-channel pairing step.
     dmPolicy = 'open';
     allowFrom = ['*'];
-    groupAllowFrom = [];
+    if (appChanged) {
+      groupAllowFrom = [];
+    }
   } else if (dmPolicy === 'open' && !allowFrom.includes('*')) {
     allowFrom.push('*');
   }

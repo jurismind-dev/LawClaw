@@ -102,7 +102,17 @@ describe('weixin onboarding config writes', () => {
       };
     };
 
-    expect(next.channels?.['openclaw-weixin']).toBeUndefined();
+    expect(next.channels?.['openclaw-weixin']).toMatchObject({
+      enabled: true,
+      defaultAccount: 'bot-alpha',
+      baseUrl: 'https://weixin.example/base',
+      accounts: {
+        'bot-alpha': {
+          enabled: true,
+          baseUrl: 'https://weixin.example/base',
+        },
+      },
+    });
     expect(next.plugins?.allow).toEqual(['custom-plugin']);
     expect(next.plugins?.entries?.['openclaw-weixin']).toBeUndefined();
     expect(next.plugins?.entries?.['custom-plugin']?.enabled).toBe(true);

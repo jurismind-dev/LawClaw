@@ -561,6 +561,82 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(existsSync(join(openclawDir, 'openclaw-weixin'))).toBe(false);
   });
 
+  it('sanitizeOpenClawConfig preserves managed weixin channel config written by LawClaw onboarding', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-weixin-managed-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          channels: {
+            'openclaw-weixin': {
+              enabled: true,
+              defaultAccount: 'bot-alpha',
+              baseUrl: 'https://weixin.example/base',
+              accounts: {
+                'bot-alpha': {
+                  enabled: true,
+                  baseUrl: 'https://weixin.example/base',
+                },
+              },
+            },
+          },
+          bindings: [
+            {
+              agentId: 'lawclaw-main',
+              match: {
+                channel: 'openclaw-weixin',
+                accountId: '*',
+              },
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    mod.sanitizeOpenClawConfig();
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      channels?: Record<string, unknown>;
+      bindings?: Array<{
+        agentId?: string;
+        match?: {
+          channel?: string;
+          accountId?: string;
+        };
+      }>;
+    };
+
+    expect(next.channels?.['openclaw-weixin']).toMatchObject({
+      enabled: true,
+      defaultAccount: 'bot-alpha',
+      baseUrl: 'https://weixin.example/base',
+      accounts: {
+        'bot-alpha': {
+          enabled: true,
+          baseUrl: 'https://weixin.example/base',
+        },
+      },
+    });
+    expect(next.bindings).toEqual([
+      {
+        agentId: 'lawclaw-main',
+        match: {
+          channel: 'openclaw-weixin',
+          accountId: '*',
+        },
+      },
+    ]);
+  });
+
   it('sanitizeOpenClawConfig prunes legacy feishu-only keys before gateway startup', async () => {
     const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-feishu-shape-'));
     tempHomes.push(homeDir);

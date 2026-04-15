@@ -138,6 +138,11 @@ vi.mock('@electron/utils/uv-setup', () => ({
 
 vi.mock('@electron/utils/openclaw-plugin-install', () => ({
   detectPluginInstallationState: vi.fn(() => ({ installed: true })),
+  cleanupStalePluginInstallStageDirs: vi.fn(() => []),
+  ensureHostOpenClawPackageLink: vi.fn(() => ({
+    changed: false,
+    linkPath: '/tmp/.openclaw/node_modules/openclaw',
+  })),
   savePluginChannelConfigBackup: vi.fn(),
   stripPluginChannelConfigForStartup: vi.fn((config: Record<string, unknown>) => ({
     config,

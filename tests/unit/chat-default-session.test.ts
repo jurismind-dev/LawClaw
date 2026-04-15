@@ -166,4 +166,32 @@ describe('chat store default session binding', () => {
     expect(useChatStore.getState().currentSessionKey).toBe(DEDICATED_SESSION_KEY);
   });
 
+  it('does not throttle the first startup session load before the default session is applied', async () => {
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'sessions.list') {
+        return {
+          success: true,
+          result: {
+            sessions: [{ key: SECONDARY_AGENT_SESSION_KEY }],
+          },
+        };
+      }
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: { messages: [] },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadSessions();
+    await useChatStore.getState().loadSessions();
+
+    expect(
+      vi.mocked(window.electron.ipcRenderer.invoke).mock.calls.filter(([, method]) => method === 'sessions.list')
+    ).toHaveLength(1);
+    expect(useChatStore.getState().currentSessionKey).toBe(DEDICATED_SESSION_KEY);
+  });
+
 });

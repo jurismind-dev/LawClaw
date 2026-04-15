@@ -9,7 +9,7 @@
  * to a ClawdbotConfig. Extracted from onboarding.ts for reuse
  * in CLI commands and other configuration flows.
  */
-import { addWildcardAllowFrom } from 'openclaw/plugin-sdk';
+import { addWildcardAllowFrom } from 'openclaw/plugin-sdk/setup';
 // ---------------------------------------------------------------------------
 // Config mutation helpers
 // ---------------------------------------------------------------------------

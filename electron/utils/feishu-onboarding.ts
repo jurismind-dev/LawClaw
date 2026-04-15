@@ -98,6 +98,12 @@ interface FeishuRegistrationPollResponse {
   };
 }
 
+interface FeishuExistingAppValidationResult {
+  valid: boolean;
+  reason?: 'invalid_credentials';
+  message?: string;
+}
+
 export interface FeishuOnboardingStatus {
   phase: FeishuOnboardingPhase;
   pluginInstalled: boolean;
@@ -110,11 +116,18 @@ export interface FeishuOnboardingStatus {
   lastMessage: string | null;
 }
 
-async function validateFeishuAppCredentials(appId: string, appSecret: string): Promise<boolean> {
+async function validateFeishuAppCredentials(
+  appId: string,
+  appSecret: string
+): Promise<FeishuExistingAppValidationResult> {
   const cleanAppId = appId.trim();
   const cleanAppSecret = appSecret.trim();
   if (!cleanAppId || !cleanAppSecret) {
-    return false;
+    return {
+      valid: false,
+      reason: 'invalid_credentials',
+      message: 'App ID 或 App Secret 不能为空',
+    };
   }
 
   try {
@@ -133,9 +146,23 @@ async function validateFeishuAppCredentials(appId: string, appSecret: string): P
       | { code?: number; tenant_access_token?: string }
       | null;
 
-    return Boolean(response.ok && payload?.code === 0 && payload.tenant_access_token);
+    if (!(response.ok && payload?.code === 0 && payload.tenant_access_token)) {
+      return {
+        valid: false,
+        reason: 'invalid_credentials',
+        message: 'App ID 或 App Secret 无效，请检查后重试',
+      };
+    }
+
+    return {
+      valid: true,
+    };
   } catch {
-    return false;
+    return {
+      valid: false,
+      reason: 'invalid_credentials',
+      message: '无法连接飞书开放平台，请稍后重试',
+    };
   }
 }
 
@@ -427,9 +454,9 @@ class FeishuOnboardingManager extends EventEmitter {
       await this.ensureOfficialPluginInstalled(false);
       this.ensureRunIsCurrent(currentRunToken);
 
-      const valid = await validateFeishuAppCredentials(cleanAppId, cleanAppSecret);
-      if (!valid) {
-        throw new Error('App ID 或 App Secret 无效，请检查后重试');
+      const validation = await validateFeishuAppCredentials(cleanAppId, cleanAppSecret);
+      if (!validation.valid) {
+        throw new Error(validation.message || '飞书应用校验失败，请检查配置后重试');
       }
 
       this.ensureRunIsCurrent(currentRunToken);

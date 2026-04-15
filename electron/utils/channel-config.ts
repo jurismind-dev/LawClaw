@@ -14,6 +14,8 @@ import {
     WEIXIN_CHANNEL_ID,
     clearWeixinStoredState,
     hasStoredWeixinCredentials,
+    loadWeixinAccountData,
+    loadWeixinSettings,
     normalizeWeixinAccountId,
 } from './weixin-channel-state';
 import * as logger from './logger';
@@ -322,31 +324,35 @@ export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void>
 
 export async function saveChannelConfig(
     channelType: string,
-    config: ChannelConfigData
+    config: ChannelConfigData,
+    accountId?: string
 ): Promise<void> {
+    const normalizedChannelType = normalizeChannelId(channelType);
+    const resolvedAccountId = accountId ? normalizeWeixinAccountId(accountId) : undefined;
     const currentConfig = await readOpenClawConfig();
 
-    cleanupLegacyBuiltInChannelPluginRegistration(currentConfig, channelType);
+    cleanupLegacyBuiltInChannelPluginRegistration(currentConfig, normalizedChannelType);
 
     // Plugin-based channels (e.g. WhatsApp) go under plugins.entries, not channels
-    if (PLUGIN_CHANNELS.includes(channelType)) {
+    if (PLUGIN_CHANNELS.includes(normalizedChannelType)) {
         if (!currentConfig.plugins) {
             currentConfig.plugins = {};
         }
         if (!currentConfig.plugins.entries) {
             currentConfig.plugins.entries = {};
         }
-        currentConfig.plugins.entries[channelType] = {
-            ...currentConfig.plugins.entries[channelType],
+        currentConfig.plugins.entries[normalizedChannelType] = {
+            ...currentConfig.plugins.entries[normalizedChannelType],
             enabled: config.enabled ?? true,
         };
         await writeOpenClawConfig(currentConfig);
         logger.info('Plugin channel config saved', {
-            channelType,
+            channelType: normalizedChannelType,
+            accountId: resolvedAccountId,
             configFile: CONFIG_FILE,
-            path: `plugins.entries.${channelType}`,
+            path: `plugins.entries.${normalizedChannelType}`,
         });
-        console.log(`Saved plugin channel config for ${channelType}`);
+        console.log(`Saved plugin channel config for ${normalizedChannelType}`);
         return;
     }
 
@@ -358,7 +364,7 @@ export async function saveChannelConfig(
     let transformedConfig: ChannelConfigData = { ...config };
 
     // Special handling for Discord: convert guildId/channelId to complete structure
-    if (channelType === 'discord') {
+    if (normalizedChannelType === 'discord') {
         const { guildId, channelId, ...restConfig } = config;
         transformedConfig = { ...restConfig };
 
@@ -394,7 +400,7 @@ export async function saveChannelConfig(
     }
 
     // Special handling for Telegram: convert allowedUsers string to allowlist array
-    if (channelType === 'telegram') {
+    if (normalizedChannelType === 'telegram') {
         const { allowedUsers, ...restConfig } = config;
         transformedConfig = { ...restConfig };
 
@@ -410,8 +416,8 @@ export async function saveChannelConfig(
     }
 
     // Special handling for Feishu: default to open DM policy with wildcard allowlist
-    if (channelType === 'feishu') {
-        const existingConfig = currentConfig.channels[channelType] || {};
+    if (normalizedChannelType === 'feishu') {
+        const existingConfig = currentConfig.channels[normalizedChannelType] || {};
         transformedConfig.dmPolicy = transformedConfig.dmPolicy ?? existingConfig.dmPolicy ?? 'open';
 
         let allowFrom = transformedConfig.allowFrom ?? existingConfig.allowFrom ?? ['*'];
@@ -430,24 +436,99 @@ export async function saveChannelConfig(
         }).config;
     }
 
+    if (normalizedChannelType === WEIXIN_CHANNEL_ID && resolvedAccountId) {
+        const existingSection = currentConfig.channels[normalizedChannelType];
+        const existingAccounts =
+            existingSection && typeof existingSection.accounts === 'object' && existingSection.accounts !== null && !Array.isArray(existingSection.accounts)
+                ? existingSection.accounts as Record<string, ChannelConfigData>
+                : {};
+        const nextAccountConfig: ChannelConfigData = {
+            ...(existingAccounts[resolvedAccountId] || {}),
+            ...transformedConfig,
+            enabled: transformedConfig.enabled ?? true,
+        };
+
+        const nextSection: ChannelConfigData = {
+            ...(existingSection || {}),
+            enabled: transformedConfig.enabled ?? existingSection?.enabled ?? true,
+            defaultAccount:
+                typeof existingSection?.defaultAccount === 'string' && existingSection.defaultAccount.trim()
+                    ? existingSection.defaultAccount
+                    : resolvedAccountId,
+            accounts: {
+                ...existingAccounts,
+                [resolvedAccountId]: nextAccountConfig,
+            },
+        };
+
+        const mirroredAccountId =
+            typeof nextSection.defaultAccount === 'string' && nextSection.defaultAccount.trim()
+                ? nextSection.defaultAccount
+                : resolvedAccountId;
+        const mirroredAccountConfig =
+            (nextSection.accounts as Record<string, ChannelConfigData>)[mirroredAccountId]
+            || nextAccountConfig;
+
+        for (const [key, value] of Object.entries(mirroredAccountConfig)) {
+            nextSection[key] = value;
+        }
+
+        const settings = await loadWeixinSettings();
+        const accountData = await loadWeixinAccountData(resolvedAccountId);
+
+        if (settings?.baseUrl || accountData?.baseUrl) {
+            const resolvedBaseUrl = accountData?.baseUrl || settings?.baseUrl;
+            nextSection.baseUrl = resolvedBaseUrl;
+            const accounts = nextSection.accounts as Record<string, ChannelConfigData>;
+            accounts[resolvedAccountId] = {
+                ...accounts[resolvedAccountId],
+                baseUrl: resolvedBaseUrl,
+            };
+        }
+        if (settings?.routeTag) {
+            nextSection.routeTag = settings.routeTag;
+            const accounts = nextSection.accounts as Record<string, ChannelConfigData>;
+            accounts[resolvedAccountId] = {
+                ...accounts[resolvedAccountId],
+                routeTag: settings.routeTag,
+            };
+        }
+
+        currentConfig.channels[normalizedChannelType] = nextSection;
+        syncBuiltinChannelsWithPluginAllowlist(currentConfig, [normalizedChannelType]);
+
+        await writeOpenClawConfig(currentConfig);
+        logger.info('Channel config saved', {
+            channelType: normalizedChannelType,
+            accountId: resolvedAccountId,
+            configFile: CONFIG_FILE,
+            rawKeys: Object.keys(config),
+            transformedKeys: Object.keys(transformedConfig),
+            enabled: currentConfig.channels[normalizedChannelType]?.enabled,
+        });
+        console.log(`Saved channel config for ${normalizedChannelType} account ${resolvedAccountId}`);
+        return;
+    }
+
     // Merge with existing config
-    currentConfig.channels[channelType] = {
-        ...currentConfig.channels[channelType],
+    currentConfig.channels[normalizedChannelType] = {
+        ...currentConfig.channels[normalizedChannelType],
         ...transformedConfig,
         enabled: transformedConfig.enabled ?? true,
     };
 
-    syncBuiltinChannelsWithPluginAllowlist(currentConfig, [channelType]);
+    syncBuiltinChannelsWithPluginAllowlist(currentConfig, [normalizedChannelType]);
 
     await writeOpenClawConfig(currentConfig);
     logger.info('Channel config saved', {
-        channelType,
+        channelType: normalizedChannelType,
+        accountId: resolvedAccountId,
         configFile: CONFIG_FILE,
         rawKeys: Object.keys(config),
         transformedKeys: Object.keys(transformedConfig),
-        enabled: currentConfig.channels[channelType]?.enabled,
+        enabled: currentConfig.channels[normalizedChannelType]?.enabled,
     });
-    console.log(`Saved channel config for ${channelType}`);
+    console.log(`Saved channel config for ${normalizedChannelType}`);
 }
 
 export async function getChannelConfig(channelType: string): Promise<ChannelConfigData | undefined> {

@@ -10,7 +10,7 @@
  * both the default account (top-level fields) and named accounts
  * (nested under `accounts`).
  */
-import { DEFAULT_ACCOUNT_ID } from 'openclaw/plugin-sdk';
+import { DEFAULT_ACCOUNT_ID } from 'openclaw/plugin-sdk/account-id';
 import { getLarkAccount, getLarkAccountIds } from '../core/accounts';
 import { collectIsolationWarnings } from '../core/security-check';
 /** Generic Feishu account config merge. */

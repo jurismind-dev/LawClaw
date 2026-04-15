@@ -11,6 +11,7 @@
 !ifndef nsProcess::FindProcess
   !include "nsProcess.nsh"
 !endif
+!include "LogicLib.nsh"
 
 !define LAWCLAW_LEGACY_SHARED_APP_GUID "36abd259-b5f8-5a78-aae7-c5b60d324643"
 !define LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY "Software\${LAWCLAW_LEGACY_SHARED_APP_GUID}"
@@ -29,17 +30,17 @@ Function DetectLegacyLawClawPerUser
   ReadRegStr $0 HKCU "${LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY}" InstallLocation
   ReadRegStr $1 HKCU "${LAWCLAW_LEGACY_SHARED_UNINSTALL_REGISTRY_KEY}" DisplayName
 
-  ${if} $1 == "${LAWCLAW_LEGACY_UNINSTALL_DISPLAY_NAME}"
+  ${If} $1 == "${LAWCLAW_LEGACY_UNINSTALL_DISPLAY_NAME}"
     StrCpy $LegacyLawClawPerUserOwned "1"
     StrCpy $LegacyLawClawPerUserInstallLocation "$0"
     Return
-  ${endIf}
+  ${EndIf}
 
-  ${if} $0 != ""
+  ${If} $0 != ""
     IfFileExists "$0\LawClaw.exe" 0 +3
       StrCpy $LegacyLawClawPerUserOwned "1"
       StrCpy $LegacyLawClawPerUserInstallLocation "$0"
-  ${endIf}
+  ${EndIf}
 FunctionEnd
 
 Function DetectLegacyLawClawPerMachine
@@ -49,17 +50,17 @@ Function DetectLegacyLawClawPerMachine
   ReadRegStr $0 HKLM "${LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY}" InstallLocation
   ReadRegStr $1 HKLM "${LAWCLAW_LEGACY_SHARED_UNINSTALL_REGISTRY_KEY}" DisplayName
 
-  ${if} $1 == "${LAWCLAW_LEGACY_UNINSTALL_DISPLAY_NAME}"
+  ${If} $1 == "${LAWCLAW_LEGACY_UNINSTALL_DISPLAY_NAME}"
     StrCpy $LegacyLawClawPerMachineOwned "1"
     StrCpy $LegacyLawClawPerMachineInstallLocation "$0"
     Return
-  ${endIf}
+  ${EndIf}
 
-  ${if} $0 != ""
+  ${If} $0 != ""
     IfFileExists "$0\LawClaw.exe" 0 +3
       StrCpy $LegacyLawClawPerMachineOwned "1"
       StrCpy $LegacyLawClawPerMachineInstallLocation "$0"
-  ${endIf}
+  ${EndIf}
 FunctionEnd
 
 Function DetectLegacyLawClawSharedRegistry
@@ -77,21 +78,21 @@ FunctionEnd
 
   StrCpy $R7 ""
   ReadRegStr $R7 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
-  ${if} $R7 == ""
+  ${If} $R7 == ""
     ReadRegStr $R7 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
-  ${endIf}
+  ${EndIf}
 
-  ${if} $R7 == ""
-    ${if} $LegacyLawClawPerMachineOwned == "1"
-    ${andIf} $LegacyLawClawPerMachineInstallLocation != ""
+  ${If} $R7 == ""
+    ${If} $LegacyLawClawPerMachineOwned == "1"
+    ${AndIf} $LegacyLawClawPerMachineInstallLocation != ""
       !insertmacro setInstallModePerAllUsers
       StrCpy $INSTDIR "$LegacyLawClawPerMachineInstallLocation"
-    ${elseif} $LegacyLawClawPerUserOwned == "1"
-    ${andIf} $LegacyLawClawPerUserInstallLocation != ""
+    ${ElseIf} $LegacyLawClawPerUserOwned == "1"
+    ${AndIf} $LegacyLawClawPerUserInstallLocation != ""
       !insertmacro setInstallModePerUser
       StrCpy $INSTDIR "$LegacyLawClawPerUserInstallLocation"
-    ${endIf}
-  ${endIf}
+    ${EndIf}
+  ${EndIf}
 !macroend
 
 !macro customCheckAppRunning
@@ -101,57 +102,57 @@ FunctionEnd
   StrCpy $R9 ""
 
   ReadRegStr $R9 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" InstallLocation
-  ${if} $R9 == ""
+  ${If} $R9 == ""
     ReadRegStr $R9 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
-  ${endIf}
-  ${if} $R9 == ""
-    ${if} $LegacyLawClawPerMachineOwned == "1"
-    ${andIf} $LegacyLawClawPerMachineInstallLocation != ""
+  ${EndIf}
+  ${If} $R9 == ""
+    ${If} $LegacyLawClawPerMachineOwned == "1"
+    ${AndIf} $LegacyLawClawPerMachineInstallLocation != ""
       StrCpy $R9 "$LegacyLawClawPerMachineInstallLocation"
-    ${elseif} $LegacyLawClawPerUserOwned == "1"
-    ${andIf} $LegacyLawClawPerUserInstallLocation != ""
+    ${ElseIf} $LegacyLawClawPerUserOwned == "1"
+    ${AndIf} $LegacyLawClawPerUserInstallLocation != ""
       StrCpy $R9 "$LegacyLawClawPerUserInstallLocation"
-    ${endIf}
-  ${endIf}
-  ${if} $R9 == ""
+    ${EndIf}
+  ${EndIf}
+  ${If} $R9 == ""
     StrCpy $R9 "$INSTDIR"
-  ${endIf}
+  ${EndIf}
 
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
 
-  ${if} $R0 == 0
-    ${if} ${isUpdated}
+  ${If} $R0 == 0
+    ${If} ${isUpdated}
       Sleep 8000
       ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
-      ${if} $R0 != 0
+      ${If} $R0 != 0
         nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
         Pop $0
         Pop $1
         Goto done_killing
-      ${endIf}
-    ${endIf}
-    ${if} ${isUpdated}
-    ${else}
+      ${EndIf}
+    ${EndIf}
+    ${If} ${isUpdated}
+    ${Else}
       MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK doStopProcess
       Quit
-    ${endIf}
+    ${EndIf}
 
     doStopProcess:
     nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
     Pop $0
     Pop $1
 
-    ${if} $R9 != "$INSTDIR"
+    ${If} $R9 != "$INSTDIR"
       nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$R9', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
       Pop $0
       Pop $1
-    ${endIf}
+    ${EndIf}
 
-    ${if} $0 != 0
+    ${If} $0 != 0
       nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
       Pop $0
       Pop $1
-    ${endIf}
+    ${EndIf}
 
     nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
     Pop $0
@@ -161,16 +162,16 @@ FunctionEnd
 
     done_killing:
       ${nsProcess::Unload}
-  ${endIf}
+  ${EndIf}
 
   nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
   Pop $0
   Pop $1
-  ${if} $R9 != "$INSTDIR"
+  ${If} $R9 != "$INSTDIR"
     nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$R9', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
     Pop $0
     Pop $1
-  ${endIf}
+  ${EndIf}
 
   nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
   Pop $0
@@ -229,14 +230,14 @@ FunctionEnd
 !macro customInstall
   ; Remove the legacy shared ClawX/LawClaw registry identity after the new
   ; LawClaw-specific installer identity has been written.
-  ${if} $LegacyLawClawPerMachineOwned == "1"
+  ${If} $LegacyLawClawPerMachineOwned == "1"
     DeleteRegKey HKLM "${LAWCLAW_LEGACY_SHARED_UNINSTALL_REGISTRY_KEY}"
     DeleteRegKey HKLM "${LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY}"
-  ${endIf}
-  ${if} $LegacyLawClawPerUserOwned == "1"
+  ${EndIf}
+  ${If} $LegacyLawClawPerUserOwned == "1"
     DeleteRegKey HKCU "${LAWCLAW_LEGACY_SHARED_UNINSTALL_REGISTRY_KEY}"
     DeleteRegKey HKCU "${LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY}"
-  ${endIf}
+  ${EndIf}
 
   ; Keep a single LawClaw CLI entry in the current user's PATH so updates and
   ; reinstalls do not accumulate stale duplicates.

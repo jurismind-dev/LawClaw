@@ -9,7 +9,8 @@
  * setup` wizard can configure Feishu credentials, domain, group
  * policies, and DM allowlists interactively.
  */
-import { DEFAULT_ACCOUNT_ID, formatDocsLink } from 'openclaw/plugin-sdk';
+import { DEFAULT_ACCOUNT_ID } from 'openclaw/plugin-sdk/account-id';
+import { formatDocsLink } from 'openclaw/plugin-sdk/setup-tools';
 import { getLarkCredentials } from '../core/accounts';
 import { probeFeishu } from './probe';
 import { setFeishuDmPolicy, setFeishuAllowFrom, setFeishuGroupPolicy, setFeishuGroupAllowFrom, parseAllowFromInput, } from './onboarding-config';

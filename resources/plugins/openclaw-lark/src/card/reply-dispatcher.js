@@ -11,7 +11,8 @@
  * 3. In static mode, delivers via sendMessageFeishu / sendMarkdownCardFeishu
  * 4. Assembles and returns FeishuReplyDispatcherResult
  */
-import { createReplyPrefixContext, createTypingCallbacks, logTypingFailure, } from 'openclaw/plugin-sdk';
+import { logTypingFailure } from 'openclaw/plugin-sdk/channel-feedback';
+import { createReplyPrefixContext, createTypingCallbacks } from 'openclaw/plugin-sdk/channel-reply-pipeline';
 import { getLarkAccount } from '../core/accounts';
 import { resolveFooterConfig } from '../core/footer-config';
 import { LarkClient } from '../core/lark-client';

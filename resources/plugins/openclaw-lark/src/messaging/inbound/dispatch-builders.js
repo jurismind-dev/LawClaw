@@ -9,7 +9,7 @@
  * structures (message bodies, envelope payloads, inbound context) but
  * never perform I/O, send messages, or mutate external state.
  */
-import { buildPendingHistoryContextFromMap } from 'openclaw/plugin-sdk';
+import { buildPendingHistoryContextFromMap } from 'openclaw/plugin-sdk/reply-history';
 import { nonBotMentions } from './mention';
 import { threadScopedKey } from '../../channel/chat-queue';
 // ---------------------------------------------------------------------------

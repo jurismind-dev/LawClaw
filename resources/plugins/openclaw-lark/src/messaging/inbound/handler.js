@@ -14,7 +14,9 @@
  *   6. Content resolution    → enrich.ts (media / quote, parallel)
  *   7. Agent dispatch        → dispatch.ts
  */
-import { recordPendingHistoryEntryIfEnabled, DEFAULT_GROUP_HISTORY_LIMIT, resolveSenderCommandAuthorization, isNormalizedSenderAllowed, } from 'openclaw/plugin-sdk';
+import { isNormalizedSenderAllowed } from 'openclaw/plugin-sdk/allow-from';
+import { resolveSenderCommandAuthorization } from 'openclaw/plugin-sdk/command-auth';
+import { DEFAULT_GROUP_HISTORY_LIMIT, recordPendingHistoryEntryIfEnabled } from 'openclaw/plugin-sdk/reply-history';
 import { getLarkAccount } from '../../core/accounts';
 import { LarkClient } from '../../core/lark-client';
 import { larkLogger } from '../../core/lark-logger';

@@ -84,6 +84,55 @@ describe('FeishuOfficialOnboardingPanel', () => {
     });
   });
 
+  it('renders existing-app binding errors from the main process', async () => {
+    invokeMock.mockImplementation(async (channel: string, payload?: unknown) => {
+      switch (channel) {
+        case 'feishu:getStatus':
+          return {
+            success: true,
+            status: {
+              phase: 'idle',
+              configured: false,
+              pluginInstalled: true,
+            },
+          };
+        case 'channel:getConfig':
+          return {
+            success: true,
+            config: {},
+          };
+        case 'feishu:configureExistingApp':
+          return {
+            success: false,
+            error: '当前飞书应用的事件订阅方式不是长连接',
+            status: {
+              phase: 'error',
+              configured: false,
+              pluginInstalled: true,
+              lastError: '当前飞书应用的事件订阅方式不是长连接',
+            },
+            payload,
+          };
+        default:
+          return { success: true };
+      }
+    });
+
+    render(<FeishuOfficialOnboardingPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.feishuOfficial.modeExisting' }));
+    fireEvent.change(screen.getByLabelText('dialog.feishuOfficial.existingAppIdLabel'), {
+      target: { value: 'cli_test_app' },
+    });
+    fireEvent.change(screen.getByLabelText('dialog.feishuOfficial.existingAppSecretLabel'), {
+      target: { value: 'secret-value' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.feishuOfficial.saveExisting' }));
+
+    expect(await screen.findByText('当前飞书应用的事件订阅方式不是长连接')).toBeInTheDocument();
+  });
+
   it('switches to existing-app mode automatically when saved credentials exist', async () => {
     invokeMock.mockImplementation(async (channel: string) => {
       switch (channel) {

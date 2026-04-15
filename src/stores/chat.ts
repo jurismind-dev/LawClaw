@@ -229,6 +229,27 @@ function isRecoverableChatSendTimeout(error: string): boolean {
   return error.includes('RPC timeout: chat.send');
 }
 
+function shouldThrottleSessionLoad(force: boolean, hasAppliedStartupDefault: boolean): boolean {
+  if (force) {
+    return false;
+  }
+  if (!hasAppliedStartupDefault) {
+    return false;
+  }
+  return Date.now() - _lastLoadSessionsAt < SESSION_LOAD_MIN_INTERVAL_MS;
+}
+
+function shouldUseDedicatedFallbackSession(
+  currentSessionKey: string,
+  hasAppliedStartupDefault: boolean,
+): boolean {
+  if (!hasAppliedStartupDefault) {
+    return true;
+  }
+
+  return isInternalMigrationSessionKey(currentSessionKey);
+}
+
 const DEFAULT_CANONICAL_PREFIX = 'agent:lawclaw-main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
 const INTERNAL_MIGRATION_SESSION_PREFIX = `${DEFAULT_CANONICAL_PREFIX}:__internal_migration__:`;
@@ -317,6 +338,44 @@ const _imageCache = loadImageCache();
 
 function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T, sessionKey: string): T {
   return Object.fromEntries(Object.entries(entries).filter(([key]) => key !== sessionKey)) as T;
+}
+
+function buildSessionSwitchPatch(
+  state: Pick<
+    ChatState,
+    'currentSessionKey' | 'messages' | 'sessions' | 'sessionLabels' | 'sessionLastActivity'
+  >,
+  nextSessionKey: string,
+): Partial<ChatState> {
+  const leavingEmpty = !state.currentSessionKey.endsWith(':main')
+    && state.messages.length === 0
+    && !state.sessionLastActivity[state.currentSessionKey]
+    && !state.sessionLabels[state.currentSessionKey];
+
+  const nextSessions = leavingEmpty
+    ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
+    : state.sessions;
+
+  return {
+    currentSessionKey: nextSessionKey,
+    currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+    sessions: ensureSessionEntry(nextSessions, nextSessionKey),
+    sessionLabels: leavingEmpty
+      ? clearSessionEntryFromMap(state.sessionLabels, state.currentSessionKey)
+      : state.sessionLabels,
+    sessionLastActivity: leavingEmpty
+      ? clearSessionEntryFromMap(state.sessionLastActivity, state.currentSessionKey)
+      : state.sessionLastActivity,
+    messages: [],
+    streamingText: '',
+    streamingMessage: null,
+    streamingTools: [],
+    activeRunId: null,
+    error: null,
+    pendingFinal: false,
+    lastUserMessageAt: null,
+    pendingToolImages: [],
+  };
 }
 
 /** Extract plain text from message content (string or content blocks) */
@@ -1136,12 +1195,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Load sessions via sessions.list ──
 
   loadSessions: async (force = false) => {
-    const now = Date.now();
     if (_loadSessionsInFlight) {
       await _loadSessionsInFlight;
       return;
     }
-    if (!force && now - _lastLoadSessionsAt < SESSION_LOAD_MIN_INTERVAL_MS) {
+    const snapshotBeforeLoad = get();
+    if (
+      shouldThrottleSessionLoad(force, snapshotBeforeLoad.hasAppliedStartupDefault)
+      && !shouldUseDedicatedFallbackSession(
+        snapshotBeforeLoad.currentSessionKey,
+        snapshotBeforeLoad.hasAppliedStartupDefault,
+      )
+    ) {
       return;
     }
 
@@ -1193,7 +1258,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             sessionLabels,
             sessionLastActivity,
           } = get();
-          const shouldForceDedicatedSession = !hasAppliedStartupDefault;
+          const shouldForceDedicatedSession = shouldUseDedicatedFallbackSession(
+            currentSessionKey,
+            hasAppliedStartupDefault,
+          );
           let nextSessionKey = shouldForceDedicatedSession
             ? DEFAULT_SESSION_KEY
             : currentSessionKey || DEFAULT_SESSION_KEY;
@@ -1314,36 +1382,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Switch session ──
 
   switchSession: (key: string) => {
-    const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
-    const leavingEmptySession =
-      !currentSessionKey.endsWith(':main') &&
-      messages.length === 0 &&
-      !sessionLastActivity[currentSessionKey] &&
-      !sessionLabels[currentSessionKey];
-    const nextSessionKey = key.startsWith('agent:')
-      ? key
-      : DEFAULT_SESSION_KEY;
-    set((state) => ({
-      currentSessionKey: nextSessionKey,
-      currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-      messages: [],
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      activeRunId: null,
-      error: null,
-      pendingFinal: false,
-      lastUserMessageAt: null,
-      pendingToolImages: [],
-      ...(leavingEmptySession
-        ? {
-            sessions: state.sessions.filter((session) => session.key !== currentSessionKey),
-            sessionLabels: clearSessionEntryFromMap(state.sessionLabels, currentSessionKey),
-            sessionLastActivity: clearSessionEntryFromMap(state.sessionLastActivity, currentSessionKey),
-          }
-        : {}),
-    }));
-    // Load history for new session
+    const nextSessionKey = key.startsWith('agent:') ? key : DEFAULT_SESSION_KEY;
+    if (nextSessionKey === get().currentSessionKey) return;
+
+    clearHistoryPoll();
+    clearErrorRecoveryTimer();
+    set((state) => buildSessionSwitchPatch(state, nextSessionKey));
     get().loadHistory();
   },
 

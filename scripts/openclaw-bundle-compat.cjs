@@ -4,6 +4,7 @@ const { join } = require('path');
 const DOUBAO_DEFAULT_BASE_URL = 'http://101.132.245.215:3001/v1';
 const DOUBAO_DEFAULT_MODEL = 'doubao';
 const WINDOWS_SPAWN_PATCH_MARKER = 'lawclaw windows spawn patch v1';
+const WINDOWS_KILL_TREE_PATCH_MARKER = 'lawclaw windows kill-tree patch v1';
 const JURISMIND_DOUBAO_PLUGIN_ID = 'jurismind-doubao';
 const JURISMIND_DOUBAO_PATCH_MARKER = 'lawclaw jurismind doubao plugin v1';
 const LRU_CACHE_COMPAT_MARKER = 'lawclaw lru-cache interop patch v1';
@@ -1131,6 +1132,58 @@ function patchOpenClawWindowsSpawnRuntime(openClawDir) {
   return patchedFiles;
 }
 
+function patchOpenClawKillTreeFile(filePath) {
+  const original = readFileSync(filePath, 'utf8');
+  if (original.includes(WINDOWS_KILL_TREE_PATCH_MARKER)) {
+    return false;
+  }
+
+  let content = original;
+  let changed = false;
+
+  if (!content.includes('import path from "node:path";')) {
+    const importMarker = 'import { spawn } from "node:child_process";';
+    if (!content.includes(importMarker)) {
+      throw new Error(`[openclaw-runtime-patch] Missing kill-tree import marker in ${filePath}`);
+    }
+    content = content.replace(
+      importMarker,
+      `${importMarker}\nimport path from "node:path";`
+    );
+    changed = true;
+  }
+
+  const before = `function runTaskkill(args) {\n\ttry {\n\t\tspawn("taskkill", args, {\n\t\t\tstdio: "ignore",\n\t\t\tdetached: true,\n\t\t\twindowsHide: true\n\t\t});\n\t} catch {}\n}`;
+  const after = `function runTaskkill(args) {\n\ttry {\n\t\tconst systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || "C:\\\\Windows";\n\t\tconst taskkillPath = path.join(systemRoot, "System32", "taskkill.exe");\n\t\tspawn(taskkillPath, args, {\n\t\t\tstdio: "ignore",\n\t\t\tdetached: true,\n\t\t\twindowsHide: true\n\t\t});\n\t\t// ${WINDOWS_KILL_TREE_PATCH_MARKER}\n\t} catch {}\n}`;
+  const result = replaceRequired(content, filePath, 'kill-tree taskkill absolute path', before, after);
+  content = result.content;
+  changed = changed || result.changed;
+
+  return writePatchedFile(filePath, content, changed);
+}
+
+function patchOpenClawKillTreeRuntime(openClawDir) {
+  const distDir = join(openClawDir, 'dist');
+  if (!existsSync(distDir)) {
+    return [];
+  }
+
+  const patchedFiles = [];
+  walkFiles(distDir, (filePath) => {
+    const relativeName = filePath.slice(distDir.length + 1).replace(/\\/g, '/');
+    const basename = relativeName.split('/').pop() || '';
+    if (!/^kill-tree-.*\.js$/.test(basename)) {
+      return;
+    }
+
+    if (patchOpenClawKillTreeFile(filePath)) {
+      patchedFiles.push(relativeName);
+    }
+  });
+
+  return patchedFiles;
+}
+
 function walkFiles(dir, visitor) {
   if (!existsSync(dir)) {
     return;
@@ -1217,6 +1270,7 @@ module.exports = {
   patchRequireCompatiblePackage,
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
+  patchOpenClawKillTreeRuntime,
   patchOpenClawPluginSdkCompat,
   patchOpenClawBundleCompat,
   removeBundledExtensions,

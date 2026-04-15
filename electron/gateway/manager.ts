@@ -46,7 +46,10 @@ import { repairInstalledFeishuOfficialPluginIfNeeded } from '../utils/feishu-off
 import { applyOpenClawConfigEnvFallbacks } from '../utils/openclaw-config-env';
 import { stripUtf8Bom } from '../utils/text-encoding';
 import { repairInstalledWeixinPluginIfNeeded } from '../utils/weixin-plugin-installer';
-import { cleanupStalePluginInstallStageDirs } from '../utils/openclaw-plugin-install';
+import {
+  cleanupStalePluginInstallStageDirs,
+  ensureHostOpenClawPackageLink,
+} from '../utils/openclaw-plugin-install';
 import { selectGatewayRuntime } from './runtime-selection';
 import { getGatewayStartupRecoveryAction } from './startup-recovery';
 import {
@@ -920,6 +923,15 @@ export class GatewayManager extends EventEmitter {
       }
     } catch (err) {
       logger.warn('Failed to clean stale plugin install stage dirs before Gateway start:', err);
+    }
+
+    try {
+      const hostPackageLink = ensureHostOpenClawPackageLink(getOpenClawConfigDir(), openclawDir);
+      if (hostPackageLink.changed) {
+        logger.info(`Linked host OpenClaw package for external plugins: ${hostPackageLink.linkPath}`);
+      }
+    } catch (err) {
+      logger.warn('Failed to link host OpenClaw package for external plugins before Gateway start:', err);
     }
 
     try {

@@ -1,4 +1,15 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { finalizeFeishuOfficialPluginConfig } from './feishu-channel-defaults';
@@ -136,6 +147,62 @@ export function cleanupStalePluginInstallStageDirs(extensionsDir: string): strin
   }
 
   return removedPaths;
+}
+
+function readPackageVersion(packageDir: string): string | null {
+  const manifestPath = join(packageDir, 'package.json');
+  if (!existsSync(manifestPath)) {
+    return null;
+  }
+
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: unknown };
+    return typeof manifest.version === 'string' && manifest.version.trim()
+      ? manifest.version.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function ensureHostOpenClawPackageLink(
+  openClawConfigDir: string,
+  hostOpenClawDir: string
+): { changed: boolean; linkPath: string } {
+  const linkParentDir = join(openClawConfigDir, 'node_modules');
+  const linkPath = join(linkParentDir, 'openclaw');
+  const hostManifestPath = join(hostOpenClawDir, 'package.json');
+  if (!existsSync(hostManifestPath)) {
+    throw new Error(`Host OpenClaw package manifest not found: ${hostManifestPath}`);
+  }
+
+  mkdirSync(linkParentDir, { recursive: true });
+
+  const desiredRealPath = realpathSync(hostOpenClawDir);
+  if (existsSync(linkPath)) {
+    try {
+      if (realpathSync(linkPath) === desiredRealPath) {
+        return { changed: false, linkPath };
+      }
+    } catch {
+      // Fall through and refresh the managed host package link.
+    }
+
+    const existingVersion = readPackageVersion(linkPath);
+    const desiredVersion = readPackageVersion(hostOpenClawDir);
+    if (existingVersion && desiredVersion && existingVersion === desiredVersion) {
+      return { changed: false, linkPath };
+    }
+
+    rmSync(linkPath, { recursive: true, force: true });
+  }
+
+  symlinkSync(
+    desiredRealPath,
+    linkPath,
+    process.platform === 'win32' ? 'junction' : 'dir'
+  );
+  return { changed: true, linkPath };
 }
 
 export function publishPreparedPluginInstallDir(

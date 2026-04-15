@@ -12,7 +12,7 @@
  * 权限: im:resource
  * 凭证: tenant_access_token
  */
-import { buildRandomTempFilePath } from 'openclaw/plugin-sdk';
+import { buildRandomTempFilePath } from 'openclaw/plugin-sdk/temp-path';
 import { Type } from '@sinclair/typebox';
 import { json, createToolContext, formatLarkError, registerTool, StringEnum } from '../../oapi/helpers';
 import * as fsPromises from 'node:fs/promises';

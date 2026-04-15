@@ -9,7 +9,7 @@
  * logging, addressing, route resolution, thread session, and system
  * event emission.
  */
-import { resolveThreadSessionKeys } from 'openclaw/plugin-sdk';
+import { resolveThreadSessionKeys } from 'openclaw/plugin-sdk/routing';
 import { LarkClient } from '../../core/lark-client';
 import { larkLogger } from '../../core/lark-logger';
 import { isThreadCapableGroup } from '../../core/chat-info-cache';

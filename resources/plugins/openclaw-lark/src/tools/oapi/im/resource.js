@@ -10,7 +10,7 @@
  *
  * 全部以用户身份（user_access_token）调用，scope 来自 real-scope.json。
  */
-import { buildRandomTempFilePath } from 'openclaw/plugin-sdk';
+import { buildRandomTempFilePath } from 'openclaw/plugin-sdk/temp-path';
 import { Type } from '@sinclair/typebox';
 import { json, createToolContext, handleInvokeErrorWithAutoAuth, registerTool, StringEnum } from '../helpers';
 import * as fs from 'node:fs/promises';

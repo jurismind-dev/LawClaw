@@ -15,7 +15,7 @@
  *   - `"all"`  — reactions on any message in the chat are dispatched.
  */
 import * as crypto from 'node:crypto';
-import { DEFAULT_GROUP_HISTORY_LIMIT } from 'openclaw/plugin-sdk';
+import { DEFAULT_GROUP_HISTORY_LIMIT } from 'openclaw/plugin-sdk/reply-history';
 import { getLarkAccount } from '../../core/accounts';
 import { getMessageFeishu } from '../shared/message-lookup';
 import { isThreadCapableGroup, getChatTypeFeishu } from '../../core/chat-info-cache';

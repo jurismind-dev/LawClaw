@@ -12,12 +12,14 @@ export function getBundledFeishuOfficialPluginDirCandidates(options: {
   isPackaged: boolean;
   resourcesPath?: string;
 }): string[] {
-  return Array.from(new Set([
-    join(options.resourcesDir, 'plugins', FEISHU_OFFICIAL_PLUGIN_ID),
-    ...(options.isPackaged && options.resourcesPath
-      ? [join(options.resourcesPath, 'openclaw-plugins', FEISHU_OFFICIAL_PLUGIN_ID)]
-      : []),
-  ]));
+  const candidates = options.isPackaged && options.resourcesPath
+    ? [
+        join(options.resourcesPath, 'openclaw-plugins', FEISHU_OFFICIAL_PLUGIN_ID),
+        join(options.resourcesDir, 'plugins', FEISHU_OFFICIAL_PLUGIN_ID),
+      ]
+    : [join(options.resourcesDir, 'plugins', FEISHU_OFFICIAL_PLUGIN_ID)];
+
+  return Array.from(new Set(candidates));
 }
 
 export function findBundledFeishuOfficialPluginDir(options: {

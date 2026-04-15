@@ -90,6 +90,39 @@ describe('finalizeFeishuOfficialPluginConfig', () => {
     });
   });
 
+  it('forces open DM policy for manual existing-app binding even when appId stays the same', () => {
+    const input = {
+      channels: {
+        feishu: {
+          appId: 'cli_existing_app',
+          appSecret: 'old_secret',
+          dmPolicy: 'allowlist',
+          allowFrom: ['ou_old_owner'],
+          groupAllowFrom: ['ou_group_sender'],
+        },
+      },
+    };
+
+    const result = finalizeFeishuOfficialPluginConfig(input, {
+      credentials: {
+        appId: 'cli_existing_app',
+        appSecret: 'new_secret',
+      },
+    });
+
+    expect(result.config).toMatchObject({
+      channels: {
+        feishu: {
+          appId: 'cli_existing_app',
+          appSecret: 'new_secret',
+          dmPolicy: 'open',
+          allowFrom: ['*'],
+          groupAllowFrom: ['ou_group_sender'],
+        },
+      },
+    });
+  });
+
   it('preserves multi-account config while projecting the default account onto top-level fields', () => {
     const result = stabilizeFeishuChannelConfig({
       defaultAccount: 'work',

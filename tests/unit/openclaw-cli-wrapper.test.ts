@@ -52,6 +52,10 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(bundleScript).toContain('patchOpenClawWindowsSpawnRuntime');
     expect(devScript).toContain('patchOpenClawWindowsSpawnRuntime');
     expect(devSetupScript).toContain('patchOpenClawWindowsSpawnRuntime');
+    expect(bundleScript).toContain('patchOpenClawKillTreeRuntime');
+    expect(devScript).toContain('patchOpenClawKillTreeRuntime');
+    expect(devSetupScript).toContain('patchOpenClawKillTreeRuntime');
+    expect(afterPackScript).toContain('patchOpenClawKillTreeRuntime');
 
     expect(openClawCliSource).toContain('process.env.npm_node_execpath');
     expect(openClawCliSource).toContain('export function getNodeExecForCli');
@@ -60,6 +64,8 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(openClawCliSource).toContain('applyBundledRuntimeToEnv');
     expect(bundledRuntimeSource).toContain('LAWCLAW_BUNDLED_NODE_EXE');
     expect(bundledRuntimeSource).toContain('LAWCLAW_BUNDLED_UV_EXE');
+    expect(bundledRuntimeSource).toContain("join(systemRoot, 'System32')");
+    expect(bundledRuntimeSource).toContain("env.Path = nextPath");
     expect(feishuOnboardingSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
     expect(ipcHandlersSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
     expect(gatewayManagerSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
@@ -124,6 +130,7 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(devSetupScript).toContain('patchOpenClawPluginSdkCompat');
     expect(compatScript).toContain('https-proxy-agent');
     expect(compatScript).toContain('plugin-sdk compat patch v1');
+    expect(compatScript).toContain('lawclaw windows kill-tree patch v1');
   });
 
   it('routes mac builds through the unsigned electron-builder wrapper', () => {

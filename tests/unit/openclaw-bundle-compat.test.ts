@@ -451,4 +451,44 @@ describe('openclaw bundle compatibility patches', () => {
 
     expect(patchOpenClawWindowsSpawnRuntime(openclawDir)).toEqual([]);
   });
+
+  it('patches OpenClaw kill-tree runtime to resolve taskkill via SystemRoot', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-kill-tree-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const distDir = join(openclawDir, 'dist');
+    mkdirSync(distDir, { recursive: true });
+
+    const killTreePath = join(distDir, 'kill-tree-test.js');
+    writeFileSync(
+      killTreePath,
+      [
+        'import { spawn } from "node:child_process";',
+        'function runTaskkill(args) {',
+        '\ttry {',
+        '\t\tspawn("taskkill", args, {',
+        '\t\t\tstdio: "ignore",',
+        '\t\t\tdetached: true,',
+        '\t\t\twindowsHide: true',
+        '\t\t});',
+        '\t} catch {}',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { patchOpenClawKillTreeRuntime } = await loadCompatTools();
+    expect(patchOpenClawKillTreeRuntime(openclawDir)).toEqual(['kill-tree-test.js']);
+
+    const patchedSource = readFileSync(killTreePath, 'utf8');
+    expect(patchedSource).toContain('import path from "node:path";');
+    expect(patchedSource).toContain('const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || "C:\\\\Windows";');
+    expect(patchedSource).toContain('const taskkillPath = path.join(systemRoot, "System32", "taskkill.exe");');
+    expect(patchedSource).toContain('spawn(taskkillPath, args, {');
+    expect(patchedSource).toContain('lawclaw windows kill-tree patch v1');
+
+    expect(patchOpenClawKillTreeRuntime(openclawDir)).toEqual([]);
+  });
 });

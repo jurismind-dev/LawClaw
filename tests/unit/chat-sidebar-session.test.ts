@@ -52,6 +52,24 @@ describe('chat sidebar session state', () => {
     expect(state.sessionLastActivity[DRAFT_SESSION_KEY]).toBeUndefined();
   });
 
+  it('switchSession ignores clicks on the already active session', () => {
+    useChatStore.setState({
+      currentSessionKey: MAIN_SESSION_KEY,
+      currentAgentId: 'lawclaw-main',
+      messages: [
+        { role: 'user', content: '保留这条消息', timestamp: 1, id: 'msg-1' },
+      ],
+    });
+
+    useChatStore.getState().switchSession(MAIN_SESSION_KEY);
+
+    const state = useChatStore.getState();
+    expect(state.currentSessionKey).toBe(MAIN_SESSION_KEY);
+    expect(state.messages).toEqual([
+      { role: 'user', content: '保留这条消息', timestamp: 1, id: 'msg-1' },
+    ]);
+  });
+
   it('newSession replaces an unused draft session instead of accumulating ghosts', () => {
     useChatStore.setState({
       sessionLabels: {},

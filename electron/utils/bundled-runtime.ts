@@ -7,6 +7,35 @@ export interface BundledRuntimeEnvOptions {
   nodeExecutablePath?: string;
 }
 
+function getExistingPathValue(env: NodeJS.ProcessEnv): string | undefined {
+  for (const key of ['PATH', 'Path', 'path']) {
+    const value = env[key];
+    if (typeof value === 'string' && value.length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function ensureWindowsSystemPathEntries(entries: string[], env: NodeJS.ProcessEnv): string[] {
+  if (process.platform !== 'win32') {
+    return entries;
+  }
+
+  const systemRoot = String(env.SystemRoot || env.SYSTEMROOT || 'C:\\Windows').trim();
+  if (!systemRoot) {
+    return entries;
+  }
+
+  const requiredEntries = [
+    systemRoot,
+    join(systemRoot, 'System32'),
+    join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0'),
+  ];
+
+  return dedupePathEntries([...entries, ...requiredEntries]);
+}
+
 function dedupePathEntries(entries: string[]): string[] {
   const normalizedSeen = new Set<string>();
   const result: string[] = [];
@@ -137,9 +166,17 @@ export function applyBundledRuntimeToEnv(
   options: BundledRuntimeEnvOptions = {},
 ): NodeJS.ProcessEnv {
   const env = applyWindowsUtf8Env(baseEnv);
-  const pathEntries = getBundledRuntimePathEntries();
+  const pathEntries = ensureWindowsSystemPathEntries(getBundledRuntimePathEntries(), env);
   if (pathEntries.length > 0) {
-    env.PATH = prependPathEntries(env.PATH, pathEntries);
+    const currentPath = getExistingPathValue(env);
+    const nextPath = prependPathEntries(currentPath, pathEntries);
+    env.PATH = nextPath;
+    if (process.platform === 'win32') {
+      env.Path = nextPath;
+      if (!env.SystemRoot && !env.SYSTEMROOT) {
+        env.SystemRoot = 'C:\\Windows';
+      }
+    }
   }
 
   const utf8CmdWrapper = getWindowsUtf8CmdWrapperPath();

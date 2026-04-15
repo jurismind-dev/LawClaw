@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url);
 const {
   patchOpenClawPluginSdkCompat,
   patchOpenClawWebSearchRuntime,
+  patchOpenClawKillTreeRuntime,
   patchOpenClawWindowsSpawnRuntime,
 } = require('./openclaw-bundle-compat.cjs');
 
@@ -19,6 +20,7 @@ const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const openclawDir = path.join(projectRoot, 'node_modules', 'openclaw');
 const patchedRuntimeFiles = patchOpenClawWebSearchRuntime(openclawDir);
 const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(openclawDir);
+const patchedKillTreeFiles = patchOpenClawKillTreeRuntime(openclawDir);
 const patchedPluginSdkCompatFiles = patchOpenClawPluginSdkCompat(openclawDir);
 
 if (patchedRuntimeFiles.length > 0) {
@@ -26,6 +28,9 @@ if (patchedRuntimeFiles.length > 0) {
 }
 if (patchedWindowsSpawnFiles.length > 0) {
   console.log(`[dev] Patched OpenClaw Windows spawn runtime: ${patchedWindowsSpawnFiles.join(', ')}`);
+}
+if (patchedKillTreeFiles.length > 0) {
+  console.log(`[dev] Patched OpenClaw Windows kill-tree runtime: ${patchedKillTreeFiles.join(', ')}`);
 }
 if (patchedPluginSdkCompatFiles.length > 0) {
   console.log(`[dev] Patched OpenClaw plugin-sdk compat/runtime guards: ${patchedPluginSdkCompatFiles.join(', ')}`);

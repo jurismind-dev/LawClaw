@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { useAgentPresetMigrationStore } from '@/stores/agent-preset-migration';
 import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
+import { useMinLoading } from '@/hooks/use-min-loading';
 
 export function Chat() {
   const { t } = useTranslation('chat');
@@ -50,6 +51,7 @@ export function Chat() {
   const dismissCurrentWarning = useAgentPresetMigrationStore((s) => s.dismissCurrentWarning);
   const agents = useAgentsStore((s) => s.agents);
   const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
+  const minLoading = useMinLoading(loading && messages.length > 0);
 
   const handleOpenGatewaySlowStartGuide = async () => {
     try {
@@ -179,7 +181,7 @@ export function Chat() {
       <div className="min-h-0 flex-1 overflow-hidden px-3 py-2">
         <div ref={scrollRef} className="h-full min-h-0 overflow-y-auto">
           <div ref={contentRef} className="w-full space-y-4">
-            {loading && !isTaskRunning ? (
+            {loading && !isTaskRunning && messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-4 py-20 text-center">
                 <LoadingSpinner size="lg" />
                 <div className="space-y-1">
@@ -295,6 +297,14 @@ export function Chat() {
         sending={sending}
         taskRunning={isTaskRunning}
       />
+
+      {minLoading && !isTaskRunning && messages.length > 0 && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-background/20 backdrop-blur-[1px]">
+          <div className="rounded-full border border-border bg-background p-2.5 shadow-lg">
+            <LoadingSpinner size="md" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

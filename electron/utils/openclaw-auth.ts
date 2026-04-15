@@ -89,6 +89,99 @@ function normalizeChannelId(channelId: string): string {
   return channelId.trim().toLowerCase();
 }
 
+function isValidManagedWeixinChannelConfig(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const hasTopLevelCredentialLikeFields = [
+    'token',
+    'userId',
+    'cdnBaseUrl',
+  ].some((key) => typeof value[key] === 'string' && value[key].trim().length > 0);
+  if (hasTopLevelCredentialLikeFields) {
+    return false;
+  }
+
+  const accounts = isRecord(value.accounts) ? value.accounts : null;
+  const defaultAccount = typeof value.defaultAccount === 'string' ? value.defaultAccount.trim() : '';
+  const hasBaseUrl = typeof value.baseUrl === 'string' && value.baseUrl.trim().length > 0;
+  const hasRouteTag =
+    value.routeTag === undefined
+    || (typeof value.routeTag === 'number' && Number.isFinite(value.routeTag));
+
+  if (!accounts || Object.keys(accounts).length === 0 || !defaultAccount || !hasBaseUrl || !hasRouteTag) {
+    return false;
+  }
+
+  if (!/^[a-z0-9][a-z0-9._-]*$/i.test(defaultAccount)) {
+    return false;
+  }
+
+  const defaultAccountConfig = accounts[defaultAccount];
+  if (!isRecord(defaultAccountConfig)) {
+    return false;
+  }
+
+  const accountIds = Object.keys(accounts);
+  if (accountIds.some((accountId) => !/^[a-z0-9][a-z0-9._-]*$/i.test(accountId))) {
+    return false;
+  }
+
+  return accountIds.every((accountId) => {
+    const account = accounts[accountId];
+    if (!isRecord(account)) {
+      return false;
+    }
+
+    if ('token' in account || 'userId' in account || 'cdnBaseUrl' in account) {
+      return false;
+    }
+
+    return typeof account.baseUrl === 'string'
+      && account.baseUrl.trim().length > 0
+      && (
+        account.routeTag === undefined
+        || (typeof account.routeTag === 'number' && Number.isFinite(account.routeTag))
+      );
+  });
+}
+
+function sanitizeLegacyFeishuFooter(value: unknown): { value?: Record<string, boolean>; changed: boolean } {
+  if (!isRecord(value)) {
+    return {
+      value: undefined,
+      changed: value !== undefined,
+    };
+  }
+
+  let changed = false;
+  const next: Record<string, boolean> = {};
+
+  if (typeof value.status === 'boolean') {
+    next.status = value.status;
+  } else if ('status' in value) {
+    changed = true;
+  }
+
+  if (typeof value.elapsed === 'boolean') {
+    next.elapsed = value.elapsed;
+  } else if ('elapsed' in value) {
+    changed = true;
+  }
+
+  for (const key of Object.keys(value)) {
+    if (key !== 'status' && key !== 'elapsed') {
+      changed = true;
+    }
+  }
+
+  return {
+    value: Object.keys(next).length > 0 ? next : undefined,
+    changed,
+  };
+}
+
 function removePluginIdsFromList(pluginIds: string[], idsToRemove: readonly string[]): boolean {
   const ids = new Set(idsToRemove);
   const nextPluginIds = pluginIds.filter((pluginId) => !ids.has(pluginId));
@@ -1383,7 +1476,7 @@ export function sanitizeOpenClawConfig(): boolean {
   }
 
   const legacyWeixinSection = isRecord(config.channels) ? config.channels[WEIXIN_CHANNEL_ID] : undefined;
-  if (legacyWeixinSection !== undefined) {
+  if (legacyWeixinSection !== undefined && !isValidManagedWeixinChannelConfig(legacyWeixinSection)) {
     delete (config.channels as Record<string, unknown>)[WEIXIN_CHANNEL_ID];
     modified = true;
     console.log('[sanitize] Removed legacy Weixin channel config that is incompatible with current OpenClaw');
@@ -1462,8 +1555,14 @@ export function sanitizeOpenClawConfig(): boolean {
   for (const [channelType, sectionValue] of Object.entries(channels)) {
     if (!isRecord(sectionValue)) continue;
     let section = { ...sectionValue };
+    let sanitizedFooter: ReturnType<typeof sanitizeLegacyFeishuFooter> | null = null;
 
     if (channelType === 'feishu') {
+      sanitizedFooter = sanitizeLegacyFeishuFooter(section.footer);
+      if (sanitizedFooter.changed) {
+        modified = true;
+      }
+
       const stabilizedFeishu = stabilizeFeishuChannelConfig(section);
       section = stabilizedFeishu.config;
       if (stabilizedFeishu.changed) {
@@ -1494,6 +1593,19 @@ export function sanitizeOpenClawConfig(): boolean {
       const sanitizedFeishu = sanitizeFeishuChannelConfigShape(section);
       section = sanitizedFeishu.config;
       if (sanitizedFeishu.changed) {
+        modified = true;
+      }
+
+      if (sanitizedFooter?.value) {
+        section.footer = sanitizedFooter.value;
+      }
+
+      if (isRecord(section.accounts)) {
+        delete section.accounts;
+        modified = true;
+      }
+      if (typeof section.defaultAccount === 'string') {
+        delete section.defaultAccount;
         modified = true;
       }
     }

@@ -295,15 +295,15 @@ jobs:
           pnpm exec zx scripts/bundle-openclaw.mjs
           pnpm run bundle:preset-artifacts:offline
 
-          echo "macOS build config: sign=${MAC_SIGN_ENABLED:-unset}/${MAC_SIGN_MODE:-unset}"
+	          echo "macOS build config: sign=${MAC_SIGN_ENABLED:-unset}/${MAC_SIGN_MODE:-unset}"
 
-          if [[ "${MAC_SIGN_ENABLED:-false}" == "true" ]]; then
-            echo "Mac signing secrets are set (mode=${MAC_SIGN_MODE}). Building signed and notarized artifacts."
-            retry_cmd 3 pnpm exec electron-builder --mac --x64 --arm64 --publish never
-          else
-            echo "Mac signing secrets are missing. Building unsigned artifacts."
-            retry_cmd 3 pnpm exec electron-builder --config electron-builder.nosign.yml --mac --x64 --arm64 --publish never
-          fi
+	          if [[ "${MAC_SIGN_ENABLED:-false}" == "true" ]]; then
+	            echo "Mac signing secrets are set (mode=${MAC_SIGN_MODE}). Building signed and notarized artifacts."
+	            pnpm exec electron-builder --mac --x64 --arm64 --publish never
+	          else
+	            echo "Mac signing secrets are missing. Building unsigned artifacts."
+	            retry_cmd 3 pnpm exec electron-builder --config electron-builder.nosign.yml --mac --x64 --arm64 --publish never
+	          fi
 
       - name: Build Windows packages (x64)
         if: matrix.platform == 'win'

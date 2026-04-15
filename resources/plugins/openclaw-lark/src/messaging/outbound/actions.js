@@ -13,7 +13,8 @@
  * reply and attachment delivery — matching the Telegram/Discord pattern
  * where a single action handles all outbound message types.
  */
-import { extractToolSend, jsonResult, readStringParam, readReactionParams } from 'openclaw/plugin-sdk';
+import { jsonResult, readStringParam, readReactionParams } from 'openclaw/plugin-sdk/channel-actions';
+import { extractToolSend } from 'openclaw/plugin-sdk/tool-send';
 import { addReactionFeishu, removeReactionFeishu, listReactionsFeishu } from './reactions';
 import { sendTextLark, sendCardLark } from './deliver';
 import { uploadAndSendMediaLark } from './media';

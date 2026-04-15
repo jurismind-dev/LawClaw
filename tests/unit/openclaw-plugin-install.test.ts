@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   cleanupStalePluginInstallStageDirs,
   detectPluginInstallationState,
+  ensureHostOpenClawPackageLink,
   finalizeBundledPluginConfigAfterInstall,
   isAlreadyInstalledErrorMessage,
   publishPreparedPluginInstallDir,
@@ -170,6 +171,53 @@ describe('openclaw plugin install directory cleanup', () => {
     expect(removed).toEqual([stageDir]);
     expect(() => readFileSync(join(stageDir, 'package.json'), 'utf-8')).toThrow();
     expect(() => mkdirSync(keepDir, { recursive: true })).not.toThrow();
+  });
+});
+
+describe('host openclaw package link', () => {
+  let tempConfigDir = '';
+
+  beforeEach(() => {
+    tempConfigDir = mkdtempSync(join(tmpdir(), 'lawclaw-host-openclaw-link-'));
+  });
+
+  afterEach(() => {
+    if (tempConfigDir) {
+      rmSync(tempConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  it('creates a managed host openclaw symlink under the openclaw config node_modules root', () => {
+    const hostOpenClawDir = join(tempConfigDir, 'host-openclaw');
+    mkdirSync(hostOpenClawDir, { recursive: true });
+    writeFileSync(
+      join(hostOpenClawDir, 'package.json'),
+      JSON.stringify({ name: 'openclaw', version: '2026.4.11' }, null, 2),
+      'utf-8'
+    );
+
+    const result = ensureHostOpenClawPackageLink(join(tempConfigDir, '.openclaw'), hostOpenClawDir);
+
+    expect(result.changed).toBe(true);
+    expect(lstatSync(result.linkPath).isSymbolicLink()).toBe(true);
+    expect(realpathSync(result.linkPath)).toBe(realpathSync(hostOpenClawDir));
+  });
+
+  it('keeps an existing managed host openclaw symlink when it already points to the same package', () => {
+    const hostOpenClawDir = join(tempConfigDir, 'host-openclaw');
+    mkdirSync(hostOpenClawDir, { recursive: true });
+    writeFileSync(
+      join(hostOpenClawDir, 'package.json'),
+      JSON.stringify({ name: 'openclaw', version: '2026.4.11' }, null, 2),
+      'utf-8'
+    );
+
+    const configDir = join(tempConfigDir, '.openclaw');
+    const first = ensureHostOpenClawPackageLink(configDir, hostOpenClawDir);
+    const second = ensureHostOpenClawPackageLink(configDir, hostOpenClawDir);
+
+    expect(first.changed).toBe(true);
+    expect(second).toEqual({ changed: false, linkPath: first.linkPath });
   });
 });
 

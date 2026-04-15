@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   readOpenClawConfig,
   type OpenClawConfig,
+  saveChannelConfig,
   upsertLawClawChannelBinding,
   writeOpenClawConfig,
   deleteChannelConfig,
@@ -586,18 +587,12 @@ class WeixinOnboardingManager extends EventEmitter {
       cdnBaseUrl: this.resolveCdnBaseUrl(settings),
       routeTag: this.resolveRouteTag(settings),
     });
+    await saveChannelConfig(WEIXIN_CHANNEL_ID, { enabled: true }, normalizedAccountId);
 
     const config = await readOpenClawConfig();
     const nextConfig: OpenClawConfig = {
       ...config,
     };
-
-    if (nextConfig.channels?.[WEIXIN_CHANNEL_ID]) {
-      delete nextConfig.channels[WEIXIN_CHANNEL_ID];
-      if (Object.keys(nextConfig.channels).length === 0) {
-        delete nextConfig.channels;
-      }
-    }
 
     const pluginEntries = asObject(nextConfig.plugins?.entries);
     if (pluginEntries?.[WEIXIN_CHANNEL_ID]) {

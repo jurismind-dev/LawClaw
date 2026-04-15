@@ -9,7 +9,8 @@
  * discover capabilities, resolve accounts, obtain outbound adapters, and
  * start the inbound event gateway.
  */
-import { DEFAULT_ACCOUNT_ID, PAIRING_APPROVED_MESSAGE } from 'openclaw/plugin-sdk';
+import { DEFAULT_ACCOUNT_ID } from 'openclaw/plugin-sdk/account-id';
+import { PAIRING_APPROVED_MESSAGE } from 'openclaw/plugin-sdk/channel-status';
 import { getLarkAccount, getLarkAccountIds, getDefaultLarkAccountId } from '../core/accounts';
 import { listFeishuDirectoryPeers, listFeishuDirectoryGroups, listFeishuDirectoryPeersLive, listFeishuDirectoryGroupsLive, } from './directory';
 import { feishuOnboardingAdapter } from './onboarding';
@@ -23,6 +24,7 @@ import { triggerOnboarding } from '../tools/onboarding-auth';
 import { setAccountEnabled, applyAccountConfig, deleteAccount, collectFeishuSecurityWarnings } from './config-adapter';
 import { larkLogger } from '../core/lark-logger';
 import { FEISHU_CONFIG_JSON_SCHEMA } from '../core/config-schema';
+import { monitorFeishuProvider } from './monitor.js';
 const pluginLog = larkLogger('channel/plugin');
 /** 状态轮询的探针结果缓存时长（10 分钟）。 */
 const PROBE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -258,7 +260,6 @@ export const feishuPlugin = {
     // -------------------------------------------------------------------------
     gateway: {
         startAccount: async (ctx) => {
-            const { monitorFeishuProvider } = await import('./monitor.js');
             const account = getLarkAccount(ctx.cfg, ctx.accountId);
             const port = account.config?.webhookPort ?? null;
             ctx.setStatus({ accountId: ctx.accountId, port });

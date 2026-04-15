@@ -14,7 +14,7 @@
  * - dispatch-builders.ts — pure payload/body/envelope construction
  * - dispatch-commands.ts — system command & permission notification
  */
-import { clearHistoryEntriesIfEnabled } from 'openclaw/plugin-sdk';
+import { clearHistoryEntriesIfEnabled } from 'openclaw/plugin-sdk/reply-history';
 import { larkLogger } from '../../core/lark-logger';
 import { ticketElapsed } from '../../core/lark-ticket';
 import { createFeishuReplyDispatcher } from '../../card/reply-dispatcher';

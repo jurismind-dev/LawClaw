@@ -522,6 +522,79 @@ async function runPythonPackageInstall(
   });
 }
 
+async function runPythonRequirementsInstall(
+  uvBin: string,
+  pythonExe: string,
+  requirementsPath: string,
+  env: Record<string, string | undefined>,
+  label: string
+): Promise<void> {
+  const useShell = needsWinShell(uvBin);
+
+  return new Promise<void>((resolve, reject) => {
+    const stderrChunks: string[] = [];
+    const stdoutChunks: string[] = [];
+    const child = spawn(
+      useShell ? quoteForCmd(uvBin) : uvBin,
+      ['pip', 'install', '--python', pythonExe, '--strict', '-r', requirementsPath],
+      {
+        shell: useShell,
+        env,
+        windowsHide: true,
+      }
+    );
+
+    child.stdout?.on('data', (data) => {
+      const line = data.toString().trim();
+      if (line) {
+        stdoutChunks.push(line);
+        logger.debug(`[python-requirements:${label}] stdout: ${line}`);
+      }
+    });
+
+    child.stderr?.on('data', (data) => {
+      const line = data.toString().trim();
+      if (line) {
+        stderrChunks.push(line);
+        logger.info(`[python-requirements:${label}] stderr: ${line}`);
+      }
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      const stderr = stderrChunks.join('\n');
+      const stdout = stdoutChunks.join('\n');
+      const detail = stderr || stdout || '(no output captured)';
+      reject(
+        new Error(
+          `Python requirements installation failed with code ${code} [${label}]\n` +
+            `  uv binary: ${uvBin}\n` +
+            `  python: ${pythonExe}\n` +
+            `  requirements: ${requirementsPath}\n` +
+            `  platform: ${process.platform}/${process.arch}\n` +
+            `  output: ${detail}`
+        )
+      );
+    });
+
+    child.on('error', (err) => {
+      reject(
+        new Error(
+          `Python requirements installation spawn error [${label}]: ${err.message}\n` +
+            `  uv binary: ${uvBin}\n` +
+            `  python: ${pythonExe}\n` +
+            `  requirements: ${requirementsPath}\n` +
+            `  platform: ${process.platform}/${process.arch}`
+        )
+      );
+    });
+  });
+}
+
 async function runWithMirrorRetry<T>(
   baseEnv: Record<string, string | undefined>,
   uvEnv: Record<string, string | undefined>,
@@ -676,5 +749,40 @@ export async function setupManagedPython(): Promise<void> {
   logger.info(
     `Managed Python ${MANAGED_PYTHON_VERSION} runtime ready ` +
       `(base=${basePythonExe}, venv=${venvPythonExe})`
+  );
+}
+
+export async function installManagedPythonRequirements(requirementsPath: string): Promise<void> {
+  const normalizedPath = requirementsPath.trim();
+  if (!normalizedPath) {
+    throw new Error('Managed Python requirements path is empty');
+  }
+  if (!existsSync(normalizedPath)) {
+    throw new Error(`Managed Python requirements file not found: ${normalizedPath}`);
+  }
+
+  if (!(await isPythonReady())) {
+    await setupManagedPython();
+  }
+
+  const { bin: uvBin } = resolveUvBin();
+  const venvPythonExe = getManagedPythonVenvExecutable();
+  if (!existsSync(venvPythonExe)) {
+    throw new Error(`Managed Python venv executable not found: ${venvPythonExe}`);
+  }
+
+  const uvEnv = await getUvMirrorEnv();
+  logger.info(
+    `Installing managed Python requirements from ${normalizedPath} ` +
+      `(python=${venvPythonExe}, uv=${uvBin})`
+  );
+
+  await runWithMirrorRetry(
+    { ...process.env },
+    uvEnv,
+    async (env, label) => {
+      await runPythonRequirementsInstall(uvBin, venvPythonExe, normalizedPath, env, label);
+    },
+    `Python requirements install (${normalizedPath})`
   );
 }

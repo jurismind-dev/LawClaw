@@ -13,6 +13,7 @@ import {
   getClawHubCliEntryPath,
   quoteForCmd,
 } from '../utils/paths';
+import { installManagedPythonRequirements } from '../utils/uv-setup';
 import {
   detectInstallSourceFromRegistry,
   JURISMINDHUB_CONVEX_API_URL,
@@ -285,6 +286,32 @@ export class ClawHubService {
         return this.listInstalledFromLocalDirs()
             .filter((skill) => skill.slug === slug)
             .map((skill) => skill.directory);
+    }
+
+    private findSkillRequirementsPath(slug: string): string | null {
+        for (const skillDir of this.findLocalSkillDirsBySlug(slug)) {
+            const requirementsPath = path.join(skillDir, 'requirements.txt');
+            if (fs.existsSync(requirementsPath)) {
+                return requirementsPath;
+            }
+        }
+
+        return null;
+    }
+
+    private async prepareInstalledSkillRuntime(slug: string): Promise<void> {
+        const requirementsPath = this.findSkillRequirementsPath(slug);
+        if (!requirementsPath) {
+            return;
+        }
+
+        try {
+            await installManagedPythonRequirements(requirementsPath);
+        } catch (error) {
+            throw new Error(
+                `Skill ${slug} installed but failed to prepare Python runtime from ${requirementsPath}: ${getErrorMessage(error)}`
+            );
+        }
     }
 
     /**
@@ -628,6 +655,7 @@ export class ClawHubService {
 
         try {
             await this.runCommandWithRetry(args, 2);
+            await this.prepareInstalledSkillRuntime(params.slug);
         } catch (error) {
             if (isClawHubTimeoutFailure(getErrorMessage(error))) {
                 throw new Error(normalizeClawHubTimeoutMessage(getErrorMessage(error)), {

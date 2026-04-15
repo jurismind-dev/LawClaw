@@ -5,6 +5,7 @@ const DOUBAO_DEFAULT_BASE_URL = 'http://101.132.245.215:3001/v1';
 const DOUBAO_DEFAULT_MODEL = 'doubao';
 const WINDOWS_SPAWN_PATCH_MARKER = 'lawclaw windows spawn patch v1';
 const WINDOWS_KILL_TREE_PATCH_MARKER = 'lawclaw windows kill-tree patch v1';
+const WINDOWS_EXEC_POWERSHELL_UTF8_PATCH_MARKER = 'lawclaw windows exec powershell utf8 patch v1';
 const JURISMIND_DOUBAO_PLUGIN_ID = 'jurismind-doubao';
 const JURISMIND_DOUBAO_PATCH_MARKER = 'lawclaw jurismind doubao plugin v1';
 const LRU_CACHE_COMPAT_MARKER = 'lawclaw lru-cache interop patch v1';
@@ -1132,9 +1133,135 @@ function patchOpenClawWindowsSpawnRuntime(openClawDir) {
   return patchedFiles;
 }
 
+function patchOpenClawExecRuntimeFile(filePath) {
+  const original = readFileSync(filePath, 'utf8');
+  if (original.includes(WINDOWS_EXEC_POWERSHELL_UTF8_PATCH_MARKER)) {
+    return false;
+  }
+
+  if (!original.includes('function resolveChildProcessInvocation(params)')) {
+    return false;
+  }
+
+  let content = original;
+  let changed = false;
+
+  const helperInsertBefore = `/**
+* On Windows, Node 18.20.2+ (CVE-2024-27980) rejects spawning .cmd/.bat directly
+* without shell, causing EINVAL. Resolve npm/npx to node + cli script so we
+* spawn node.exe instead of npm.cmd.
+*/`;
+  const helperInsertAfter = `const WINDOWS_POWERSHELL_COMMANDS = new Set(["powershell", "powershell.exe", "pwsh", "pwsh.exe"]);
+const WINDOWS_POWERSHELL_INLINE_COMMAND_FLAGS = new Set(["-command", "-c"]);
+const WINDOWS_POWERSHELL_UTF8_PREAMBLE = "chcp 65001 > $null; [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding;";
+function isWindowsPowerShellCommand(resolvedCommand) {
+\tif (process$1.platform !== "win32") return false;
+\tconst basename = normalizeLowercaseStringOrEmpty(path.basename(resolvedCommand));
+\treturn WINDOWS_POWERSHELL_COMMANDS.has(basename);
+}
+function injectWindowsPowerShellUtf8CommandArgs(args) {
+\tconst nextArgs = [...args];
+\tfor (let index = 0; index < nextArgs.length - 1; index += 1) {
+\t\tconst flag = normalizeLowercaseStringOrEmpty(String(nextArgs[index] ?? ""));
+\t\tif (!WINDOWS_POWERSHELL_INLINE_COMMAND_FLAGS.has(flag)) continue;
+\t\tconst commandValue = String(nextArgs[index + 1] ?? "");
+\t\tif (!commandValue.trim()) return nextArgs;
+\t\tif (commandValue.includes("[Console]::OutputEncoding") || commandValue.includes("$OutputEncoding = [Console]::OutputEncoding")) return nextArgs;
+\t\tnextArgs[index + 1] = \`\${WINDOWS_POWERSHELL_UTF8_PREAMBLE} \${commandValue}\`;
+\t\t// ${WINDOWS_EXEC_POWERSHELL_UTF8_PATCH_MARKER}
+\t\treturn nextArgs;
+\t}
+\treturn nextArgs;
+}
+${helperInsertBefore}`;
+  const helperResult = replaceRequired(
+    content,
+    filePath,
+    'exec runtime PowerShell UTF-8 helpers',
+    helperInsertBefore,
+    helperInsertAfter
+  );
+  content = helperResult.content;
+  changed = changed || helperResult.changed;
+
+  const invocationBefore = `function resolveChildProcessInvocation(params) {
+\tconst finalArgv = process$1.platform === "win32" ? resolveNpmArgvForWindows(params.argv) ?? params.argv : params.argv;
+\tconst resolvedCommand = finalArgv !== params.argv ? finalArgv[0] ?? "" : resolveCommand(params.argv[0] ?? "");
+\tconst useCmdWrapper = isWindowsBatchCommand(resolvedCommand);
+\treturn {
+\t\tcommand: useCmdWrapper ? process$1.env.ComSpec ?? "cmd.exe" : resolvedCommand,
+\t\targs: useCmdWrapper ? [
+\t\t\t"/d",
+\t\t\t"/s",
+\t\t\t"/c",
+\t\t\tbuildCmdExeCommandLine(resolvedCommand, finalArgv.slice(1))
+\t\t] : finalArgv.slice(1),
+\t\tusesWindowsExitCodeShim: process$1.platform === "win32" && (useCmdWrapper || finalArgv !== params.argv),
+\t\twindowsHide: true,
+\t\twindowsVerbatimArguments: useCmdWrapper ? true : params.windowsVerbatimArguments
+\t};
+}`;
+  const invocationAfter = `function resolveChildProcessInvocation(params) {
+\tconst finalArgv = process$1.platform === "win32" ? resolveNpmArgvForWindows(params.argv) ?? params.argv : params.argv;
+\tconst resolvedCommand = finalArgv !== params.argv ? finalArgv[0] ?? "" : resolveCommand(params.argv[0] ?? "");
+\tconst useCmdWrapper = isWindowsBatchCommand(resolvedCommand);
+\tconst commandArgs = finalArgv.slice(1);
+\tconst normalizedArgs = !useCmdWrapper && isWindowsPowerShellCommand(resolvedCommand) ? injectWindowsPowerShellUtf8CommandArgs(commandArgs) : commandArgs;
+\treturn {
+\t\tcommand: useCmdWrapper ? process$1.env.ComSpec ?? "cmd.exe" : resolvedCommand,
+\t\targs: useCmdWrapper ? [
+\t\t\t"/d",
+\t\t\t"/s",
+\t\t\t"/c",
+\t\t\tbuildCmdExeCommandLine(resolvedCommand, finalArgv.slice(1))
+\t\t] : normalizedArgs,
+\t\tusesWindowsExitCodeShim: process$1.platform === "win32" && (useCmdWrapper || finalArgv !== params.argv),
+\t\twindowsHide: true,
+\t\twindowsVerbatimArguments: useCmdWrapper ? true : params.windowsVerbatimArguments
+\t};
+}`;
+  const invocationResult = replaceRequired(
+    content,
+    filePath,
+    'exec runtime PowerShell UTF-8 invocation',
+    invocationBefore,
+    invocationAfter
+  );
+  content = invocationResult.content;
+  changed = changed || invocationResult.changed;
+
+  return writePatchedFile(filePath, content, changed);
+}
+
+function patchOpenClawExecRuntime(openClawDir) {
+  const distDir = join(openClawDir, 'dist');
+  if (!existsSync(distDir)) {
+    return [];
+  }
+
+  const patchedFiles = [];
+  walkFiles(distDir, (filePath) => {
+    const relativeName = filePath.slice(distDir.length + 1).replace(/\\/g, '/');
+    const basename = relativeName.split('/').pop() || '';
+    if (relativeName.includes('/') || !/^exec-.*\.js$/.test(basename)) {
+      return;
+    }
+
+    if (patchOpenClawExecRuntimeFile(filePath)) {
+      patchedFiles.push(relativeName);
+    }
+  });
+
+  return patchedFiles;
+}
+
 function patchOpenClawKillTreeFile(filePath) {
   const original = readFileSync(filePath, 'utf8');
   if (original.includes(WINDOWS_KILL_TREE_PATCH_MARKER)) {
+    return false;
+  }
+
+  if (!original.includes('taskkill') || !original.includes('runTaskkill')) {
     return false;
   }
 
@@ -1142,22 +1269,38 @@ function patchOpenClawKillTreeFile(filePath) {
   let changed = false;
 
   if (!content.includes('import path from "node:path";')) {
-    const importMarker = 'import { spawn } from "node:child_process";';
-    if (!content.includes(importMarker)) {
+    const importPattern = /import\s*\{\s*spawn\s*\}\s*from\s*["']node:child_process["'];?/;
+    if (importPattern.test(content)) {
+      content = content.replace(
+        importPattern,
+        (match) => `${match}\nimport path from "node:path";`
+      );
+      changed = true;
+    } else if (/^\s*import\s/m.test(content)) {
+      content = `import path from "node:path";\n${content}`;
+      changed = true;
+    } else {
       throw new Error(`[openclaw-runtime-patch] Missing kill-tree import marker in ${filePath}`);
     }
-    content = content.replace(
-      importMarker,
-      `${importMarker}\nimport path from "node:path";`
-    );
-    changed = true;
   }
 
-  const before = `function runTaskkill(args) {\n\ttry {\n\t\tspawn("taskkill", args, {\n\t\t\tstdio: "ignore",\n\t\t\tdetached: true,\n\t\t\twindowsHide: true\n\t\t});\n\t} catch {}\n}`;
-  const after = `function runTaskkill(args) {\n\ttry {\n\t\tconst systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || "C:\\\\Windows";\n\t\tconst taskkillPath = path.join(systemRoot, "System32", "taskkill.exe");\n\t\tspawn(taskkillPath, args, {\n\t\t\tstdio: "ignore",\n\t\t\tdetached: true,\n\t\t\twindowsHide: true\n\t\t});\n\t\t// ${WINDOWS_KILL_TREE_PATCH_MARKER}\n\t} catch {}\n}`;
-  const result = replaceRequired(content, filePath, 'kill-tree taskkill absolute path', before, after);
-  content = result.content;
-  changed = changed || result.changed;
+  const taskkillCallPattern =
+    /spawn\(\s*["']taskkill["']\s*,\s*args\s*,\s*\{\s*stdio:\s*["']ignore["']\s*,\s*detached:\s*true\s*,\s*windowsHide:\s*true\s*\}\s*\);/;
+  if (!taskkillCallPattern.test(content)) {
+    throw new Error(`[openclaw-runtime-patch] Missing kill-tree taskkill absolute path marker in ${filePath}`);
+  }
+  content = content.replace(
+    taskkillCallPattern,
+    `const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || "C:\\\\Windows";
+\t\tconst taskkillPath = path.join(systemRoot, "System32", "taskkill.exe");
+\t\tspawn(taskkillPath, args, {
+\t\t\tstdio: "ignore",
+\t\t\tdetached: true,
+\t\t\twindowsHide: true
+\t\t});
+\t\t// ${WINDOWS_KILL_TREE_PATCH_MARKER}`
+  );
+  changed = true;
 
   return writePatchedFile(filePath, content, changed);
 }
@@ -1270,6 +1413,7 @@ module.exports = {
   patchRequireCompatiblePackage,
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
+  patchOpenClawExecRuntime,
   patchOpenClawKillTreeRuntime,
   patchOpenClawPluginSdkCompat,
   patchOpenClawBundleCompat,

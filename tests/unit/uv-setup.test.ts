@@ -271,4 +271,32 @@ describe('uv managed python setup', () => {
     expect(childProcessMocks.spawn.mock.calls[0]?.[1]).toEqual(['python', 'install', '3.12']);
     expect(childProcessMocks.spawn.mock.calls[1]?.[1]).toEqual(['python', 'install', '3.12']);
   });
+
+  it('installs skill requirements into the managed Python venv', async () => {
+    setPlatform('win32');
+    pathMocks.getClawXConfigDir.mockReturnValue('C:\\Users\\test\\.LawClaw');
+    const managedPython = 'C:\\Users\\test\\AppData\\Roaming\\uv\\python\\cpython-3.12.11-windows-x86_64-none\\python.exe';
+    const managedVenvRoot = join('C:\\Users\\test\\.LawClaw', 'support', 'managed-python', '3.12', 'win32');
+    const managedVenvPython = join(managedVenvRoot, 'Scripts', 'python.exe');
+    const requirementsPath = 'C:\\Users\\test\\.openclaw\\skills\\合同审查专家\\requirements.txt';
+
+    fsMocks.existsSync.mockImplementation(() => true);
+    queueSpawnResult({ stdout: `${managedPython}\r\n` });
+    queueSpawnResult({});
+    queueSpawnResult({});
+
+    const mod = await import('@electron/utils/uv-setup');
+    await mod.installManagedPythonRequirements(requirementsPath);
+
+    expect(childProcessMocks.spawn).toHaveBeenCalledTimes(3);
+    expect(childProcessMocks.spawn.mock.calls[2]?.[1]).toEqual([
+      'pip',
+      'install',
+      '--python',
+      managedVenvPython,
+      '--strict',
+      '-r',
+      requirementsPath,
+    ]);
+  });
 });

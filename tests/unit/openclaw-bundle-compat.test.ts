@@ -491,4 +491,142 @@ describe('openclaw bundle compatibility patches', () => {
 
     expect(patchOpenClawKillTreeRuntime(openclawDir)).toEqual([]);
   });
+
+  it('patches OpenClaw kill-tree runtime when child_process import formatting changes', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-kill-tree-format-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const distDir = join(openclawDir, 'dist');
+    mkdirSync(distDir, { recursive: true });
+
+    const killTreePath = join(distDir, 'kill-tree-test.js');
+    writeFileSync(
+      killTreePath,
+      [
+        "import{spawn}from'node:child_process';",
+        'function runTaskkill(args) {',
+        '\ttry {',
+        '\t\tspawn("taskkill", args, {',
+        '\t\t\tstdio: "ignore",',
+        '\t\t\tdetached: true,',
+        '\t\t\twindowsHide: true',
+        '\t\t});',
+        '\t} catch {}',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { patchOpenClawKillTreeRuntime } = await loadCompatTools();
+    expect(patchOpenClawKillTreeRuntime(openclawDir)).toEqual(['kill-tree-test.js']);
+
+    const patchedSource = readFileSync(killTreePath, 'utf8');
+    expect(patchedSource).toContain('import path from "node:path";');
+    expect(patchedSource).toContain('const taskkillPath = path.join(systemRoot, "System32", "taskkill.exe");');
+  });
+
+  it('ignores re-export kill-tree chunks and patches only the implementation chunk', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-kill-tree-reexport-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const distDir = join(openclawDir, 'dist');
+    mkdirSync(distDir, { recursive: true });
+
+    writeFileSync(
+      join(distDir, 'kill-tree-reexport.js'),
+      'import { t as killProcessTree } from "./kill-tree-impl.js";\nexport { killProcessTree };\n',
+      'utf8',
+    );
+    writeFileSync(
+      join(distDir, 'kill-tree-impl.js'),
+      [
+        'import { spawn } from "node:child_process";',
+        'function runTaskkill(args) {',
+        '\ttry {',
+        '\t\tspawn("taskkill", args, {',
+        '\t\t\tstdio: "ignore",',
+        '\t\t\tdetached: true,',
+        '\t\t\twindowsHide: true',
+        '\t\t});',
+        '\t} catch {}',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { patchOpenClawKillTreeRuntime } = await loadCompatTools();
+    expect(patchOpenClawKillTreeRuntime(openclawDir)).toEqual(['kill-tree-impl.js']);
+  });
+
+  it('patches OpenClaw exec runtime to inject UTF-8 setup for PowerShell inline commands', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-exec-runtime-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const distDir = join(openclawDir, 'dist');
+    mkdirSync(distDir, { recursive: true });
+
+    const execPath = join(distDir, 'exec-runtime.js');
+    writeFileSync(
+      execPath,
+      [
+        'const WINDOWS_UNSAFE_CMD_CHARS_RE = /[&|<>^%\\r\\n]/;',
+        'function isWindowsBatchCommand(resolvedCommand) {',
+        '\treturn false;',
+        '}',
+        'function escapeForCmdExe(arg) {',
+        '\treturn arg;',
+        '}',
+        'function buildCmdExeCommandLine(resolvedCommand, args) {',
+        '\treturn [escapeForCmdExe(resolvedCommand), ...args.map(escapeForCmdExe)].join(" ");',
+        '}',
+        '/**',
+        '* On Windows, Node 18.20.2+ (CVE-2024-27980) rejects spawning .cmd/.bat directly',
+        '* without shell, causing EINVAL. Resolve npm/npx to node + cli script so we',
+        '* spawn node.exe instead of npm.cmd.',
+        '*/',
+        'function resolveNpmArgvForWindows(argv) {',
+        '\treturn null;',
+        '}',
+        'function resolveCommand(command) {',
+        '\treturn command;',
+        '}',
+        'function resolveChildProcessInvocation(params) {',
+        '\tconst finalArgv = process$1.platform === "win32" ? resolveNpmArgvForWindows(params.argv) ?? params.argv : params.argv;',
+        '\tconst resolvedCommand = finalArgv !== params.argv ? finalArgv[0] ?? "" : resolveCommand(params.argv[0] ?? "");',
+        '\tconst useCmdWrapper = isWindowsBatchCommand(resolvedCommand);',
+        '\treturn {',
+        '\t\tcommand: useCmdWrapper ? process$1.env.ComSpec ?? "cmd.exe" : resolvedCommand,',
+        '\t\targs: useCmdWrapper ? [',
+        '\t\t\t"/d",',
+        '\t\t\t"/s",',
+        '\t\t\t"/c",',
+        '\t\t\tbuildCmdExeCommandLine(resolvedCommand, finalArgv.slice(1))',
+        '\t\t] : finalArgv.slice(1),',
+        '\t\tusesWindowsExitCodeShim: process$1.platform === "win32" && (useCmdWrapper || finalArgv !== params.argv),',
+        '\t\twindowsHide: true,',
+        '\t\twindowsVerbatimArguments: useCmdWrapper ? true : params.windowsVerbatimArguments',
+        '\t};',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { patchOpenClawExecRuntime } = await loadCompatTools();
+    expect(patchOpenClawExecRuntime(openclawDir)).toEqual(['exec-runtime.js']);
+
+    const patchedSource = readFileSync(execPath, 'utf8');
+    expect(patchedSource).toContain('lawclaw windows exec powershell utf8 patch v1');
+    expect(patchedSource).toContain('const WINDOWS_POWERSHELL_COMMANDS = new Set(["powershell", "powershell.exe", "pwsh", "pwsh.exe"]);');
+    expect(patchedSource).toContain('const WINDOWS_POWERSHELL_UTF8_PREAMBLE = "chcp 65001 > $null;');
+    expect(patchedSource).toContain('function injectWindowsPowerShellUtf8CommandArgs(args)');
+    expect(patchedSource).toContain('const normalizedArgs = !useCmdWrapper && isWindowsPowerShellCommand(resolvedCommand) ? injectWindowsPowerShellUtf8CommandArgs(commandArgs) : commandArgs;');
+
+    expect(patchOpenClawExecRuntime(openclawDir)).toEqual([]);
+  });
 });

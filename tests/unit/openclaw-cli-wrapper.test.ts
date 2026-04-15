@@ -123,13 +123,18 @@ describe('bundled openclaw CLI wrappers', () => {
     const compatScript = readRepoFile('scripts/openclaw-bundle-compat.cjs');
 
     expect(bundleScript).toContain('patchOpenClawBundleCompat');
+    expect(bundleScript).toContain('patchOpenClawExecRuntime');
     expect(bundleScript).toContain('patchOpenClawPluginSdkCompat');
     expect(afterPackScript).toContain('patchOpenClawBundleCompat');
+    expect(afterPackScript).toContain('patchOpenClawExecRuntime');
     expect(afterPackScript).toContain('patchOpenClawPluginSdkCompat');
+    expect(devScript).toContain('patchOpenClawExecRuntime');
     expect(devScript).toContain('patchOpenClawPluginSdkCompat');
+    expect(devSetupScript).toContain('patchOpenClawExecRuntime');
     expect(devSetupScript).toContain('patchOpenClawPluginSdkCompat');
     expect(compatScript).toContain('https-proxy-agent');
     expect(compatScript).toContain('plugin-sdk compat patch v1');
+    expect(compatScript).toContain('lawclaw windows exec powershell utf8 patch v1');
     expect(compatScript).toContain('lawclaw windows kill-tree patch v1');
   });
 

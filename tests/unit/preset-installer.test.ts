@@ -19,6 +19,14 @@ import {
   readPresetInstallState,
 } from '../../electron/utils/preset-install-state';
 
+const managedPythonMocks = vi.hoisted(() => ({
+  installManagedPythonRequirements: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../electron/utils/uv-setup', () => ({
+  installManagedPythonRequirements: managedPythonMocks.installManagedPythonRequirements,
+}));
+
 interface PluginInstallSnapshot {
   pluginId: string;
   installPath: string;
@@ -266,6 +274,7 @@ function getClawHubLockPath(context: TestContext): string {
 }
 
 afterEach(() => {
+  vi.clearAllMocks();
   const envBackup = process.env.__TEST_FORCE_PRESET_SYNC_BACKUP;
   if (envBackup === undefined) {
     delete process.env.FORCE_PRESET_SYNC;
@@ -654,6 +663,44 @@ describe('PresetInstaller', () => {
     const rerun = await context.installer.run('upgrade');
     expect(rerun.success).toBe(true);
     expect(existsSync(installedSkillDir)).toBe(true);
+  });
+
+  it('market 预置 skill 即使版本已满足也会预热 requirements 依赖', async () => {
+    const context = createContext();
+    const skillDir = join(context.openClawSkillsDir, 'contract-review');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, 'package.json'),
+      JSON.stringify({ name: 'contract-review', version: '2.0.0' }, null, 2),
+      'utf-8'
+    );
+    writeFileSync(join(skillDir, 'SKILL.md'), '# contract-review\n', 'utf-8');
+    writeFileSync(
+      join(skillDir, 'requirements.txt'),
+      ['python-docx', 'openpyxl', 'lxml', 'defusedxml', "pywin32; sys_platform == 'win32'"].join('\n'),
+      'utf-8'
+    );
+
+    writeManifest(context, {
+      presetVersion: '2026.04.15.1',
+      items: [
+        {
+          kind: 'skill',
+          id: 'contract-review',
+          targetVersion: '1.0.0',
+          installMode: 'market',
+          market: 'jurismindhub',
+        },
+      ],
+    });
+
+    const result = await context.installer.run('upgrade');
+    expect(result.success).toBe(true);
+    expect(result.skippedItems).toContain('skill:contract-review');
+    expect(managedPythonMocks.installManagedPythonRequirements).toHaveBeenCalledWith(
+      join(skillDir, 'requirements.txt')
+    );
+    expect(context.marketSkillInstallCalls).toEqual([]);
   });
 
   it('应用内卸载预置 skill 时会清理 managed state，避免再次触发 pending', async () => {

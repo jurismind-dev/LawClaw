@@ -25,6 +25,7 @@ const {
   patchOpenClawPluginSdkCompat,
   patchOpenClawWebSearchRuntime,
   patchOpenClawKillTreeRuntime,
+  patchOpenClawExecRuntime,
   patchOpenClawWindowsSpawnRuntime,
   removeBundledExtensions,
 } = compatTools;
@@ -151,6 +152,11 @@ if (patchedRuntimeFiles.length > 0) {
 const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(OUTPUT);
 if (patchedWindowsSpawnFiles.length > 0) {
   echo`   Patched OpenClaw Windows spawn runtime: ${patchedWindowsSpawnFiles.join(', ')}`;
+}
+
+const patchedExecRuntimeFiles = patchOpenClawExecRuntime(OUTPUT);
+if (patchedExecRuntimeFiles.length > 0) {
+  echo`   Patched OpenClaw Windows exec runtime: ${patchedExecRuntimeFiles.join(', ')}`;
 }
 
 const patchedKillTreeFiles = patchOpenClawKillTreeRuntime(OUTPUT);

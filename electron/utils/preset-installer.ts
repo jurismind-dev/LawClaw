@@ -19,6 +19,7 @@ import { logger } from './logger';
 import { parseJsonText, stringifyJsonText } from './text-encoding';
 import { sanitizePluginPackageManifestForLocalInstall } from './openclaw-plugin-install';
 import { getOpenClawConfigDir } from './paths';
+import { installManagedPythonRequirements } from './uv-setup';
 import { isClawHubTimeoutFailure } from '../gateway/clawhub-timeout';
 import {
   computePresetInstallManifestHash,
@@ -614,6 +615,15 @@ export class PresetInstaller {
     this.writeClawHubLockFile(lock);
   }
 
+  private async prepareSkillRuntimeRequirements(skillId: string): Promise<void> {
+    const requirementsPath = join(this.openClawSkillsDir, skillId, 'requirements.txt');
+    if (!existsSync(requirementsPath)) {
+      return;
+    }
+
+    await installManagedPythonRequirements(requirementsPath);
+  }
+
   async run(phase: PresetInstallPhase): Promise<PresetInstallRunResult> {
     if (this.currentRunPromise) {
       return this.currentRunPromise;
@@ -857,12 +867,22 @@ export class PresetInstaller {
     const skillDir = join(this.openClawSkillsDir, item.id);
     const existingVersion = existsSync(skillDir) ? readVersionFromPackageJson(skillDir) : undefined;
     if (existingVersion && compareVersions(existingVersion, item.targetVersion) >= 0) {
-      this.upsertSkillInstallMetadata(item, skillDir, existingVersion);
-      return {
-        skipped: true,
-        shouldRestartGateway: false,
-        message: `kept existing skill version ${existingVersion}`,
-      };
+      try {
+        this.upsertSkillInstallMetadata(item, skillDir, existingVersion);
+        await this.prepareSkillRuntimeRequirements(item.id);
+        return {
+          skipped: true,
+          shouldRestartGateway: false,
+          message: `kept existing skill version ${existingVersion}`,
+        };
+      } catch (error) {
+        return {
+          skipped: false,
+          shouldRestartGateway: false,
+          failed: true,
+          message: `Failed to prepare skill runtime ${item.id}: ${String(error)}`,
+        };
+      }
     }
 
     const installMode = item.installMode || (artifactPath.endsWith('.tgz') ? 'tgz' : 'dir');
@@ -895,6 +915,7 @@ export class PresetInstaller {
       cpSync(sourceDir, skillDir, { recursive: true, dereference: true });
       const installedVersion = readVersionFromPackageJson(skillDir) ?? item.targetVersion;
       this.upsertSkillInstallMetadata(item, skillDir, installedVersion);
+      await this.prepareSkillRuntimeRequirements(item.id);
       return {
         skipped: false,
         shouldRestartGateway: false,
@@ -929,12 +950,22 @@ export class PresetInstaller {
     const skillDir = join(this.openClawSkillsDir, item.id);
     const existingVersion = existsSync(skillDir) ? readVersionFromPackageJson(skillDir) : undefined;
     if (existingVersion && compareVersions(existingVersion, item.targetVersion) >= 0) {
-      this.upsertSkillInstallMetadata(item, skillDir, existingVersion);
-      return {
-        skipped: true,
-        shouldRestartGateway: false,
-        message: `kept existing skill version ${existingVersion}`,
-      };
+      try {
+        this.upsertSkillInstallMetadata(item, skillDir, existingVersion);
+        await this.prepareSkillRuntimeRequirements(item.id);
+        return {
+          skipped: true,
+          shouldRestartGateway: false,
+          message: `kept existing skill version ${existingVersion}`,
+        };
+      } catch (error) {
+        return {
+          skipped: false,
+          shouldRestartGateway: false,
+          failed: true,
+          message: `Failed to prepare skill runtime ${item.id}: ${String(error)}`,
+        };
+      }
     }
 
     const result = await this.options.installSkillFromMarket({
@@ -956,15 +987,25 @@ export class PresetInstaller {
     }
 
     if (result.skipped) {
-      if (existsSync(skillDir)) {
-        const installedVersion = readVersionFromPackageJson(skillDir) ?? item.targetVersion;
-        this.upsertSkillInstallMetadata(item, skillDir, installedVersion);
+      try {
+        if (existsSync(skillDir)) {
+          const installedVersion = readVersionFromPackageJson(skillDir) ?? item.targetVersion;
+          this.upsertSkillInstallMetadata(item, skillDir, installedVersion);
+          await this.prepareSkillRuntimeRequirements(item.id);
+        }
+        return {
+          skipped: true,
+          shouldRestartGateway: false,
+          message: result.reason || 'already installed',
+        };
+      } catch (error) {
+        return {
+          skipped: false,
+          shouldRestartGateway: false,
+          failed: true,
+          message: `Failed to prepare skill runtime ${item.id}: ${String(error)}`,
+        };
       }
-      return {
-        skipped: true,
-        shouldRestartGateway: false,
-        message: result.reason || 'already installed',
-      };
     }
 
     if (!existsSync(skillDir)) {
@@ -978,6 +1019,7 @@ export class PresetInstaller {
 
     const installedVersion = readVersionFromPackageJson(skillDir) ?? item.targetVersion;
     this.upsertSkillInstallMetadata(item, skillDir, installedVersion);
+    await this.prepareSkillRuntimeRequirements(item.id);
     return {
       skipped: false,
       shouldRestartGateway: false,

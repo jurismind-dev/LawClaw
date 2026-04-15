@@ -14,6 +14,10 @@ const testRoot = vi.hoisted(() => ({
   dir: '',
 }));
 
+const managedPythonMocks = vi.hoisted(() => ({
+  installManagedPythonRequirements: vi.fn(async () => undefined),
+}));
+
 vi.mock('electron', () => ({
   app: mockedApp,
   shell: {
@@ -30,8 +34,13 @@ vi.mock('@electron/utils/paths', () => ({
   quoteForCmd: vi.fn((value: string) => value),
 }));
 
+vi.mock('@electron/utils/uv-setup', () => ({
+  installManagedPythonRequirements: managedPythonMocks.installManagedPythonRequirements,
+}));
+
 describe('ClawHubService installed skill discovery', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     testRoot.dir = mkdtempSync(join(tmpdir(), 'lawclaw-clawhub-'));
   });
 
@@ -92,5 +101,31 @@ describe('ClawHubService installed skill discovery', () => {
     await service.uninstall({ slug: 'excel-xlsx' });
 
     expect(() => rmSync(versionedSkillDir, { recursive: true })).toThrow();
+  });
+
+  it('warms managed Python requirements after installing a skill with requirements.txt', async () => {
+    const skillDir = join(testRoot.dir, 'skills', '合同审查专家');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, '_meta.json'),
+      JSON.stringify({ slug: '合同审查专家', version: '2.0.0' }),
+      'utf8'
+    );
+    writeFileSync(join(skillDir, 'SKILL.md'), '# 合同审查专家', 'utf8');
+    writeFileSync(join(skillDir, 'requirements.txt'), "pywin32; sys_platform == 'win32'\n", 'utf8');
+
+    const service = new ClawHubService({
+      market: 'jurismindhub',
+      siteUrl: 'https://lawhub.jurismind.com',
+      registryUrl: 'https://lawhub.jurismind.com',
+    });
+
+    vi.spyOn(service as never, 'runCommandWithRetry').mockResolvedValue('');
+
+    await service.install({ slug: '合同审查专家', version: '2.0.0' });
+
+    expect(managedPythonMocks.installManagedPythonRequirements).toHaveBeenCalledWith(
+      join(skillDir, 'requirements.txt')
+    );
   });
 });

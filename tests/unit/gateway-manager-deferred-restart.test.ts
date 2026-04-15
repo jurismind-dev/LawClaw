@@ -184,4 +184,33 @@ describe('GatewayManager deferred restart', () => {
     expect(stopSpy).toHaveBeenCalledTimes(1);
     expect(startSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('routes agent protocol events only through notifications', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const notificationSpy = vi.fn();
+    const chatMessageSpy = vi.fn();
+
+    manager.on('notification', notificationSpy);
+    manager.on('chat:message', chatMessageSpy);
+
+    const payload = {
+      runId: 'run-1',
+      sessionKey: 'agent:lawclaw-main:main',
+      state: 'final',
+      message: { role: 'assistant', content: 'done' },
+    };
+
+    (
+      manager as unknown as {
+        handleProtocolEvent: (event: string, payload: unknown) => void;
+      }
+    ).handleProtocolEvent('agent', payload);
+
+    expect(notificationSpy).toHaveBeenCalledWith({
+      method: 'agent',
+      params: payload,
+    });
+    expect(chatMessageSpy).not.toHaveBeenCalled();
+  });
 });

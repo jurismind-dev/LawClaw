@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ChatToolbar } from '@/pages/Chat/ChatToolbar';
@@ -128,5 +128,65 @@ describe('sidebar clawx alignment', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.getByText('toolbar.currentAgent')).toBeInTheDocument();
     expect(screen.getByText('LawClaw')).toBeInTheDocument();
+  });
+
+  it('waits for gatewayReady before loading sessions and history', async () => {
+    const loadSessions = vi.fn().mockResolvedValue(undefined);
+    const loadHistory = vi.fn().mockResolvedValue(undefined);
+
+    useGatewayStore.setState({
+      status: { state: 'running', port: 18789, gatewayReady: false },
+    });
+    useChatStore.setState({
+      loadSessions,
+      loadHistory,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(loadSessions).not.toHaveBeenCalled();
+      expect(loadHistory).not.toHaveBeenCalled();
+    });
+
+    await act(async () => {
+      useGatewayStore.setState({
+        status: { state: 'running', port: 18789, gatewayReady: true },
+      });
+    });
+
+    await waitFor(() => {
+      expect(loadSessions).toHaveBeenCalledTimes(1);
+      expect(loadHistory).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('re-entering chat with existing messages only performs quiet history refresh', async () => {
+    const loadSessions = vi.fn().mockResolvedValue(undefined);
+    const loadHistory = vi.fn().mockResolvedValue(undefined);
+
+    useGatewayStore.setState({
+      status: { state: 'running', port: 18789, gatewayReady: true },
+    });
+    useChatStore.setState({
+      messages: [{ role: 'assistant', content: '已有历史', id: 'msg-1' }],
+      loadSessions,
+      loadHistory,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(loadSessions).toHaveBeenCalledTimes(1);
+      expect(loadHistory).toHaveBeenCalledWith(true);
+    });
   });
 });

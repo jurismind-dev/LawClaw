@@ -194,4 +194,36 @@ describe('chat store default session binding', () => {
     expect(useChatStore.getState().currentSessionKey).toBe(DEDICATED_SESSION_KEY);
   });
 
+  it('preserves the current local session when sessions.list temporarily omits it', async () => {
+    useChatStore.setState({
+      currentSessionKey: 'agent:lawclaw-main:session-keep',
+      currentAgentId: 'lawclaw-main',
+      hasAppliedStartupDefault: true,
+      sessions: [{ key: 'agent:lawclaw-main:session-keep', persisted: true }],
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'sessions.list') {
+        return {
+          success: true,
+          result: {
+            sessions: [{ key: SECONDARY_AGENT_SESSION_KEY }, { key: DEDICATED_SESSION_KEY }],
+          },
+        };
+      }
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: { messages: [] },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadSessions(true);
+
+    expect(useChatStore.getState().currentSessionKey).toBe('agent:lawclaw-main:session-keep');
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toContain('agent:lawclaw-main:session-keep');
+  });
+
 });

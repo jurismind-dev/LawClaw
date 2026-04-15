@@ -70,6 +70,7 @@ export interface GatewayStatus {
   connectedAt?: number;
   version?: string;
   reconnectAttempts?: number;
+  gatewayReady?: boolean;
 }
 
 /**
@@ -83,6 +84,7 @@ export interface GatewayManagerEvents {
   error: (error: Error) => void;
   'channel:status': (data: { channelId: string; status: string }) => void;
   'chat:message': (data: { message: unknown }) => void;
+  'gateway:ready': (payload: unknown) => void;
 }
 
 /**
@@ -195,6 +197,7 @@ function ensureGatewayFetchPreload(): string {
  * Handles starting, stopping, and communicating with the OpenClaw Gateway
  */
 export class GatewayManager extends EventEmitter {
+  private static readonly GATEWAY_READY_FALLBACK_MS = 30_000;
   private process: ChildProcess | null = null;
   private ownsProcess = false;
   private ws: WebSocket | null = null;
@@ -213,6 +216,7 @@ export class GatewayManager extends EventEmitter {
     reject: (error: Error) => void;
     timeout: NodeJS.Timeout;
   }> = new Map();
+  private gatewayReadyFallbackTimer: NodeJS.Timeout | null = null;
   private deviceIdentity: DeviceIdentity | null = null;
   private restartDebounceTimer: NodeJS.Timeout | null = null;
   private deferredRestartPending = false;
@@ -224,6 +228,13 @@ export class GatewayManager extends EventEmitter {
     this.reconnectConfig = { ...DEFAULT_RECONNECT_CONFIG, ...config };
     // Device identity is loaded lazily in start() — not in the constructor —
     // so that async file I/O and key generation don't block module loading.
+    this.on('gateway:ready', () => {
+      this.clearGatewayReadyFallback();
+      if (this.status.state === 'running' && !this.status.gatewayReady) {
+        logger.info('Gateway subsystems ready (event received)');
+        this.setStatus({ gatewayReady: true });
+      }
+    });
   }
 
   private async initDeviceIdentity(): Promise<void> {
@@ -393,7 +404,7 @@ export class GatewayManager extends EventEmitter {
     }
 
     this.reconnectAttempts = 0;
-    this.setStatus({ state: 'starting', reconnectAttempts: 0 });
+    this.setStatus({ state: 'starting', reconnectAttempts: 0, gatewayReady: false });
     
     try {
       let configRepairAttempted = false;
@@ -570,7 +581,14 @@ export class GatewayManager extends EventEmitter {
     }
     this.pendingRequests.clear();
     
-    this.setStatus({ state: 'stopped', error: undefined, pid: undefined, connectedAt: undefined, uptime: undefined });
+    this.setStatus({
+      state: 'stopped',
+      error: undefined,
+      pid: undefined,
+      connectedAt: undefined,
+      uptime: undefined,
+      gatewayReady: undefined,
+    });
   }
   
   /**
@@ -631,6 +649,25 @@ export class GatewayManager extends EventEmitter {
       clearTimeout(this.restartDebounceTimer);
       this.restartDebounceTimer = null;
     }
+    this.clearGatewayReadyFallback();
+  }
+
+  private clearGatewayReadyFallback(): void {
+    if (this.gatewayReadyFallbackTimer) {
+      clearTimeout(this.gatewayReadyFallbackTimer);
+      this.gatewayReadyFallbackTimer = null;
+    }
+  }
+
+  private scheduleGatewayReadyFallback(): void {
+    this.clearGatewayReadyFallback();
+    this.gatewayReadyFallbackTimer = setTimeout(() => {
+      this.gatewayReadyFallbackTimer = null;
+      if (this.status.state === 'running' && !this.status.gatewayReady) {
+        logger.info('Gateway ready fallback triggered (no gateway.ready event within timeout)');
+        this.setStatus({ gatewayReady: true });
+      }
+    }, GatewayManager.GATEWAY_READY_FALLBACK_MS);
   }
   
   /**
@@ -1589,6 +1626,7 @@ export class GatewayManager extends EventEmitter {
               connectedAt: Date.now(),
             });
             this.startPing();
+            this.scheduleGatewayReadyFallback();
             resolveOnce();
           },
           reject: (error) => {
@@ -1741,21 +1779,13 @@ export class GatewayManager extends EventEmitter {
       case 'chat':
         this.emit('chat:message', { message: payload });
         break;
+      case 'gateway.ready':
+      case 'ready':
+        this.emit('gateway:ready', payload);
+        break;
       case 'agent': {
-        // Agent events may carry chat streaming data inside payload.data,
-        // or be lifecycle events (phase=started/completed) with no message.
-        const p = payload as Record<string, unknown>;
-        const data = (p.data && typeof p.data === 'object') ? p.data as Record<string, unknown> : {};
-        const chatEvent: Record<string, unknown> = {
-          ...data,
-          runId: p.runId ?? data.runId,
-          sessionKey: p.sessionKey ?? data.sessionKey,
-          state: p.state ?? data.state,
-          message: p.message ?? data.message,
-        };
-        if (chatEvent.state || chatEvent.message) {
-          this.emit('chat:message', { message: chatEvent });
-        }
+        // Keep "agent" on the canonical notification path to avoid double
+        // handling in the renderer when both notification and chat-message are wired.
         this.emit('notification', { method: event, params: payload });
         break;
       }
@@ -1906,6 +1936,10 @@ export class GatewayManager extends EventEmitter {
   private setStatus(update: Partial<GatewayStatus>): void {
     const previousState = this.status.state;
     this.status = { ...this.status, ...update };
+
+    if (this.status.state !== 'running') {
+      this.clearGatewayReadyFallback();
+    }
     
     // Calculate uptime if connected
     if (this.status.state === 'running' && this.status.connectedAt) {

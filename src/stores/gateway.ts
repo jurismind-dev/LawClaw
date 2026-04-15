@@ -6,6 +6,8 @@ import { create } from 'zustand';
 import type { GatewayStatus } from '../types/gateway';
 
 let gatewayInitPromise: Promise<void> | null = null;
+const gatewayEventDedupe = new Map<string, number>();
+const GATEWAY_EVENT_DEDUPE_TTL_MS = 30_000;
 
 interface GatewayHealth {
   ok: boolean;
@@ -28,6 +30,69 @@ interface GatewayState {
   rpc: <T>(method: string, params?: unknown, timeoutMs?: number) => Promise<T>;
   setStatus: (status: GatewayStatus) => void;
   clearError: () => void;
+}
+
+function pruneGatewayEventDedupe(now: number): void {
+  for (const [key, timestamp] of gatewayEventDedupe.entries()) {
+    if (now - timestamp > GATEWAY_EVENT_DEDUPE_TTL_MS) {
+      gatewayEventDedupe.delete(key);
+    }
+  }
+}
+
+function buildGatewayEventDedupeKey(event: Record<string, unknown>): string | null {
+  const runId = event.runId != null ? String(event.runId) : '';
+  const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
+  const seq = event.seq != null ? String(event.seq) : '';
+  const state = event.state != null ? String(event.state) : '';
+
+  if (runId || sessionKey || seq || state) {
+    return [runId, sessionKey, seq, state].join('|');
+  }
+
+  const message = event.message;
+  if (message && typeof message === 'object') {
+    const msg = message as Record<string, unknown>;
+    const messageId = msg.id != null ? String(msg.id) : '';
+    const stopReason = msg.stopReason ?? msg.stop_reason;
+    if (messageId || stopReason) {
+      return `msg|${messageId}|${String(stopReason ?? '')}`;
+    }
+  }
+
+  return null;
+}
+
+function getMessageIdDedupeKey(event: Record<string, unknown>): string | null {
+  const state = event.state != null ? String(event.state) : '';
+  if (state !== 'final') return null;
+
+  const message = event.message;
+  if (message && typeof message === 'object') {
+    const messageId = (message as Record<string, unknown>).id;
+    if (messageId != null) {
+      return `final-msgid|${String(messageId)}`;
+    }
+  }
+
+  return null;
+}
+
+function shouldProcessGatewayEvent(event: Record<string, unknown>): boolean {
+  const key = buildGatewayEventDedupeKey(event);
+  const messageKey = getMessageIdDedupeKey(event);
+  if (!key && !messageKey) return true;
+
+  const now = Date.now();
+  pruneGatewayEventDedupe(now);
+
+  if ((key && gatewayEventDedupe.has(key)) || (messageKey && gatewayEventDedupe.has(messageKey))) {
+    return false;
+  }
+
+  if (key) gatewayEventDedupe.set(key, now);
+  if (messageKey) gatewayEventDedupe.set(messageKey, now);
+  return true;
 }
 
 export const useGatewayStore = create<GatewayState>((set, get) => ({
@@ -87,6 +152,9 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
               state: p.state ?? data.state,
               message: p.message ?? data.message,
             };
+            if (!shouldProcessGatewayEvent(normalizedEvent)) {
+              return;
+            }
             import('./chat')
               .then(({ useChatStore }) => {
                 useChatStore.getState().handleChatEvent(normalizedEvent);
@@ -100,10 +168,19 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           if (phase === 'started' && runId != null && sessionKey != null) {
             import('./chat')
               .then(({ useChatStore }) => {
-                useChatStore.getState().handleChatEvent({
+                const state = useChatStore.getState();
+                const resolvedSessionKey = String(sessionKey);
+                const shouldRefreshSessions =
+                  resolvedSessionKey !== state.currentSessionKey
+                  || !state.sessions.some((session) => session.key === resolvedSessionKey);
+                if (shouldRefreshSessions) {
+                  void state.loadSessions(true);
+                }
+
+                state.handleChatEvent({
                   state: 'started',
                   runId,
-                  sessionKey,
+                  sessionKey: resolvedSessionKey,
                 });
               })
               .catch(() => {});
@@ -120,7 +197,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                   || !state.sessions.some((session) => session.key === resolvedSessionKey)
                 );
                 if (shouldRefreshSessions) {
-                  void state.loadSessions();
+                  void state.loadSessions(true);
                 }
 
                 const matchesCurrentSession =
@@ -132,6 +209,16 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                   // Let chat store/history recovery own the final transition so
                   // the UI keeps the stop state until authoritative final data lands.
                   void state.loadHistory(true);
+                }
+
+                if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
+                  useChatStore.setState({
+                    sending: false,
+                    activeRunId: null,
+                    pendingFinal: false,
+                    lastUserMessageAt: null,
+                    error: null,
+                  });
                 }
               })
               .catch(() => {});
@@ -151,41 +238,26 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                 : chatData;
 
               if (payload.state) {
+                if (!shouldProcessGatewayEvent(payload)) {
+                  return;
+                }
                 useChatStore.getState().handleChatEvent(payload);
                 return;
               }
 
               // Raw message without state wrapper — treat as final
-              useChatStore.getState().handleChatEvent({
+              const normalizedEvent = {
                 state: 'final',
                 message: payload,
                 runId: chatData.runId ?? payload.runId,
-              });
+              };
+              if (!shouldProcessGatewayEvent(normalizedEvent)) {
+                return;
+              }
+              useChatStore.getState().handleChatEvent(normalizedEvent);
             }).catch(() => {});
           } catch {
             // Silently ignore forwarding failures
-          }
-        });
-
-        // Catch-all: handle unmatched gateway messages that fell through
-        // all protocol/notification handlers in the main process.
-        // This prevents events from being silently lost.
-        window.electron.ipcRenderer.on('gateway:message', (data) => {
-          if (!data || typeof data !== 'object') return;
-          const msg = data as Record<string, unknown>;
-
-          // Try to detect if this is a chat-related event and forward it
-          if (msg.state && msg.message) {
-            import('./chat').then(({ useChatStore }) => {
-              useChatStore.getState().handleChatEvent(msg);
-            }).catch(() => {});
-          } else if (msg.role && msg.content) {
-            import('./chat').then(({ useChatStore }) => {
-              useChatStore.getState().handleChatEvent({
-                state: 'final',
-                message: msg,
-              });
-            }).catch(() => {});
           }
         });
 

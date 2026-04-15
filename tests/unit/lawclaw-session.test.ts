@@ -36,15 +36,16 @@ describe('lawclaw session guard', () => {
     }
   });
 
-  it('normalizeLawClawSessionKey 会将未配置 agent 的会话回落到默认会话', async () => {
+  it('normalizeLawClawSessionKey 会保留任意非空字符串 sessionKey，仅空值回落到默认会话', async () => {
     const mod = await importModule();
 
     expect(mod.normalizeLawClawSessionKey('agent:lawclaw-main:main')).toBe('agent:lawclaw-main:main');
-    expect(mod.normalizeLawClawSessionKey('agent:main:main')).toBe(mod.LAWCLAW_DEFAULT_SESSION_KEY);
+    expect(mod.normalizeLawClawSessionKey('agent:main:main')).toBe('agent:main:main');
     expect(mod.normalizeLawClawSessionKey(undefined)).toBe(mod.LAWCLAW_DEFAULT_SESSION_KEY);
+    expect(mod.normalizeLawClawSessionKey('')).toBe(mod.LAWCLAW_DEFAULT_SESSION_KEY);
   });
 
-  it('允许 openclaw.json 里已配置的 agent 会话通过', async () => {
+  it('允许未知 agent 会话透传，避免把真实历史重写到默认会话', async () => {
     writeConfig({
       agents: {
         list: [
@@ -56,7 +57,7 @@ describe('lawclaw session guard', () => {
     const mod = await importModule();
 
     expect(mod.normalizeLawClawSessionKey('agent:contract-review:main')).toBe('agent:contract-review:main');
-    expect(mod.normalizeLawClawSessionKey('agent:research:main')).toBe(mod.LAWCLAW_DEFAULT_SESSION_KEY);
+    expect(mod.normalizeLawClawSessionKey('agent:research:main')).toBe('agent:research:main');
   });
 
   it('normalizeSessionKeyParam 仅改写 sessionKey 字段', async () => {
@@ -83,7 +84,7 @@ describe('lawclaw session guard', () => {
         limit: 20,
       })
     ).toEqual({
-      sessionKey: mod.LAWCLAW_DEFAULT_SESSION_KEY,
+      sessionKey: 'agent:research:main',
       limit: 20,
     });
 
@@ -91,7 +92,7 @@ describe('lawclaw session guard', () => {
     expect(mod.normalizeSessionKeyParam('raw')).toBe('raw');
   });
 
-  it('filterLawClawSessions 仅保留默认 agent 和已配置 agent 的会话', async () => {
+  it('filterLawClawSessions 保留所有合法 agent session，仅过滤畸形 key', async () => {
     writeConfig({
       agents: {
         list: [{ id: 'lawclaw-main' }, { id: 'contract-review' }],
@@ -104,14 +105,16 @@ describe('lawclaw session guard', () => {
         { key: 'agent:lawclaw-main:main' },
         { key: 'agent:contract-review:main' },
         { key: 'agent:research:main' },
+        { key: 'bad-key' },
       ],
-      total: 3,
+      total: 4,
     }) as { sessions: Array<{ key: string }>; total: number };
 
-    expect(filtered.total).toBe(3);
+    expect(filtered.total).toBe(4);
     expect(filtered.sessions.map((item) => item.key)).toEqual([
       'agent:lawclaw-main:main',
       'agent:contract-review:main',
+      'agent:research:main',
     ]);
   });
 });

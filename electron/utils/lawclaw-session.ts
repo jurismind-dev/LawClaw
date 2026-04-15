@@ -69,7 +69,7 @@ function isAllowedLawClawSessionKey(sessionKey: unknown): sessionKey is string {
 }
 
 export function normalizeLawClawSessionKey(sessionKey: unknown): string {
-  if (isAllowedLawClawSessionKey(sessionKey)) {
+  if (typeof sessionKey === 'string' && sessionKey.trim()) {
     return sessionKey;
   }
   return LAWCLAW_DEFAULT_SESSION_KEY;
@@ -98,8 +98,20 @@ export function filterLawClawSessions(result: unknown): unknown {
 
   return {
     ...result,
-    sessions: result.sessions.filter(
-      (session) => isRecord(session) && isAllowedLawClawSessionKey(session.key)
-    ),
+    sessions: result.sessions.filter((session) => {
+      if (!isRecord(session) || typeof session.key !== 'string') {
+        return false;
+      }
+
+      const agentId = getSessionAgentId(session.key);
+      if (!agentId) {
+        return false;
+      }
+
+      // Preserve persisted conversation history even when the local agent
+      // registry has drifted or failed to load. Hiding these sessions makes
+      // real transcripts appear "deleted" from the sidebar.
+      return true;
+    }),
   };
 }

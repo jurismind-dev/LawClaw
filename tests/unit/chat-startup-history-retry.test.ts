@@ -75,7 +75,7 @@ describe('chat history startup retry', () => {
     expect(useChatStore.getState().error).toBeNull();
     expect(useChatStore.getState().messages).toEqual([]);
 
-    await vi.advanceTimersByTimeAsync(600);
+    await vi.advanceTimersByTimeAsync(800);
     await loadPromise;
 
     expect(historyCalls).toBe(2);

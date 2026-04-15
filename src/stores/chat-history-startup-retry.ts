@@ -1,8 +1,8 @@
 import type { GatewayStatus } from '@/types/gateway';
 
 export const CHAT_HISTORY_RPC_TIMEOUT_MS = 35_000;
-export const CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS = [600] as const;
-export const CHAT_HISTORY_STARTUP_CONNECTION_GRACE_MS = 15_000;
+export const CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS = [800, 2_000, 4_000, 8_000] as const;
+export const CHAT_HISTORY_STARTUP_CONNECTION_GRACE_MS = 30_000;
 export const CHAT_HISTORY_STARTUP_RUNNING_WINDOW_MS =
   CHAT_HISTORY_RPC_TIMEOUT_MS + CHAT_HISTORY_STARTUP_CONNECTION_GRACE_MS;
 export const CHAT_HISTORY_DEFAULT_LOADING_SAFETY_TIMEOUT_MS = 15_000;
@@ -11,10 +11,19 @@ export const CHAT_HISTORY_LOADING_SAFETY_TIMEOUT_MS =
   + CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0)
   + 2_000;
 
-export type HistoryRetryErrorKind = 'timeout' | 'gateway_unavailable';
+export type HistoryRetryErrorKind = 'timeout' | 'gateway_unavailable' | 'gateway_startup';
 
 export function classifyHistoryStartupRetryError(error: unknown): HistoryRetryErrorKind | null {
   const message = String(error).toLowerCase();
+
+  if (
+    message.includes('unavailable during gateway startup')
+    || message.includes('unavailable during startup')
+    || message.includes('not yet ready')
+    || message.includes('service not initialized')
+  ) {
+    return 'gateway_startup';
+  }
 
   if (
     message.includes('rpc timeout: chat.history')
@@ -35,7 +44,6 @@ export function classifyHistoryStartupRetryError(error: unknown): HistoryRetryEr
     || message.includes('gateway ws connect timeout')
     || message.includes('gateway connection closed')
     || message.includes('websocket not connected')
-    || message.includes('chat.history unavailable during gateway startup')
   ) {
     return 'gateway_unavailable';
   }
@@ -48,6 +56,10 @@ export function shouldRetryStartupHistoryLoad(
   errorKind: HistoryRetryErrorKind | null,
 ): boolean {
   if (!gatewayStatus || !errorKind) return false;
+
+  if (errorKind === 'gateway_startup') {
+    return true;
+  }
 
   if (gatewayStatus.state === 'starting') {
     return true;

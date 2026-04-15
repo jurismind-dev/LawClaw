@@ -54,6 +54,38 @@ describe('chat heartbeat filtering', () => {
     ]);
   });
 
+  it('loadHistory 生成会话标题时会忽略 heartbeat 首条消息', async () => {
+    useChatStore.setState({
+      currentSessionKey: 'agent:lawclaw-main:session-1',
+      sessions: [{ key: 'agent:lawclaw-main:session-1', persisted: true }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [
+              { role: 'user', content: HEARTBEAT_PROMPT, timestamp: 1 },
+              { role: 'assistant', content: 'HEARTBEAT_OK', timestamp: 2 },
+              { role: 'user', content: '真正的首条问题', timestamp: 3 },
+              { role: 'assistant', content: '正常回答', timestamp: 4 },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadHistory();
+
+    const state = useChatStore.getState();
+    expect(state.sessionLabels['agent:lawclaw-main:session-1']).toBe('真正的首条问题');
+    expect(state.sessionLastActivity['agent:lawclaw-main:session-1']).toBe(4_000);
+  });
+
   it('实时 heartbeat 事件不会出现在界面中，并会清理误占用的运行态', () => {
     useChatStore.setState({
       messages: [{ role: 'assistant', content: '已有消息', id: 'existing-1' }],

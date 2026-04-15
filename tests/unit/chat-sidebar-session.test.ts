@@ -145,4 +145,24 @@ describe('chat sidebar session state', () => {
     expect(state.sessionLastActivity[DRAFT_SESSION_KEY]).toBeUndefined();
     expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('session:delete', DRAFT_SESSION_KEY);
   });
+
+  it('cleanupEmptySession 不会删除已持久化但当前内存为空的历史会话', () => {
+    useChatStore.setState({
+      sessions: [
+        { key: MAIN_SESSION_KEY, displayName: MAIN_SESSION_KEY, persisted: true },
+        { key: DRAFT_SESSION_KEY, displayName: DRAFT_SESSION_KEY, persisted: true },
+      ],
+      currentSessionKey: DRAFT_SESSION_KEY,
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    useChatStore.getState().cleanupEmptySession();
+
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([
+      MAIN_SESSION_KEY,
+      DRAFT_SESSION_KEY,
+    ]);
+  });
 });

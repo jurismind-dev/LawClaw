@@ -65,6 +65,7 @@ export interface ChatSession {
   thinkingLevel?: string;
   model?: string;
   updatedAt?: number;
+  persisted?: boolean;
 }
 
 export interface ToolStatus {
@@ -150,7 +151,10 @@ const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
 const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
+const LABEL_FETCH_CONCURRENCY = 5;
+const SESSION_LABEL_CACHE_TTL_MS = 5 * 60_000;
 const _chatEventDedupe = new Map<string, number>();
+const _sessionLabelFetchedAt = new Map<string, number>();
 
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
@@ -211,17 +215,28 @@ function buildChatEventDedupeKey(eventState: string, event: Record<string, unkno
   return null;
 }
 
+function getFinalMessageIdDedupeKey(eventState: string, event: Record<string, unknown>): string | null {
+  if (eventState !== 'final') return null;
+  const msg = (event.message && typeof event.message === 'object')
+    ? event.message as Record<string, unknown>
+    : null;
+  if (msg?.id != null) return `final-msgid|${String(msg.id)}`;
+  return null;
+}
+
 function isDuplicateChatEvent(eventState: string, event: Record<string, unknown>): boolean {
   const key = buildChatEventDedupeKey(eventState, event);
-  if (!key) return false;
+  const msgKey = getFinalMessageIdDedupeKey(eventState, event);
+  if (!key && !msgKey) return false;
 
   const now = Date.now();
   pruneChatEventDedupe(now);
-  if (_chatEventDedupe.has(key)) {
+  if ((key && _chatEventDedupe.has(key)) || (msgKey && _chatEventDedupe.has(msgKey))) {
     return true;
   }
 
-  _chatEventDedupe.set(key, now);
+  if (key) _chatEventDedupe.set(key, now);
+  if (msgKey) _chatEventDedupe.set(msgKey, now);
   return false;
 }
 
@@ -277,7 +292,8 @@ function resolveMainSessionKeyForAgent(agentId: string | undefined | null): stri
 }
 
 function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession[] {
-  if (sessions.some((session) => session.key === sessionKey)) {
+  const existingIndex = sessions.findIndex((session) => session.key === sessionKey);
+  if (existingIndex >= 0) {
     return sessions;
   }
   return [...sessions, { key: sessionKey, displayName: sessionKey }];
@@ -340,6 +356,28 @@ function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T,
   return Object.fromEntries(Object.entries(entries).filter(([key]) => key !== sessionKey)) as T;
 }
 
+function getSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession | undefined {
+  return sessions.find((session) => session.key === sessionKey);
+}
+
+function isEphemeralSessionCandidate(
+  sessionKey: string,
+  messages: RawMessage[],
+  sessionLabels: Record<string, string>,
+  sessionLastActivity: Record<string, number>,
+  persisted = false,
+): boolean {
+  if (!sessionKey || sessionKey.endsWith(':main') || persisted) {
+    return false;
+  }
+
+  if (sessionLabels[sessionKey] || sessionLastActivity[sessionKey]) {
+    return false;
+  }
+
+  return messages.every((message) => isToolResultRole(message.role) || isHiddenHeartbeatMessage(message));
+}
+
 function buildSessionSwitchPatch(
   state: Pick<
     ChatState,
@@ -347,10 +385,14 @@ function buildSessionSwitchPatch(
   >,
   nextSessionKey: string,
 ): Partial<ChatState> {
-  const leavingEmpty = !state.currentSessionKey.endsWith(':main')
-    && state.messages.length === 0
-    && !state.sessionLastActivity[state.currentSessionKey]
-    && !state.sessionLabels[state.currentSessionKey];
+  const currentSession = getSessionEntry(state.sessions, state.currentSessionKey);
+  const leavingEmpty = isEphemeralSessionCandidate(
+    state.currentSessionKey,
+    state.messages,
+    state.sessionLabels,
+    state.sessionLastActivity,
+    currentSession?.persisted === true,
+  );
 
   const nextSessions = leavingEmpty
     ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
@@ -976,6 +1018,71 @@ function isHiddenHeartbeatMessage(message: unknown): boolean {
   return false;
 }
 
+function getUserFacingSessionMessages(messages: RawMessage[]): RawMessage[] {
+  return messages.filter((message) => {
+    if (message.role !== 'user' && message.role !== 'assistant') {
+      return false;
+    }
+
+    return !isToolResultRole(message.role) && !isHiddenHeartbeatMessage(message);
+  });
+}
+
+function getSessionLabelCandidate(messages: RawMessage[]): string | null {
+  const firstUserMessage = getUserFacingSessionMessages(messages).find((message) => message.role === 'user');
+  if (!firstUserMessage) return null;
+
+  const labelText = getMessageText(firstUserMessage.content).trim();
+  if (!labelText) return null;
+
+  return labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+}
+
+function getSessionLastActivityCandidate(messages: RawMessage[]): number | null {
+  const lastMessage = [...getUserFacingSessionMessages(messages)]
+    .reverse()
+    .find((message) => message.timestamp != null);
+
+  return lastMessage?.timestamp ? toMs(lastMessage.timestamp) : null;
+}
+
+function shouldFetchSessionLabel(
+  session: ChatSession,
+  state: Pick<ChatState, 'sessionLabels'>,
+  force = false,
+): boolean {
+  if (session.key.endsWith(':main')) {
+    return false;
+  }
+
+  if (!force && state.sessionLabels[session.key]) {
+    return false;
+  }
+
+  const lastFetchedAt = _sessionLabelFetchedAt.get(session.key) ?? 0;
+  if (!force && Date.now() - lastFetchedAt < SESSION_LABEL_CACHE_TTL_MS) {
+    return false;
+  }
+
+  return true;
+}
+
+function pickFallbackSessionKey(sessions: ChatSession[], preferredAgentId: string): string | null {
+  const fallbackCandidates = [
+    resolveMainSessionKeyForAgent(preferredAgentId),
+    buildFallbackMainSessionKey(preferredAgentId),
+    DEFAULT_SESSION_KEY,
+  ].filter((value, index, values): value is string => !!value && values.indexOf(value) === index);
+
+  for (const sessionKey of fallbackCandidates) {
+    if (sessions.some((session) => session.key === sessionKey)) {
+      return sessionKey;
+    }
+  }
+
+  return sessions[0]?.key ?? null;
+}
+
 function summarizeToolOutput(text: string): string | undefined {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
@@ -1228,6 +1335,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
             model: s.model ? String(s.model) : undefined,
             updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
+            persisted: true,
           })).filter((s: ChatSession) => s.key);
           const visibleSessions = sessions.filter((session) => !isInternalMigrationSessionKey(session.key));
 
@@ -1274,27 +1382,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
               nextSessionKey = canonicalMatch;
             }
           }
-          if (
-            !shouldForceDedicatedSession &&
-            !dedupedSessions.find((s) => s.key === nextSessionKey) &&
-            dedupedSessions.length > 0
-          ) {
+          if (!shouldForceDedicatedSession && !dedupedSessions.find((s) => s.key === nextSessionKey)) {
+            const currentLocalSession = getSessionEntry(localSessions, nextSessionKey);
+            const shouldPreserveLocalCurrentSession =
+              nextSessionKey === currentSessionKey && currentLocalSession != null;
             const hasLocalPendingSession =
-              localSessions.some((session) => session.key === nextSessionKey)
-              && nextSessionKey === currentSessionKey
-              && !nextSessionKey.endsWith(':main')
-              && messages.length === 0
-              && !sessionLastActivity[nextSessionKey]
-              && !sessionLabels[nextSessionKey];
-            if (!hasLocalPendingSession) {
-              nextSessionKey = dedupedSessions[0].key;
+              shouldPreserveLocalCurrentSession &&
+              isEphemeralSessionCandidate(
+                nextSessionKey,
+                messages,
+                sessionLabels,
+                sessionLastActivity,
+                currentLocalSession.persisted === true,
+              );
+
+            if (!hasLocalPendingSession && !shouldPreserveLocalCurrentSession) {
+              nextSessionKey =
+                pickFallbackSessionKey(dedupedSessions, getAgentIdFromSessionKey(currentSessionKey))
+                ?? DEFAULT_SESSION_KEY;
             }
           }
 
+          const currentLocalSession = getSessionEntry(localSessions, nextSessionKey);
           const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
             ? [
                 ...dedupedSessions,
-                { key: nextSessionKey, displayName: nextSessionKey },
+                currentLocalSession ?? { key: nextSessionKey, displayName: nextSessionKey },
               ]
             : dedupedSessions;
 
@@ -1319,50 +1432,55 @@ export const useChatStore = create<ChatState>((set, get) => ({
             void get().loadHistory();
           }
 
-          const sessionsToLabel = sessionsWithCurrent.filter((session) => !session.key.endsWith(':main'));
+          const currentState = get();
+          const sessionsToLabel = sessionsWithCurrent.filter((session) =>
+            shouldFetchSessionLabel(session, currentState, force),
+          );
           if (sessionsToLabel.length > 0) {
-            void Promise.all(
-              sessionsToLabel.map(async (session) => {
-                try {
-                  const historyResult = await useGatewayStore.getState().rpc<Record<string, unknown>>(
-                    'chat.history',
-                    { sessionKey: session.key, limit: 1000 },
-                  );
+            void (async () => {
+              for (let index = 0; index < sessionsToLabel.length; index += LABEL_FETCH_CONCURRENCY) {
+                const batch = sessionsToLabel.slice(index, index + LABEL_FETCH_CONCURRENCY);
+                await Promise.all(
+                  batch.map(async (session) => {
+                    try {
+                      _sessionLabelFetchedAt.set(session.key, Date.now());
+                      const historyResult = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+                        'chat.history',
+                        { sessionKey: session.key, limit: 1000 },
+                      );
 
-                  const historyMessages = Array.isArray(historyResult.messages)
-                    ? historyResult.messages as RawMessage[]
-                    : [];
-                  const firstUserMessage = historyMessages.find((message) => message.role === 'user');
-                  const lastMessage = historyMessages[historyMessages.length - 1];
+                      const historyMessages = Array.isArray(historyResult.messages)
+                        ? historyResult.messages as RawMessage[]
+                        : [];
+                      const labelCandidate = getSessionLabelCandidate(historyMessages);
+                      const lastActivityCandidate = getSessionLastActivityCandidate(historyMessages);
 
-                  set((state) => {
-                    const nextState: Partial<ChatState> = {};
+                      set((state) => {
+                        const nextState: Partial<ChatState> = {};
 
-                    if (firstUserMessage) {
-                      const labelText = getMessageText(firstUserMessage.content).trim();
-                      if (labelText) {
-                        const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-                        nextState.sessionLabels = {
-                          ...state.sessionLabels,
-                          [session.key]: truncated,
-                        };
-                      }
+                        if (labelCandidate) {
+                          nextState.sessionLabels = {
+                            ...state.sessionLabels,
+                            [session.key]: labelCandidate,
+                          };
+                        }
+
+                        if (lastActivityCandidate != null) {
+                          nextState.sessionLastActivity = {
+                            ...state.sessionLastActivity,
+                            [session.key]: lastActivityCandidate,
+                          };
+                        }
+
+                        return nextState;
+                      });
+                    } catch {
+                      // ignore per-session label errors
                     }
-
-                    if (lastMessage?.timestamp) {
-                      nextState.sessionLastActivity = {
-                        ...state.sessionLastActivity,
-                        [session.key]: toMs(lastMessage.timestamp),
-                      };
-                    }
-
-                    return nextState;
-                  });
-                } catch {
-                  // ignore per-session label errors
-                }
-              }),
-            );
+                  }),
+                );
+              }
+            })();
           }
         }
       } catch (err) {
@@ -1444,11 +1562,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   newSession: () => {
     const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
-    const leavingEmptySession =
-      !currentSessionKey.endsWith(':main') &&
-      messages.length === 0 &&
-      !sessionLastActivity[currentSessionKey] &&
-      !sessionLabels[currentSessionKey];
+    const currentSession = getSessionEntry(get().sessions, currentSessionKey);
+    const leavingEmptySession = isEphemeralSessionCandidate(
+      currentSessionKey,
+      messages,
+      sessionLabels,
+      sessionLastActivity,
+      currentSession?.persisted === true,
+    );
     const nextPrefix = currentSessionKey.startsWith('agent:')
       ? currentSessionKey.split(':').slice(0, 2).join(':')
       : DEFAULT_CANONICAL_PREFIX;
@@ -1461,7 +1582,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...(leavingEmptySession
           ? s.sessions.filter((session) => session.key !== currentSessionKey)
           : s.sessions),
-        newSessionEntry,
+        { ...newSessionEntry, persisted: false },
       ],
       sessionLabels: leavingEmptySession
         ? clearSessionEntryFromMap(s.sessionLabels, currentSessionKey)
@@ -1484,12 +1605,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Cleanup empty session on navigate away ──
 
   cleanupEmptySession: () => {
-    const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
-    const isEmptyNonMainSession =
-      !currentSessionKey.endsWith(':main') &&
-      messages.length === 0 &&
-      !sessionLastActivity[currentSessionKey] &&
-      !sessionLabels[currentSessionKey];
+    const { currentSessionKey, messages, sessionLastActivity, sessionLabels, sessions } = get();
+    const currentSession = getSessionEntry(sessions, currentSessionKey);
+    const isEmptyNonMainSession = isEphemeralSessionCandidate(
+      currentSessionKey,
+      messages,
+      sessionLabels,
+      sessionLastActivity,
+      currentSession?.persisted === true,
+    );
     if (!isEmptyNonMainSession) return;
 
     set((state) => ({
@@ -1593,24 +1717,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ messages: finalMessages, thinkingLevel, loading: false });
 
         if (!requestedSessionKey.endsWith(':main')) {
-          const firstUserMessage = finalMessages.find((message) => message.role === 'user');
-          if (firstUserMessage) {
-            const labelText = getMessageText(firstUserMessage.content).trim();
-            if (labelText) {
-              const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-              set((state) => ({
-                sessionLabels: {
-                  ...state.sessionLabels,
-                  [requestedSessionKey]: truncated,
-                },
-              }));
-            }
+          const labelCandidate = getSessionLabelCandidate(finalMessages);
+          if (labelCandidate) {
+            set((state) => ({
+              sessionLabels: {
+                ...state.sessionLabels,
+                [requestedSessionKey]: labelCandidate,
+              },
+            }));
           }
         }
 
-        const lastMessage = finalMessages[finalMessages.length - 1];
-        if (lastMessage?.timestamp) {
-          const lastActivityAt = toMs(lastMessage.timestamp);
+        const lastActivityAt = getSessionLastActivityCandidate(finalMessages);
+        if (lastActivityAt != null) {
           set((state) => ({
             sessionLastActivity: {
               ...state.sessionLastActivity,
@@ -1688,10 +1807,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const errorKind = classifyHistoryStartupRetryError(lastError);
           const shouldRetry = isInitialForegroundLoad
             && attempt < CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length
-            && (
-              shouldRetryStartupHistoryLoad(useGatewayStore.getState().status, errorKind)
-              || /chat\.history unavailable during gateway startup/i.test(String(lastError))
-            );
+            && shouldRetryStartupHistoryLoad(useGatewayStore.getState().status, errorKind);
 
           if (!shouldRetry) {
             break;
@@ -1763,10 +1879,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
     if (targetSessionKey !== get().currentSessionKey) {
       const current = get();
-      const leavingEmpty = !current.currentSessionKey.endsWith(':main')
-        && current.messages.length === 0
-        && !current.sessionLastActivity[current.currentSessionKey]
-        && !current.sessionLabels[current.currentSessionKey];
+      const currentSession = getSessionEntry(current.sessions, current.currentSessionKey);
+      const leavingEmpty = isEphemeralSessionCandidate(
+        current.currentSessionKey,
+        current.messages,
+        current.sessionLabels,
+        current.sessionLastActivity,
+        currentSession?.persisted === true,
+      );
       set((state) => ({
         currentSessionKey: targetSessionKey,
         currentAgentId: getAgentIdFromSessionKey(targetSessionKey),

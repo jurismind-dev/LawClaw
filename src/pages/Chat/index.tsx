@@ -62,11 +62,10 @@ export function Chat() {
   };
 
   useEffect(() => {
-    if (!isGatewayRunning) return;
     return () => {
       cleanupEmptySession();
     };
-  }, [cleanupEmptySession, isGatewayRunning]);
+  }, [cleanupEmptySession]);
 
   if (!isGatewayRunning) {
     return (

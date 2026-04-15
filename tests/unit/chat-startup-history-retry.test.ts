@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatStore } from '@/stores/chat';
+import { useGatewayStore } from '@/stores/gateway';
 
 const MAIN_SESSION_KEY = 'agent:lawclaw-main:main';
 
 describe('chat history startup retry', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    useGatewayStore.setState({
+      status: { state: 'starting', port: 18789 },
+      isInitialized: true,
+      lastError: null,
+    });
     useChatStore.setState({
       messages: [],
       loading: false,
@@ -63,12 +69,14 @@ describe('chat history startup retry', () => {
       throw new Error(`unexpected method: ${String(method)}`);
     });
 
-    await useChatStore.getState().loadHistory();
+    const loadPromise = useChatStore.getState().loadHistory();
+    await Promise.resolve();
 
     expect(useChatStore.getState().error).toBeNull();
     expect(useChatStore.getState().messages).toEqual([]);
 
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(600);
+    await loadPromise;
 
     expect(historyCalls).toBe(2);
     expect(useChatStore.getState().error).toBeNull();

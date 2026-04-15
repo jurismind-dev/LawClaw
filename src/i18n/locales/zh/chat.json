@@ -13,6 +13,10 @@
         "creativeTasks": "实务处理",
         "creativeTasksDesc": "合同起草与审查、法律意见书、函件、脱敏翻译…"
     },
+    "loadingHistory": {
+        "title": "正在整理历史会话",
+        "subtitle": "LawClaw 正在读取并渲染本地聊天记录，请稍候。"
+    },
     "inputPlaceholder": "将合同或案件材料导入工作区，即可开始处理",
     "inputGenerating": "生成中{{dots}}",
     "inputDisabledPlaceholder": "网关未连接...",

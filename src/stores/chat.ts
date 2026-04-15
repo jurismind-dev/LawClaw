@@ -5,6 +5,15 @@
  */
 import { create } from 'zustand';
 import { useAgentsStore } from './agents';
+import { useGatewayStore } from './gateway';
+import {
+  CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
+  classifyHistoryStartupRetryError,
+  getHistoryLoadingSafetyTimeout,
+  getStartupHistoryTimeoutOverride,
+  shouldRetryStartupHistoryLoad,
+  sleep,
+} from './chat-history-startup-retry';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -55,6 +64,7 @@ export interface ChatSession {
   displayName?: string;
   thinkingLevel?: string;
   model?: string;
+  updatedAt?: number;
 }
 
 export interface ToolStatus {
@@ -97,7 +107,7 @@ interface ChatState {
   thinkingLevel: string | null;
 
   // Actions
-  loadSessions: () => Promise<void>;
+  loadSessions: (force?: boolean) => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
@@ -131,15 +141,16 @@ let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Timer for delayed error finalization when the Gateway may still recover.
 let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+let _loadSessionsInFlight: Promise<void> | null = null;
+let _lastLoadSessionsAt = 0;
+const _historyLoadInFlight = new Map<string, Promise<void>>();
+const _lastHistoryLoadAtBySession = new Map<string, number>();
+const _foregroundHistoryLoadSeen = new Set<string>();
+const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
+const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
 const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
 const _chatEventDedupe = new Map<string, number>();
-
-function isTransientChatHistoryError(error: string): boolean {
-  return /chat\.history unavailable during gateway startup/i.test(error)
-    || /gateway not connected/i.test(error)
-    || /websocket not connected/i.test(error);
-}
 
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
@@ -249,6 +260,26 @@ function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSe
     return sessions;
   }
   return [...sessions, { key: sessionKey, displayName: sessionKey }];
+}
+
+function parseSessionUpdatedAtMs(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return toMs(value);
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return toMs(numeric);
+    }
+  }
+
+  return undefined;
 }
 
 // ── Local image cache ─────────────────────────────────────────
@@ -1104,138 +1135,179 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Load sessions via sessions.list ──
 
-  loadSessions: async () => {
-    try {
-      const result = await window.electron.ipcRenderer.invoke(
-        'gateway:rpc',
-        'sessions.list',
-        { limit: 50 }
-      ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+  loadSessions: async (force = false) => {
+    const now = Date.now();
+    if (_loadSessionsInFlight) {
+      await _loadSessionsInFlight;
+      return;
+    }
+    if (!force && now - _lastLoadSessionsAt < SESSION_LOAD_MIN_INTERVAL_MS) {
+      return;
+    }
 
-      if (result.success && result.result) {
-        const data = result.result;
-        const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
-        const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
-          key: String(s.key || ''),
-          label: s.label ? String(s.label) : undefined,
-          displayName: s.displayName ? String(s.displayName) : undefined,
-          thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
-          model: s.model ? String(s.model) : undefined,
-        })).filter((s: ChatSession) => s.key);
-        const visibleSessions = sessions.filter((session) => !isInternalMigrationSessionKey(session.key));
+    _loadSessionsInFlight = (async () => {
+      try {
+        const result = await window.electron.ipcRenderer.invoke(
+          'gateway:rpc',
+          'sessions.list',
+          { limit: 50 }
+        ) as { success: boolean; result?: Record<string, unknown>; error?: string };
 
-        const canonicalBySuffix = new Map<string, string>();
-        for (const session of visibleSessions) {
-          if (!session.key.startsWith('agent:')) continue;
-          const parts = session.key.split(':');
-          if (parts.length < 3) continue;
-          const suffix = parts.slice(2).join(':');
-          if (suffix && !canonicalBySuffix.has(suffix)) {
-            canonicalBySuffix.set(suffix, session.key);
+        if (result.success && result.result) {
+          const data = result.result;
+          const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
+          const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
+            key: String(s.key || ''),
+            label: s.label ? String(s.label) : undefined,
+            displayName: s.displayName ? String(s.displayName) : undefined,
+            thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
+            model: s.model ? String(s.model) : undefined,
+            updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
+          })).filter((s: ChatSession) => s.key);
+          const visibleSessions = sessions.filter((session) => !isInternalMigrationSessionKey(session.key));
+
+          const canonicalBySuffix = new Map<string, string>();
+          for (const session of visibleSessions) {
+            if (!session.key.startsWith('agent:')) continue;
+            const parts = session.key.split(':');
+            if (parts.length < 3) continue;
+            const suffix = parts.slice(2).join(':');
+            if (suffix && !canonicalBySuffix.has(suffix)) {
+              canonicalBySuffix.set(suffix, session.key);
+            }
           }
-        }
 
-        // Deduplicate: if both short and canonical existed, keep canonical only
-        const seen = new Set<string>();
-        const dedupedSessions = visibleSessions.filter((s) => {
-          if (!s.key.startsWith('agent:') && canonicalBySuffix.has(s.key)) return false;
-          if (seen.has(s.key)) return false;
-          seen.add(s.key);
-          return true;
-        });
+          const seen = new Set<string>();
+          const dedupedSessions = visibleSessions.filter((s) => {
+            if (!s.key.startsWith('agent:') && canonicalBySuffix.has(s.key)) return false;
+            if (seen.has(s.key)) return false;
+            seen.add(s.key);
+            return true;
+          });
 
-        const { currentSessionKey, hasAppliedStartupDefault } = get();
-        const shouldForceDedicatedSession = !hasAppliedStartupDefault;
-        let nextSessionKey = shouldForceDedicatedSession
-          ? DEFAULT_SESSION_KEY
-          : currentSessionKey || DEFAULT_SESSION_KEY;
-        if (isInternalMigrationSessionKey(nextSessionKey)) {
-          nextSessionKey = DEFAULT_SESSION_KEY;
-        }
-        if (!nextSessionKey.startsWith('agent:')) {
-          const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
-          if (canonicalMatch) {
-            nextSessionKey = canonicalMatch;
+          const {
+            currentSessionKey,
+            hasAppliedStartupDefault,
+            sessions: localSessions,
+            messages,
+            sessionLabels,
+            sessionLastActivity,
+          } = get();
+          const shouldForceDedicatedSession = !hasAppliedStartupDefault;
+          let nextSessionKey = shouldForceDedicatedSession
+            ? DEFAULT_SESSION_KEY
+            : currentSessionKey || DEFAULT_SESSION_KEY;
+          if (isInternalMigrationSessionKey(nextSessionKey)) {
+            nextSessionKey = DEFAULT_SESSION_KEY;
           }
-        }
-        if (
-          !shouldForceDedicatedSession &&
-          !dedupedSessions.find((s) => s.key === nextSessionKey) &&
-          dedupedSessions.length > 0
-        ) {
-          // Current session not found at all — switch to the first available session
-          nextSessionKey = dedupedSessions[0].key;
-        }
+          if (!nextSessionKey.startsWith('agent:')) {
+            const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
+            if (canonicalMatch) {
+              nextSessionKey = canonicalMatch;
+            }
+          }
+          if (
+            !shouldForceDedicatedSession &&
+            !dedupedSessions.find((s) => s.key === nextSessionKey) &&
+            dedupedSessions.length > 0
+          ) {
+            const hasLocalPendingSession =
+              localSessions.some((session) => session.key === nextSessionKey)
+              && nextSessionKey === currentSessionKey
+              && !nextSessionKey.endsWith(':main')
+              && messages.length === 0
+              && !sessionLastActivity[nextSessionKey]
+              && !sessionLabels[nextSessionKey];
+            if (!hasLocalPendingSession) {
+              nextSessionKey = dedupedSessions[0].key;
+            }
+          }
 
-        const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
-          ? [
-            ...dedupedSessions,
-            { key: nextSessionKey, displayName: nextSessionKey },
-          ]
-          : dedupedSessions;
+          const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
+            ? [
+                ...dedupedSessions,
+                { key: nextSessionKey, displayName: nextSessionKey },
+              ]
+            : dedupedSessions;
 
-        set({
-          sessions: sessionsWithCurrent,
-          currentSessionKey: nextSessionKey,
-          currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-          hasAppliedStartupDefault: true,
-        });
+          const discoveredActivity = Object.fromEntries(
+            sessionsWithCurrent
+              .filter((session) => typeof session.updatedAt === 'number' && Number.isFinite(session.updatedAt))
+              .map((session) => [session.key, session.updatedAt!]),
+          );
 
-        if (currentSessionKey !== nextSessionKey) {
-          get().loadHistory();
-        }
+          set((state) => ({
+            sessions: sessionsWithCurrent,
+            currentSessionKey: nextSessionKey,
+            currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+            hasAppliedStartupDefault: true,
+            sessionLastActivity: {
+              ...state.sessionLastActivity,
+              ...discoveredActivity,
+            },
+          }));
 
-        const sessionsToLabel = sessionsWithCurrent.filter((session) => !session.key.endsWith(':main'));
-        if (sessionsToLabel.length > 0) {
-          void Promise.all(
-            sessionsToLabel.map(async (session) => {
-              try {
-                const historyResult = await window.electron.ipcRenderer.invoke(
-                  'gateway:rpc',
-                  'chat.history',
-                  { sessionKey: session.key, limit: 1000 }
-                ) as { success: boolean; result?: Record<string, unknown> };
+          if (currentSessionKey !== nextSessionKey) {
+            void get().loadHistory();
+          }
 
-                if (!historyResult.success || !historyResult.result) return;
+          const sessionsToLabel = sessionsWithCurrent.filter((session) => !session.key.endsWith(':main'));
+          if (sessionsToLabel.length > 0) {
+            void Promise.all(
+              sessionsToLabel.map(async (session) => {
+                try {
+                  const historyResult = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+                    'chat.history',
+                    { sessionKey: session.key, limit: 1000 },
+                  );
 
-                const historyMessages = Array.isArray(historyResult.result.messages)
-                  ? historyResult.result.messages as RawMessage[]
-                  : [];
-                const firstUserMessage = historyMessages.find((message) => message.role === 'user');
-                const lastMessage = historyMessages[historyMessages.length - 1];
+                  const historyMessages = Array.isArray(historyResult.messages)
+                    ? historyResult.messages as RawMessage[]
+                    : [];
+                  const firstUserMessage = historyMessages.find((message) => message.role === 'user');
+                  const lastMessage = historyMessages[historyMessages.length - 1];
 
-                set((state) => {
-                  const nextState: Partial<ChatState> = {};
+                  set((state) => {
+                    const nextState: Partial<ChatState> = {};
 
-                  if (firstUserMessage) {
-                    const labelText = getMessageText(firstUserMessage.content).trim();
-                    if (labelText) {
-                      const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-                      nextState.sessionLabels = {
-                        ...state.sessionLabels,
-                        [session.key]: truncated,
+                    if (firstUserMessage) {
+                      const labelText = getMessageText(firstUserMessage.content).trim();
+                      if (labelText) {
+                        const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+                        nextState.sessionLabels = {
+                          ...state.sessionLabels,
+                          [session.key]: truncated,
+                        };
+                      }
+                    }
+
+                    if (lastMessage?.timestamp) {
+                      nextState.sessionLastActivity = {
+                        ...state.sessionLastActivity,
+                        [session.key]: toMs(lastMessage.timestamp),
                       };
                     }
-                  }
 
-                  if (lastMessage?.timestamp) {
-                    nextState.sessionLastActivity = {
-                      ...state.sessionLastActivity,
-                      [session.key]: toMs(lastMessage.timestamp),
-                    };
-                  }
-
-                  return nextState;
-                });
-              } catch {
-                // ignore per-session label errors
-              }
-            }),
-          );
+                    return nextState;
+                  });
+                } catch {
+                  // ignore per-session label errors
+                }
+              }),
+            );
+          }
         }
+      } catch (err) {
+        console.warn('Failed to load sessions:', err);
+      } finally {
+        _lastLoadSessionsAt = Date.now();
       }
-    } catch (err) {
-      console.warn('Failed to load sessions:', err);
+    })();
+
+    try {
+      await _loadSessionsInFlight;
+    } finally {
+      _loadSessionsInFlight = null;
     }
   },
 
@@ -1388,35 +1460,74 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadHistory: async (quiet = false) => {
     const { currentSessionKey } = get();
     const requestedSessionKey = currentSessionKey;
+    const isInitialForegroundLoad = !quiet && !_foregroundHistoryLoadSeen.has(requestedSessionKey);
+    const historyTimeoutOverride = getStartupHistoryTimeoutOverride(isInitialForegroundLoad);
+    const existingLoad = _historyLoadInFlight.get(requestedSessionKey);
+    if (existingLoad) {
+      await existingLoad;
+      return;
+    }
+
+    const lastLoadAt = _lastHistoryLoadAtBySession.get(requestedSessionKey) || 0;
+    if (quiet && Date.now() - lastLoadAt < HISTORY_LOAD_MIN_INTERVAL_MS) {
+      return;
+    }
+
     if (!quiet) set({ loading: true, error: null });
 
-    try {
-      const result = await window.electron.ipcRenderer.invoke(
-        'gateway:rpc',
-        'chat.history',
-        { sessionKey: requestedSessionKey, limit: 200 }
-      ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+    let loadingTimedOut = false;
+    const loadingSafetyTimer = quiet ? null : setTimeout(() => {
+      loadingTimedOut = true;
+      set({ loading: false });
+    }, getHistoryLoadingSafetyTimeout(isInitialForegroundLoad));
 
-      if (get().currentSessionKey !== requestedSessionKey) {
-        return;
-      }
+    const loadPromise = (async () => {
+      const isCurrentSession = () => get().currentSessionKey === requestedSessionKey;
+      const getPreviewMergeKey = (message: RawMessage): string => (
+        `${message.id ?? ''}|${message.role}|${message.timestamp ?? ''}|${getMessageText(message.content)}`
+      );
+      const mergeHydratedMessages = (
+        currentMessages: RawMessage[],
+        hydratedMessages: RawMessage[],
+      ): RawMessage[] => {
+        const hydratedFilesByKey = new Map(
+          hydratedMessages
+            .filter((message) => message._attachedFiles?.length)
+            .map((message) => [
+              getPreviewMergeKey(message),
+              message._attachedFiles!.map((file) => ({ ...file })),
+            ]),
+        );
 
-      if (result.success && result.result) {
-        const data = result.result;
-        const rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
+        return currentMessages.map((message) => {
+          const attachedFiles = hydratedFilesByKey.get(getPreviewMergeKey(message));
+          return attachedFiles
+            ? { ...message, _attachedFiles: attachedFiles }
+            : message;
+        });
+      };
 
-        // Before filtering: attach images/files from tool_result messages to the next assistant message
+      const applyLoadFailure = (errorMessage: string | null) => {
+        if (!isCurrentSession()) return;
+        set((state) => {
+          const hasMessages = state.messages.length > 0;
+          return {
+            loading: false,
+            error: !quiet && errorMessage ? errorMessage : state.error,
+            ...(hasMessages ? {} : { messages: [] as RawMessage[] }),
+          };
+        });
+      };
+
+      const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
+        if (!isCurrentSession()) return false;
+
         const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
         const filteredMessages = messagesWithToolImages.filter(
           (msg) => !isToolResultRole(msg.role) && !isHiddenHeartbeatMessage(msg),
         );
-        // Restore file attachments for user/assistant messages (from cache + text patterns)
         const enrichedMessages = enrichWithCachedImages(filteredMessages);
-        const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
 
-        // Preserve the optimistic user message during an active send.
-        // The Gateway may not include the user's message in chat.history
-        // until the run completes, causing it to flash out of the UI.
         let finalMessages = enrichedMessages;
         const userMsgAt = get().lastUserMessageAt;
         if (get().sending && userMsgAt) {
@@ -1464,29 +1575,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }));
         }
 
-        // Async: load missing image previews from disk (updates in background)
         loadMissingPreviews(finalMessages).then((updated) => {
-          if (updated) {
-            if (get().currentSessionKey !== requestedSessionKey) {
-              return;
-            }
-            // Create new object references so React.memo detects changes.
-            // loadMissingPreviews mutates AttachedFileMeta in place, so we
-            // must produce fresh message + file references for each affected msg.
-            set({
-              messages: finalMessages.map(msg =>
-                msg._attachedFiles
-                  ? { ...msg, _attachedFiles: msg._attachedFiles.map(f => ({ ...f })) }
-                  : msg
-              ),
-            });
+          if (!updated || !isCurrentSession()) {
+            return;
           }
-        });
-        const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
 
-        // If we're sending but haven't received streaming events, check
-        // whether the loaded history reveals intermediate tool-call activity.
-        // This surfaces progress via the pendingFinal → ActivityIndicator path.
+          set((state) => ({
+            messages: mergeHydratedMessages(state.messages, finalMessages),
+          }));
+        });
+
+        const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
         const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
         const isAfterUserMsg = (msg: RawMessage): boolean => {
           if (!userMsTs || !msg.timestamp) return true;
@@ -1503,9 +1602,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        // If pendingFinal, only end the run when the latest assistant turn after
-        // the user's prompt is truly terminal. Assistant text can now arrive in
-        // the same message as a later tool_use, which is not a completed answer.
         if (pendingFinal || get().pendingFinal) {
           const recentAssistant = [...filteredMessages].reverse().find((msg) => {
             if (msg.role !== 'assistant') return false;
@@ -1516,43 +1612,96 @@ export const useChatStore = create<ChatState>((set, get) => ({
             set({ sending: false, activeRunId: null, pendingFinal: false });
           }
         }
-      } else if (get().currentSessionKey === requestedSessionKey) {
-        const errorMessage = result.error || 'Failed to load chat history';
-        if (isTransientChatHistoryError(errorMessage)) {
-          set({ loading: false, error: null });
-          window.setTimeout(() => {
-            const state = get();
-            if (state.currentSessionKey === requestedSessionKey) {
-              void state.loadHistory(true);
-            }
-          }, 1000);
-          return;
+
+        return true;
+      };
+
+      try {
+        let data: Record<string, unknown> | null = null;
+        let lastError: unknown = null;
+
+        for (let attempt = 0; attempt <= CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length; attempt += 1) {
+          if (!isCurrentSession()) {
+            break;
+          }
+
+          try {
+            data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+              'chat.history',
+              { sessionKey: requestedSessionKey, limit: 200 },
+              historyTimeoutOverride,
+            );
+            lastError = null;
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+
+          if (!isCurrentSession()) {
+            break;
+          }
+
+          const errorKind = classifyHistoryStartupRetryError(lastError);
+          const shouldRetry = isInitialForegroundLoad
+            && attempt < CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length
+            && (
+              shouldRetryStartupHistoryLoad(useGatewayStore.getState().status, errorKind)
+              || /chat\.history unavailable during gateway startup/i.test(String(lastError))
+            );
+
+          if (!shouldRetry) {
+            break;
+          }
+
+          console.warn('[chat.history] startup retry scheduled', {
+            sessionKey: requestedSessionKey,
+            attempt: attempt + 1,
+            gatewayState: useGatewayStore.getState().status.state,
+            errorKind,
+            error: String(lastError),
+          });
+          await sleep(CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS[attempt]!);
         }
 
-        set({
-          loading: false,
-          error: errorMessage,
-        });
+        if (data) {
+          const rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
+          const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
+          const applied = applyLoadedMessages(rawMessages, thinkingLevel);
+          if (applied && isInitialForegroundLoad) {
+            _foregroundHistoryLoadSeen.add(requestedSessionKey);
+          }
+        } else {
+          if (isCurrentSession() && isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
+            console.warn('[chat.history] startup retry exhausted', {
+              sessionKey: requestedSessionKey,
+              gatewayState: useGatewayStore.getState().status.state,
+              error: String(lastError),
+            });
+          }
+
+          applyLoadFailure(
+            (lastError instanceof Error ? lastError.message : String(lastError))
+              || 'Failed to load chat history',
+          );
+        }
+      } catch (err) {
+        console.warn('Failed to load chat history:', err);
+        applyLoadFailure(String(err));
       }
-    } catch (err) {
-      console.warn('Failed to load chat history:', err);
-      if (get().currentSessionKey === requestedSessionKey) {
-        const errorMessage = String(err);
-        if (isTransientChatHistoryError(errorMessage)) {
-          set({ loading: false, error: null });
-          window.setTimeout(() => {
-            const state = get();
-            if (state.currentSessionKey === requestedSessionKey) {
-              void state.loadHistory(true);
-            }
-          }, 1000);
-          return;
-        }
+    })();
 
-        set({
-          loading: false,
-          error: errorMessage,
-        });
+    _historyLoadInFlight.set(requestedSessionKey, loadPromise);
+    try {
+      await loadPromise;
+    } finally {
+      if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
+      if (!loadingTimedOut) {
+        _lastHistoryLoadAtBySession.set(requestedSessionKey, Date.now());
+      }
+
+      const active = _historyLoadInFlight.get(requestedSessionKey);
+      if (active === loadPromise) {
+        _historyLoadInFlight.delete(requestedSessionKey);
       }
     }
   },
@@ -2136,7 +2285,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   refresh: async () => {
     const { loadHistory, loadSessions, messages } = get();
     const hadMessages = messages.length > 0;
-    await loadSessions();
+    await loadSessions(true);
     await loadHistory(hadMessages);
   },
 

@@ -180,8 +180,12 @@ export function Chat() {
         <div ref={scrollRef} className="h-full min-h-0 overflow-y-auto">
           <div ref={contentRef} className="w-full space-y-4">
             {loading && !isTaskRunning ? (
-              <div className="flex h-full items-center justify-center py-20">
+              <div className="flex h-full flex-col items-center justify-center gap-4 py-20 text-center">
                 <LoadingSpinner size="lg" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">{t('loadingHistory.title')}</p>
+                  <p className="text-sm text-muted-foreground">{t('loadingHistory.subtitle')}</p>
+                </div>
               </div>
             ) : messages.length === 0 && !isTaskRunning ? (
               <WelcomeScreen />

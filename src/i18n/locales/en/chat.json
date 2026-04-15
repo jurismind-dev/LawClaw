@@ -13,6 +13,10 @@
         "creativeTasks": "Creative Tasks",
         "creativeTasksDesc": "Writing, brainstorming, ideas"
     },
+    "loadingHistory": {
+        "title": "Restoring conversation history",
+        "subtitle": "LawClaw is reading and rendering your local chat records."
+    },
     "inputPlaceholder": "Import a contract or case file into the workspace to begin.",
     "inputGenerating": "Generating{{dots}}",
     "inputDisabledPlaceholder": "Gateway not connected...",

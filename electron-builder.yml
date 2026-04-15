@@ -1,4 +1,4 @@
-appId: app.clawx.desktop
+appId: app.lawclaw.desktop
 productName: LawClaw
 copyright: Copyright © 2026 法义经纬 (Jurismind)
 compression: normal
@@ -138,6 +138,9 @@ win:
         - x64
 
 nsis:
+  # Keep LawClaw on its own Windows upgrade/uninstall chain instead of
+  # reusing the legacy ClawX-derived identity.
+  guid: 509c62e4-d3e7-5e20-aa66-d59894dcca47
   oneClick: false
   perMachine: false
   # Avoid NSIS build failure: warning 6010 (_ci_StrContains "not referenced") is emitted when

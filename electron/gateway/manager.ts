@@ -49,6 +49,11 @@ import { repairInstalledWeixinPluginIfNeeded } from '../utils/weixin-plugin-inst
 import { cleanupStalePluginInstallStageDirs } from '../utils/openclaw-plugin-install';
 import { selectGatewayRuntime } from './runtime-selection';
 import { getGatewayStartupRecoveryAction } from './startup-recovery';
+import {
+  getDeferredRestartAction,
+  shouldDeferRestart,
+} from './process-policy';
+import { waitForGatewayReady } from './ws-client';
 
 /**
  * Gateway connection status
@@ -207,6 +212,9 @@ export class GatewayManager extends EventEmitter {
   }> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
   private restartDebounceTimer: NodeJS.Timeout | null = null;
+  private deferredRestartPending = false;
+  private deferredRestartRequestedAt = 0;
+  private lastRestartCompletedAt = 0;
   
   constructor(config?: Partial<ReconnectConfig>) {
     super();
@@ -275,6 +283,64 @@ export class GatewayManager extends EventEmitter {
 
   private async delay(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private markDeferredRestart(reason: string): void {
+    if (!this.deferredRestartPending) {
+      logger.info(
+        `Deferring Gateway restart (${reason}) until startup/reconnect settles (state=${this.status.state}, startLock=${this.startLock})`,
+      );
+      this.deferredRestartRequestedAt = Date.now();
+    } else {
+      logger.debug(
+        `Gateway restart already deferred; keeping pending request (${reason}, state=${this.status.state}, startLock=${this.startLock})`,
+      );
+    }
+    this.deferredRestartPending = true;
+  }
+
+  private recordRestartCompleted(): void {
+    this.lastRestartCompletedAt = Date.now();
+  }
+
+  private flushDeferredRestart(trigger: string): void {
+    const action = getDeferredRestartAction({
+      hasPendingRestart: this.deferredRestartPending,
+      state: this.status.state,
+      startLock: this.startLock,
+      shouldReconnect: this.shouldReconnect,
+    });
+
+    if (action === 'none') return;
+    if (action === 'wait') {
+      logger.debug(
+        `Deferred Gateway restart still waiting (${trigger}, state=${this.status.state}, startLock=${this.startLock})`,
+      );
+      return;
+    }
+
+    const requestedAt = this.deferredRestartRequestedAt;
+    this.deferredRestartPending = false;
+    this.deferredRestartRequestedAt = 0;
+
+    if (action === 'drop') {
+      logger.info(
+        `Dropping deferred Gateway restart (${trigger}) because reconnect is disabled (state=${this.status.state})`,
+      );
+      return;
+    }
+
+    if (requestedAt > 0 && this.lastRestartCompletedAt >= requestedAt) {
+      logger.info(
+        `Dropping deferred Gateway restart (${trigger}): a restart already completed after the request (requested=${requestedAt}, completed=${this.lastRestartCompletedAt})`,
+      );
+      return;
+    }
+
+    logger.info(`Executing deferred Gateway restart now (${trigger})`);
+    void this.restart().catch((error) => {
+      logger.warn('Deferred Gateway restart failed:', error);
+    });
   }
 
   /**
@@ -358,6 +424,7 @@ export class GatewayManager extends EventEmitter {
             this.ownsProcess = false;
             this.setStatus({ pid: undefined });
             this.startHealthCheck();
+            this.recordRestartCompleted();
             return;
           }
 
@@ -369,6 +436,7 @@ export class GatewayManager extends EventEmitter {
 
           this.startHealthCheck();
           logger.debug('Gateway started successfully');
+          this.recordRestartCompleted();
           return;
         } catch (error) {
           const recoveryAction = getGatewayStartupRecoveryAction({
@@ -408,6 +476,7 @@ export class GatewayManager extends EventEmitter {
       throw error;
     } finally {
       this.startLock = false;
+      this.flushDeferredRestart('start:finally');
     }
   }
   
@@ -506,8 +575,17 @@ export class GatewayManager extends EventEmitter {
    */
   async restart(): Promise<void> {
     logger.debug('Gateway restart requested');
+    if (shouldDeferRestart({ state: this.status.state, startLock: this.startLock })) {
+      this.markDeferredRestart('restart');
+      return;
+    }
     await this.stop();
-    await this.start();
+    try {
+      await this.start();
+      this.recordRestartCompleted();
+    } finally {
+      this.flushDeferredRestart('restart:finally');
+    }
   }
 
   /**
@@ -769,17 +847,41 @@ export class GatewayManager extends EventEmitter {
       return await new Promise<{ port: number, externalToken?: string } | null>((resolve) => {
         const testWs = new WebSocket(`ws://localhost:${port}/ws`);
         const timeout = setTimeout(() => {
-          testWs.close();
+          try {
+            testWs.terminate();
+          } catch {
+            // ignore
+          }
           resolve(null);
         }, 2000);
         
         testWs.on('open', () => {
-          clearTimeout(timeout);
-          testWs.close();
-          resolve({ port });
+          // Open is not enough on OpenClaw 4.11; wait for protocol challenge.
+        });
+
+        testWs.on('message', (data) => {
+          try {
+            const message = JSON.parse(data.toString()) as { type?: string; event?: string };
+            if (message.type === 'event' && message.event === 'connect.challenge') {
+              clearTimeout(timeout);
+              try {
+                testWs.terminate();
+              } catch {
+                // ignore
+              }
+              resolve({ port });
+            }
+          } catch {
+            // ignore malformed probe payloads
+          }
         });
         
         testWs.on('error', () => {
+          clearTimeout(timeout);
+          resolve(null);
+        });
+
+        testWs.on('close', () => {
           clearTimeout(timeout);
           resolve(null);
         });
@@ -1115,53 +1217,15 @@ export class GatewayManager extends EventEmitter {
    * Wait for Gateway to be ready by checking if the port is accepting connections
    */
   private async waitForReady(retries = 2400, interval = 250): Promise<void> {
-    const child = this.process;
-    for (let i = 0; i < retries; i++) {
-      // Early exit if the gateway process has already exited
-      if (child && (child.exitCode !== null || child.signalCode !== null)) {
-        const code = child.exitCode;
-        const signal = child.signalCode;
-        logger.error(`Gateway process exited before ready (${this.formatExit(code, signal)})`);
-        throw new Error(`Gateway process exited before becoming ready (${this.formatExit(code, signal)})`);
-      }
-      
-      try {
-        const ready = await new Promise<boolean>((resolve) => {
-          const testWs = new WebSocket(`ws://localhost:${this.status.port}/ws`);
-          const timeout = setTimeout(() => {
-            testWs.close();
-            resolve(false);
-          }, 2000);
-          
-          testWs.on('open', () => {
-            clearTimeout(timeout);
-            testWs.close();
-            resolve(true);
-          });
-          
-          testWs.on('error', () => {
-            clearTimeout(timeout);
-            resolve(false);
-          });
-        });
-        
-        if (ready) {
-          logger.debug(`Gateway ready after ${i + 1} attempt(s)`);
-          return;
-        }
-      } catch {
-        // Gateway not ready yet
-      }
-      
-      if (i > 0 && i % 10 === 0) {
-        logger.debug(`Still waiting for Gateway... (attempt ${i + 1}/${retries})`);
-      }
-      
-      await new Promise((resolve) => setTimeout(resolve, interval));
-    }
-    
-    logger.error(`Gateway failed to become ready after ${retries} attempts on port ${this.status.port}`);
-    throw new Error(`Gateway failed to start after ${retries} retries (port ${this.status.port})`);
+    await waitForGatewayReady({
+      port: this.status.port,
+      retries,
+      intervalMs: interval,
+      getProcessExit: () => ({
+        code: this.process?.exitCode ?? null,
+        signal: this.process?.signalCode ?? null,
+      }),
+    });
   }
 
   private async runOpenClawDoctorRepair(): Promise<boolean> {

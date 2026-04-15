@@ -7,7 +7,7 @@ import { logger } from './logger';
 import { getClawXConfigDir, getOpenClawConfigDir } from './paths';
 
 const WATCHER_LABEL = 'com.jurismind.lawclaw.cleanup';
-const APP_ID = 'app.clawx.desktop';
+const APP_ID = 'app.lawclaw.desktop';
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;

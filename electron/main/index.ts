@@ -47,7 +47,7 @@ import {
 // set `"disable-hardware-acceleration": false` in the app config (future).
 app.disableHardwareAcceleration();
 
-const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
+const WINDOWS_APP_USER_MODEL_ID = 'app.lawclaw.desktop';
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {

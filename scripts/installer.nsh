@@ -12,15 +12,110 @@
   !include "nsProcess.nsh"
 !endif
 
+!define LAWCLAW_LEGACY_SHARED_APP_GUID "36abd259-b5f8-5a78-aae7-c5b60d324643"
+!define LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY "Software\${LAWCLAW_LEGACY_SHARED_APP_GUID}"
+!define LAWCLAW_LEGACY_SHARED_UNINSTALL_REGISTRY_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${LAWCLAW_LEGACY_SHARED_APP_GUID}"
+!define LAWCLAW_LEGACY_UNINSTALL_DISPLAY_NAME "劳有钳 (LawClaw)"
+
+Var /GLOBAL LegacyLawClawPerUserInstallLocation
+Var /GLOBAL LegacyLawClawPerMachineInstallLocation
+Var /GLOBAL LegacyLawClawPerUserOwned
+Var /GLOBAL LegacyLawClawPerMachineOwned
+
+Function DetectLegacyLawClawPerUser
+  StrCpy $LegacyLawClawPerUserInstallLocation ""
+  StrCpy $LegacyLawClawPerUserOwned "0"
+
+  ReadRegStr $0 HKCU "${LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY}" InstallLocation
+  ReadRegStr $1 HKCU "${LAWCLAW_LEGACY_SHARED_UNINSTALL_REGISTRY_KEY}" DisplayName
+
+  ${if} $1 == "${LAWCLAW_LEGACY_UNINSTALL_DISPLAY_NAME}"
+    StrCpy $LegacyLawClawPerUserOwned "1"
+    StrCpy $LegacyLawClawPerUserInstallLocation "$0"
+    Return
+  ${endIf}
+
+  ${if} $0 != ""
+    IfFileExists "$0\LawClaw.exe" 0 +3
+      StrCpy $LegacyLawClawPerUserOwned "1"
+      StrCpy $LegacyLawClawPerUserInstallLocation "$0"
+  ${endIf}
+FunctionEnd
+
+Function DetectLegacyLawClawPerMachine
+  StrCpy $LegacyLawClawPerMachineInstallLocation ""
+  StrCpy $LegacyLawClawPerMachineOwned "0"
+
+  ReadRegStr $0 HKLM "${LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY}" InstallLocation
+  ReadRegStr $1 HKLM "${LAWCLAW_LEGACY_SHARED_UNINSTALL_REGISTRY_KEY}" DisplayName
+
+  ${if} $1 == "${LAWCLAW_LEGACY_UNINSTALL_DISPLAY_NAME}"
+    StrCpy $LegacyLawClawPerMachineOwned "1"
+    StrCpy $LegacyLawClawPerMachineInstallLocation "$0"
+    Return
+  ${endIf}
+
+  ${if} $0 != ""
+    IfFileExists "$0\LawClaw.exe" 0 +3
+      StrCpy $LegacyLawClawPerMachineOwned "1"
+      StrCpy $LegacyLawClawPerMachineInstallLocation "$0"
+  ${endIf}
+FunctionEnd
+
+Function DetectLegacyLawClawSharedRegistry
+  Call DetectLegacyLawClawPerUser
+  Call DetectLegacyLawClawPerMachine
+FunctionEnd
+
 !macro customHeader
   ShowInstDetails hide
   ShowUninstDetails hide
+!macroend
+
+!macro customInit
+  Call DetectLegacyLawClawSharedRegistry
+
+  StrCpy $R7 ""
+  ReadRegStr $R7 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${if} $R7 == ""
+    ReadRegStr $R7 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${endIf}
+
+  ${if} $R7 == ""
+    ${if} $LegacyLawClawPerMachineOwned == "1"
+    ${andIf} $LegacyLawClawPerMachineInstallLocation != ""
+      !insertmacro setInstallModePerAllUsers
+      StrCpy $INSTDIR "$LegacyLawClawPerMachineInstallLocation"
+    ${elseif} $LegacyLawClawPerUserOwned == "1"
+    ${andIf} $LegacyLawClawPerUserInstallLocation != ""
+      !insertmacro setInstallModePerUser
+      StrCpy $INSTDIR "$LegacyLawClawPerUserInstallLocation"
+    ${endIf}
+  ${endIf}
 !macroend
 
 !macro customCheckAppRunning
   ; Keep installer internals silent for end users. We still run the same
   ; upgrade safety steps, but without exposing file deletion/copy logs.
   SetDetailsPrint none
+  StrCpy $R9 ""
+
+  ReadRegStr $R9 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${if} $R9 == ""
+    ReadRegStr $R9 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${endIf}
+  ${if} $R9 == ""
+    ${if} $LegacyLawClawPerMachineOwned == "1"
+    ${andIf} $LegacyLawClawPerMachineInstallLocation != ""
+      StrCpy $R9 "$LegacyLawClawPerMachineInstallLocation"
+    ${elseif} $LegacyLawClawPerUserOwned == "1"
+    ${andIf} $LegacyLawClawPerUserInstallLocation != ""
+      StrCpy $R9 "$LegacyLawClawPerUserInstallLocation"
+    ${endIf}
+  ${endIf}
+  ${if} $R9 == ""
+    StrCpy $R9 "$INSTDIR"
+  ${endIf}
 
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
 
@@ -46,6 +141,12 @@
     Pop $0
     Pop $1
 
+    ${if} $R9 != "$INSTDIR"
+      nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$R9', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+      Pop $0
+      Pop $1
+    ${endIf}
+
     ${if} $0 != 0
       nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
       Pop $0
@@ -65,11 +166,19 @@
   nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
   Pop $0
   Pop $1
+  ${if} $R9 != "$INSTDIR"
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$R9', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+    Pop $0
+    Pop $1
+  ${endIf}
 
   nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
   Pop $0
   Pop $1
   nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'taskkill /F /IM crashpad_handler.exe'
   Pop $0
   Pop $1
 
@@ -118,6 +227,17 @@
 !macroend
 
 !macro customInstall
+  ; Remove the legacy shared ClawX/LawClaw registry identity after the new
+  ; LawClaw-specific installer identity has been written.
+  ${if} $LegacyLawClawPerMachineOwned == "1"
+    DeleteRegKey HKLM "${LAWCLAW_LEGACY_SHARED_UNINSTALL_REGISTRY_KEY}"
+    DeleteRegKey HKLM "${LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY}"
+  ${endIf}
+  ${if} $LegacyLawClawPerUserOwned == "1"
+    DeleteRegKey HKCU "${LAWCLAW_LEGACY_SHARED_UNINSTALL_REGISTRY_KEY}"
+    DeleteRegKey HKCU "${LAWCLAW_LEGACY_SHARED_INSTALL_REGISTRY_KEY}"
+  ${endIf}
+
   ; Keep a single LawClaw CLI entry in the current user's PATH so updates and
   ; reinstalls do not accumulate stale duplicates.
   StrCpy $1 "$INSTDIR\\resources\\cli"

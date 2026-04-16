@@ -30,7 +30,7 @@ import {
   JURISMINDHUB_REGISTRY_URL,
   JURISMINDHUB_SITE_URL,
 } from '../gateway/market-source';
-import { syncAllProvidersToRuntime } from '@electron/services/providers/provider-runtime-sync';
+import { syncAllProvidersToRuntime } from '../services/providers/provider-runtime-sync';
 
 // Disable GPU hardware acceleration globally for maximum stability across
 // all GPU configurations (no GPU, integrated, discrete).

@@ -113,7 +113,7 @@ import {
   syncProviderApiKeyToRuntime,
   syncSavedProviderToRuntime,
   syncUpdatedProviderToRuntime,
-} from '@electron/services/providers/provider-runtime-sync';
+} from '../services/providers/provider-runtime-sync';
 
 function normalizeChannelType(channelType: string): string {
   return channelType.trim().toLowerCase();

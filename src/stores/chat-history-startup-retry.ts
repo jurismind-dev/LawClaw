@@ -12,6 +12,8 @@ export const CHAT_HISTORY_LOADING_SAFETY_TIMEOUT_MS =
   + 2_000;
 
 export type HistoryRetryErrorKind = 'timeout' | 'gateway_unavailable' | 'gateway_startup';
+export type StartupRetryErrorKind = HistoryRetryErrorKind;
+export const STARTUP_RETRY_DELAYS_MS = CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS;
 
 export function classifyHistoryStartupRetryError(error: unknown): HistoryRetryErrorKind | null {
   const message = String(error).toLowerCase();
@@ -51,6 +53,10 @@ export function classifyHistoryStartupRetryError(error: unknown): HistoryRetryEr
   return null;
 }
 
+export function classifyStartupRetryError(error: unknown): StartupRetryErrorKind | null {
+  return classifyHistoryStartupRetryError(error);
+}
+
 export function shouldRetryStartupHistoryLoad(
   gatewayStatus: GatewayStatus | undefined,
   errorKind: HistoryRetryErrorKind | null,
@@ -74,6 +80,13 @@ export function shouldRetryStartupHistoryLoad(
   }
 
   return Date.now() - gatewayStatus.connectedAt <= CHAT_HISTORY_STARTUP_RUNNING_WINDOW_MS;
+}
+
+export function shouldRetryStartupRpc(
+  gatewayStatus: GatewayStatus | undefined,
+  errorKind: StartupRetryErrorKind | null,
+): boolean {
+  return shouldRetryStartupHistoryLoad(gatewayStatus, errorKind);
 }
 
 export async function sleep(ms: number): Promise<void> {

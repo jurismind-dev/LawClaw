@@ -130,12 +130,12 @@ describe('sidebar clawx alignment', () => {
     expect(screen.getByText('LawClaw')).toBeInTheDocument();
   });
 
-  it('waits for gatewayReady before loading sessions and history', async () => {
+  it('loads sessions and history as soon as the gateway is running, even before gatewayReady', async () => {
     const loadSessions = vi.fn().mockResolvedValue(undefined);
     const loadHistory = vi.fn().mockResolvedValue(undefined);
 
     useGatewayStore.setState({
-      status: { state: 'running', port: 18789, gatewayReady: false },
+      status: { state: 'starting', port: 18789, gatewayReady: false },
     });
     useChatStore.setState({
       loadSessions,
@@ -155,7 +155,7 @@ describe('sidebar clawx alignment', () => {
 
     await act(async () => {
       useGatewayStore.setState({
-        status: { state: 'running', port: 18789, gatewayReady: true },
+        status: { state: 'running', port: 18789, gatewayReady: false, connectedAt: 1 },
       });
     });
 

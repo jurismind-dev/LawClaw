@@ -114,7 +114,6 @@ export function Sidebar() {
 
   const gatewayStatus = useGatewayStore((state) => state.status);
   const isGatewayRunning = gatewayStatus.state === 'running';
-  const isGatewayReady = isGatewayRunning && gatewayStatus.gatewayReady !== false;
   const agents = useAgentsStore((state) => state.agents);
   const fetchAgents = useAgentsStore((state) => state.fetchAgents);
 
@@ -126,7 +125,7 @@ export function Sidebar() {
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS);
 
   useEffect(() => {
-    if (!isGatewayReady) return;
+    if (!isGatewayRunning) return;
     let cancelled = false;
     const hasExistingMessages = useChatStore.getState().messages.length > 0;
     (async () => {
@@ -141,7 +140,7 @@ export function Sidebar() {
     return () => {
       cancelled = true;
     };
-  }, [isGatewayReady, loadHistory, loadSessions]);
+  }, [isGatewayRunning, gatewayStatus.connectedAt, gatewayStatus.gatewayReady, loadHistory, loadSessions]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

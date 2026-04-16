@@ -9,10 +9,13 @@ import { useGatewayStore } from './gateway';
 import {
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
   classifyHistoryStartupRetryError,
+  classifyStartupRetryError,
   getHistoryLoadingSafetyTimeout,
   getStartupHistoryTimeoutOverride,
+  shouldRetryStartupRpc,
   shouldRetryStartupHistoryLoad,
   sleep,
+  STARTUP_RETRY_DELAYS_MS,
 } from './chat-history-startup-retry';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -1307,6 +1310,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
     const snapshotBeforeLoad = get();
+    const isInitialStartupLoad = !snapshotBeforeLoad.hasAppliedStartupDefault;
     if (
       shouldThrottleSessionLoad(force, snapshotBeforeLoad.hasAppliedStartupDefault)
       && !shouldUseDedicatedFallbackSession(
@@ -1319,14 +1323,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     _loadSessionsInFlight = (async () => {
       try {
-        const result = await window.electron.ipcRenderer.invoke(
-          'gateway:rpc',
-          'sessions.list',
-          { limit: 50 }
-        ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+        let data: Record<string, unknown> | null = null;
+        let lastError: unknown = null;
 
-        if (result.success && result.result) {
-          const data = result.result;
+        for (let attempt = 0; attempt <= STARTUP_RETRY_DELAYS_MS.length; attempt += 1) {
+          const result = await window.electron.ipcRenderer.invoke(
+            'gateway:rpc',
+            'sessions.list',
+            { limit: 50 }
+          ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+
+          if (result.success) {
+            data = (result.result ?? {}) as Record<string, unknown>;
+            lastError = null;
+            break;
+          }
+
+          lastError = result.error || 'Failed to load sessions';
+          const errorKind = classifyStartupRetryError(lastError);
+          const shouldRetry = isInitialStartupLoad
+            && attempt < STARTUP_RETRY_DELAYS_MS.length
+            && shouldRetryStartupRpc(useGatewayStore.getState().status, errorKind);
+
+          if (!shouldRetry) {
+            break;
+          }
+
+          console.warn('[sessions.list] startup retry scheduled', {
+            attempt: attempt + 1,
+            gatewayState: useGatewayStore.getState().status.state,
+            errorKind,
+            error: String(lastError),
+          });
+          await sleep(STARTUP_RETRY_DELAYS_MS[attempt]!);
+        }
+
+        if (data) {
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
           const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
             key: String(s.key || ''),
@@ -1482,6 +1514,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
             })();
           }
+        } else if (lastError != null) {
+          if (isInitialStartupLoad && classifyStartupRetryError(lastError)) {
+            console.warn('[sessions.list] startup retry exhausted', {
+              gatewayState: useGatewayStore.getState().status.state,
+              error: String(lastError),
+            });
+          }
+          console.warn('Failed to load sessions:', lastError);
         }
       } catch (err) {
         console.warn('Failed to load sessions:', err);

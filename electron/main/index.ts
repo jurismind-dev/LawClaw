@@ -30,6 +30,7 @@ import {
   JURISMINDHUB_REGISTRY_URL,
   JURISMINDHUB_SITE_URL,
 } from '../gateway/market-source';
+import { syncAllProvidersToRuntime } from '@electron/services/providers/provider-runtime-sync';
 
 // Disable GPU hardware acceleration globally for maximum stability across
 // all GPU configurations (no GPU, integrated, discrete).
@@ -281,6 +282,11 @@ async function initialize(): Promise<void> {
   });
 
   await syncLawClawDefaultProviderAtStartup();
+  try {
+    await syncAllProvidersToRuntime();
+  } catch (error) {
+    logger.warn('Failed to sync provider runtime state at startup:', error);
+  }
 
   // Start Gateway automatically
   try {

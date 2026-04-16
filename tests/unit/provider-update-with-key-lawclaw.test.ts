@@ -38,6 +38,25 @@ const providerValidationMock = vi.hoisted(() => ({
   validateApiKeyWithProvider: vi.fn(async () => ({ valid: true })),
 }));
 
+const runtimeSyncMock = vi.hoisted(() => ({
+  getOpenClawProviderKey: vi.fn((type: string, providerId: string) => {
+    if (type === 'custom' || type === 'ollama') {
+      return `${type}-${providerId.replace(/-/g, '').slice(0, 8)}`;
+    }
+    if (type === 'minimax-portal-cn') {
+      return 'minimax-portal';
+    }
+    return type;
+  }),
+  syncAgentModelOverrideToRuntime: vi.fn(async () => undefined),
+  syncAllProvidersToRuntime: vi.fn(async () => undefined),
+  syncDeletedProviderApiKeyToRuntime: vi.fn(async () => undefined),
+  syncDeletedProviderToRuntime: vi.fn(async () => undefined),
+  syncProviderApiKeyToRuntime: vi.fn(async () => undefined),
+  syncSavedProviderToRuntime: vi.fn(async () => undefined),
+  syncUpdatedProviderToRuntime: vi.fn(async () => undefined),
+}));
+
 vi.mock('electron', () => ({
   ipcMain: {
     handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
@@ -153,6 +172,8 @@ vi.mock('@electron/utils/whatsapp-login', () => ({
 }));
 
 vi.mock('@electron/utils/provider-validation', () => providerValidationMock);
+
+vi.mock('@electron/services/providers/provider-runtime-sync', () => runtimeSyncMock);
 
 vi.mock('@electron/utils/openclaw-config-env', () => ({
   applyOpenClawConfigEnvFallbacks: vi.fn((raw: string, env: Record<string, string>) => env),

@@ -145,4 +145,5 @@ describe('chat refresh session race handling', () => {
       expect.objectContaining({ role: 'assistant', content: '主会话回答' }),
     ]);
   });
+
 });

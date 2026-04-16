@@ -3,6 +3,7 @@ import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 
 const MAIN_SESSION_KEY = 'agent:lawclaw-main:main';
+const PREFETCHED_SESSION_KEY = 'agent:lawclaw-main:session-prefetched-view';
 
 describe('session label fetch concurrency', () => {
   beforeEach(() => {
@@ -22,7 +23,6 @@ describe('session label fetch concurrency', () => {
       pendingToolImages: [],
       sessionLabels: {},
       sessionLastActivity: {},
-      loadHistory: vi.fn().mockResolvedValue(undefined),
     });
   });
 
@@ -122,5 +122,106 @@ describe('session label fetch concurrency', () => {
     await useChatStore.getState().loadSessions(false);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses prefetched history so switching sessions renders immediately without foreground loading', async () => {
+    useChatStore.setState({
+      sessions: [
+        { key: MAIN_SESSION_KEY },
+        { key: PREFETCHED_SESSION_KEY },
+      ],
+      currentSessionKey: MAIN_SESSION_KEY,
+      currentAgentId: 'lawclaw-main',
+      hasAppliedStartupDefault: true,
+      messages: [
+        { role: 'user', content: 'main question', timestamp: 1 },
+        { role: 'assistant', content: 'main answer', timestamp: 2 },
+      ],
+      loading: false,
+      error: null,
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      showThinking: true,
+      thinkingLevel: null,
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'sessions.list') {
+        return {
+          success: true,
+          result: {
+            sessions: [
+              { key: MAIN_SESSION_KEY },
+              { key: PREFETCHED_SESSION_KEY },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    let prefetchedHistoryCalls = 0;
+    let resolveForegroundHistory: ((value: unknown) => void) | null = null;
+    const foregroundHistoryPromise = new Promise((resolve) => {
+      resolveForegroundHistory = resolve;
+    });
+
+    useGatewayStore.setState({
+      rpc: vi.fn(async (method: string, params?: unknown) => {
+        if (method !== 'chat.history') {
+          throw new Error(`unexpected gateway method: ${method}`);
+        }
+
+        const sessionKey = (params as { sessionKey?: string } | undefined)?.sessionKey;
+        if (sessionKey !== PREFETCHED_SESSION_KEY) {
+          return { messages: [] };
+        }
+
+        prefetchedHistoryCalls += 1;
+        if (prefetchedHistoryCalls === 1) {
+          return {
+            messages: [
+              { role: 'user', content: 'prefetched question', timestamp: 10 },
+              { role: 'assistant', content: 'prefetched answer', timestamp: 11 },
+            ],
+          };
+        }
+
+        return foregroundHistoryPromise as Promise<unknown>;
+      }),
+    });
+
+    await useChatStore.getState().loadSessions(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    useChatStore.getState().switchSession(PREFETCHED_SESSION_KEY);
+
+    let state = useChatStore.getState();
+    expect(state.currentSessionKey).toBe(PREFETCHED_SESSION_KEY);
+    expect(state.loading).toBe(false);
+    expect(state.messages).toEqual([
+      expect.objectContaining({ role: 'user', content: 'prefetched question' }),
+      expect.objectContaining({ role: 'assistant', content: 'prefetched answer' }),
+    ]);
+
+    resolveForegroundHistory?.({
+      messages: [
+        { role: 'user', content: 'prefetched question', timestamp: 10 },
+        { role: 'assistant', content: 'prefetched answer', timestamp: 11 },
+      ],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    state = useChatStore.getState();
+    expect(state.currentSessionKey).toBe(PREFETCHED_SESSION_KEY);
+    expect(prefetchedHistoryCalls).toBe(2);
   });
 });

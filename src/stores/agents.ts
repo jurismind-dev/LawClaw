@@ -6,6 +6,8 @@ interface AgentsState {
   defaultAgentId: string;
   defaultModelRef: string | null;
   configuredChannelTypes: string[];
+  channelOwners: Record<string, string>;
+  channelAccountOwners: Record<string, string>;
   loading: boolean;
   error: string | null;
   fetchAgents: () => Promise<void>;
@@ -22,6 +24,8 @@ function applySnapshot(snapshot: AgentsSnapshot | undefined) {
     defaultAgentId: snapshot.defaultAgentId ?? 'lawclaw-main',
     defaultModelRef: snapshot.defaultModelRef ?? null,
     configuredChannelTypes: snapshot.configuredChannelTypes ?? [],
+    channelOwners: snapshot.channelOwners ?? {},
+    channelAccountOwners: snapshot.channelAccountOwners ?? {},
   } : {};
 }
 
@@ -30,6 +34,8 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   defaultAgentId: 'lawclaw-main',
   defaultModelRef: null,
   configuredChannelTypes: [],
+  channelOwners: {},
+  channelAccountOwners: {},
   loading: false,
   error: null,
 

@@ -147,7 +147,8 @@ let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
 let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let _loadSessionsInFlight: Promise<void> | null = null;
 let _lastLoadSessionsAt = 0;
-const _historyLoadInFlight = new Map<string, Promise<void>>();
+const _historyLoadInFlight = new Map<string, { promise: Promise<void>; quiet: boolean; requestId: number }>();
+const _historyLoadRequestIdBySession = new Map<string, number>();
 const _lastHistoryLoadAtBySession = new Map<string, number>();
 const _foregroundHistoryLoadSeen = new Set<string>();
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
@@ -330,6 +331,8 @@ function parseSessionUpdatedAtMs(value: unknown): number | undefined {
 // available after the RPC returns, but history may load before that).
 const IMAGE_CACHE_KEY = 'clawx:image-cache';
 const IMAGE_CACHE_MAX = 100; // max entries to prevent unbounded growth
+const SESSION_VIEW_STICKY_TTL_MS = 20_000;
+const SESSION_VIEW_CACHE_MESSAGE_LIMIT = 200;
 
 function loadImageCache(): Map<string, AttachedFileMeta> {
   try {
@@ -354,6 +357,76 @@ function saveImageCache(cache: Map<string, AttachedFileMeta>): void {
 }
 
 const _imageCache = loadImageCache();
+type SessionViewCacheEntry = {
+  messages: RawMessage[];
+  thinkingLevel: string | null;
+  updatedAt: number;
+};
+const _sessionViewCache = new Map<string, SessionViewCacheEntry>();
+
+function cloneRawMessages(messages: RawMessage[]): RawMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    _attachedFiles: message._attachedFiles?.map((file) => ({ ...file })),
+  }));
+}
+
+function getCachedSessionView(
+  sessionKey: string,
+  maxAgeMs = Number.POSITIVE_INFINITY,
+): SessionViewCacheEntry | null {
+  if (!sessionKey) {
+    return null;
+  }
+
+  const entry = _sessionViewCache.get(sessionKey);
+  if (!entry) {
+    return null;
+  }
+
+  if (Date.now() - entry.updatedAt > maxAgeMs) {
+    return null;
+  }
+
+  return {
+    messages: cloneRawMessages(entry.messages),
+    thinkingLevel: entry.thinkingLevel,
+    updatedAt: entry.updatedAt,
+  };
+}
+
+function cacheSessionView(sessionKey: string, messages: RawMessage[], thinkingLevel: string | null): void {
+  if (!sessionKey) {
+    return;
+  }
+
+  if (messages.length === 0 && !thinkingLevel) {
+    _sessionViewCache.delete(sessionKey);
+    return;
+  }
+
+  _sessionViewCache.set(sessionKey, {
+    messages: cloneRawMessages(messages),
+    thinkingLevel,
+    updatedAt: Date.now(),
+  });
+}
+
+function clearSessionViewCache(sessionKey: string): void {
+  if (!sessionKey) {
+    return;
+  }
+
+  _sessionViewCache.delete(sessionKey);
+}
+
+function buildRenderableHistoryMessages(rawMessages: RawMessage[]): RawMessage[] {
+  const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
+  const filteredMessages = messagesWithToolImages.filter(
+    (message) => !isToolResultRole(message.role) && !isHiddenHeartbeatMessage(message),
+  );
+  return enrichWithCachedImages(filteredMessages);
+}
 
 function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T, sessionKey: string): T {
   return Object.fromEntries(Object.entries(entries).filter(([key]) => key !== sessionKey)) as T;
@@ -384,7 +457,7 @@ function isEphemeralSessionCandidate(
 function buildSessionSwitchPatch(
   state: Pick<
     ChatState,
-    'currentSessionKey' | 'messages' | 'sessions' | 'sessionLabels' | 'sessionLastActivity'
+    'currentSessionKey' | 'messages' | 'sessions' | 'sessionLabels' | 'sessionLastActivity' | 'thinkingLevel'
   >,
   nextSessionKey: string,
 ): Partial<ChatState> {
@@ -400,6 +473,13 @@ function buildSessionSwitchPatch(
   const nextSessions = leavingEmpty
     ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
     : state.sessions;
+  const currentMessages = cloneRawMessages(state.messages);
+  if (leavingEmpty) {
+    clearSessionViewCache(state.currentSessionKey);
+  } else {
+    cacheSessionView(state.currentSessionKey, currentMessages, state.thinkingLevel);
+  }
+  const cachedNextView = getCachedSessionView(nextSessionKey);
 
   return {
     currentSessionKey: nextSessionKey,
@@ -411,13 +491,14 @@ function buildSessionSwitchPatch(
     sessionLastActivity: leavingEmpty
       ? clearSessionEntryFromMap(state.sessionLastActivity, state.currentSessionKey)
       : state.sessionLastActivity,
-    messages: [],
+    messages: cachedNextView?.messages ?? [],
     sending: false,
     streamingText: '',
     streamingMessage: null,
     streamingTools: [],
     activeRunId: null,
     error: null,
+    thinkingLevel: cachedNextView?.thinkingLevel ?? null,
     pendingFinal: false,
     lastUserMessageAt: null,
     pendingToolImages: [],
@@ -1485,6 +1566,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
                       const historyMessages = Array.isArray(historyResult.messages)
                         ? historyResult.messages as RawMessage[]
                         : [];
+                      const historyThinkingLevel = historyResult.thinkingLevel
+                        ? String(historyResult.thinkingLevel)
+                        : null;
+                      const cachedSessionMessages = buildRenderableHistoryMessages(historyMessages);
+                      cacheSessionView(
+                        session.key,
+                        cachedSessionMessages.slice(-SESSION_VIEW_CACHE_MESSAGE_LIMIT),
+                        historyThinkingLevel,
+                      );
                       const labelCandidate = getSessionLabelCandidate(historyMessages);
                       const lastActivityCandidate = getSessionLastActivityCandidate(historyMessages);
 
@@ -1546,8 +1636,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     clearHistoryPoll();
     clearErrorRecoveryTimer();
-    set((state) => buildSessionSwitchPatch(state, nextSessionKey));
-    get().loadHistory();
+    const nextSessionPatch = buildSessionSwitchPatch(get(), nextSessionKey);
+    const shouldLoadHistoryQuietly = Array.isArray(nextSessionPatch.messages) && nextSessionPatch.messages.length > 0;
+    set(nextSessionPatch);
+    void get().loadHistory(shouldLoadHistoryQuietly);
   },
 
   // ── Delete session ──
@@ -1569,20 +1661,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const remainingSessions = sessions.filter((session) => session.key !== key);
 
     if (currentSessionKey === key) {
+      clearSessionViewCache(key);
       clearHistoryPoll();
       clearErrorRecoveryTimer();
       const nextSession = remainingSessions[0];
+      const cachedNextView = getCachedSessionView(nextSession?.key ?? DEFAULT_SESSION_KEY);
       set((state) => ({
         sessions: remainingSessions,
         sessionLabels: clearSessionEntryFromMap(state.sessionLabels, key),
         sessionLastActivity: clearSessionEntryFromMap(state.sessionLastActivity, key),
-        messages: [],
+        messages: cachedNextView?.messages ?? [],
         sending: false,
         streamingText: '',
         streamingMessage: null,
         streamingTools: [],
         activeRunId: null,
         error: null,
+        thinkingLevel: cachedNextView?.thinkingLevel ?? null,
         pendingFinal: false,
         lastUserMessageAt: null,
         pendingToolImages: [],
@@ -1595,6 +1690,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
+    clearSessionViewCache(key);
     set((state) => ({
       sessions: remainingSessions,
       sessionLabels: clearSessionEntryFromMap(state.sessionLabels, key),
@@ -1621,6 +1717,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       : DEFAULT_CANONICAL_PREFIX;
     const newKey = `${nextPrefix}:session-${Date.now()}`;
     const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
+    if (leavingEmptySession) {
+      clearSessionViewCache(currentSessionKey);
+    } else {
+      cacheSessionView(currentSessionKey, messages, get().thinkingLevel);
+    }
     set((s) => ({
       currentSessionKey: newKey,
       currentAgentId: getAgentIdFromSessionKey(newKey),
@@ -1646,6 +1747,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       pendingFinal: false,
       lastUserMessageAt: null,
       pendingToolImages: [],
+      thinkingLevel: null,
     }));
   },
 
@@ -1663,6 +1765,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     );
     if (!isEmptyNonMainSession) return;
 
+    clearSessionViewCache(currentSessionKey);
     set((state) => ({
       sessions: state.sessions.filter((session) => session.key !== currentSessionKey),
       sessionLabels: clearSessionEntryFromMap(state.sessionLabels, currentSessionKey),
@@ -1679,8 +1782,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const historyTimeoutOverride = getStartupHistoryTimeoutOverride(isInitialForegroundLoad);
     const existingLoad = _historyLoadInFlight.get(requestedSessionKey);
     if (existingLoad) {
-      await existingLoad;
-      return;
+      const shouldReuseExistingLoad = quiet || !existingLoad.quiet;
+      if (shouldReuseExistingLoad) {
+        await existingLoad.promise;
+        return;
+      }
     }
 
     const lastLoadAt = _lastHistoryLoadAtBySession.get(requestedSessionKey) || 0;
@@ -1695,9 +1801,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       loadingTimedOut = true;
       set({ loading: false });
     }, getHistoryLoadingSafetyTimeout(isInitialForegroundLoad));
+    const requestId = (_historyLoadRequestIdBySession.get(requestedSessionKey) || 0) + 1;
+    _historyLoadRequestIdBySession.set(requestedSessionKey, requestId);
 
     const loadPromise = (async () => {
       const isCurrentSession = () => get().currentSessionKey === requestedSessionKey;
+      const isLatestLoadForSession = () =>
+        (_historyLoadRequestIdBySession.get(requestedSessionKey) || 0) === requestId;
       const getPreviewMergeKey = (message: RawMessage): string => (
         `${message.id ?? ''}|${message.role}|${message.timestamp ?? ''}|${getMessageText(message.content)}`
       );
@@ -1723,7 +1833,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
 
       const applyLoadFailure = (errorMessage: string | null) => {
-        if (!isCurrentSession()) return;
+        if (!isCurrentSession() || !isLatestLoadForSession()) return;
         set((state) => {
           const hasMessages = state.messages.length > 0;
           return {
@@ -1735,15 +1845,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
 
       const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
-        if (!isCurrentSession()) return false;
+        if (!isCurrentSession() || !isLatestLoadForSession()) return false;
 
-        const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-        const filteredMessages = messagesWithToolImages.filter(
-          (msg) => !isToolResultRole(msg.role) && !isHiddenHeartbeatMessage(msg),
-        );
-        const enrichedMessages = enrichWithCachedImages(filteredMessages);
+        const enrichedMessages = buildRenderableHistoryMessages(rawMessages);
+        const filteredMessages = enrichedMessages;
+        const recentCachedView = getCachedSessionView(requestedSessionKey, SESSION_VIEW_STICKY_TTL_MS);
 
         let finalMessages = enrichedMessages;
+        let finalThinkingLevel = thinkingLevel;
+        if (enrichedMessages.length === 0 && recentCachedView?.messages.length) {
+          finalMessages = recentCachedView.messages;
+          finalThinkingLevel = thinkingLevel ?? recentCachedView.thinkingLevel;
+        }
         const userMsgAt = get().lastUserMessageAt;
         if (get().sending && userMsgAt) {
           const userMsMs = toMs(userMsgAt);
@@ -1761,7 +1874,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        set({ messages: finalMessages, thinkingLevel, loading: false });
+        set({ messages: finalMessages, thinkingLevel: finalThinkingLevel, loading: false });
+        cacheSessionView(requestedSessionKey, finalMessages, finalThinkingLevel);
 
         if (!requestedSessionKey.endsWith(':main')) {
           const labelCandidate = getSessionLabelCandidate(finalMessages);
@@ -1786,7 +1900,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
 
         loadMissingPreviews(finalMessages).then((updated) => {
-          if (!updated || !isCurrentSession()) {
+          if (!updated || !isCurrentSession() || !isLatestLoadForSession()) {
             return;
           }
 
@@ -1897,17 +2011,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     })();
 
-    _historyLoadInFlight.set(requestedSessionKey, loadPromise);
+    _historyLoadInFlight.set(requestedSessionKey, { promise: loadPromise, quiet, requestId });
     try {
       await loadPromise;
     } finally {
       if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
-      if (!loadingTimedOut) {
+      if (!loadingTimedOut && (_historyLoadRequestIdBySession.get(requestedSessionKey) || 0) === requestId) {
         _lastHistoryLoadAtBySession.set(requestedSessionKey, Date.now());
       }
 
       const active = _historyLoadInFlight.get(requestedSessionKey);
-      if (active === loadPromise) {
+      if (active?.requestId === requestId) {
         _historyLoadInFlight.delete(requestedSessionKey);
       }
     }

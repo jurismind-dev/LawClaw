@@ -1,13 +1,15 @@
 import { access, copyFile, mkdir, readdir, rm } from 'fs/promises';
 import { constants } from 'fs';
-import { join } from 'path';
+import { join, normalize } from 'path';
 import { expandPath, getOpenClawConfigDir } from './paths';
 import { listConfiguredChannels, readOpenClawConfig, writeOpenClawConfig } from './channel-config';
 import { logger } from './logger';
+import { withConfigLock } from './config-mutex';
 
 const DEFAULT_AGENT_ID = 'lawclaw-main';
 const DEFAULT_AGENT_NAME = 'LawClaw';
 const DEFAULT_WORKSPACE_PATH = '~/.openclaw/workspace-lawclaw-main';
+const DEFAULT_ACCOUNT_ID = 'default';
 const AGENT_BOOTSTRAP_FILES = [
   'AGENTS.md',
   'SOUL.md',
@@ -60,6 +62,7 @@ interface BindingConfig extends Record<string, unknown> {
 interface AgentConfigDocument extends Record<string, unknown> {
   agents?: AgentsConfig;
   bindings?: BindingConfig[];
+  channels?: Record<string, Record<string, unknown>>;
   session?: {
     mainKey?: string;
     [key: string]: unknown;
@@ -85,6 +88,8 @@ export interface AgentsSnapshot {
   defaultAgentId: string;
   defaultModelRef: string | null;
   configuredChannelTypes: string[];
+  channelOwners: Record<string, string>;
+  channelAccountOwners: Record<string, string>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -115,7 +120,7 @@ function slugifyAgentId(name: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 
-  if (!normalized) return 'agent';
+  if (!normalized || /^\d+$/.test(normalized)) return 'agent';
   if (normalized === DEFAULT_AGENT_ID) return 'agent';
   return normalized;
 }
@@ -216,41 +221,89 @@ function normalizeAgentsConfig(config: AgentConfigDocument): {
   };
 }
 
-function getChannelBindings(bindings: unknown): Map<string, Set<string>> {
-  const result = new Map<string, Set<string>>();
-  if (!Array.isArray(bindings)) return result;
+function getChannelBindingMap(bindings: unknown): {
+  channelToAgent: Map<string, string>;
+  accountToAgent: Map<string, string>;
+} {
+  const channelToAgent = new Map<string, string>();
+  const accountToAgent = new Map<string, string>();
+  if (!Array.isArray(bindings)) {
+    return { channelToAgent, accountToAgent };
+  }
 
   for (const binding of bindings) {
     if (!isBindingConfig(binding)) continue;
     const agentId = normalizeAgentId(binding.agentId);
     const channelType = String(binding.match?.channel || '').trim().toLowerCase();
+    const accountId = String(binding.match?.accountId || '').trim();
     if (!agentId || !channelType) continue;
-    const existing = result.get(agentId) ?? new Set<string>();
-    existing.add(channelType);
-    result.set(agentId, existing);
+
+    if (accountId) {
+      accountToAgent.set(`${channelType}:${accountId}`, agentId);
+    } else {
+      channelToAgent.set(channelType, agentId);
+    }
   }
 
-  return result;
+  return { channelToAgent, accountToAgent };
 }
 
 async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<AgentsSnapshot> {
   const { entries, defaultAgentId } = normalizeAgentsConfig(config);
   const configuredChannels = await listConfiguredChannels();
-  const boundChannelsByAgent = getChannelBindings(config.bindings);
-  const explicitlyBoundChannels = new Set<string>();
-
-  for (const channelSet of boundChannelsByAgent.values()) {
-    for (const channelType of channelSet) {
-      explicitlyBoundChannels.add(channelType);
-    }
-  }
-
+  const { channelToAgent, accountToAgent } = getChannelBindingMap(config.bindings);
+  const agentChannelSets = new Map<string, Set<string>>();
   const defaultAgentKey = normalizeAgentId(defaultAgentId);
+  const channelOwners: Record<string, string> = {};
+  const channelAccountOwners: Record<string, string> = {};
+
   for (const channelType of configuredChannels) {
-    if (explicitlyBoundChannels.has(channelType)) continue;
-    const existing = boundChannelsByAgent.get(defaultAgentKey) ?? new Set<string>();
-    existing.add(channelType);
-    boundChannelsByAgent.set(defaultAgentKey, existing);
+    const wildcardOwner = accountToAgent.get(`${channelType}:*`);
+    if (wildcardOwner) {
+      channelAccountOwners[`${channelType}:*`] = wildcardOwner;
+    }
+
+    const channelSection = config.channels?.[channelType];
+    const configuredAccountIds = isRecord(channelSection) && isRecord(channelSection.accounts)
+      ? Object.keys(channelSection.accounts)
+      : [];
+    const accountIds = configuredAccountIds.length > 0 ? configuredAccountIds : [DEFAULT_ACCOUNT_ID];
+    const hasExplicitAccountBinding = wildcardOwner || accountIds.some((accountId) =>
+      accountToAgent.has(`${channelType}:${accountId}`)
+    );
+
+    let primaryOwner: string | undefined;
+
+    for (const accountId of accountIds) {
+      const owner =
+        accountToAgent.get(`${channelType}:${accountId}`)
+        || wildcardOwner
+        || (
+          accountId === DEFAULT_ACCOUNT_ID && !hasExplicitAccountBinding
+            ? channelToAgent.get(channelType)
+            : undefined
+        );
+
+      if (!owner) {
+        continue;
+      }
+
+      channelAccountOwners[`${channelType}:${accountId}`] = owner;
+      primaryOwner ??= owner;
+
+      const existing = agentChannelSets.get(owner) ?? new Set<string>();
+      existing.add(channelType);
+      agentChannelSets.set(owner, existing);
+    }
+
+    if (!primaryOwner) {
+      primaryOwner = channelToAgent.get(channelType) || defaultAgentKey;
+      const existing = agentChannelSets.get(primaryOwner) ?? new Set<string>();
+      existing.add(channelType);
+      agentChannelSets.set(primaryOwner, existing);
+    }
+
+    channelOwners[channelType] = primaryOwner;
   }
 
   const defaultModelConfig = isRecord(config.agents) && isRecord(config.agents.defaults)
@@ -263,7 +316,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
     const explicitModelRef = resolveModelRef(entry.model);
     const modelLabel = formatModelLabel(entry.model) || defaultModelLabel || 'Not configured';
     const entryKey = normalizeAgentId(entry.id);
-    const channelTypes = [...(boundChannelsByAgent.get(entryKey) ?? new Set<string>())].sort();
+    const channelTypes = [...(agentChannelSets.get(entryKey) ?? new Set<string>())].sort();
 
     return {
       id: entry.id,
@@ -285,6 +338,8 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
     defaultAgentId,
     defaultModelRef,
     configuredChannelTypes: configuredChannels,
+    channelOwners,
+    channelAccountOwners,
   };
 }
 
@@ -373,8 +428,8 @@ function getManagedWorkspaceDirectory(agent: AgentListEntry): string | null {
 
   const configuredWorkspace = expandPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
   const managedWorkspace = join(getOpenClawConfigDir(), `workspace-${agent.id}`);
-  const normalizedConfigured = trimTrailingSeparators(configuredWorkspace);
-  const normalizedManaged = trimTrailingSeparators(managedWorkspace);
+  const normalizedConfigured = trimTrailingSeparators(normalize(configuredWorkspace));
+  const normalizedManaged = trimTrailingSeparators(normalize(managedWorkspace));
 
   return normalizedConfigured === normalizedManaged ? configuredWorkspace : null;
 }
@@ -422,131 +477,139 @@ export async function createAgent(
   name: string,
   options?: { inheritWorkspace?: boolean },
 ): Promise<AgentsSnapshot> {
-  const config = await readOpenClawConfig() as AgentConfigDocument;
-  const { agentsConfig, entries } = normalizeAgentsConfig(config);
-  const normalizedName = normalizeAgentName(name);
-  const existingIds = new Set(entries.map((entry) => entry.id));
-  const diskIds = await listExistingAgentIdsOnDisk();
-  const baseId = slugifyAgentId(normalizedName);
-  let nextId = baseId;
-  let suffix = 2;
+  return withConfigLock(async () => {
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const { agentsConfig, entries } = normalizeAgentsConfig(config);
+    const normalizedName = normalizeAgentName(name);
+    const existingIds = new Set(entries.map((entry) => entry.id));
+    const diskIds = await listExistingAgentIdsOnDisk();
+    const baseId = slugifyAgentId(normalizedName);
+    let nextId = baseId;
+    let suffix = 2;
 
-  while (existingIds.has(nextId) || diskIds.has(nextId)) {
-    nextId = `${baseId}-${suffix}`;
-    suffix += 1;
-  }
+    while (existingIds.has(nextId) || diskIds.has(nextId)) {
+      nextId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
 
-  const nextEntries = [...entries];
-  const newAgent: AgentListEntry = {
-    id: nextId,
-    name: normalizedName,
-    workspace: `~/.openclaw/workspace-${nextId}`,
-    agentDir: getDefaultAgentDirPath(nextId),
-  };
-  nextEntries.push(newAgent);
+    const nextEntries = [...entries];
+    const newAgent: AgentListEntry = {
+      id: nextId,
+      name: normalizedName,
+      workspace: `~/.openclaw/workspace-${nextId}`,
+      agentDir: getDefaultAgentDirPath(nextId),
+    };
+    nextEntries.push(newAgent);
 
-  config.agents = {
-    ...agentsConfig,
-    list: nextEntries,
-  };
+    config.agents = {
+      ...agentsConfig,
+      list: nextEntries,
+    };
 
-  await provisionAgentFilesystem(config, newAgent, { inheritWorkspace: options?.inheritWorkspace });
-  await writeOpenClawConfig(config);
-  logger.info('Created agent config entry', { agentId: nextId, inheritWorkspace: !!options?.inheritWorkspace });
-  return buildSnapshotFromConfig(config);
+    await provisionAgentFilesystem(config, newAgent, { inheritWorkspace: options?.inheritWorkspace });
+    await writeOpenClawConfig(config);
+    logger.info('Created agent config entry', { agentId: nextId, inheritWorkspace: !!options?.inheritWorkspace });
+    return buildSnapshotFromConfig(config);
+  });
 }
 
 export async function updateAgentName(agentId: string, name: string): Promise<AgentsSnapshot> {
-  const config = await readOpenClawConfig() as AgentConfigDocument;
-  const { agentsConfig, entries } = normalizeAgentsConfig(config);
-  const normalizedName = normalizeAgentName(name);
-  const index = entries.findIndex((entry) => entry.id === agentId);
+  return withConfigLock(async () => {
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const { agentsConfig, entries } = normalizeAgentsConfig(config);
+    const normalizedName = normalizeAgentName(name);
+    const index = entries.findIndex((entry) => entry.id === agentId);
 
-  if (index === -1) {
-    throw new Error(`Agent "${agentId}" not found`);
-  }
+    if (index === -1) {
+      throw new Error(`Agent "${agentId}" not found`);
+    }
 
-  entries[index] = {
-    ...entries[index],
-    name: normalizedName,
-  };
+    entries[index] = {
+      ...entries[index],
+      name: normalizedName,
+    };
 
-  config.agents = {
-    ...agentsConfig,
-    list: entries,
-  };
+    config.agents = {
+      ...agentsConfig,
+      list: entries,
+    };
 
-  await writeOpenClawConfig(config);
-  logger.info('Updated agent name', { agentId, name: normalizedName });
-  return buildSnapshotFromConfig(config);
+    await writeOpenClawConfig(config);
+    logger.info('Updated agent name', { agentId, name: normalizedName });
+    return buildSnapshotFromConfig(config);
+  });
 }
 
 export async function updateAgentModel(agentId: string, modelRef: string | null): Promise<AgentsSnapshot> {
-  const config = await readOpenClawConfig() as AgentConfigDocument;
-  const { agentsConfig, entries } = normalizeAgentsConfig(config);
-  const index = entries.findIndex((entry) => entry.id === agentId);
+  return withConfigLock(async () => {
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const { agentsConfig, entries } = normalizeAgentsConfig(config);
+    const index = entries.findIndex((entry) => entry.id === agentId);
 
-  if (index === -1) {
-    throw new Error(`Agent "${agentId}" not found`);
-  }
-
-  const nextEntry: AgentListEntry = { ...entries[index] };
-  const normalizedModelRef = typeof modelRef === 'string' ? modelRef.trim() : '';
-
-  if (!normalizedModelRef) {
-    delete nextEntry.model;
-  } else {
-    if (!isValidModelRef(normalizedModelRef)) {
-      throw new Error('modelRef must be in "provider/model" format');
+    if (index === -1) {
+      throw new Error(`Agent "${agentId}" not found`);
     }
-    nextEntry.model = { primary: normalizedModelRef };
-  }
 
-  entries[index] = nextEntry;
-  config.agents = {
-    ...agentsConfig,
-    list: entries,
-  };
+    const nextEntry: AgentListEntry = { ...entries[index] };
+    const normalizedModelRef = typeof modelRef === 'string' ? modelRef.trim() : '';
 
-  await writeOpenClawConfig(config);
-  logger.info('Updated agent model', { agentId, modelRef: normalizedModelRef || null });
-  return buildSnapshotFromConfig(config);
+    if (!normalizedModelRef) {
+      delete nextEntry.model;
+    } else {
+      if (!isValidModelRef(normalizedModelRef)) {
+        throw new Error('modelRef must be in "provider/model" format');
+      }
+      nextEntry.model = { primary: normalizedModelRef };
+    }
+
+    entries[index] = nextEntry;
+    config.agents = {
+      ...agentsConfig,
+      list: entries,
+    };
+
+    await writeOpenClawConfig(config);
+    logger.info('Updated agent model', { agentId, modelRef: normalizedModelRef || null });
+    return buildSnapshotFromConfig(config);
+  });
 }
 
 export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: AgentsSnapshot; removedEntry: AgentListEntry }> {
-  if (agentId === DEFAULT_AGENT_ID) {
-    throw new Error('The default LawClaw agent cannot be deleted');
-  }
+  return withConfigLock(async () => {
+    if (agentId === DEFAULT_AGENT_ID) {
+      throw new Error('The default LawClaw agent cannot be deleted');
+    }
 
-  const config = await readOpenClawConfig() as AgentConfigDocument;
-  const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
-  const removedEntry = entries.find((entry) => entry.id === agentId);
-  const nextEntries = entries.filter((entry) => entry.id !== agentId);
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
+    const removedEntry = entries.find((entry) => entry.id === agentId);
+    const nextEntries = entries.filter((entry) => entry.id !== agentId);
 
-  if (!removedEntry || nextEntries.length === entries.length) {
-    throw new Error(`Agent "${agentId}" not found`);
-  }
+    if (!removedEntry || nextEntries.length === entries.length) {
+      throw new Error(`Agent "${agentId}" not found`);
+    }
 
-  if (defaultAgentId === agentId && nextEntries.length > 0) {
-    nextEntries[0] = {
-      ...nextEntries[0],
-      default: true,
+    if (defaultAgentId === agentId && nextEntries.length > 0) {
+      nextEntries[0] = {
+        ...nextEntries[0],
+        default: true,
+      };
+    }
+
+    config.agents = {
+      ...agentsConfig,
+      list: nextEntries,
     };
-  }
+    config.bindings = Array.isArray(config.bindings)
+      ? config.bindings.filter((binding) => !(isBindingConfig(binding) && normalizeAgentId(binding.agentId) === normalizeAgentId(agentId)))
+      : undefined;
 
-  config.agents = {
-    ...agentsConfig,
-    list: nextEntries,
-  };
-  config.bindings = Array.isArray(config.bindings)
-    ? config.bindings.filter((binding) => !(isBindingConfig(binding) && normalizeAgentId(binding.agentId) === normalizeAgentId(agentId)))
-    : undefined;
-
-  await writeOpenClawConfig(config);
-  await removeAgentRuntimeDirectory(agentId);
-  logger.info('Deleted agent config entry', { agentId });
-  return {
-    snapshot: await buildSnapshotFromConfig(config),
-    removedEntry,
-  };
+    await writeOpenClawConfig(config);
+    await removeAgentRuntimeDirectory(agentId);
+    logger.info('Deleted agent config entry', { agentId });
+    return {
+      snapshot: await buildSnapshotFromConfig(config),
+      removedEntry,
+    };
+  });
 }

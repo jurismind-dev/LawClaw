@@ -505,23 +505,28 @@ function AgentModelModal({
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   const runtimeProviderOptions = useMemo<RuntimeProviderOption[]>(() => {
-    return providers
+    const deduped = new Map<string, RuntimeProviderOption>();
+
+    providers
       .filter((provider) => provider.enabled)
       .sort((left, right) => {
         if (left.id === defaultProviderId) return -1;
         if (right.id === defaultProviderId) return 1;
         return right.updatedAt.localeCompare(left.updatedAt);
       })
-      .map((provider) => {
+      .forEach((provider) => {
         const info = getProviderTypeInfo(provider.type);
         const runtimeProviderKey = getRuntimeProviderKey(provider);
+        if (!runtimeProviderKey || deduped.has(runtimeProviderKey)) {
+          return;
+        }
         const configuredModelId = getModelIdForRuntimeProvider(provider.model, runtimeProviderKey);
         const defaultModelId = getModelIdForRuntimeProvider(info?.defaultModelId, runtimeProviderKey);
         const lockedModelId = provider.type === 'jurismind'
           ? (defaultModelId || configuredModelId || 'jurismind')
           : undefined;
 
-        return {
+        deduped.set(runtimeProviderKey, {
           runtimeProviderKey,
           providerType: provider.type,
           providerId: provider.id,
@@ -529,8 +534,10 @@ function AgentModelModal({
           modelIdPlaceholder: info?.modelIdPlaceholder,
           configuredModelId,
           lockedModelId,
-        };
+        });
       });
+
+    return [...deduped.values()];
   }, [defaultProviderId, providers]);
 
   useEffect(() => {

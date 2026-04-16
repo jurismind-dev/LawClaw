@@ -445,6 +445,52 @@ function removeAuthProfile(store: AuthProfilesStore, providerId: string): boolea
   return changed;
 }
 
+function cloneAuthProfileEntry(
+  entry: AuthProfileEntry | OAuthProfileEntry,
+  providerId: string,
+): AuthProfileEntry | OAuthProfileEntry {
+  if (entry.type === 'oauth') {
+    return {
+      type: 'oauth',
+      provider: providerId,
+      access: entry.access,
+      refresh: entry.refresh,
+      expires: entry.expires,
+    };
+  }
+
+  return {
+    type: 'api_key',
+    provider: providerId,
+    key: entry.key,
+  };
+}
+
+function upsertRawAuthProfile(
+  store: AuthProfilesStore,
+  providerId: string,
+  entry: AuthProfileEntry | OAuthProfileEntry,
+): void {
+  const profileId = `${providerId}:default`;
+
+  store.profiles[profileId] = cloneAuthProfileEntry(entry, providerId);
+
+  if (!store.order) {
+    store.order = {};
+  }
+  if (!store.order[providerId]) {
+    store.order[providerId] = [];
+  }
+  if (!store.order[providerId].includes(profileId)) {
+    store.order[providerId].push(profileId);
+  }
+
+  if (!store.lastGood) {
+    store.lastGood = {};
+  }
+  store.lastGood[providerId] = profileId;
+}
+
 function getMappedDefaultModel(provider: string): string | undefined {
   const aliases = getProviderAliasIds(provider);
   for (const providerId of aliases) {
@@ -1699,6 +1745,52 @@ export async function saveOAuthTokenToOpenClaw(
 }
 
 /**
+ * Copy an existing canonical auth profile (OAuth or API key) to target agents.
+ * Used to heal older installs where only main/lawclaw-main had credentials.
+ */
+export function syncProviderAuthProfileToOpenClawAgents(
+  provider: string,
+  targetAgentIds?: string[],
+): boolean {
+  const canonicalProviderId = getCanonicalProviderId(provider);
+  const aliasIds = getProviderAliasIds(provider).filter((id) => id !== canonicalProviderId);
+  const preferredSourceAgentIds = Array.from(
+    new Set(['lawclaw-main', 'main', ...discoverAgentIds()]),
+  );
+
+  let sourceProfile: AuthProfileEntry | OAuthProfileEntry | null = null;
+  for (const agentId of preferredSourceAgentIds) {
+    const store = readAuthProfiles(agentId);
+    const profile = store.profiles[`${canonicalProviderId}:default`];
+    if (!profile || (profile.type !== 'api_key' && profile.type !== 'oauth')) {
+      continue;
+    }
+
+    sourceProfile = cloneAuthProfileEntry(profile, canonicalProviderId);
+    break;
+  }
+
+  if (!sourceProfile) {
+    return false;
+  }
+
+  const agentIds = Array.from(new Set(targetAgentIds && targetAgentIds.length > 0
+    ? targetAgentIds
+    : discoverAgentIds()));
+
+  for (const agentId of agentIds) {
+    const store = readAuthProfiles(agentId);
+    upsertRawAuthProfile(store, canonicalProviderId, sourceProfile);
+    for (const alias of aliasIds) {
+      removeAuthProfile(store, alias);
+    }
+    writeAuthProfiles(store, agentId);
+  }
+
+  return true;
+}
+
+/**
  * Read OAuth access token from OpenClaw auth-profiles.
  */
 export async function getOAuthTokenFromOpenClaw(
@@ -2002,39 +2094,53 @@ export async function updateAgentModelProvider(
   }
 ): Promise<void> {
   for (const agentId of discoverAgentIds()) {
-    const modelsPath = join(homedir(), '.openclaw', 'agents', agentId, 'agent', 'models.json');
-    let data: Record<string, unknown> = {};
-
-    try {
-      if (existsSync(modelsPath)) {
-        data = JSON.parse(readFileSync(modelsPath, 'utf-8')) as Record<string, unknown>;
-      }
-    } catch {
-      data = {};
-    }
-
-    const providers = isRecord(data.providers) ? { ...data.providers } : {};
-    const existing = isRecord(providers[providerType]) ? { ...providers[providerType] } : {};
-    const existingModels = Array.isArray(existing.models)
-      ? (existing.models as Array<Record<string, unknown>>)
-      : [];
-
-    const mergedModels = (entry.models ?? []).map((item) => {
-      const prev = existingModels.find((oldItem) => oldItem.id === item.id);
-      return prev ? { ...prev, id: item.id, name: item.name } : { ...item };
-    });
-
-    if (entry.baseUrl !== undefined) existing.baseUrl = entry.baseUrl;
-    if (entry.api !== undefined) existing.api = entry.api;
-    if (mergedModels.length > 0) existing.models = mergedModels;
-    if (entry.apiKey !== undefined) existing.apiKey = entry.apiKey;
-    if (entry.authHeader !== undefined) existing.authHeader = entry.authHeader;
-
-    providers[providerType] = existing;
-    data.providers = providers;
-
-    writeFileSync(modelsPath, JSON.stringify(data, null, 2), 'utf-8');
+    await updateSingleAgentModelProvider(agentId, providerType, entry);
   }
+}
+
+export async function updateSingleAgentModelProvider(
+  agentId: string,
+  providerType: string,
+  entry: {
+    baseUrl?: string;
+    api?: string;
+    models?: Array<{ id: string; name: string }>;
+    apiKey?: string;
+    authHeader?: boolean;
+  }
+): Promise<void> {
+  const modelsPath = join(homedir(), '.openclaw', 'agents', agentId, 'agent', 'models.json');
+  let data: Record<string, unknown> = {};
+
+  try {
+    if (existsSync(modelsPath)) {
+      data = JSON.parse(readFileSync(modelsPath, 'utf-8')) as Record<string, unknown>;
+    }
+  } catch {
+    data = {};
+  }
+
+  const providers = isRecord(data.providers) ? { ...data.providers } : {};
+  const existing = isRecord(providers[providerType]) ? { ...providers[providerType] } : {};
+  const existingModels = Array.isArray(existing.models)
+    ? (existing.models as Array<Record<string, unknown>>)
+    : [];
+
+  const mergedModels = (entry.models ?? []).map((item) => {
+    const prev = existingModels.find((oldItem) => oldItem.id === item.id);
+    return prev ? { ...prev, id: item.id, name: item.name } : { ...item };
+  });
+
+  if (entry.baseUrl !== undefined) existing.baseUrl = entry.baseUrl;
+  if (entry.api !== undefined) existing.api = entry.api;
+  if (mergedModels.length > 0) existing.models = mergedModels;
+  if (entry.apiKey !== undefined) existing.apiKey = entry.apiKey;
+  if (entry.authHeader !== undefined) existing.authHeader = entry.authHeader;
+
+  providers[providerType] = existing;
+  data.providers = providers;
+
+  writeFileSync(modelsPath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 // Re-export for backwards compatibility.

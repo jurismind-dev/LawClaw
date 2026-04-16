@@ -41,12 +41,7 @@ import {
 } from '../utils/store';
 import {
   clearJurismindWebSearchConfig,
-  saveProviderKeyToOpenClaw,
-  removeProviderKeyFromOpenClaw,
-  removeProviderFromOpenClaw,
   syncJurismindWebSearchConfig,
-  syncProviderConfigToOpenClaw,
-  updateAgentModelProvider,
 } from '../utils/openclaw-auth';
 import { logger } from '../utils/logger';
 import {
@@ -109,24 +104,16 @@ import {
   updateAgentModel,
   updateAgentName,
 } from '../utils/agent-config';
-
-const LAWCLAW_MAIN_AGENT_ID = 'lawclaw-main';
-
-/**
- * For custom/ollama providers, derive a unique key for OpenClaw config files
- * so that multiple instances of the same type don't overwrite each other.
- * For all other providers the key is simply the provider type.
- */
-export function getOpenClawProviderKey(type: string, providerId: string): string {
-  if (type === 'custom' || type === 'ollama') {
-    const suffix = providerId.replace(/-/g, '').slice(0, 8);
-    return `${type}-${suffix}`;
-  }
-  if (type === 'minimax-portal-cn') {
-    return 'minimax-portal';
-  }
-  return type;
-}
+import {
+  getOpenClawProviderKey,
+  syncAgentModelOverrideToRuntime,
+  syncAllProvidersToRuntime,
+  syncDeletedProviderApiKeyToRuntime,
+  syncDeletedProviderToRuntime,
+  syncProviderApiKeyToRuntime,
+  syncSavedProviderToRuntime,
+  syncUpdatedProviderToRuntime,
+} from '@electron/services/providers/provider-runtime-sync';
 
 function normalizeChannelType(channelType: string): string {
   return channelType.trim().toLowerCase();
@@ -266,6 +253,11 @@ function registerAgentHandlers(gatewayManager: GatewayManager): void {
       const snapshot = await createAgent(String(payload?.name || ''), {
         inheritWorkspace: payload?.inheritWorkspace === true,
       });
+      try {
+        await syncAllProvidersToRuntime();
+      } catch (error) {
+        logger.warn('Failed to sync provider runtime state after agent creation', error);
+      }
       gatewayManager.debouncedRestart();
       return { success: true, ...snapshot };
     } catch (error) {
@@ -290,6 +282,11 @@ function registerAgentHandlers(gatewayManager: GatewayManager): void {
       const agentId = String(payload?.agentId || '').trim();
       const modelRef = typeof payload?.modelRef === 'string' ? payload.modelRef : null;
       const snapshot = await updateAgentModel(agentId, modelRef);
+      try {
+        await syncAgentModelOverrideToRuntime(agentId);
+      } catch (error) {
+        logger.warn('Failed to sync agent model runtime state after agent model update', error);
+      }
       gatewayManager.debouncedRestart();
       return { success: true, ...snapshot };
     } catch (error) {
@@ -1851,16 +1848,6 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
 function registerProviderHandlers(gatewayManager: GatewayManager): void {
   let activeJurismindBindingPromise: Promise<Awaited<ReturnType<typeof bindJurismindProviderToken>>> | null = null;
 
-  const saveProviderKeyToOpenClawAgents = (providerType: string, apiKey: string): void => {
-    saveProviderKeyToOpenClaw(providerType, apiKey);
-    saveProviderKeyToOpenClaw(providerType, apiKey, LAWCLAW_MAIN_AGENT_ID);
-  };
-
-  const removeProviderKeyFromOpenClawAgents = (providerType: string): void => {
-    removeProviderKeyFromOpenClaw(providerType);
-    removeProviderKeyFromOpenClaw(providerType, LAWCLAW_MAIN_AGENT_ID);
-  };
-
   // Get all providers with key info
   ipcMain.handle('provider:list', async () => {
     return await getAllProvidersWithKeyInfo();
@@ -1886,13 +1873,6 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         if (trimmedKey) {
           await storeApiKey(config.id, trimmedKey);
 
-          // Also write to OpenClaw auth-profiles.json so the gateway can use it
-          try {
-            saveProviderKeyToOpenClawAgents(ock, trimmedKey);
-          } catch (err) {
-            console.warn('Failed to save key to OpenClaw auth-profiles:', err);
-          }
-
           if (config.type === 'jurismind') {
             try {
               syncJurismindWebSearchConfig(trimmedKey);
@@ -1905,37 +1885,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
       // Sync the provider configuration to openclaw.json so Gateway knows about it
       try {
-        const meta = getProviderConfig(config.type);
-        const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
-
-        if (api) {
-          await syncProviderConfigToOpenClaw(ock, config.model, {
-            baseUrl: config.baseUrl || meta?.baseUrl,
-            api,
-            apiKeyEnv: meta?.apiKeyEnv,
-            headers: meta?.headers,
-          });
-
-          if (config.type === 'custom' || config.type === 'ollama') {
-            const resolvedKey = apiKey !== undefined
-              ? (apiKey.trim() || null)
-              : await getApiKey(config.id);
-            if (resolvedKey && config.baseUrl) {
-              const modelId = config.model;
-              await updateAgentModelProvider(ock, {
-                baseUrl: config.baseUrl,
-                api: 'openai-completions',
-                models: modelId ? [{ id: modelId, name: modelId }] : [],
-                apiKey: resolvedKey,
-              });
-            }
-          }
-
-          // Debounced restart so the gateway picks up new config/env vars.
-          // Multiple rapid provider saves (e.g. during setup) are coalesced.
-          logger.info(`Scheduling Gateway restart after saving provider "${ock}" config`);
-          gatewayManager.debouncedRestart();
-        }
+        await syncSavedProviderToRuntime(config, apiKey);
+        logger.info(`Scheduling Gateway restart after saving provider "${ock}" config`);
+        gatewayManager.debouncedRestart();
       } catch (err) {
         console.warn('Failed to sync openclaw provider config:', err);
       }
@@ -1957,7 +1909,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       if (existing?.type) {
         try {
           const ock = getOpenClawProviderKey(existing.type, providerId);
-          await removeProviderFromOpenClaw(ock);
+          await syncDeletedProviderToRuntime(existing, providerId);
 
           if (existing.type === 'jurismind') {
             clearJurismindWebSearchConfig();
@@ -2002,9 +1954,8 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       // Also write to OpenClaw auth-profiles.json
       const provider = await getProvider(providerId);
       const providerType = provider?.type || providerId;
-      const ock = getOpenClawProviderKey(providerType, providerId);
       try {
-        saveProviderKeyToOpenClawAgents(ock, apiKey);
+        await syncProviderApiKeyToRuntime(providerType, providerId, apiKey);
       } catch (err) {
         console.warn('Failed to save key to OpenClaw auth-profiles:', err);
       }
@@ -2038,7 +1989,6 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       }
 
       const previousKey = await getApiKey(providerId);
-      const previousOck = getOpenClawProviderKey(existing.type, providerId);
 
       try {
         const nextConfig: ProviderConfig = {
@@ -2055,14 +2005,12 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const trimmedKey = apiKey.trim();
           if (trimmedKey) {
             await storeApiKey(providerId, trimmedKey);
-            saveProviderKeyToOpenClawAgents(ock, trimmedKey);
 
             if (nextConfig.type === 'jurismind') {
               syncJurismindWebSearchConfig(trimmedKey);
             }
           } else {
             await deleteApiKey(providerId);
-            removeProviderKeyFromOpenClawAgents(ock);
 
             if (nextConfig.type === 'jurismind') {
               clearJurismindWebSearchConfig();
@@ -2076,32 +2024,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
         // Sync the provider configuration to openclaw.json so Gateway knows about it
         try {
-          const meta = getProviderConfig(nextConfig.type);
-          const api = nextConfig.type === 'custom' || nextConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
-
-          if (api) {
-            await syncProviderConfigToOpenClaw(ock, nextConfig.model, {
-              baseUrl: nextConfig.baseUrl || meta?.baseUrl,
-              api,
-              apiKeyEnv: meta?.apiKeyEnv,
-              headers: meta?.headers,
-            });
-
-            if (nextConfig.type === 'custom' || nextConfig.type === 'ollama') {
-              const resolvedKey = apiKey !== undefined
-                ? (apiKey.trim() || null)
-                : await getApiKey(providerId);
-              if (resolvedKey && nextConfig.baseUrl) {
-                const modelId = nextConfig.model;
-                await updateAgentModelProvider(ock, {
-                  baseUrl: nextConfig.baseUrl,
-                  api: 'openai-completions',
-                  models: modelId ? [{ id: modelId, name: modelId }] : [],
-                  apiKey: resolvedKey,
-                });
-              }
-            }
-          }
+          await syncUpdatedProviderToRuntime(nextConfig, apiKey);
 
           const defaultProviderId = await getDefaultProvider();
           if (defaultProviderId === providerId) {
@@ -2144,11 +2067,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           await saveProvider(existing);
           if (previousKey) {
             await storeApiKey(providerId, previousKey);
-            saveProviderKeyToOpenClawAgents(previousOck, previousKey);
           } else {
             await deleteApiKey(providerId);
-            removeProviderKeyFromOpenClawAgents(previousOck);
           }
+          await syncUpdatedProviderToRuntime(existing, previousKey ?? undefined);
         } catch (rollbackError) {
           console.warn('Failed to rollback provider updateWithKey:', rollbackError);
         }
@@ -2167,9 +2089,8 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       // Keep OpenClaw auth-profiles.json in sync with local key storage
       const provider = await getProvider(providerId);
       const providerType = provider?.type || providerId;
-      const ock = getOpenClawProviderKey(providerType, providerId);
       try {
-        removeProviderKeyFromOpenClawAgents(ock);
+        await syncDeletedProviderApiKeyToRuntime(providerType, providerId);
       } catch (err) {
         console.warn('Failed to completely remove provider from OpenClaw:', err);
       }

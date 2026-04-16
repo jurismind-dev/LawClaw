@@ -17,4 +17,6 @@ export interface AgentsSnapshot {
   defaultAgentId: string;
   defaultModelRef?: string | null;
   configuredChannelTypes: string[];
+  channelOwners?: Record<string, string>;
+  channelAccountOwners?: Record<string, string>;
 }

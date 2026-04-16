@@ -412,6 +412,7 @@ function buildSessionSwitchPatch(
       ? clearSessionEntryFromMap(state.sessionLastActivity, state.currentSessionKey)
       : state.sessionLastActivity,
     messages: [],
+    sending: false,
     streamingText: '',
     streamingMessage: null,
     streamingTools: [],
@@ -1568,12 +1569,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const remainingSessions = sessions.filter((session) => session.key !== key);
 
     if (currentSessionKey === key) {
+      clearHistoryPoll();
+      clearErrorRecoveryTimer();
       const nextSession = remainingSessions[0];
       set((state) => ({
         sessions: remainingSessions,
         sessionLabels: clearSessionEntryFromMap(state.sessionLabels, key),
         sessionLastActivity: clearSessionEntryFromMap(state.sessionLastActivity, key),
         messages: [],
+        sending: false,
         streamingText: '',
         streamingMessage: null,
         streamingTools: [],
@@ -1602,6 +1606,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   newSession: () => {
     const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
+    clearHistoryPoll();
+    clearErrorRecoveryTimer();
     const currentSession = getSessionEntry(get().sessions, currentSessionKey);
     const leavingEmptySession = isEphemeralSessionCandidate(
       currentSessionKey,
@@ -1631,6 +1637,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? clearSessionEntryFromMap(s.sessionLastActivity, currentSessionKey)
         : s.sessionLastActivity,
       messages: [],
+      sending: false,
       streamingText: '',
       streamingMessage: null,
       streamingTools: [],

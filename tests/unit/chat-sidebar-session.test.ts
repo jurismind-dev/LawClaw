@@ -89,6 +89,29 @@ describe('chat sidebar session state', () => {
     expect(state.sessionLastActivity[DRAFT_SESSION_KEY]).toBeUndefined();
   });
 
+  it('newSession clears the running state so the new chat is immediately usable', () => {
+    useChatStore.setState({
+      sending: true,
+      activeRunId: 'run-1',
+      pendingFinal: true,
+      lastUserMessageAt: 2_000,
+      messages: [
+        { role: 'user', content: '正在执行的任务', timestamp: 1 },
+      ],
+    });
+    vi.spyOn(Date, 'now').mockReturnValue(2_500);
+
+    useChatStore.getState().newSession();
+
+    const state = useChatStore.getState();
+    expect(state.currentSessionKey).toBe('agent:lawclaw-main:session-2500');
+    expect(state.sending).toBe(false);
+    expect(state.activeRunId).toBeNull();
+    expect(state.pendingFinal).toBe(false);
+    expect(state.lastUserMessageAt).toBeNull();
+    expect(state.messages).toEqual([]);
+  });
+
   it('loadHistory updates sidebar labels and activity timestamps for non-main sessions', async () => {
     vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
       if (method === 'chat.history') {
@@ -144,6 +167,30 @@ describe('chat sidebar session state', () => {
     expect(state.sessionLabels[DRAFT_SESSION_KEY]).toBeUndefined();
     expect(state.sessionLastActivity[DRAFT_SESSION_KEY]).toBeUndefined();
     expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('session:delete', DRAFT_SESSION_KEY);
+  });
+
+  it('switchSession clears the previous session running state before loading the target history', () => {
+    useChatStore.setState({
+      sending: true,
+      activeRunId: 'run-2',
+      pendingFinal: true,
+      lastUserMessageAt: 3_000,
+      messages: [{ role: 'user', content: '旧会话任务', timestamp: 1 }],
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+      success: true,
+      result: { messages: [] },
+    });
+
+    useChatStore.getState().switchSession(MAIN_SESSION_KEY);
+
+    const state = useChatStore.getState();
+    expect(state.currentSessionKey).toBe(MAIN_SESSION_KEY);
+    expect(state.sending).toBe(false);
+    expect(state.activeRunId).toBeNull();
+    expect(state.pendingFinal).toBe(false);
+    expect(state.lastUserMessageAt).toBeNull();
   });
 
   it('cleanupEmptySession 不会删除已持久化但当前内存为空的历史会话', () => {

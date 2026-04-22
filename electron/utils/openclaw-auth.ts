@@ -2254,7 +2254,7 @@ export async function updateSingleAgentModelProvider(
   entry: {
     baseUrl?: string;
     api?: string;
-    models?: Array<{ id: string; name: string }>;
+    models?: Array<Record<string, unknown> & { id: string; name: string }>;
     apiKey?: string;
     authHeader?: boolean;
   }
@@ -2276,10 +2276,22 @@ export async function updateSingleAgentModelProvider(
     ? (existing.models as Array<Record<string, unknown>>)
     : [];
 
-  const mergedModels = (entry.models ?? []).map((item) => {
-    const prev = existingModels.find((oldItem) => oldItem.id === item.id);
-    return prev ? { ...prev, id: item.id, name: item.name } : { ...item };
-  });
+  const mergedModelsById = new Map<string, Record<string, unknown>>();
+
+  for (const item of existingModels) {
+    const id = typeof item?.id === 'string' ? item.id.trim() : '';
+    if (!id) continue;
+    mergedModelsById.set(id, { ...item });
+  }
+
+  for (const item of entry.models ?? []) {
+    const id = typeof item?.id === 'string' ? item.id.trim() : '';
+    if (!id) continue;
+    const prev = mergedModelsById.get(id);
+    mergedModelsById.set(id, prev ? { ...prev, ...item } : { ...item });
+  }
+
+  const mergedModels = Array.from(mergedModelsById.values());
 
   if (entry.baseUrl !== undefined) existing.baseUrl = entry.baseUrl;
   if (entry.api !== undefined) existing.api = entry.api;

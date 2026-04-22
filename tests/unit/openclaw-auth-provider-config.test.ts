@@ -269,4 +269,55 @@ describe('openclaw auth - provider config apiKey markers', () => {
     expect(changed).toBe(true);
     expect(next.models?.providers?.jurismind?.apiKey).toBeUndefined();
   });
+
+  it('updateSingleAgentModelProvider preserves existing vision models when updating the primary model entry', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
+    tempHomes.push(homeDir);
+
+    const agentDir = join(homeDir, '.openclaw', 'agents', 'lawclaw-main', 'agent');
+    mkdirSync(agentDir, { recursive: true });
+    const modelsPath = join(agentDir, 'models.json');
+    writeFileSync(
+      modelsPath,
+      JSON.stringify(
+        {
+          providers: {
+            jurismind: {
+              baseUrl: 'http://101.132.245.215:3001/v1',
+              api: 'openai-completions',
+              models: [
+                { id: 'jurismind', name: 'jurismind' },
+                { id: 'doubao', name: 'doubao', input: ['text', 'image'] },
+              ],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    await mod.updateSingleAgentModelProvider('lawclaw-main', 'jurismind', {
+      baseUrl: 'http://101.132.245.215:3001/v1',
+      api: 'openai-completions',
+      models: [{ id: 'jurismind', name: 'jurismind' }],
+    });
+
+    const next = JSON.parse(readFileSync(modelsPath, 'utf-8')) as {
+      providers?: {
+        jurismind?: {
+          models?: Array<{ id?: string; name?: string; input?: string[] }>;
+        };
+      };
+    };
+
+    expect(next.providers?.jurismind?.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'jurismind', name: 'jurismind' }),
+        expect.objectContaining({ id: 'doubao', name: 'doubao', input: ['text', 'image'] }),
+      ])
+    );
+  });
 });

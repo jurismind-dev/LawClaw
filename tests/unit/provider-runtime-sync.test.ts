@@ -21,6 +21,18 @@ const openclawAuthMock = vi.hoisted(() => ({
 
 const providerRegistryMock = vi.hoisted(() => ({
   getProviderConfig: vi.fn((type: string) => {
+    if (type === 'jurismind') {
+      return {
+        baseUrl: 'http://101.132.245.215:3001/v1',
+        api: 'openai-completions',
+        apiKeyEnv: 'JURISMIND_API_KEY',
+        models: [
+          { id: 'jurismind', name: 'jurismind' },
+          { id: 'doubao', name: 'doubao', input: ['text', 'image'] },
+        ],
+      };
+    }
+
     if (type === 'openai') {
       return {
         baseUrl: 'https://api.openai.com/v1',
@@ -165,6 +177,49 @@ describe('provider runtime sync', () => {
         baseUrl: 'https://api.openai.com/v1',
         api: 'openai-responses',
         models: [{ id: 'gpt-4.1', name: 'gpt-4.1' }],
+      }),
+    );
+  });
+
+  it('preserves provider model metadata when syncing jurismind agents to runtime', async () => {
+    secureStorageMock.getAllProviders.mockResolvedValue([
+      {
+        id: 'provider-jurismind',
+        name: 'Jurismind',
+        type: 'jurismind',
+        model: 'jurismind',
+        enabled: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z',
+      },
+    ]);
+    secureStorageMock.getApiKey.mockResolvedValue('sk-jurismind');
+    agentConfigMock.listAgentsSnapshot.mockResolvedValue({
+      agents: [
+        {
+          id: 'lawclaw-main',
+          modelRef: 'jurismind/jurismind',
+        },
+      ],
+      defaultAgentId: 'lawclaw-main',
+      defaultModelRef: 'jurismind/jurismind',
+      configuredChannelTypes: [],
+    });
+
+    const { syncAllProvidersToRuntime } = await import('@electron/services/providers/provider-runtime-sync');
+
+    await syncAllProvidersToRuntime();
+
+    expect(openclawAuthMock.updateSingleAgentModelProvider).toHaveBeenCalledWith(
+      'lawclaw-main',
+      'jurismind',
+      expect.objectContaining({
+        baseUrl: 'http://101.132.245.215:3001/v1',
+        api: 'openai-completions',
+        models: [
+          expect.objectContaining({ id: 'jurismind', name: 'jurismind' }),
+          expect.objectContaining({ id: 'doubao', name: 'doubao', input: ['text', 'image'] }),
+        ],
       }),
     );
   });

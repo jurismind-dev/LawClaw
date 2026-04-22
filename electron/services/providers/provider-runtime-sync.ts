@@ -198,7 +198,7 @@ async function buildAgentModelProviderEntry(
 ): Promise<{
   baseUrl?: string;
   api?: string;
-  models?: Array<{ id: string; name: string }>;
+  models?: Array<Record<string, unknown> & { id: string; name: string }>;
   apiKey?: string;
   authHeader?: boolean;
 } | null> {
@@ -212,13 +212,27 @@ async function buildAgentModelProviderEntry(
   const entry: {
     baseUrl?: string;
     api?: string;
-    models?: Array<{ id: string; name: string }>;
+    models?: Array<Record<string, unknown> & { id: string; name: string }>;
     apiKey?: string;
     authHeader?: boolean;
   } = {
     baseUrl,
     api,
-    models: [{ id: modelId, name: modelId }],
+    models: (() => {
+      const registryModels = Array.isArray(meta?.models)
+        ? meta.models.map((model) => ({ ...model }))
+        : [];
+      if (registryModels.length === 0) {
+        return [{ id: modelId, name: modelId }];
+      }
+
+      const hasPrimaryModel = registryModels.some((model) => model.id === modelId);
+      if (hasPrimaryModel) {
+        return registryModels;
+      }
+
+      return [...registryModels, { id: modelId, name: modelId }];
+    })(),
   };
 
   if (isUnregisteredProviderType(config.type)) {

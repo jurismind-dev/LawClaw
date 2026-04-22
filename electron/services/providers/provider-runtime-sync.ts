@@ -235,6 +235,10 @@ async function buildAgentModelProviderEntry(
     })(),
   };
 
+  if (meta?.apiKeyEnv) {
+    entry.apiKey = meta.apiKeyEnv;
+  }
+
   if (isUnregisteredProviderType(config.type)) {
     const apiKey = await getApiKey(config.id);
     if (apiKey) {

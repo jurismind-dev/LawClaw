@@ -336,11 +336,17 @@ function buildJurismindDoubaoManifest() {
           authMethods: ['api-key'],
           envVars: ['JURISMIND_API_KEY'],
         },
+        {
+          id: 'jurismind',
+          authMethods: ['api-key'],
+          envVars: ['JURISMIND_API_KEY'],
+        },
       ],
       requiresRuntime: false,
     },
     providerAuthEnvVars: {
       doubao: ['JURISMIND_API_KEY'],
+      jurismind: ['JURISMIND_API_KEY'],
     },
     uiHints: {
       'webSearch.apiKey': {

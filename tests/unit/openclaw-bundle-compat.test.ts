@@ -300,9 +300,15 @@ describe('openclaw bundle compatibility patches', () => {
         authMethods: ['api-key'],
         envVars: ['JURISMIND_API_KEY'],
       },
+      {
+        id: 'jurismind',
+        authMethods: ['api-key'],
+        envVars: ['JURISMIND_API_KEY'],
+      },
     ]);
     expect(manifest.setup?.requiresRuntime).toBe(false);
     expect(manifest.providerAuthEnvVars?.doubao).toEqual(['JURISMIND_API_KEY']);
+    expect(manifest.providerAuthEnvVars?.jurismind).toEqual(['JURISMIND_API_KEY']);
     expect(manifest.contracts?.webSearchProviders).toEqual(['doubao']);
     expect(manifest.configContracts?.secretInputs?.bundledDefaultEnabled).toBe(true);
     expect(manifest.configContracts?.secretInputs?.paths).toEqual([

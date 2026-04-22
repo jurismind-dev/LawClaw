@@ -216,6 +216,7 @@ describe('provider runtime sync', () => {
       expect.objectContaining({
         baseUrl: 'http://101.132.245.215:3001/v1',
         api: 'openai-completions',
+        apiKey: 'JURISMIND_API_KEY',
         models: [
           expect.objectContaining({ id: 'jurismind', name: 'jurismind' }),
           expect.objectContaining({ id: 'doubao', name: 'doubao', input: ['text', 'image'] }),

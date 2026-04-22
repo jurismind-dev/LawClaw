@@ -105,7 +105,7 @@ describe('openclaw auth - provider config apiKey markers', () => {
     });
   });
 
-  it('does not persist unsupported jurismind env markers into models.providers', async () => {
+  it('persists jurismind env markers into models.providers for OpenClaw model discovery', async () => {
     const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);
 
@@ -140,7 +140,7 @@ describe('openclaw auth - provider config apiKey markers', () => {
 
     expect(next.models?.providers?.jurismind?.baseUrl).toBe('http://101.132.245.215:3001/v1');
     expect(next.models?.providers?.jurismind?.api).toBe('openai-completions');
-    expect(next.models?.providers?.jurismind?.apiKey).toBeUndefined();
+    expect(next.models?.providers?.jurismind?.apiKey).toBe('JURISMIND_API_KEY');
     expect(next.models?.providers?.jurismind?.models).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'jurismind', name: 'jurismind' }),
@@ -178,7 +178,7 @@ describe('openclaw auth - provider config apiKey markers', () => {
     expect(next.models?.providers?.openai?.apiKey).toBe('OPENAI_API_KEY');
   });
 
-  it('removes stale jurismind env markers when refreshing agent model config', async () => {
+  it('keeps jurismind env markers when refreshing agent model config', async () => {
     const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);
 
@@ -222,10 +222,10 @@ describe('openclaw auth - provider config apiKey markers', () => {
       };
     };
 
-    expect(next.models?.providers?.jurismind?.apiKey).toBeUndefined();
+    expect(next.models?.providers?.jurismind?.apiKey).toBe('JURISMIND_API_KEY');
   });
 
-  it('cleanupOpenClawProviderApiKeyConfig removes stale jurismind env markers from existing config', async () => {
+  it('cleanupOpenClawProviderApiKeyConfig keeps supported jurismind env markers', async () => {
     const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-provider-config-'));
     tempHomes.push(homeDir);
 
@@ -266,8 +266,8 @@ describe('openclaw auth - provider config apiKey markers', () => {
       };
     };
 
-    expect(changed).toBe(true);
-    expect(next.models?.providers?.jurismind?.apiKey).toBeUndefined();
+    expect(changed).toBe(false);
+    expect(next.models?.providers?.jurismind?.apiKey).toBe('JURISMIND_API_KEY');
   });
 
   it('updateSingleAgentModelProvider preserves existing vision models when updating the primary model entry', async () => {

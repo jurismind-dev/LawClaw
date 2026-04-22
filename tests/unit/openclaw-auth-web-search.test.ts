@@ -229,6 +229,7 @@ describe('openclaw auth - jurismind web search sync', () => {
       models?: {
         providers?: {
           jurismind?: {
+            apiKey?: string;
             models?: Array<{
               id?: string;
               name?: string;
@@ -253,6 +254,7 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.agents?.defaults?.imageModel).toBe('jurismind/doubao');
     expect(next.agents?.defaults?.pdfModel).toBe('jurismind/doubao');
     expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.apiKey).toBe('sk-jurismind');
+    expect(next.models?.providers?.jurismind?.apiKey).toBe('JURISMIND_API_KEY');
     expect(next.models?.providers?.jurismind?.models).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'jurismind', name: 'jurismind' }),

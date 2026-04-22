@@ -38,6 +38,12 @@ type ControlUiInfo = {
   port: number;
 };
 
+type InternalAutomationConfig = {
+  bootEnabled: boolean;
+  heartbeatEnabled: boolean;
+  heartbeatEvery: string;
+};
+
 const LAWCLAW_DOCS_URL = 'https://jurismind.com';
 const LAWCLAW_GITHUB_URL = 'https://github.com/jurismind-dev/LawClaw';
 const LAWCLAW_PRIVACY_POLICY_URL = 'https://files.jurismind.com/PrivacyPolicy.pdf';
@@ -68,6 +74,9 @@ export function Settings() {
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
   const [openclawCliCommand, setOpenclawCliCommand] = useState('');
   const [openclawCliError, setOpenclawCliError] = useState<string | null>(null);
+  const [internalAutomation, setInternalAutomation] = useState<InternalAutomationConfig | null>(null);
+  const [internalAutomationLoading, setInternalAutomationLoading] = useState(true);
+  const [internalAutomationSaving, setInternalAutomationSaving] = useState(false);
 
   const isWindows = window.electron.platform === 'win32';
   const showGatewaySlowStartGuide = isWindows || window.electron.platform === 'darwin';
@@ -199,6 +208,37 @@ export function Settings() {
     return () => { cancelled = true; };
   }, [devModeUnlocked, showCliTools]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setInternalAutomationLoading(true);
+      try {
+        const result = await window.electron.ipcRenderer.invoke('openclaw:getInternalAutomationConfig') as {
+          success: boolean;
+          config?: InternalAutomationConfig;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (result.success && result.config) {
+          setInternalAutomation(result.config);
+        } else {
+          toast.error(result.error || t('internalAutomation.loadFailed'));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(`${t('internalAutomation.loadFailed')}: ${String(error)}`);
+        }
+      } finally {
+        if (!cancelled) {
+          setInternalAutomationLoading(false);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [t]);
+
   const handleCopyCliCommand = async () => {
     if (!openclawCliCommand) return;
     try {
@@ -206,6 +246,33 @@ export function Settings() {
       toast.success(t('developer.cmdCopied'));
     } catch (error) {
       toast.error(`Failed to copy command: ${String(error)}`);
+    }
+  };
+
+  const handleUpdateInternalAutomation = async (
+    updates: Partial<Pick<InternalAutomationConfig, 'bootEnabled' | 'heartbeatEnabled'>>,
+  ) => {
+    setInternalAutomationSaving(true);
+    try {
+      const result = await window.electron.ipcRenderer.invoke(
+        'openclaw:setInternalAutomationConfig',
+        updates,
+      ) as {
+        success: boolean;
+        config?: InternalAutomationConfig;
+        error?: string;
+      };
+
+      if (!result.success || !result.config) {
+        throw new Error(result.error || t('internalAutomation.saveFailed'));
+      }
+
+      setInternalAutomation(result.config);
+      toast.success(t('internalAutomation.saved'));
+    } catch (error) {
+      toast.error(`${t('internalAutomation.saveFailed')}: ${String(error)}`);
+    } finally {
+      setInternalAutomationSaving(false);
     }
   };
 
@@ -392,6 +459,54 @@ export function Settings() {
               onCheckedChange={setGatewayAutoStart}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('internalAutomation.title')}</CardTitle>
+          <CardDescription>{t('internalAutomation.description')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {internalAutomationLoading ? (
+            <p className="text-sm text-muted-foreground">{t('internalAutomation.loading')}</p>
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <Label>{t('internalAutomation.boot')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('internalAutomation.bootDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={internalAutomation?.bootEnabled ?? false}
+                  disabled={internalAutomationSaving}
+                  onCheckedChange={(checked) => void handleUpdateInternalAutomation({ bootEnabled: checked })}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <Label>{t('internalAutomation.heartbeat')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('internalAutomation.heartbeatDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={internalAutomation?.heartbeatEnabled ?? false}
+                  disabled={internalAutomationSaving}
+                  onCheckedChange={(checked) => void handleUpdateInternalAutomation({ heartbeatEnabled: checked })}
+                />
+              </div>
+
+              {internalAutomationSaving && (
+                <p className="text-sm text-muted-foreground">{t('internalAutomation.saving')}</p>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

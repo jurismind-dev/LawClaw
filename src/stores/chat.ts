@@ -424,7 +424,7 @@ function clearSessionViewCache(sessionKey: string): void {
 function buildRenderableHistoryMessages(rawMessages: RawMessage[]): RawMessage[] {
   const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
   const filteredMessages = messagesWithToolImages.filter(
-    (message) => !isToolResultRole(message.role) && !isHiddenHeartbeatMessage(message),
+    (message) => !isToolResultRole(message.role) && !isHiddenInternalMessage(message),
   );
   return enrichWithCachedImages(filteredMessages);
 }
@@ -452,7 +452,7 @@ function isEphemeralSessionCandidate(
     return false;
   }
 
-  return messages.every((message) => isToolResultRole(message.role) || isHiddenHeartbeatMessage(message));
+  return messages.every((message) => isToolResultRole(message.role) || isHiddenInternalMessage(message));
 }
 
 function buildSessionSwitchPatch(
@@ -1103,13 +1103,66 @@ function isHiddenHeartbeatMessage(message: unknown): boolean {
   return false;
 }
 
+function isNoReplyText(text: string): boolean {
+  return normalizeHeartbeatText(text).toUpperCase() === 'NO_REPLY';
+}
+
+function isAsyncCompletionNoticeText(text: string): boolean {
+  if (!text) return false;
+  const normalized = normalizeHeartbeatText(text).toLowerCase();
+  return (
+    normalized.includes('an async command you ran earlier has completed') ||
+    (normalized.startsWith('system (untrusted):') && normalized.includes('exec completed')) ||
+    (normalized.startsWith('system (untrusted):') && normalized.includes('current time:'))
+  );
+}
+
+function isBootCheckPromptText(text: string): boolean {
+  if (!text) return false;
+  const normalized = normalizeHeartbeatText(text).toLowerCase();
+  return (
+    normalized.includes('you are running a boot check') &&
+    normalized.includes('follow boot.md instructions exactly')
+  ) || (
+    normalized.includes('boot.md:') &&
+    normalized.includes('reply with no_reply')
+  );
+}
+
+function isHiddenInternalMessage(message: unknown): boolean {
+  if (!message || typeof message !== 'object') return false;
+  const msg = message as Record<string, unknown>;
+  const role = typeof msg.role === 'string' ? msg.role.toLowerCase() : '';
+  const text = extractTextFromContent(msg.content ?? msg.text ?? '');
+
+  if (isHiddenHeartbeatMessage(message)) return true;
+  if (role === 'system') return true;
+  if (!text) return false;
+
+  if (role === 'assistant' || role === 'user' || !role) {
+    return isNoReplyText(text) || isAsyncCompletionNoticeText(text) || isBootCheckPromptText(text);
+  }
+
+  return false;
+}
+
+function isHiddenCompletionMessage(message: unknown): boolean {
+  if (!message || typeof message !== 'object') return false;
+  const msg = message as Record<string, unknown>;
+  const role = typeof msg.role === 'string' ? msg.role.toLowerCase() : '';
+  const text = extractTextFromContent(msg.content ?? msg.text ?? '');
+
+  if (!text || role === 'user') return false;
+  return isHeartbeatAckText(text) || isNoReplyText(text) || isAsyncCompletionNoticeText(text);
+}
+
 function getUserFacingSessionMessages(messages: RawMessage[]): RawMessage[] {
   return messages.filter((message) => {
     if (message.role !== 'user' && message.role !== 'assistant') {
       return false;
     }
 
-    return !isToolResultRole(message.role) && !isHiddenHeartbeatMessage(message);
+    return !isToolResultRole(message.role) && !isHiddenInternalMessage(message);
   });
 }
 
@@ -1451,6 +1504,7 @@ function collectToolUpdates(message: unknown, eventState: string): ToolStatus[] 
 
 function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (!message) return false;
+  if (isHiddenInternalMessage(message)) return false;
   if (typeof message.content === 'string' && message.content.trim()) return true;
 
   const content = message.content;
@@ -2413,9 +2467,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     _lastChatEventAt = Date.now();
 
-    if (isHiddenHeartbeatMessage(event.message)) {
+    if (isHiddenInternalMessage(event.message)) {
       const state = get();
-      if (runId && state.activeRunId === runId) {
+      if (
+        runId &&
+        state.activeRunId === runId &&
+        isHiddenCompletionMessage(event.message)
+      ) {
         clearHistoryPoll();
         clearErrorRecoveryTimer();
         set({
@@ -2467,6 +2525,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (get().error) {
           set({ error: null });
         }
+        if (isHiddenInternalMessage(event.message)) {
+          break;
+        }
         const updates = collectToolUpdates(event.message, resolvedState);
         set((s) => ({
           streamingMessage: (() => {
@@ -2490,6 +2551,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Message complete - add to history and clear streaming
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
+          if (isHiddenInternalMessage(finalMsg)) {
+            if (runId && get().activeRunId === runId && isHiddenCompletionMessage(finalMsg)) {
+              clearHistoryPoll();
+              set({
+                sending: false,
+                activeRunId: null,
+                streamingText: '',
+                streamingMessage: null,
+                streamingTools: [],
+                pendingFinal: false,
+                lastUserMessageAt: null,
+                pendingToolImages: [],
+              });
+            }
+            break;
+          }
           const updates = collectToolUpdates(finalMsg, resolvedState);
           if (isToolResultRole(finalMsg.role)) {
             // Resolve file path from the streaming assistant message's matching tool call

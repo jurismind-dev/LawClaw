@@ -48,6 +48,10 @@ import {
   syncJurismindMultimodalConfig,
   syncJurismindWebSearchConfig,
 } from '../utils/openclaw-auth';
+import {
+  getInternalAutomationConfig,
+  setInternalAutomationConfig,
+} from '../utils/openclaw-internal-automation';
 import { logger } from '../utils/logger';
 import {
   saveChannelConfig,
@@ -656,6 +660,27 @@ function registerGatewayHandlers(
       return { success: false, error: String(error) };
     }
   });
+
+  ipcMain.handle('openclaw:getInternalAutomationConfig', async () => {
+    try {
+      return { success: true, config: getInternalAutomationConfig() };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle(
+    'openclaw:setInternalAutomationConfig',
+    async (_, updates?: { bootEnabled?: boolean; heartbeatEnabled?: boolean }) => {
+      try {
+        const config = setInternalAutomationConfig(updates || {});
+        await gatewayManager.restart();
+        return { success: true, config };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
+  );
 
   // Gateway RPC call
   ipcMain.handle('gateway:rpc', async (_, method: string, params?: unknown, timeoutMs?: number) => {
@@ -2628,6 +2653,7 @@ const LAWCLAW_MEDIA_REF_PREFIX = 'lawclaw-media';
 const JURISMIND_PROVIDER_TYPE = 'jurismind';
 const JURISMIND_VISION_PROVIDER = 'jurismind';
 const JURISMIND_VISION_MODEL_ID = 'doubao';
+const JURISMIND_VISION_MODEL = `${JURISMIND_VISION_PROVIDER}/${JURISMIND_VISION_MODEL_ID}`;
 const DEFAULT_PDF_MAX_PAGES = 20;
 const DEFAULT_PDF_MAX_BYTES_MB = 10;
 const PDF_RENDER_MAX_PIXELS = 4_000_000;
@@ -2701,11 +2727,29 @@ function resolveConfiguredPdfMaxBytes(config: OpenClawConfigLike | null | undefi
 
 async function isJurismindVisionRoutingActive(): Promise<boolean> {
   const defaultProviderId = await getDefaultProvider();
-  if (!defaultProviderId) return false;
-  const provider = await getProvider(defaultProviderId);
-  if (!provider || provider.type !== JURISMIND_PROVIDER_TYPE) return false;
-  const apiKey = await getApiKey(defaultProviderId);
-  return typeof apiKey === 'string' && apiKey.trim().length > 0;
+  if (defaultProviderId) {
+    const provider = await getProvider(defaultProviderId);
+    if (provider?.type === JURISMIND_PROVIDER_TYPE) {
+      const apiKey = await getApiKey(defaultProviderId);
+      if (typeof apiKey === 'string' && apiKey.trim().length > 0) {
+        return true;
+      }
+    }
+  }
+
+  const config = await readOpenClawConfig() as OpenClawConfigLike & {
+    models?: {
+      providers?: Record<string, unknown>;
+    };
+  };
+  const defaults = config?.agents?.defaults;
+  const imageModel = typeof defaults?.imageModel === 'string' ? defaults.imageModel.trim() : '';
+  const pdfModel = typeof defaults?.pdfModel === 'string' ? defaults.pdfModel.trim() : '';
+  const providers = config?.models?.providers;
+  const hasJurismindProvider = !!providers && typeof providers === 'object' && 'jurismind' in providers;
+
+  return hasJurismindProvider
+    && (imageModel === JURISMIND_VISION_MODEL || pdfModel === JURISMIND_VISION_MODEL);
 }
 
 async function loadPdfExtractRuntime(): Promise<{

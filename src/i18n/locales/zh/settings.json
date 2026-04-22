@@ -85,6 +85,19 @@
             "action": "查看文档"
         }
     },
+    "internalAutomation": {
+        "title": "内部自动检查",
+        "description": "控制 OpenClaw 的 BOOT 启动检查和 HEARTBEAT 心跳轮询。开启后可更早发现异常，但会额外消耗模型额度。",
+        "boot": "启用 BOOT 启动检查",
+        "bootDesc": "开启后启动时执行 BOOT.md，帮助提前发现环境或配置问题；会额外消耗少量模型额度。",
+        "heartbeat": "启用 HEARTBEAT 心跳",
+        "heartbeatDesc": "开启后按周期检查运行状态，帮助提前发现异常；会额外消耗模型额度。",
+        "loading": "正在读取内部自动检查配置...",
+        "saving": "正在保存内部自动检查配置...",
+        "saved": "内部自动检查配置已更新，并已重启网关",
+        "loadFailed": "读取内部自动检查配置失败",
+        "saveFailed": "保存内部自动检查配置失败"
+    },
     "updates": {
         "title": "更新",
         "description": "保持 LawClaw 最新",

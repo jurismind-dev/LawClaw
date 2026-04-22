@@ -427,4 +427,69 @@ describe('chat:sendWithMedia vision routing', () => {
       120000,
     );
   });
+
+  it('falls back to openclaw.json imageModel/pdfModel config when the local provider store is missing on Windows', async () => {
+    secureStorageMock.getDefaultProvider.mockResolvedValue(undefined);
+    readOpenClawConfigMock.mockResolvedValue({
+      agents: {
+        defaults: {
+          imageModel: 'jurismind/doubao',
+          pdfModel: 'jurismind/doubao',
+          pdfMaxPages: 2,
+          pdfMaxBytesMb: 10,
+        },
+      },
+      models: {
+        providers: {
+          jurismind: {
+            baseUrl: 'http://101.132.245.215:3001/v1',
+            api: 'openai-completions',
+            models: [
+              { id: 'jurismind', name: 'jurismind' },
+              { id: 'doubao', name: 'doubao', input: ['text', 'image'] },
+            ],
+          },
+        },
+      },
+    });
+
+    const handler = await registerHandlers();
+    expect(handler).toBeTypeOf('function');
+
+    const invokeResult = await handler?.({}, {
+      sessionKey: 'agent:lawclaw-main:main',
+      message: '这个图片内容是什么',
+      deliver: false,
+      idempotencyKey: 'idem-win-fallback',
+      media: [
+        {
+          filePath: 'C:\\Users\\fyjw888\\.openclaw\\media\\outbound\\test-image.png',
+          mimeType: 'image/png',
+          fileName: 'test-image.png',
+        },
+      ],
+    }) as { success: boolean; result?: { runId: string } };
+
+    expect(invokeResult.success).toBe(true);
+    expect(gatewayRpc).toHaveBeenCalledTimes(1);
+    expect(gatewayRpc).toHaveBeenCalledWith(
+      'agent',
+      expect.objectContaining({
+        provider: 'jurismind',
+        model: 'doubao',
+        attachments: [
+          expect.objectContaining({
+            mimeType: 'image/png',
+            fileName: 'test-image.png',
+          }),
+        ],
+      }),
+      120000,
+    );
+    expect(gatewayRpc).not.toHaveBeenCalledWith(
+      'chat.send',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
 });

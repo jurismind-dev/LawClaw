@@ -85,6 +85,19 @@
             "action": "View Guide"
         }
     },
+    "internalAutomation": {
+        "title": "Internal Automation",
+        "description": "Control OpenClaw BOOT startup checks and HEARTBEAT polling. They help catch issues earlier, but they also consume model credits.",
+        "boot": "Enable BOOT startup check",
+        "bootDesc": "Run BOOT.md after startup to catch environment or config issues earlier. This uses a small amount of model credits.",
+        "heartbeat": "Enable HEARTBEAT polling",
+        "heartbeatDesc": "Poll runtime health on schedule to catch issues earlier. This also consumes model credits.",
+        "loading": "Loading internal automation settings...",
+        "saving": "Saving internal automation settings...",
+        "saved": "Internal automation settings updated and gateway restarted",
+        "loadFailed": "Failed to load internal automation settings",
+        "saveFailed": "Failed to save internal automation settings"
+    },
     "updates": {
         "title": "Updates",
         "description": "Keep LawClaw up to date",

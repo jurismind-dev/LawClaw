@@ -57,7 +57,11 @@ describe('openclaw internal automation config', () => {
         hooks: {
           internal: {
             enabled: true,
-            bundled: ['boot-md'],
+            entries: {
+              'boot-md': {
+                enabled: true,
+              },
+            },
           },
         },
         agents: {
@@ -92,7 +96,11 @@ describe('openclaw internal automation config', () => {
         hooks: {
           internal: {
             enabled: true,
-            bundled: ['boot-md'],
+            entries: {
+              'boot-md': {
+                enabled: true,
+              },
+            },
           },
         },
         agents: {
@@ -119,12 +127,19 @@ describe('openclaw internal automation config', () => {
     });
 
     const saved = JSON.parse(readFileSync(configPath, 'utf-8')) as {
-      hooks?: { internal?: { enabled?: boolean; bundled?: string[] } };
+      hooks?: {
+        internal?: {
+          enabled?: boolean;
+          bundled?: string[];
+          entries?: Record<string, { enabled?: boolean }>;
+        };
+      };
       agents?: { defaults?: { heartbeat?: { every?: string } } };
     };
 
-    expect(saved.hooks?.internal?.enabled).toBe(false);
-    expect(saved.hooks?.internal?.bundled).toEqual([]);
+    expect(saved.hooks?.internal?.enabled).toBe(true);
+    expect(saved.hooks?.internal?.bundled).toBeUndefined();
+    expect(saved.hooks?.internal?.entries?.['boot-md']?.enabled).toBe(false);
     expect(saved.agents?.defaults?.heartbeat?.every).toBe('0m');
   });
 
@@ -140,8 +155,12 @@ describe('openclaw internal automation config', () => {
       JSON.stringify({
         hooks: {
           internal: {
-            enabled: false,
-            bundled: [],
+            enabled: true,
+            entries: {
+              'boot-md': {
+                enabled: false,
+              },
+            },
           },
         },
         agents: {
@@ -166,12 +185,66 @@ describe('openclaw internal automation config', () => {
     expect(next.heartbeatEvery).toBe('15m');
 
     const saved = JSON.parse(readFileSync(configPath, 'utf-8')) as {
-      hooks?: { internal?: { enabled?: boolean; bundled?: string[] } };
+      hooks?: {
+        internal?: {
+          enabled?: boolean;
+          entries?: Record<string, { enabled?: boolean }>;
+        };
+      };
       agents?: { defaults?: { heartbeat?: { every?: string } } };
     };
 
     expect(saved.hooks?.internal?.enabled).toBe(true);
-    expect(saved.hooks?.internal?.bundled).toEqual(['boot-md']);
+    expect(saved.hooks?.internal?.entries?.['boot-md']?.enabled).toBe(true);
     expect(saved.agents?.defaults?.heartbeat?.every).toBe('15m');
+  });
+
+  it('migrates legacy bundled boot-md config to entries format on save', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-internal-automation-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        hooks: {
+          internal: {
+            enabled: true,
+            bundled: ['boot-md'],
+          },
+        },
+        agents: {
+          defaults: {
+            heartbeat: {
+              every: '15m',
+            },
+          },
+        },
+      }, null, 2),
+      'utf-8',
+    );
+
+    const mod = await loadInternalAutomationWithHome(homeDir);
+    const next = mod.setInternalAutomationConfig({
+      bootEnabled: false,
+    });
+
+    expect(next.bootEnabled).toBe(false);
+
+    const saved = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      hooks?: {
+        internal?: {
+          enabled?: boolean;
+          bundled?: string[];
+          entries?: Record<string, { enabled?: boolean }>;
+        };
+      };
+    };
+
+    expect(saved.hooks?.internal?.enabled).toBe(true);
+    expect(saved.hooks?.internal?.bundled).toBeUndefined();
+    expect(saved.hooks?.internal?.entries?.['boot-md']?.enabled).toBe(false);
   });
 });

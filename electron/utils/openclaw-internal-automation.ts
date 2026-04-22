@@ -2,11 +2,6 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { readJson5File, writeJsonFile } from './openclaw-json5';
 
-type InternalHooksConfig = {
-  enabled?: boolean;
-  bundled?: string[];
-};
-
 type InternalAutomationConfig = {
   bootEnabled: boolean;
   heartbeatEnabled: boolean;
@@ -14,6 +9,7 @@ type InternalAutomationConfig = {
 };
 
 const DEFAULT_HEARTBEAT_EVERY = '15m';
+const BOOT_MD_HOOK_NAME = 'boot-md';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -25,25 +21,6 @@ function getOpenClawConfigPath(): string {
 
 function readConfig(): Record<string, unknown> {
   return readJson5File<Record<string, unknown>>(getOpenClawConfigPath(), {});
-}
-
-function readInternalHooksConfig(config: Record<string, unknown>): InternalHooksConfig {
-  const hooks = isRecord(config.hooks) ? config.hooks : {};
-  const internal = isRecord(hooks.internal) ? hooks.internal : {};
-  const bundled = Array.isArray(internal.bundled)
-    ? internal.bundled.filter((item): item is string => typeof item === 'string')
-    : undefined;
-
-  return {
-    enabled: typeof internal.enabled === 'boolean' ? internal.enabled : undefined,
-    bundled,
-  };
-}
-
-function readHeartbeatConfig(config: Record<string, unknown>): Record<string, unknown> {
-  const agents = isRecord(config.agents) ? config.agents : {};
-  const defaults = isRecord(agents.defaults) ? agents.defaults : {};
-  return isRecord(defaults.heartbeat) ? defaults.heartbeat : {};
 }
 
 function ensureNestedRecord(root: Record<string, unknown>, key: string): Record<string, unknown> {
@@ -61,15 +38,40 @@ function normalizeHeartbeatEvery(value: unknown): string {
   return trimmed || DEFAULT_HEARTBEAT_EVERY;
 }
 
+function readHeartbeatConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const agents = isRecord(config.agents) ? config.agents : {};
+  const defaults = isRecord(agents.defaults) ? agents.defaults : {};
+  return isRecord(defaults.heartbeat) ? defaults.heartbeat : {};
+}
+
+function readBootEnabled(config: Record<string, unknown>): boolean {
+  const hooks = isRecord(config.hooks) ? config.hooks : {};
+  const internal = isRecord(hooks.internal) ? hooks.internal : {};
+  const entries = isRecord(internal.entries) ? internal.entries : {};
+  const bootEntry = isRecord(entries[BOOT_MD_HOOK_NAME]) ? entries[BOOT_MD_HOOK_NAME] : null;
+
+  if (bootEntry && typeof bootEntry.enabled === 'boolean') {
+    return bootEntry.enabled;
+  }
+
+  // Backward compatibility for older invalid config written by LawClaw.
+  const bundled = Array.isArray(internal.bundled)
+    ? internal.bundled.filter((item): item is string => typeof item === 'string')
+    : [];
+  if (bundled.map((item) => item.trim()).includes(BOOT_MD_HOOK_NAME)) {
+    return internal.enabled !== false;
+  }
+
+  return false;
+}
+
 export function getInternalAutomationConfig(): InternalAutomationConfig {
   const config = readConfig();
-  const internalHooks = readInternalHooksConfig(config);
   const heartbeat = readHeartbeatConfig(config);
-  const bundled = new Set((internalHooks.bundled ?? ['boot-md']).map((item) => item.trim()).filter(Boolean));
   const heartbeatEvery = normalizeHeartbeatEvery(heartbeat.every);
 
   return {
-    bootEnabled: (internalHooks.enabled ?? true) && bundled.has('boot-md'),
+    bootEnabled: readBootEnabled(config),
     heartbeatEnabled: heartbeatEvery !== '0m',
     heartbeatEvery,
   };
@@ -81,6 +83,8 @@ export function setInternalAutomationConfig(
   const config = readConfig();
   const hooks = ensureNestedRecord(config, 'hooks');
   const internal = ensureNestedRecord(hooks, 'internal');
+  const entries = ensureNestedRecord(internal, 'entries');
+  const bootEntry = ensureNestedRecord(entries, BOOT_MD_HOOK_NAME);
   const agents = ensureNestedRecord(config, 'agents');
   const defaults = ensureNestedRecord(agents, 'defaults');
   const heartbeat = ensureNestedRecord(defaults, 'heartbeat');
@@ -94,27 +98,19 @@ export function setInternalAutomationConfig(
       ? (currentHeartbeatEvery === '0m' ? DEFAULT_HEARTBEAT_EVERY : currentHeartbeatEvery)
       : '0m';
 
-  const existingBundled = Array.isArray(internal.bundled)
-    ? internal.bundled.filter((item): item is string => typeof item === 'string')
-    : ['boot-md'];
-  const bundled = new Set(existingBundled.map((item) => item.trim()).filter(Boolean));
-
-  if (nextBootEnabled) {
-    bundled.add('boot-md');
-  } else {
-    bundled.delete('boot-md');
-  }
-
-  internal.enabled = bundled.size > 0;
-  internal.bundled = Array.from(bundled);
-
+  internal.enabled = true;
+  bootEntry.enabled = nextBootEnabled;
   heartbeat.every = nextHeartbeatEvery;
+
+  if ('bundled' in internal) {
+    delete internal.bundled;
+  }
 
   writeJsonFile(getOpenClawConfigPath(), config);
 
   return {
-    bootEnabled: Boolean(internal.enabled) && bundled.has('boot-md'),
+    bootEnabled: nextBootEnabled,
     heartbeatEnabled: nextHeartbeatEvery !== '0m',
-    heartbeatEvery: normalizeHeartbeatEvery(heartbeat.every),
+    heartbeatEvery: nextHeartbeatEvery,
   };
 }

@@ -59,10 +59,11 @@ vi.mock('@electron/utils/provider-registry', () => ({
 }));
 
 vi.mock('@electron/utils/openclaw-auth', () => ({
+  clearJurismindMultimodalConfig: vi.fn(() => false),
   sanitizeOpenClawConfig: vi.fn(() => false),
   syncBrowserConfigToOpenClaw: vi.fn(async () => undefined),
   syncGatewayTokenToConfig: vi.fn(async () => undefined),
-  syncJurismindWebSearchConfig: vi.fn(),
+  syncJurismindMultimodalConfig: vi.fn(),
 }));
 
 vi.mock('@electron/gateway/protocol', () => ({

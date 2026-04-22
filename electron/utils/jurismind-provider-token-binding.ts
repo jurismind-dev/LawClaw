@@ -13,6 +13,7 @@ import {
 export interface JurismindProviderBindingResult {
   openId: string;
   tokenKey: string;
+  token?: string;
   tokenId: number | null;
   avatar?: string;
 }
@@ -20,6 +21,7 @@ export interface JurismindProviderBindingResult {
 interface SsoAuthContext {
   openId: string;
   token: JurismindTokenRecord | null;
+  sessionToken?: string;
   avatar?: string;
 }
 
@@ -124,6 +126,41 @@ function extractAvatarFromAnyLevel(payload: unknown): string {
 
 function extractAvatar(payload: unknown): string {
   return extractAvatarFromAnyLevel(payload);
+}
+
+function extractSessionTokenFromAnyLevel(payload: unknown): string {
+  const queue: unknown[] = [payload];
+  const visited = new Set<object>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    const data = current as Record<string, unknown>;
+    const token = String(
+      data.token
+      ?? data.access_token
+      ?? data.accessToken
+      ?? ''
+    ).trim();
+    if (token && !/\s/.test(token)) {
+      return token;
+    }
+
+    for (const value of Object.values(data)) {
+      if (value && typeof value === 'object') {
+        queue.push(value);
+      }
+    }
+  }
+
+  return '';
+}
+
+function extractSessionToken(payload: unknown): string {
+  return extractSessionTokenFromAnyLevel(payload);
 }
 
 function escapeHtml(value: string): string {
@@ -963,6 +1000,7 @@ async function checkSsoTicket(
     throw new Error(`SSO 校验成功但未返回 open_id: ${getResponseMessage(body)}`);
   }
   const avatar = extractAvatar(body);
+  const sessionToken = extractSessionToken(body);
 
   const token = extractTokenFromPayload(body);
   if (!token?.tokenKey) {
@@ -971,6 +1009,7 @@ async function checkSsoTicket(
 
   return {
     openId,
+    sessionToken: sessionToken || undefined,
     avatar: avatar || undefined,
     token,
   };
@@ -994,6 +1033,7 @@ export async function bindJurismindProviderToken(): Promise<JurismindProviderBin
     return {
       openId,
       tokenKey: validatedToken.token.tokenKey,
+      token: auth.sessionToken,
       tokenId: validatedToken.token.tokenId,
       avatar: auth.avatar,
     };

@@ -24,6 +24,7 @@ const JURISMIND_WEB_SEARCH_PROVIDER = 'doubao';
 const LEGACY_JURISMIND_WEB_SEARCH_PROVIDER = 'perplexity';
 const JURISMIND_WEB_SEARCH_MODEL = 'doubao';
 const JURISMIND_WEB_SEARCH_PLUGIN_ID = 'jurismind-doubao';
+const JURISMIND_VISION_MODEL = 'jurismind/doubao';
 const OPENCLAW_SAFE_PROVIDER_API_KEY_ENV_MARKERS = new Set([
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
@@ -1849,12 +1850,30 @@ export async function syncProviderConfigToOpenClaw(
   const providers = isRecord(providersRoot.providers) ? { ...providersRoot.providers } : {};
 
   if (override.baseUrl && override.api) {
-    const nextModels: Array<Record<string, unknown>> = [];
+    const providerCfg = getProviderConfig(provider);
+    const existingProvider = isRecord(providers[provider])
+      ? { ...(providers[provider] as Record<string, unknown>) }
+      : {};
+    const existingModels = Array.isArray(existingProvider.models)
+      ? (existingProvider.models as Array<Record<string, unknown>>)
+      : [];
+    const nextModels: Array<Record<string, unknown>> = providerCfg?.models
+      ? providerCfg.models.map((model) => ({ ...model }) as Record<string, unknown>)
+      : [];
     if (modelId) {
-      nextModels.push({ id: modelId, name: modelId });
+      if (!nextModels.some((model) => model.id === modelId)) {
+        nextModels.push({ id: modelId, name: modelId });
+      }
+    }
+    for (const model of existingModels) {
+      const existingId = typeof model?.id === 'string' ? model.id.trim() : '';
+      if (existingId && !nextModels.some((item) => item.id === existingId)) {
+        nextModels.push(model);
+      }
     }
 
     const nextProvider: Record<string, unknown> = {
+      ...existingProvider,
       baseUrl: override.baseUrl,
       api: override.api,
       models: nextModels,
@@ -1957,6 +1976,102 @@ function resolveJurismindWebSearchBaseUrl(): string {
   return getProviderConfig('jurismind')?.baseUrl || 'http://101.132.245.215:3001/v1';
 }
 
+function upsertJurismindVisionModelCatalog(config: Record<string, unknown>): boolean {
+  const providerCfg = getProviderConfig('jurismind');
+  if (!providerCfg) {
+    return false;
+  }
+
+  const models = isRecord(config.models) ? { ...config.models } : {};
+  const providers = isRecord(models.providers) ? { ...models.providers } : {};
+  const existingProvider = isRecord(providers.jurismind)
+    ? { ...(providers.jurismind as Record<string, unknown>) }
+    : {};
+  const existingModels = Array.isArray(existingProvider.models)
+    ? (existingProvider.models as Array<Record<string, unknown>>)
+    : [];
+  const registryModels = (providerCfg.models ?? []).map((model) => ({ ...model })) as Array<Record<string, unknown>>;
+
+  const mergedModels = [...registryModels];
+  for (const item of existingModels) {
+    const id = typeof item?.id === 'string' ? item.id.trim() : '';
+    if (id && !mergedModels.some((model) => model.id === id)) {
+      mergedModels.push(item);
+    }
+  }
+
+  const nextProvider: Record<string, unknown> = {
+    ...existingProvider,
+    baseUrl: providerCfg.baseUrl,
+    api: providerCfg.api,
+    models: mergedModels,
+  };
+  applyOpenClawProviderApiKey(nextProvider, providerCfg.apiKeyEnv);
+
+  const previousSerialized = JSON.stringify(providers.jurismind ?? null);
+  const nextSerialized = JSON.stringify(nextProvider);
+  if (previousSerialized === nextSerialized) {
+    return false;
+  }
+
+  providers.jurismind = nextProvider;
+  models.providers = providers;
+  config.models = models;
+  return true;
+}
+
+function syncJurismindVisionModelTargets(config: Record<string, unknown>): boolean {
+  const agents = isRecord(config.agents) ? { ...config.agents } : {};
+  const defaults = isRecord(agents.defaults) ? { ...agents.defaults } : {};
+  const previousImageModel = defaults.imageModel;
+  const previousPdfModel = defaults.pdfModel;
+
+  defaults.imageModel = JURISMIND_VISION_MODEL;
+  defaults.pdfModel = JURISMIND_VISION_MODEL;
+  agents.defaults = defaults;
+  config.agents = agents;
+
+  return previousImageModel !== JURISMIND_VISION_MODEL || previousPdfModel !== JURISMIND_VISION_MODEL;
+}
+
+function clearJurismindVisionModelTargets(config: Record<string, unknown>): boolean {
+  const agents = isRecord(config.agents) ? { ...config.agents } : {};
+  const defaults = isRecord(agents.defaults) ? { ...agents.defaults } : {};
+  const hadImageModel = Object.prototype.hasOwnProperty.call(defaults, 'imageModel');
+  const hadPdfModel = Object.prototype.hasOwnProperty.call(defaults, 'pdfModel');
+  const imageModel = typeof defaults.imageModel === 'string' ? defaults.imageModel.trim() : '';
+  const pdfModel = typeof defaults.pdfModel === 'string' ? defaults.pdfModel.trim() : '';
+
+  let changed = false;
+
+  if (hadImageModel && imageModel === JURISMIND_VISION_MODEL) {
+    delete defaults.imageModel;
+    changed = true;
+  }
+  if (hadPdfModel && pdfModel === JURISMIND_VISION_MODEL) {
+    delete defaults.pdfModel;
+    changed = true;
+  }
+
+  if (!changed) {
+    return false;
+  }
+
+  if (Object.keys(defaults).length > 0) {
+    agents.defaults = defaults;
+  } else if (agents.defaults) {
+    delete agents.defaults;
+  }
+
+  if (Object.keys(agents).length > 0) {
+    config.agents = agents;
+  } else if (config.agents) {
+    delete config.agents;
+  }
+
+  return true;
+}
+
 function isManagedJurismindWebSearchConfig(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) {
     return false;
@@ -2021,6 +2136,27 @@ export function syncJurismindWebSearchConfig(apiKey: string): void {
   console.log('Synced Jurismind-backed Doubao web search config to OpenClaw');
 }
 
+export function syncJurismindMultimodalConfig(apiKey: string): void {
+  const trimmedKey = String(apiKey || '').trim();
+  if (!trimmedKey) {
+    return;
+  }
+
+  syncJurismindWebSearchConfig(trimmedKey);
+
+  const config = readOpenClawConfig();
+  const catalogChanged = upsertJurismindVisionModelCatalog(config);
+  const targetChanged = syncJurismindVisionModelTargets(config);
+  const changed = catalogChanged || targetChanged;
+
+  if (!changed) {
+    return;
+  }
+
+  writeOpenClawConfig(config);
+  console.log('Synced Jurismind multimodal image/pdf config to OpenClaw');
+}
+
 /**
  * Clear LawClaw-managed Doubao web search config from openclaw.json.
  * When the managed transport was the active provider, disable search so
@@ -2077,6 +2213,20 @@ export function clearJurismindWebSearchConfig(): boolean {
   applyOpenClawPluginState(config, { plugins, entries, allow });
   writeOpenClawConfig(config);
   console.log('Cleared Jurismind-backed Doubao web search config from OpenClaw');
+  return true;
+}
+
+export function clearJurismindMultimodalConfig(): boolean {
+  const clearedWebSearch = clearJurismindWebSearchConfig();
+  const config = readOpenClawConfig();
+  const clearedVisionTargets = clearJurismindVisionModelTargets(config);
+
+  if (!clearedVisionTargets) {
+    return clearedWebSearch;
+  }
+
+  writeOpenClawConfig(config);
+  console.log('Cleared Jurismind multimodal image/pdf config from OpenClaw');
   return true;
 }
 

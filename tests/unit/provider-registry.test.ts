@@ -35,6 +35,10 @@ describe('provider backend registry', () => {
       baseUrl: 'http://101.132.245.215:3001/v1',
       api: 'openai-completions',
       apiKeyEnv: 'JURISMIND_API_KEY',
+      models: expect.arrayContaining([
+        expect.objectContaining({ id: 'jurismind', name: 'jurismind' }),
+        expect.objectContaining({ id: 'doubao', name: 'doubao', input: ['text', 'image'] }),
+      ]),
     });
   });
 

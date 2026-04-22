@@ -13,7 +13,7 @@ import type { RawMessage, ContentBlock } from '@/stores/chat';
 function cleanUserText(text: string): string {
   return text
     // Remove [media attached: path (mime) | path] references
-    .replace(/\s*\[media attached:[^\]]*\]/g, '')
+    .replace(/\s*\[(?:media attached|lawclaw-media):[^\]]*\]/g, '')
     // Remove [message_id: uuid]
     .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
     // Remove Gateway-injected "Conversation info (untrusted metadata): ```json...```" block
@@ -110,7 +110,7 @@ export function extractMediaRefs(message: RawMessage | unknown): Array<{ filePat
   }
 
   const refs: Array<{ filePath: string; mimeType: string }> = [];
-  const regex = /\[media attached:\s*([^\s(]+)\s*\(([^)]+)\)\s*\|[^\]]*\]/g;
+  const regex = /\[(?:media attached|lawclaw-media):\s*([^\s(]+)\s*\(([^)]+)\)\s*\|[^\]]*\]/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     refs.push({ filePath: match[1], mimeType: match[2] });

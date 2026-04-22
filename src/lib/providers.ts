@@ -45,6 +45,7 @@ export interface ProviderWithKeyInfo extends ProviderConfig {
 
 export interface JurismindBindingResult {
   tokenKey: string;
+  token?: string;
   openId: string;
   tokenId?: number | null;
   avatar?: string;

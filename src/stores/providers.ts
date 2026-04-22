@@ -215,6 +215,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     const result = await window.electron.ipcRenderer.invoke('provider:bindJurismindToken') as {
       success?: boolean;
       error?: string;
+      token?: string;
       tokenKey?: string;
       openId?: string;
       tokenId?: number | null;
@@ -225,7 +226,10 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       throw new Error(result?.error || 'Jurismind token binding failed');
     }
 
+    await get().fetchProviders();
+
     return {
+      token: typeof result.token === 'string' ? result.token : undefined,
       tokenKey: String(result.tokenKey),
       openId: String(result.openId || ''),
       tokenId: result.tokenId ?? null,

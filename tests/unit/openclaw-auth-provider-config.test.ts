@@ -128,6 +128,11 @@ describe('openclaw auth - provider config apiKey markers', () => {
             apiKey?: string;
             baseUrl?: string;
             api?: string;
+            models?: Array<{
+              id?: string;
+              name?: string;
+              input?: string[];
+            }>;
           };
         };
       };
@@ -136,6 +141,12 @@ describe('openclaw auth - provider config apiKey markers', () => {
     expect(next.models?.providers?.jurismind?.baseUrl).toBe('http://101.132.245.215:3001/v1');
     expect(next.models?.providers?.jurismind?.api).toBe('openai-completions');
     expect(next.models?.providers?.jurismind?.apiKey).toBeUndefined();
+    expect(next.models?.providers?.jurismind?.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'jurismind', name: 'jurismind' }),
+        expect.objectContaining({ id: 'doubao', name: 'doubao', input: ['text', 'image'] }),
+      ])
+    );
   });
 
   it('keeps supported openai env markers in models.providers', async () => {

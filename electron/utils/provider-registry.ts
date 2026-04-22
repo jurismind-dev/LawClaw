@@ -51,6 +51,17 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
       baseUrl: 'http://101.132.245.215:3001/v1',
       api: 'openai-completions',
       apiKeyEnv: 'JURISMIND_API_KEY',
+      models: [
+        {
+          id: 'jurismind',
+          name: 'jurismind',
+        },
+        {
+          id: 'doubao',
+          name: 'doubao',
+          input: ['text', 'image'],
+        },
+      ],
     },
   },
   moonshot_code_plan: {

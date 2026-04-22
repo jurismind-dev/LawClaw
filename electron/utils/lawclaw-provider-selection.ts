@@ -9,12 +9,13 @@ import {
 } from './secure-storage';
 import {
   clearOpenClawAgentModelPrimary,
+  clearJurismindMultimodalConfig,
   getOAuthTokenFromOpenClaw,
   getOpenClawAgentModelPrimary,
   saveProviderKeyToOpenClaw,
   setOpenClawAgentModel,
   setOpenClawAgentModelWithOverride,
-  syncJurismindWebSearchConfig,
+  syncJurismindMultimodalConfig,
 } from './openclaw-auth';
 import { getProviderConfig, getProviderDefaultModel, getProviderEnvVar } from './provider-registry';
 import { logger } from './logger';
@@ -219,8 +220,12 @@ export async function applyLawClawProviderSelection(
     saveProviderKeyToOpenClaw(providerKey, providerApiKey);
     saveProviderKeyToOpenClaw(providerKey, providerApiKey, LAWCLAW_MAIN_AGENT_ID);
     if (provider.type === 'jurismind') {
-      syncJurismindWebSearchConfig(providerApiKey);
+      syncJurismindMultimodalConfig(providerApiKey);
+    } else {
+      clearJurismindMultimodalConfig();
     }
+  } else if (provider.type === 'jurismind') {
+    clearJurismindMultimodalConfig();
   }
 
   if (options.restartGateway) {

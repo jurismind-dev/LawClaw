@@ -4,6 +4,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 case "$1" in
+  jurismind-sso)
+    shift
+    JURISMIND_SSO_CLI="$INSTALL_DIR/resources/cli/jurismind-sso.mjs"
+    if [ ! -f "$JURISMIND_SSO_CLI" ]; then
+      echo "Error: Jurismind SSO CLI not found at $JURISMIND_SSO_CLI" >&2
+      exit 1
+    fi
+    export OPENCLAW_EMBEDDED_IN="LawClaw"
+    ELECTRON_RUN_AS_NODE=1 exec "$INSTALL_DIR/LawClaw.exe" "$JURISMIND_SSO_CLI" "$@"
+    ;;
   update)
     echo "openclaw is managed by LawClaw (bundled version)."
     echo ""

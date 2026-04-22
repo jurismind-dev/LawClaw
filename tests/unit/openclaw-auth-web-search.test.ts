@@ -182,6 +182,85 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.model).toBe('doubao');
   });
 
+  it('syncJurismindMultimodalConfig writes imageModel/pdfModel and jurismind vision catalog', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          agents: {
+            defaults: {
+              model: {
+                primary: 'jurismind/jurismind',
+              },
+            },
+          },
+          models: {
+            providers: {
+              jurismind: {
+                baseUrl: 'http://101.132.245.215:3001/v1',
+                api: 'openai-completions',
+                models: [{ id: 'jurismind', name: 'jurismind' }],
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    mod.syncJurismindMultimodalConfig('sk-jurismind');
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      agents?: {
+        defaults?: {
+          imageModel?: string;
+          pdfModel?: string;
+        };
+      };
+      models?: {
+        providers?: {
+          jurismind?: {
+            models?: Array<{
+              id?: string;
+              name?: string;
+              input?: string[];
+            }>;
+          };
+        };
+      };
+      plugins?: {
+        entries?: {
+          'jurismind-doubao'?: {
+            config?: {
+              webSearch?: {
+                apiKey?: string;
+              };
+            };
+          };
+        };
+      };
+    };
+
+    expect(next.agents?.defaults?.imageModel).toBe('jurismind/doubao');
+    expect(next.agents?.defaults?.pdfModel).toBe('jurismind/doubao');
+    expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch?.apiKey).toBe('sk-jurismind');
+    expect(next.models?.providers?.jurismind?.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'jurismind', name: 'jurismind' }),
+        expect.objectContaining({ id: 'doubao', name: 'doubao', input: ['text', 'image'] }),
+      ])
+    );
+  });
+
   it('clearJurismindWebSearchConfig removes managed doubao transport config and disables search', async () => {
     const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
     tempHomes.push(homeDir);
@@ -249,6 +328,79 @@ describe('openclaw auth - jurismind web search sync', () => {
     expect(next.tools?.web?.search?.gemini?.model).toBe('gemini-2.5-flash');
     expect(next.plugins?.entries?.['jurismind-doubao']?.enabled).toBe(true);
     expect(next.plugins?.entries?.['jurismind-doubao']?.config?.webSearch).toBeUndefined();
+  });
+
+  it('clearJurismindMultimodalConfig removes managed imageModel/pdfModel', async () => {
+    const homeDir = mkdtempSync(join(TEST_TMPDIR, 'lawclaw-openclaw-web-search-'));
+    tempHomes.push(homeDir);
+
+    const openclawDir = join(homeDir, '.openclaw');
+    mkdirSync(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          agents: {
+            defaults: {
+              imageModel: 'jurismind/doubao',
+              pdfModel: 'jurismind/doubao',
+            },
+          },
+          tools: {
+            web: {
+              search: {
+                enabled: true,
+                provider: 'doubao',
+              },
+            },
+          },
+          plugins: {
+            entries: {
+              'jurismind-doubao': {
+                enabled: true,
+                config: {
+                  webSearch: {
+                    apiKey: 'sk-jurismind',
+                    baseUrl: 'http://101.132.245.215:3001/v1',
+                    model: 'doubao',
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const mod = await loadOpenClawAuthWithHome(homeDir);
+    const changed = mod.clearJurismindMultimodalConfig();
+
+    const next = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      agents?: {
+        defaults?: {
+          imageModel?: string;
+          pdfModel?: string;
+        };
+      };
+      tools?: {
+        web?: {
+          search?: {
+            enabled?: boolean;
+            provider?: string;
+          };
+        };
+      };
+    };
+
+    expect(changed).toBe(true);
+    expect(next.agents?.defaults?.imageModel).toBeUndefined();
+    expect(next.agents?.defaults?.pdfModel).toBeUndefined();
+    expect(next.tools?.web?.search?.enabled).toBe(false);
+    expect(next.tools?.web?.search?.provider).toBeUndefined();
   });
 
   it('sanitizeOpenClawConfig migrates legacy jurismind doubao search config into plugin config', async () => {

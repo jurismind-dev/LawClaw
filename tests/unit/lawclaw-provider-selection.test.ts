@@ -13,8 +13,9 @@ const openclawAuthMock = vi.hoisted(() => ({
   setOpenClawAgentModel: vi.fn(),
   setOpenClawAgentModelWithOverride: vi.fn(),
   clearOpenClawAgentModelPrimary: vi.fn(),
+  clearJurismindMultimodalConfig: vi.fn(),
   saveProviderKeyToOpenClaw: vi.fn(),
-  syncJurismindWebSearchConfig: vi.fn(),
+  syncJurismindMultimodalConfig: vi.fn(),
   getOAuthTokenFromOpenClaw: vi.fn(),
   getOpenClawAgentModelPrimary: vi.fn(),
 }));
@@ -159,7 +160,7 @@ describe('lawclaw provider selection helpers', () => {
       'jurismind',
       undefined
     );
-    expect(openclawAuthMock.syncJurismindWebSearchConfig).toHaveBeenCalledWith('sk-jurismind');
+    expect(openclawAuthMock.syncJurismindMultimodalConfig).toHaveBeenCalledWith('sk-jurismind');
   });
 
   it('keeps a user-customized model when default provider refresh uses if-managed', async () => {
@@ -180,6 +181,7 @@ describe('lawclaw provider selection helpers', () => {
 
     expect(secureStorageMock.setDefaultProvider).toHaveBeenCalledWith('provider-openai');
     expect(openclawAuthMock.setOpenClawAgentModel).not.toHaveBeenCalled();
+    expect(openclawAuthMock.clearJurismindMultimodalConfig).toHaveBeenCalledTimes(1);
   });
 
   it('clears the selected provider and dedicated agent model when no fallback remains', async () => {

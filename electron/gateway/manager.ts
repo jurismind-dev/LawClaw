@@ -23,10 +23,11 @@ import { getSetting } from '../utils/store';
 import { getAllProviders, getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
 import {
+  clearJurismindMultimodalConfig,
   sanitizeOpenClawConfig,
   syncBrowserConfigToOpenClaw,
   syncGatewayTokenToConfig,
-  syncJurismindWebSearchConfig,
+  syncJurismindMultimodalConfig,
 } from '../utils/openclaw-auth';
 import { applyProviderEnvFallbacks } from './provider-env';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
@@ -1137,12 +1138,18 @@ export class GatewayManager extends EventEmitter {
     }
 
     try {
+      const defaultProviderId = await getDefaultProvider();
+      const defaultProvider = defaultProviderId ? await getProvider(defaultProviderId) : null;
       const jurismindApiKey = resolvedProviderEnv.JURISMIND_API_KEY?.trim();
-      if (jurismindApiKey && !jurismindApiKey.startsWith('__CLAWX_PLACEHOLDER_')) {
-        syncJurismindWebSearchConfig(jurismindApiKey);
+      const hasJurismindKey =
+        jurismindApiKey && !jurismindApiKey.startsWith('__CLAWX_PLACEHOLDER_');
+      if (defaultProvider?.type === 'jurismind' && hasJurismindKey) {
+        syncJurismindMultimodalConfig(jurismindApiKey);
+      } else {
+        clearJurismindMultimodalConfig();
       }
     } catch (err) {
-      logger.warn('Failed to sync Jurismind doubao web search config to openclaw.json:', err);
+      logger.warn('Failed to sync Jurismind multimodal config to openclaw.json:', err);
     }
 
     const uvEnv = await getUvMirrorEnv();

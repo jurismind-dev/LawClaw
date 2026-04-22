@@ -2,11 +2,12 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtimeMocks = vi.hoisted(() => ({
+  clearJurismindMultimodalConfig: vi.fn(() => false),
   sanitizeOpenClawConfig: vi.fn(() => false),
   spawn: vi.fn(),
   syncGatewayTokenToConfig: vi.fn(),
   syncBrowserConfigToOpenClaw: vi.fn(),
-  syncJurismindWebSearchConfig: vi.fn(),
+  syncJurismindMultimodalConfig: vi.fn(),
 }));
 
 const secureStorageMocks = vi.hoisted(() => ({
@@ -106,10 +107,11 @@ vi.mock('@electron/utils/provider-registry', () => ({
 }));
 
 vi.mock('@electron/utils/openclaw-auth', () => ({
+  clearJurismindMultimodalConfig: runtimeMocks.clearJurismindMultimodalConfig,
   sanitizeOpenClawConfig: runtimeMocks.sanitizeOpenClawConfig,
   syncGatewayTokenToConfig: runtimeMocks.syncGatewayTokenToConfig,
   syncBrowserConfigToOpenClaw: runtimeMocks.syncBrowserConfigToOpenClaw,
-  syncJurismindWebSearchConfig: runtimeMocks.syncJurismindWebSearchConfig,
+  syncJurismindMultimodalConfig: runtimeMocks.syncJurismindMultimodalConfig,
 }));
 
 vi.mock('@electron/gateway/protocol', () => ({
@@ -206,7 +208,8 @@ describe('gateway start pre-sync', () => {
     runtimeMocks.sanitizeOpenClawConfig.mockReturnValue(false);
     runtimeMocks.syncGatewayTokenToConfig.mockResolvedValue(undefined);
     runtimeMocks.syncBrowserConfigToOpenClaw.mockResolvedValue(undefined);
-    runtimeMocks.syncJurismindWebSearchConfig.mockImplementation(() => undefined);
+    runtimeMocks.clearJurismindMultimodalConfig.mockImplementation(() => false);
+    runtimeMocks.syncJurismindMultimodalConfig.mockImplementation(() => undefined);
     secureStorageMocks.getApiKey.mockResolvedValue(null);
     secureStorageMocks.getDefaultProvider.mockResolvedValue(undefined);
     secureStorageMocks.getProvider.mockResolvedValue(null);
@@ -264,22 +267,29 @@ describe('gateway start pre-sync', () => {
       if (providerId === 'provider-jurismind') return 'jm-live-key';
       return null;
     });
+    secureStorageMocks.getDefaultProvider.mockResolvedValue('provider-jurismind');
+    secureStorageMocks.getProvider.mockResolvedValue({
+      id: 'provider-jurismind',
+      type: 'jurismind',
+    });
 
     await (manager as unknown as { startProcess: () => Promise<void> }).startProcess();
 
     const firstSpawnOptions = runtimeMocks.spawn.mock.calls[0][2] as { env: Record<string, string> };
     expect(firstSpawnOptions.env.JURISMIND_API_KEY).toBe('jm-live-key');
-    expect(runtimeMocks.syncJurismindWebSearchConfig).toHaveBeenCalledWith('jm-live-key');
+    expect(runtimeMocks.syncJurismindMultimodalConfig).toHaveBeenCalledWith('jm-live-key');
 
     runtimeMocks.spawn.mockClear();
-    runtimeMocks.syncJurismindWebSearchConfig.mockClear();
+    runtimeMocks.syncJurismindMultimodalConfig.mockClear();
+    runtimeMocks.clearJurismindMultimodalConfig.mockClear();
     secureStorageMocks.getApiKey.mockResolvedValue(null);
 
     await (manager as unknown as { startProcess: () => Promise<void> }).startProcess();
 
     const secondSpawnOptions = runtimeMocks.spawn.mock.calls[0][2] as { env: Record<string, string> };
     expect(secondSpawnOptions.env.JURISMIND_API_KEY).toBe('__CLAWX_PLACEHOLDER_JURISMIND_API_KEY__');
-    expect(runtimeMocks.syncJurismindWebSearchConfig).not.toHaveBeenCalled();
+    expect(runtimeMocks.syncJurismindMultimodalConfig).not.toHaveBeenCalled();
+    expect(runtimeMocks.clearJurismindMultimodalConfig).toHaveBeenCalledTimes(1);
   });
 
   it('prepends the packaged runtime bridge only to the gateway child environment', async () => {

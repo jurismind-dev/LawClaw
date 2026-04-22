@@ -24,16 +24,56 @@ const providerStoreDefaults = {
   providers: {} as Record<string, ProviderConfig>,
   apiKeys: {} as Record<string, string>,
   defaultProvider: null as string | null,
+  jurismindSsoBinding: null as JurismindSsoBinding | null,
 };
 
 interface ProviderStoreSnapshot {
   providers: Record<string, ProviderConfig>;
   apiKeys: Record<string, string>;
   defaultProvider: string | null;
+  jurismindSsoBinding: JurismindSsoBinding | null;
+}
+
+export interface JurismindSsoBinding {
+  openId: string;
+  token?: string;
+  tokenKey?: string;
+  tokenId?: number | null;
+  avatar?: string;
+  updatedAt: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeJurismindSsoBinding(value: unknown): JurismindSsoBinding | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const openId = typeof value.openId === 'string' ? value.openId.trim() : '';
+  if (!openId) {
+    return null;
+  }
+
+  const token = typeof value.token === 'string' ? value.token.trim() : '';
+  const tokenKey = typeof value.tokenKey === 'string' ? value.tokenKey.trim() : '';
+  const avatar = typeof value.avatar === 'string' ? value.avatar.trim() : '';
+  const tokenIdRaw = value.tokenId;
+  const tokenId = Number.isFinite(Number(tokenIdRaw)) ? Number(tokenIdRaw) : null;
+  const updatedAt = typeof value.updatedAt === 'string' && value.updatedAt.trim()
+    ? value.updatedAt.trim()
+    : new Date(0).toISOString();
+
+  return {
+    openId,
+    token: token || undefined,
+    tokenKey: tokenKey || undefined,
+    tokenId,
+    avatar: avatar || undefined,
+    updatedAt,
+  };
 }
 
 function normalizeProviderStoreSnapshot(value: unknown): ProviderStoreSnapshot {
@@ -53,6 +93,7 @@ function normalizeProviderStoreSnapshot(value: unknown): ProviderStoreSnapshot {
       typeof source.defaultProvider === 'string' && source.defaultProvider.trim().length > 0
         ? source.defaultProvider.trim()
         : null,
+    jurismindSsoBinding: normalizeJurismindSsoBinding(source.jurismindSsoBinding),
   };
 }
 
@@ -61,6 +102,7 @@ function hasProviderStoreData(snapshot: ProviderStoreSnapshot): boolean {
     Object.keys(snapshot.providers).length > 0
     || Object.keys(snapshot.apiKeys).length > 0
     || typeof snapshot.defaultProvider === 'string'
+    || snapshot.jurismindSsoBinding !== null
   );
 }
 
@@ -107,6 +149,7 @@ async function migrateLegacyProviderStoreIfNeeded(store: {
     providers: store.get('providers'),
     apiKeys: store.get('apiKeys'),
     defaultProvider: store.get('defaultProvider'),
+    jurismindSsoBinding: store.get('jurismindSsoBinding'),
   });
   if (hasProviderStoreData(currentSnapshot)) {
     return;
@@ -120,6 +163,7 @@ async function migrateLegacyProviderStoreIfNeeded(store: {
   store.set('providers', legacySnapshot.providers);
   store.set('apiKeys', legacySnapshot.apiKeys);
   store.set('defaultProvider', legacySnapshot.defaultProvider);
+  store.set('jurismindSsoBinding', legacySnapshot.jurismindSsoBinding);
 }
 
 async function getProviderStore() {
@@ -311,6 +355,26 @@ export async function clearDefaultProvider(): Promise<void> {
 export async function getDefaultProvider(): Promise<string | undefined> {
   const s = await getProviderStore();
   return s.get('defaultProvider') as string | undefined;
+}
+
+export async function saveJurismindSsoBinding(
+  binding: Omit<JurismindSsoBinding, 'updatedAt'> & { updatedAt?: string }
+): Promise<void> {
+  const s = await getProviderStore();
+  s.set('jurismindSsoBinding', normalizeJurismindSsoBinding({
+    ...binding,
+    updatedAt: binding.updatedAt || new Date().toISOString(),
+  }));
+}
+
+export async function getJurismindSsoBinding(): Promise<JurismindSsoBinding | null> {
+  const s = await getProviderStore();
+  return normalizeJurismindSsoBinding(s.get('jurismindSsoBinding'));
+}
+
+export async function clearJurismindSsoBinding(): Promise<void> {
+  const s = await getProviderStore();
+  s.delete('jurismindSsoBinding');
 }
 
 /**

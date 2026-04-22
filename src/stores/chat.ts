@@ -333,6 +333,7 @@ const IMAGE_CACHE_KEY = 'clawx:image-cache';
 const IMAGE_CACHE_MAX = 100; // max entries to prevent unbounded growth
 const SESSION_VIEW_STICKY_TTL_MS = 20_000;
 const SESSION_VIEW_CACHE_MESSAGE_LIMIT = 200;
+const LAWCLAW_MEDIA_REF_REGEX = /\[(?:media attached|lawclaw-media):\s*([^\s(]+)\s*\(([^)]+)\)\s*\|[^\]]*\]/g;
 
 function loadImageCache(): Map<string, AttachedFileMeta> {
   try {
@@ -520,9 +521,8 @@ function getMessageText(content: unknown): string {
 /** Extract media file refs from [media attached: <path> (<mime>) | ...] patterns */
 function extractMediaRefs(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
-  const regex = /\[media attached:\s*([^\s(]+)\s*\(([^)]+)\)\s*\|[^\]]*\]/g;
   let match;
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = LAWCLAW_MEDIA_REF_REGEX.exec(text)) !== null) {
     refs.push({ filePath: match[1], mimeType: match[2] });
   }
   return refs;
@@ -1129,6 +1129,122 @@ function getSessionLastActivityCandidate(messages: RawMessage[]): number | null 
     .find((message) => message.timestamp != null);
 
   return lastMessage?.timestamp ? toMs(lastMessage.timestamp) : null;
+}
+
+function normalizeComparableAssistantText(content: unknown): string {
+  return getMessageText(content)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getComparableAttachedFileSignature(message: Pick<RawMessage, '_attachedFiles'>): string {
+  const files = (message._attachedFiles || [])
+    .map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`)
+    .filter(Boolean)
+    .sort();
+  return files.join('::');
+}
+
+function isGeneratedMessageId(id: string | undefined): boolean {
+  if (!id) return false;
+  return id.startsWith('run-') || id.startsWith('error-snap-') || id.startsWith('error-');
+}
+
+function pickPreferredMessageId(existingId: string | undefined, incomingId: string | undefined): string | undefined {
+  if (incomingId && (!existingId || isGeneratedMessageId(existingId))) {
+    return incomingId;
+  }
+  return existingId ?? incomingId;
+}
+
+function mergeAttachedFiles(
+  existingFiles: AttachedFileMeta[] | undefined,
+  incomingFiles: AttachedFileMeta[] | undefined,
+): AttachedFileMeta[] | undefined {
+  const merged = new Map<string, AttachedFileMeta>();
+
+  const addFile = (file: AttachedFileMeta): void => {
+    const key = file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`;
+    const current = merged.get(key);
+    if (!current) {
+      merged.set(key, { ...file });
+      return;
+    }
+
+    merged.set(key, {
+      ...current,
+      ...file,
+      filePath: current.filePath || file.filePath,
+      preview: current.preview || file.preview,
+      fileSize: current.fileSize || file.fileSize,
+      source: current.source || file.source,
+    });
+  };
+
+  for (const file of existingFiles || []) addFile(file);
+  for (const file of incomingFiles || []) addFile(file);
+
+  return merged.size > 0 ? Array.from(merged.values()) : undefined;
+}
+
+function shouldTreatAsDuplicateAssistantFinal(existing: RawMessage, incoming: RawMessage): boolean {
+  if (existing.role !== 'assistant' || incoming.role !== 'assistant') return false;
+  if (isToolOnlyMessage(existing) || isToolOnlyMessage(incoming)) return false;
+  if (hasToolUseContent(existing) || hasToolUseContent(incoming)) return false;
+
+  const existingText = normalizeComparableAssistantText(existing.content);
+  const incomingText = normalizeComparableAssistantText(incoming.content);
+  const sameText = existingText.length > 0 && existingText === incomingText;
+
+  const existingAttachments = getComparableAttachedFileSignature(existing);
+  const incomingAttachments = getComparableAttachedFileSignature(incoming);
+  const sameAttachments = existingAttachments.length > 0 && existingAttachments === incomingAttachments;
+
+  if (sameText && sameAttachments) return true;
+  if (sameText && (!existingAttachments || !incomingAttachments)) return true;
+  if (sameAttachments && (!existingText || !incomingText)) return true;
+  return false;
+}
+
+function findDuplicateAssistantFinalMessageIndex(messages: RawMessage[], incoming: RawMessage): number {
+  if (incoming.id) {
+    const sameIdIndex = messages.findIndex((message) => message.id === incoming.id);
+    if (sameIdIndex >= 0) {
+      return sameIdIndex;
+    }
+  }
+
+  if (isToolOnlyMessage(incoming)) {
+    return -1;
+  }
+
+  let lastUserIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') {
+      lastUserIndex = index;
+      break;
+    }
+  }
+
+  for (let index = messages.length - 1; index > lastUserIndex; index -= 1) {
+    const candidate = messages[index];
+    if (!candidate || candidate.role !== 'assistant') continue;
+    if (shouldTreatAsDuplicateAssistantFinal(candidate, incoming)) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function mergeDuplicateAssistantFinal(existing: RawMessage, incoming: RawMessage): RawMessage {
+  return {
+    ...existing,
+    ...incoming,
+    id: pickPreferredMessageId(existing.id, incoming.id),
+    timestamp: existing.timestamp ?? incoming.timestamp,
+    _attachedFiles: mergeAttachedFiles(existing._attachedFiles, incoming._attachedFiles),
+  };
 }
 
 function shouldFetchSessionLabel(
@@ -2461,16 +2577,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
               : { ...finalMsg, role: (finalMsg.role || 'assistant') as RawMessage['role'], id: msgId };
             const clearPendingImages = { pendingToolImages: [] as AttachedFileMeta[] };
 
-            // Check if message already exists (prevent duplicates)
-            const alreadyExists = s.messages.some(m => m.id === msgId);
-            if (alreadyExists) {
+            const duplicateIndex = findDuplicateAssistantFinalMessageIndex(s.messages, msgWithImages);
+            if (duplicateIndex >= 0) {
+              const nextMessages = [...s.messages];
+              nextMessages[duplicateIndex] = mergeDuplicateAssistantFinal(
+                nextMessages[duplicateIndex]!,
+                msgWithImages,
+              );
               return toolOnly ? {
+                messages: nextMessages,
                 streamingText: '',
                 streamingMessage: null,
                 pendingFinal: true,
                 streamingTools,
                 ...clearPendingImages,
               } : {
+                messages: nextMessages,
                 streamingText: '',
                 streamingMessage: null,
                 sending: hasOutput ? false : s.sending,

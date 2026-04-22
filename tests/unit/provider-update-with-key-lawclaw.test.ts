@@ -18,6 +18,7 @@ const secureStorageMock = vi.hoisted(() => ({
 }));
 
 const openclawAuthMock = vi.hoisted(() => ({
+  clearJurismindMultimodalConfig: vi.fn(),
   clearJurismindWebSearchConfig: vi.fn(),
   saveProviderKeyToOpenClaw: vi.fn(),
   removeProviderKeyFromOpenClaw: vi.fn(),
@@ -26,6 +27,7 @@ const openclawAuthMock = vi.hoisted(() => ({
   setOpenClawDefaultModelWithOverride: vi.fn(),
   setOpenClawAgentModel: vi.fn(),
   setOpenClawAgentModelWithOverride: vi.fn(),
+  syncJurismindMultimodalConfig: vi.fn(),
   syncJurismindWebSearchConfig: vi.fn(),
   syncProviderConfigToOpenClaw: vi.fn(),
   updateAgentModelProvider: vi.fn(),
@@ -487,7 +489,7 @@ describe('jurismind web search sync', () => {
     ) as { success: boolean; error?: string };
 
     expect(result.success).toBe(true);
-    expect(openclawAuthMock.syncJurismindWebSearchConfig).toHaveBeenCalledWith('sk-jurismind');
+    expect(openclawAuthMock.syncJurismindMultimodalConfig).toHaveBeenCalledWith('sk-jurismind');
   });
 
   it('clears Jurismind doubao web search config when deleting a jurismind key', async () => {
@@ -537,7 +539,7 @@ describe('jurismind web search sync', () => {
     const result = await handler?.({}, 'jurismind') as { success: boolean; error?: string };
 
     expect(result.success).toBe(true);
-    expect(openclawAuthMock.clearJurismindWebSearchConfig).toHaveBeenCalledTimes(1);
+    expect(openclawAuthMock.clearJurismindMultimodalConfig).toHaveBeenCalledTimes(1);
   });
 });
 

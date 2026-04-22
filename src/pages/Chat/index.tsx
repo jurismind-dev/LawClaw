@@ -24,6 +24,18 @@ import { useAgentPresetMigrationStore } from '@/stores/agent-preset-migration';
 import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useMinLoading } from '@/hooks/use-min-loading';
+import type { TaskStep } from './task-visualization';
+
+type GraphStepCacheEntry = {
+  steps: TaskStep[];
+  agentLabel: string;
+  sessionLabel: string;
+  segmentEnd: number;
+  replyIndex: number | null;
+  triggerIndex: number;
+};
+
+const graphStepCacheStore = new Map<string, Record<string, GraphStepCacheEntry>>();
 
 export function Chat() {
   const { t } = useTranslation('chat');
@@ -52,6 +64,7 @@ export function Chat() {
   const agents = useAgentsStore((s) => s.agents);
   const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
   const minLoading = useMinLoading(loading && messages.length > 0);
+  const graphStepCache = graphStepCacheStore.get(currentSessionKey) ?? {};
 
   const handleOpenGatewaySlowStartGuide = async () => {
     try {
@@ -66,23 +79,6 @@ export function Chat() {
       cleanupEmptySession();
     };
   }, [cleanupEmptySession]);
-
-  if (!isGatewayRunning) {
-    return (
-      <div className="flex h-[calc(100vh-8rem)] flex-col items-center justify-center p-8 text-center">
-        <AlertCircle className="mb-4 h-12 w-12 text-yellow-500" />
-        <h2 className="mb-2 text-xl font-semibold">{t('gatewayNotRunning')}</h2>
-        <p className="max-w-md text-muted-foreground">{t('gatewayRequired')}</p>
-        <div className="mt-6 flex flex-col items-center gap-2">
-          <p className="text-sm text-muted-foreground">{t('gatewaySlowStartHelp.title')}</p>
-          <Button variant="outline" onClick={handleOpenGatewaySlowStartGuide}>
-            <ExternalLink className="mr-2 h-4 w-4" />
-            {t('gatewaySlowStartHelp.action')}
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   const streamMsg =
     streamingMessage && typeof streamingMessage === 'object'
@@ -119,6 +115,9 @@ export function Chat() {
   const userRunCards = messages.flatMap((message, idx) => {
     if (message.role !== 'user') return [];
 
+    const runKey = message.id
+      ? `msg-${message.id}`
+      : `${currentSessionKey}:trigger-${idx}`;
     const nextUserIndex = nextUserMessageIndexes[idx];
     const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
     const segmentMessages = messages.slice(idx + 1, segmentEnd);
@@ -134,11 +133,23 @@ export function Chat() {
       showThinking,
     });
 
-    if (steps.length === 0) return [];
-
     const segmentAgentLabel =
       agents.find((agent) => agent.id === currentAgentId)?.name || currentAgentId;
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
+
+    if (steps.length === 0) {
+      const cached = graphStepCache[runKey];
+      if (!cached) return [];
+      return [{
+        triggerIndex: idx,
+        replyIndex: cached.replyIndex,
+        active: false,
+        agentLabel: cached.agentLabel,
+        sessionLabel: cached.sessionLabel,
+        segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
+        steps: cached.steps,
+      }];
+    }
 
     return [{
       triggerIndex: idx,
@@ -151,6 +162,76 @@ export function Chat() {
     }];
   });
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
+
+  useEffect(() => {
+    if (userRunCards.length === 0) return;
+    const current = graphStepCacheStore.get(currentSessionKey) ?? {};
+    let changed = false;
+    const next = { ...current };
+
+    for (const card of userRunCards) {
+      if (card.steps.length === 0) continue;
+      const triggerMsg = messages[card.triggerIndex];
+      const runKey = triggerMsg?.id
+        ? `msg-${triggerMsg.id}`
+        : `${currentSessionKey}:trigger-${card.triggerIndex}`;
+      const existing = current[runKey];
+      const sameSteps = !!existing
+        && existing.steps.length === card.steps.length
+        && existing.steps.every((step, index) => {
+          const nextStep = card.steps[index];
+          return nextStep
+            && step.id === nextStep.id
+            && step.label === nextStep.label
+            && step.status === nextStep.status
+            && step.kind === nextStep.kind
+            && step.detail === nextStep.detail
+            && step.depth === nextStep.depth
+            && step.parentId === nextStep.parentId;
+        });
+      if (
+        sameSteps
+        && existing?.agentLabel === card.agentLabel
+        && existing?.sessionLabel === card.sessionLabel
+        && existing?.segmentEnd === card.segmentEnd
+        && existing?.replyIndex === card.replyIndex
+        && existing?.triggerIndex === card.triggerIndex
+      ) {
+        continue;
+      }
+
+      next[runKey] = {
+        steps: card.steps,
+        agentLabel: card.agentLabel,
+        sessionLabel: card.sessionLabel,
+        segmentEnd: card.segmentEnd,
+        replyIndex: card.replyIndex,
+        triggerIndex: card.triggerIndex,
+      };
+      changed = true;
+    }
+
+    if (changed) {
+      graphStepCacheStore.set(currentSessionKey, next);
+    }
+  }, [currentSessionKey, messages, userRunCards]);
+
+  if (!isGatewayRunning) {
+    return (
+      <div className="flex h-[calc(100vh-8rem)] flex-col items-center justify-center p-8 text-center">
+        <AlertCircle className="mb-4 h-12 w-12 text-yellow-500" />
+        <h2 className="mb-2 text-xl font-semibold">{t('gatewayNotRunning')}</h2>
+        <p className="max-w-md text-muted-foreground">{t('gatewayRequired')}</p>
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <p className="text-sm text-muted-foreground">{t('gatewaySlowStartHelp.title')}</p>
+          <Button variant="outline" onClick={handleOpenGatewaySlowStartGuide}>
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {t('gatewaySlowStartHelp.action')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">

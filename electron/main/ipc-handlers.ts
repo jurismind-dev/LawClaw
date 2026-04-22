@@ -11,10 +11,12 @@ import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
 import {
+  clearJurismindSsoBinding,
   storeApiKey,
   getApiKey,
   deleteApiKey,
   hasApiKey,
+  saveJurismindSsoBinding,
   saveProvider,
   getProvider,
   deleteProvider,
@@ -29,6 +31,7 @@ import {
   getOpenClawSkillsDir,
   getResourcesDir,
   ensureDir,
+  getOpenClawResolvedDir,
 } from '../utils/paths';
 import { applyBundledNpmToCliEnv, getNodeExecForCli, getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { parseJsonText, stringifyJsonText, stripUtf8Bom } from '../utils/text-encoding';
@@ -40,7 +43,9 @@ import {
   type AppSettings,
 } from '../utils/store';
 import {
+  clearJurismindMultimodalConfig,
   clearJurismindWebSearchConfig,
+  syncJurismindMultimodalConfig,
   syncJurismindWebSearchConfig,
 } from '../utils/openclaw-auth';
 import { logger } from '../utils/logger';
@@ -50,6 +55,7 @@ import {
   getChannelFormValues,
   deleteChannelConfig,
   listConfiguredChannels,
+  readOpenClawConfig,
   setChannelEnabled,
   validateChannelConfig,
   validateChannelCredentials,
@@ -663,14 +669,6 @@ function registerGatewayHandlers(
     }
   });
 
-  // Chat send with media — reads staged files from disk and builds attachments.
-  // Raster images (png/jpg/gif/webp) are inlined as base64 vision attachments.
-  // All other files are referenced by path in the message text so the model
-  // can access them via tools (the same format channels use).
-  const VISION_MIME_TYPES = new Set([
-    'image/png', 'image/jpeg', 'image/bmp', 'image/webp',
-  ]);
-
   ipcMain.handle('chat:sendWithMedia', async (_, params: {
     sessionKey: string;
     message: string;
@@ -681,47 +679,14 @@ function registerGatewayHandlers(
     try {
       const normalizedSessionKey = normalizeLawClawSessionKey(params.sessionKey);
       let message = params.message;
-      // The Gateway processes image attachments through TWO parallel paths:
-      // Path A: `attachments` param → parsed via `parseMessageWithAttachments` →
-      //   injected as inline vision content when the model supports images.
-      //   Format: { content: base64, mimeType: string, fileName?: string }
-      // Path B: `[media attached: ...]` in message text → Gateway's native image
-      //   detection (`detectAndLoadPromptImages`) reads the file from disk and
-      //   injects it as inline vision content. Also works for history messages.
-      // We use BOTH paths for maximum reliability.
-      const imageAttachments: Array<Record<string, unknown>> = [];
-      const fileReferences: string[] = [];
+      const media = Array.isArray(params.media) ? params.media : [];
+      const visionRoutingActive = media.length > 0 && await isJurismindVisionRoutingActive();
+      const prepared = media.length > 0
+        ? await prepareMediaPayloadForModel(media)
+        : { attachments: [], messageRefs: [], sourceFiles: [] };
 
-      if (params.media && params.media.length > 0) {
-        const fsP = await import('fs/promises');
-        for (const m of params.media) {
-          const exists = await fsP.access(m.filePath).then(() => true, () => false);
-          logger.info(`[chat:sendWithMedia] Processing file: ${m.fileName} (${m.mimeType}), path: ${m.filePath}, exists: ${exists}, isVision: ${VISION_MIME_TYPES.has(m.mimeType)}`);
-
-          // Always add file path reference so the model can access it via tools
-          fileReferences.push(
-            `[media attached: ${m.filePath} (${m.mimeType}) | ${m.filePath}]`,
-          );
-
-          if (VISION_MIME_TYPES.has(m.mimeType)) {
-            // Send as base64 attachment in the format the Gateway expects:
-            // { content: base64String, mimeType: string, fileName?: string }
-            // The Gateway normalizer looks for `a.content` (NOT `a.source.data`).
-            const fileBuffer = await fsP.readFile(m.filePath);
-            const base64Data = fileBuffer.toString('base64');
-            logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);
-            imageAttachments.push({
-              content: base64Data,
-              mimeType: m.mimeType,
-              fileName: m.fileName,
-            });
-          }
-        }
-      }
-
-      // Append file references to message text so the model knows about them
-      if (fileReferences.length > 0) {
-        const refs = fileReferences.join('\n');
+      if (prepared.messageRefs.length > 0) {
+        const refs = prepared.messageRefs.join('\n');
         message = message ? `${message}\n\n${refs}` : refs;
       }
 
@@ -732,17 +697,23 @@ function registerGatewayHandlers(
         idempotencyKey: params.idempotencyKey,
       };
 
-      if (imageAttachments.length > 0) {
-        rpcParams.attachments = imageAttachments;
+      if (prepared.attachments.length > 0) {
+        rpcParams.attachments = prepared.attachments;
       }
 
-      logger.info(`[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", attachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`);
+      logger.info(`[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", attachments=${prepared.attachments.length}, fileRefs=${prepared.messageRefs.length}, visionRouting=${visionRoutingActive}`);
 
       // Attachment-assisted chats often keep the RPC open until the whole
       // tool-use flow completes, so align them with the renderer's longer
       // chat.send timeout instead of falling back to the default 30s window.
-      const timeoutMs = params.media && params.media.length > 0 ? 120000 : 30000;
-      const result = await gatewayManager.rpc('chat.send', rpcParams, timeoutMs);
+      const timeoutMs = media.length > 0 ? 120000 : 30000;
+      const result = visionRoutingActive
+        ? await gatewayManager.rpc('agent', {
+          ...rpcParams,
+          provider: JURISMIND_VISION_PROVIDER,
+          model: JURISMIND_VISION_MODEL_ID,
+        }, timeoutMs)
+        : await gatewayManager.rpc('chat.send', rpcParams, timeoutMs);
       logger.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
       return { success: true, result };
     } catch (error) {
@@ -1578,6 +1549,7 @@ function registerJurismindHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('jurismind:clearBinding', async () => {
     try {
       await jurismindConnectorManager.clearBinding();
+      await clearJurismindSsoBinding();
       return { success: true, status: jurismindConnectorManager.getStatus() };
     } catch (error) {
       return { success: false, error: String(error), status: jurismindConnectorManager.getStatus() };
@@ -1875,9 +1847,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
           if (config.type === 'jurismind') {
             try {
-              syncJurismindWebSearchConfig(trimmedKey);
+              syncJurismindMultimodalConfig(trimmedKey);
             } catch (err) {
-              console.warn('Failed to sync Jurismind web search config:', err);
+              console.warn('Failed to sync Jurismind multimodal config:', err);
             }
           }
         }
@@ -1904,6 +1876,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const defaultProviderId = await getDefaultProvider();
       const existing = await getProvider(providerId);
       await deleteProvider(providerId);
+      if (existing?.type === 'jurismind') {
+        await clearJurismindSsoBinding();
+      }
 
       // Best-effort cleanup in OpenClaw auth profiles & openclaw.json config
       if (existing?.type) {
@@ -1912,7 +1887,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           await syncDeletedProviderToRuntime(existing, providerId);
 
           if (existing.type === 'jurismind') {
-            clearJurismindWebSearchConfig();
+            clearJurismindMultimodalConfig();
           }
 
           // Debounced restart so the gateway stops loading the deleted provider.
@@ -1962,9 +1937,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
       if (providerType === 'jurismind') {
         try {
-          syncJurismindWebSearchConfig(apiKey);
+          syncJurismindMultimodalConfig(apiKey);
         } catch (err) {
-          console.warn('Failed to sync Jurismind web search config:', err);
+          console.warn('Failed to sync Jurismind multimodal config:', err);
         }
       }
 
@@ -2007,19 +1982,19 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             await storeApiKey(providerId, trimmedKey);
 
             if (nextConfig.type === 'jurismind') {
-              syncJurismindWebSearchConfig(trimmedKey);
+              syncJurismindMultimodalConfig(trimmedKey);
             }
           } else {
             await deleteApiKey(providerId);
 
             if (nextConfig.type === 'jurismind') {
-              clearJurismindWebSearchConfig();
+              clearJurismindMultimodalConfig();
             }
           }
         }
 
         if (existing.type === 'jurismind' && nextConfig.type !== 'jurismind') {
-          clearJurismindWebSearchConfig();
+          clearJurismindMultimodalConfig();
         }
 
         // Sync the provider configuration to openclaw.json so Gateway knows about it
@@ -2089,6 +2064,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       // Keep OpenClaw auth-profiles.json in sync with local key storage
       const provider = await getProvider(providerId);
       const providerType = provider?.type || providerId;
+      if (providerType === 'jurismind') {
+        await clearJurismindSsoBinding();
+      }
       try {
         await syncDeletedProviderApiKeyToRuntime(providerType, providerId);
       } catch (err) {
@@ -2097,9 +2075,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
       if (providerType === 'jurismind') {
         try {
-          clearJurismindWebSearchConfig();
+          clearJurismindMultimodalConfig();
         } catch (err) {
-          console.warn('Failed to clear Jurismind web search config:', err);
+          console.warn('Failed to clear Jurismind multimodal config:', err);
         }
       }
 
@@ -2212,9 +2190,46 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       }
 
       const bound = await activeJurismindBindingPromise;
+      await saveJurismindSsoBinding({
+        openId: bound.openId,
+        token: bound.token,
+        tokenKey: bound.tokenKey,
+        tokenId: bound.tokenId,
+        avatar: bound.avatar,
+      });
+
+      const existingJurismindProvider = await getProvider('jurismind');
+      if (existingJurismindProvider?.type === 'jurismind') {
+        const nextJurismindProvider: ProviderConfig = {
+          ...existingJurismindProvider,
+          openId: bound.openId,
+          tokenId: bound.tokenId,
+          avatar: bound.avatar?.trim() || undefined,
+          updatedAt: new Date().toISOString(),
+        };
+
+        await saveProvider(nextJurismindProvider);
+        await storeApiKey(existingJurismindProvider.id, bound.tokenKey);
+
+        try {
+          syncJurismindMultimodalConfig(bound.tokenKey);
+        } catch (err) {
+          console.warn('Failed to sync Jurismind multimodal config after SSO rebind:', err);
+        }
+
+        try {
+          await syncUpdatedProviderToRuntime(nextJurismindProvider, bound.tokenKey);
+          logger.info('Scheduling Gateway restart after Jurismind SSO rebind');
+          gatewayManager.debouncedRestart();
+        } catch (err) {
+          console.warn('Failed to sync Jurismind provider after SSO rebind:', err);
+        }
+      }
+
       return {
         success: true,
         openId: bound.openId,
+        token: bound.token,
         tokenKey: bound.tokenKey,
         tokenId: bound.tokenId,
         avatar: bound.avatar,
@@ -2609,6 +2624,188 @@ function mimeToExt(mimeType: string): string {
 }
 
 const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
+const LAWCLAW_MEDIA_REF_PREFIX = 'lawclaw-media';
+const JURISMIND_PROVIDER_TYPE = 'jurismind';
+const JURISMIND_VISION_PROVIDER = 'jurismind';
+const JURISMIND_VISION_MODEL_ID = 'doubao';
+const DEFAULT_PDF_MAX_PAGES = 20;
+const DEFAULT_PDF_MAX_BYTES_MB = 10;
+const PDF_RENDER_MAX_PIXELS = 4_000_000;
+const PDF_RENDER_MIN_TEXT_CHARS = 200;
+
+type StagedMediaInput = {
+  filePath: string;
+  mimeType: string;
+  fileName: string;
+};
+
+type VisualAttachment = {
+  content: string;
+  mimeType: string;
+  fileName?: string;
+};
+
+type PreparedMediaPayload = {
+  attachments: VisualAttachment[];
+  messageRefs: string[];
+  sourceFiles: StagedMediaInput[];
+};
+
+type OpenClawConfigLike = {
+  agents?: {
+    defaults?: {
+      pdfMaxPages?: unknown;
+      pdfMaxBytesMb?: unknown;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+type PdfRenderResult = {
+  text: string;
+  images: Array<{
+    type: 'image';
+    data: string;
+    mimeType: string;
+  }>;
+};
+
+let pdfExtractModulePromise: Promise<{ t: (params: {
+  buffer: Buffer;
+  maxPages: number;
+  maxPixels: number;
+  minTextChars: number;
+  onImageExtractionError?: (err: unknown) => void;
+}) => Promise<PdfRenderResult> }> | null = null;
+
+function isFinitePositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function buildLawClawMediaRef(filePath: string, mimeType: string): string {
+  return `[${LAWCLAW_MEDIA_REF_PREFIX}: ${filePath} (${mimeType}) | ${filePath}]`;
+}
+
+function resolveConfiguredPdfMaxPages(config: OpenClawConfigLike | null | undefined): number {
+  const raw = config?.agents?.defaults?.pdfMaxPages;
+  return isFinitePositiveInteger(raw) ? Math.max(1, Math.floor(raw)) : DEFAULT_PDF_MAX_PAGES;
+}
+
+function resolveConfiguredPdfMaxBytes(config: OpenClawConfigLike | null | undefined): number {
+  const raw = config?.agents?.defaults?.pdfMaxBytesMb;
+  const mb = isFinitePositiveInteger(raw) ? raw : DEFAULT_PDF_MAX_BYTES_MB;
+  return Math.max(1, Math.floor(mb)) * 1024 * 1024;
+}
+
+async function isJurismindVisionRoutingActive(): Promise<boolean> {
+  const defaultProviderId = await getDefaultProvider();
+  if (!defaultProviderId) return false;
+  const provider = await getProvider(defaultProviderId);
+  if (!provider || provider.type !== JURISMIND_PROVIDER_TYPE) return false;
+  const apiKey = await getApiKey(defaultProviderId);
+  return typeof apiKey === 'string' && apiKey.trim().length > 0;
+}
+
+async function loadPdfExtractRuntime(): Promise<{
+  t: (params: {
+    buffer: Buffer;
+    maxPages: number;
+    maxPixels: number;
+    minTextChars: number;
+    onImageExtractionError?: (err: unknown) => void;
+  }) => Promise<PdfRenderResult>;
+}> {
+  if (!pdfExtractModulePromise) {
+    const entryPath = join(getOpenClawResolvedDir(), 'dist', 'pdf-extract-BQPFOwRi.js');
+    pdfExtractModulePromise = import(entryPath) as Promise<{
+      t: (params: {
+        buffer: Buffer;
+        maxPages: number;
+        maxPixels: number;
+        minTextChars: number;
+        onImageExtractionError?: (err: unknown) => void;
+      }) => Promise<PdfRenderResult>;
+    }>;
+  }
+  return pdfExtractModulePromise;
+}
+
+async function convertPdfToVisionAttachments(
+  file: StagedMediaInput,
+  fsP: typeof import('fs/promises'),
+): Promise<VisualAttachment[]> {
+  const config = await readOpenClawConfig() as OpenClawConfigLike;
+  const maxBytes = resolveConfiguredPdfMaxBytes(config);
+  const maxPages = resolveConfiguredPdfMaxPages(config);
+  const stat = await fsP.stat(file.filePath);
+  if (stat.size > maxBytes) {
+    throw new Error(`PDF exceeds configured size limit (${stat.size} > ${maxBytes} bytes): ${file.fileName}`);
+  }
+
+  const buffer = await fsP.readFile(file.filePath);
+  const runtime = await loadPdfExtractRuntime();
+  const extracted = await runtime.t({
+    buffer,
+    maxPages,
+    maxPixels: PDF_RENDER_MAX_PIXELS,
+    minTextChars: PDF_RENDER_MIN_TEXT_CHARS,
+    onImageExtractionError: (err) => {
+      logger.warn(`[chat:sendWithMedia] PDF image extraction warning for ${file.fileName}: ${String(err)}`);
+    },
+  });
+
+  if (!Array.isArray(extracted.images) || extracted.images.length === 0) {
+    throw new Error(`PDF rendering produced no page images for ${file.fileName}`);
+  }
+
+  return extracted.images.map((image, index) => ({
+    content: image.data,
+    mimeType: image.mimeType || 'image/png',
+    fileName: `${file.fileName}-page-${index + 1}.png`,
+  }));
+}
+
+async function prepareMediaPayloadForModel(
+  media: StagedMediaInput[],
+): Promise<PreparedMediaPayload> {
+  const fsP = await import('fs/promises');
+  const attachments: VisualAttachment[] = [];
+  const messageRefs: string[] = [];
+
+  for (const item of media) {
+    const exists = await fsP.access(item.filePath).then(() => true, () => false);
+    logger.info(`[chat:sendWithMedia] Processing file: ${item.fileName} (${item.mimeType}), path: ${item.filePath}, exists: ${exists}`);
+    if (!exists) {
+      throw new Error(`Attachment file not found: ${item.filePath}`);
+    }
+
+    messageRefs.push(buildLawClawMediaRef(item.filePath, item.mimeType));
+
+    if (item.mimeType === 'application/pdf') {
+      attachments.push(...await convertPdfToVisionAttachments(item, fsP));
+      continue;
+    }
+
+    if (item.mimeType.startsWith('image/')) {
+      const fileBuffer = await fsP.readFile(item.filePath);
+      const base64Data = fileBuffer.toString('base64');
+      logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);
+      attachments.push({
+        content: base64Data,
+        mimeType: item.mimeType,
+        fileName: item.fileName,
+      });
+    }
+  }
+
+  return {
+    attachments,
+    messageRefs,
+    sourceFiles: media,
+  };
+}
 
 /**
  * Generate a preview data URL for image files.

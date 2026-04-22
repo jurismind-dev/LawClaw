@@ -14,6 +14,14 @@ if /i "%1"=="update" (
     exit /b 0
 )
 
+if /i "%1"=="jurismind-sso" (
+    shift
+    set ELECTRON_RUN_AS_NODE=1
+    set OPENCLAW_EMBEDDED_IN=LawClaw
+    "%~dp0..\..\LawClaw.exe" "%~dp0..\resources\cli\jurismind-sso.mjs" %*
+    exit /b %ERRORLEVEL%
+)
+
 set ELECTRON_RUN_AS_NODE=1
 set OPENCLAW_EMBEDDED_IN=LawClaw
 "%~dp0..\..\LawClaw.exe" "%~dp0..\openclaw\openclaw.mjs" %*

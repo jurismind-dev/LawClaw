@@ -302,4 +302,94 @@ describe('chat stream recovery', () => {
       ],
     });
   });
+
+  it('deduplicates duplicate assistant finals for the same turn when ids differ', () => {
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: '你好',
+          timestamp: 1,
+          id: 'user-1',
+        },
+      ],
+      sending: true,
+      activeRunId: 'run-duplicate-final',
+      pendingFinal: true,
+    });
+
+    useChatStore.getState().handleChatEvent({
+      state: 'final',
+      runId: 'run-duplicate-final',
+      sessionKey: 'agent:lawclaw-main:main',
+      message: {
+        role: 'assistant',
+        id: 'assistant-final-1',
+        content: '你好！有什么可以帮你的吗？',
+        timestamp: 2,
+      },
+    });
+
+    useChatStore.getState().handleChatEvent({
+      state: 'final',
+      sessionKey: 'agent:lawclaw-main:main',
+      message: {
+        role: 'assistant',
+        content: '你好！有什么可以帮你的吗？',
+        timestamp: 2,
+      },
+    });
+
+    const assistantMessages = useChatStore.getState().messages.filter((message) => message.role === 'assistant');
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0]).toMatchObject({
+      role: 'assistant',
+      id: 'assistant-final-1',
+      content: '你好！有什么可以帮你的吗？',
+    });
+  });
+
+  it('keeps identical assistant replies from different turns', () => {
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: '你好',
+          timestamp: 1,
+          id: 'user-1',
+        },
+        {
+          role: 'assistant',
+          content: '你好！有什么可以帮你的吗？',
+          timestamp: 2,
+          id: 'assistant-old',
+        },
+        {
+          role: 'user',
+          content: '再说一遍',
+          timestamp: 3,
+          id: 'user-2',
+        },
+      ],
+      sending: true,
+      activeRunId: 'run-next-turn',
+      pendingFinal: true,
+    });
+
+    useChatStore.getState().handleChatEvent({
+      state: 'final',
+      runId: 'run-next-turn',
+      sessionKey: 'agent:lawclaw-main:main',
+      message: {
+        role: 'assistant',
+        id: 'assistant-new',
+        content: '你好！有什么可以帮你的吗？',
+        timestamp: 4,
+      },
+    });
+
+    const assistantMessages = useChatStore.getState().messages.filter((message) => message.role === 'assistant');
+    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages.map((message) => message.id)).toEqual(['assistant-old', 'assistant-new']);
+  });
 });

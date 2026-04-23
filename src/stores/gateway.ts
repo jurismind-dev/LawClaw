@@ -8,6 +8,13 @@ import type { GatewayStatus } from '../types/gateway';
 let gatewayInitPromise: Promise<void> | null = null;
 const gatewayEventDedupe = new Map<string, number>();
 const GATEWAY_EVENT_DEDUPE_TTL_MS = 30_000;
+const GATEWAY_LISTENER_CLEANUP_KEY = '__lawclawGatewayListenerCleanups';
+
+type GatewayListenerCleanup = () => void;
+
+type GatewayGlobal = typeof globalThis & {
+  [GATEWAY_LISTENER_CLEANUP_KEY]?: GatewayListenerCleanup[];
+};
 
 interface GatewayHealth {
   ok: boolean;
@@ -40,24 +47,40 @@ function pruneGatewayEventDedupe(now: number): void {
   }
 }
 
+function serializeGatewayEventValue(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? '';
+  } catch {
+    return String(value);
+  }
+}
+
 function buildGatewayEventDedupeKey(event: Record<string, unknown>): string | null {
   const runId = event.runId != null ? String(event.runId) : '';
-  const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
   const seq = event.seq != null ? String(event.seq) : '';
   const state = event.state != null ? String(event.state) : '';
+  const phase = event.phase != null ? String(event.phase) : '';
+  const message = event.message;
 
-  if (runId || sessionKey || seq || state) {
-    return [runId, sessionKey, seq, state].join('|');
+  if (seq) {
+    return ['seq', runId, seq, state].join('|');
   }
 
-  const message = event.message;
   if (message && typeof message === 'object') {
     const msg = message as Record<string, unknown>;
     const messageId = msg.id != null ? String(msg.id) : '';
-    const stopReason = msg.stopReason ?? msg.stop_reason;
-    if (messageId || stopReason) {
-      return `msg|${messageId}|${String(stopReason ?? '')}`;
+    if (messageId) {
+      return ['message-id', runId, state, messageId].join('|');
     }
+
+    const serializedMessage = serializeGatewayEventValue(message);
+    if (serializedMessage) {
+      return ['message', runId, state, serializedMessage].join('|');
+    }
+  }
+
+  if (runId || phase || state) {
+    return ['event', runId, phase, state].join('|');
   }
 
   return null;
@@ -95,6 +118,34 @@ function shouldProcessGatewayEvent(event: Record<string, unknown>): boolean {
   return true;
 }
 
+function clearGatewayRendererListeners(): void {
+  const global = globalThis as GatewayGlobal;
+  const cleanups = global[GATEWAY_LISTENER_CLEANUP_KEY] ?? [];
+  for (const cleanup of cleanups) {
+    try {
+      cleanup();
+    } catch {
+      // ignore stale listener cleanup failures
+    }
+  }
+  global[GATEWAY_LISTENER_CLEANUP_KEY] = [];
+}
+
+function registerGatewayRendererListener(
+  channel: string,
+  callback: (...args: unknown[]) => void,
+): void {
+  const unsubscribe = window.electron.ipcRenderer.on(channel, callback);
+  if (typeof unsubscribe !== 'function') {
+    return;
+  }
+
+  const global = globalThis as GatewayGlobal;
+  const cleanups = global[GATEWAY_LISTENER_CLEANUP_KEY] ?? [];
+  cleanups.push(unsubscribe);
+  global[GATEWAY_LISTENER_CLEANUP_KEY] = cleanups;
+}
+
 export const useGatewayStore = create<GatewayState>((set, get) => ({
   status: {
     state: 'stopped',
@@ -116,14 +167,15 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         // Get initial status first
         const status = await window.electron.ipcRenderer.invoke('gateway:status') as GatewayStatus;
         set({ status, isInitialized: true });
+        clearGatewayRendererListeners();
 
         // Listen for status changes
-        window.electron.ipcRenderer.on('gateway:status-changed', (newStatus) => {
+        registerGatewayRendererListener('gateway:status-changed', (newStatus) => {
           set({ status: newStatus as GatewayStatus });
         });
 
         // Listen for errors
-        window.electron.ipcRenderer.on('gateway:error', (error) => {
+        registerGatewayRendererListener('gateway:error', (error) => {
           set({ lastError: String(error) });
         });
 
@@ -131,7 +183,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         // Normalize and forward them to the chat store.
         // The Gateway may put event fields (state, message, etc.) either inside
         // params.data or directly on params — we must handle both layouts.
-        window.electron.ipcRenderer.on('gateway:notification', (notification) => {
+        registerGatewayRendererListener('gateway:notification', (notification) => {
           const payload = notification as { method?: string; params?: Record<string, unknown> } | undefined;
           if (!payload || payload.method !== 'agent' || !payload.params || typeof payload.params !== 'object') {
             return;
@@ -229,7 +281,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         // The data arrives as { message: payload } from handleProtocolEvent.
         // The payload may be a full event wrapper ({ state, runId, message })
         // or the raw chat message itself. We need to handle both.
-        window.electron.ipcRenderer.on('gateway:chat-message', (data) => {
+        registerGatewayRendererListener('gateway:chat-message', (data) => {
           try {
             import('./chat').then(({ useChatStore }) => {
               const chatData = data as Record<string, unknown>;

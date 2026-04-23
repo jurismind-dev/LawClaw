@@ -1252,8 +1252,15 @@ function normalizeComparableAssistantText(content: unknown): string {
     .trim();
 }
 
+function stripComparableUserMetadata(text: string): string {
+  return text
+    .replace(/\s*\[(?:media attached|lawclaw-media):[^\]]*\]/g, '')
+    .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
+    .trim();
+}
+
 function normalizeComparableUserText(content: unknown): string {
-  return getMessageText(content)
+  return stripComparableUserMetadata(getMessageText(content))
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -1433,6 +1440,13 @@ function mergeDuplicateUserMessage(existing: RawMessage, incoming: RawMessage): 
     timestamp: existing.timestamp ?? incoming.timestamp,
     _attachedFiles: mergeAttachedFiles(existing._attachedFiles, incoming._attachedFiles),
   };
+}
+
+function mergeCanonicalUserMessageIntoOptimistic(
+  optimistic: RawMessage,
+  canonical: RawMessage,
+): RawMessage {
+  return mergeDuplicateUserMessage(canonical, optimistic);
 }
 
 function shouldFetchSessionLabel(
@@ -2813,6 +2827,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
             break;
           }
+
+          if (finalMsg.role === 'user') {
+            set((s) => {
+              const msgWithRole: RawMessage = { ...finalMsg, role: 'user' };
+              const duplicateIndex = findDuplicateUserMessageIndex(s.messages, msgWithRole);
+              if (duplicateIndex >= 0) {
+                const nextMessages = [...s.messages];
+                nextMessages[duplicateIndex] = mergeCanonicalUserMessageIntoOptimistic(
+                  nextMessages[duplicateIndex]!,
+                  msgWithRole,
+                );
+                return {
+                  messages: nextMessages,
+                  activeRunId: s.activeRunId || runId || null,
+                  sending: s.sending || Boolean(runId),
+                };
+              }
+
+              return {
+                messages: [...s.messages, msgWithRole],
+                activeRunId: s.activeRunId || runId || null,
+                sending: s.sending || Boolean(runId),
+              };
+            });
+            break;
+          }
+
           const updates = collectToolUpdates(finalMsg, resolvedState);
           if (isToolResultRole(finalMsg.role)) {
             if (!get().sending) {

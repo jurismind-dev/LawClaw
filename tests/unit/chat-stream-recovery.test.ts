@@ -504,4 +504,64 @@ describe('chat stream recovery', () => {
     ]);
     expect(userMessages[0]?.content).toBe('这个图片什么内容');
   });
+
+  it('merges realtime canonical user image echo into the optimistic user message', () => {
+    const optimisticTimestampMs = Date.now();
+
+    useChatStore.setState({
+      sending: true,
+      activeRunId: 'run-image-user-echo',
+      lastUserMessageAt: optimisticTimestampMs,
+      messages: [
+        {
+          role: 'user',
+          id: 'optimistic-user-image',
+          content: '这个图片什么内容',
+          timestamp: optimisticTimestampMs / 1000,
+          _attachedFiles: [
+            {
+              fileName: 'test-image.png',
+              mimeType: 'image/png',
+              fileSize: 1024,
+              preview: 'data:image/png;base64,abc',
+              filePath: 'C:\\Users\\fyjw888\\.openclaw\\media\\outbound\\test-image.png',
+              source: 'user-upload',
+            },
+          ],
+        },
+      ],
+    });
+
+    useChatStore.getState().handleChatEvent({
+      state: 'final',
+      runId: 'run-image-user-echo',
+      sessionKey: 'agent:lawclaw-main:main',
+      message: {
+        role: 'user',
+        id: 'gateway-user-image',
+        content:
+          '这个图片什么内容\n\n[lawclaw-media: C:\\Users\\fyjw888\\.openclaw\\media\\outbound\\test-image.png (image/png) | C:\\Users\\fyjw888\\.openclaw\\media\\outbound\\test-image.png]',
+        timestamp: optimisticTimestampMs / 1000,
+      },
+    });
+
+    const state = useChatStore.getState();
+    const userMessages = state.messages.filter((message) => message.role === 'user');
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]).toMatchObject({
+      role: 'user',
+      id: 'gateway-user-image',
+      content: '这个图片什么内容',
+    });
+    expect(userMessages[0]?._attachedFiles).toEqual([
+      expect.objectContaining({
+        fileName: 'test-image.png',
+        mimeType: 'image/png',
+        filePath: 'C:\\Users\\fyjw888\\.openclaw\\media\\outbound\\test-image.png',
+        preview: 'data:image/png;base64,abc',
+      }),
+    ]);
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-image-user-echo');
+  });
 });

@@ -9,6 +9,12 @@ function getListener(eventName: string): ((payload: unknown) => void) | undefine
   return match?.[1] as ((payload: unknown) => void) | undefined;
 }
 
+function getLastListener(eventName: string): ((payload: unknown) => void) | undefined {
+  const calls = vi.mocked(window.electron.ipcRenderer.on).mock.calls;
+  const match = [...calls].reverse().find(([name]) => name === eventName);
+  return match?.[1] as ((payload: unknown) => void) | undefined;
+}
+
 describe('gateway notification sync', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -56,6 +62,39 @@ describe('gateway notification sync', () => {
     });
 
     await useGatewayStore.getState().init();
+  });
+
+  it('cleans up previous renderer gateway listeners before re-initializing in dev setup mode', async () => {
+    const unsubscribeCalls: string[] = [];
+
+    vi.mocked(window.electron.ipcRenderer.on).mockImplementation((channel) => {
+      return () => {
+        unsubscribeCalls.push(String(channel));
+      };
+    });
+
+    useGatewayStore.setState({
+      status: { state: 'stopped', port: 18789 },
+      isInitialized: false,
+      lastError: null,
+    });
+
+    await useGatewayStore.getState().init();
+
+    useGatewayStore.setState({
+      status: { state: 'stopped', port: 18789 },
+      isInitialized: false,
+      lastError: null,
+    });
+
+    await useGatewayStore.getState().init();
+
+    expect(unsubscribeCalls).toEqual([
+      'gateway:status-changed',
+      'gateway:error',
+      'gateway:notification',
+      'gateway:chat-message',
+    ]);
   });
 
   it('refreshes sessions on started for background session runs', async () => {
@@ -113,6 +152,51 @@ describe('gateway notification sync', () => {
       expect(useChatStore.getState().sending).toBe(false);
       expect(useChatStore.getState().activeRunId).toBeNull();
       expect(useChatStore.getState().pendingFinal).toBe(false);
+    });
+  });
+
+  it('deduplicates the same final chat event delivered through notification and chat-message channels', async () => {
+    const handleChatEvent = vi.spyOn(useChatStore.getState(), 'handleChatEvent');
+    useChatStore.setState({
+      activeRunId: 'run-image-1',
+      sending: true,
+      pendingFinal: true,
+    });
+
+    const notificationListener = getLastListener('gateway:notification');
+    const chatMessageListener = getLastListener('gateway:chat-message');
+    expect(notificationListener).toBeDefined();
+    expect(chatMessageListener).toBeDefined();
+
+    const message = {
+      role: 'assistant',
+      id: 'assistant-image-final',
+      content: '这是一个界面截图。',
+      timestamp: 1776920924,
+    };
+
+    notificationListener?.({
+      method: 'agent',
+      params: {
+        runId: 'run-image-1',
+        sessionKey: 'agent:lawclaw-main:main',
+        data: {
+          state: 'final',
+          message,
+        },
+      },
+    });
+
+    chatMessageListener?.({
+      message: {
+        state: 'final',
+        runId: 'run-image-1',
+        message,
+      },
+    });
+
+    await waitFor(() => {
+      expect(handleChatEvent).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -110,9 +110,6 @@ export function Chat() {
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
   const isTaskRunning = sending || pendingFinal || activeRunId !== null;
-  const shouldRenderStreaming =
-    isTaskRunning &&
-    (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
   const hasAnyStreamContent =
     hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
   const nextUserMessageIndexes = new Array<number>(messages.length).fill(-1);
@@ -174,6 +171,12 @@ export function Chat() {
     }];
   });
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
+  const streamHasRenderableReply = hasStreamText || hasStreamImages;
+  const canRenderStreamingAlongsideGraph = !hasActiveExecutionGraph || streamHasRenderableReply;
+  const shouldRenderStreaming =
+    isTaskRunning &&
+    canRenderStreamingAlongsideGraph &&
+    (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
 
   useEffect(() => {
     if (userRunCards.length === 0) return;

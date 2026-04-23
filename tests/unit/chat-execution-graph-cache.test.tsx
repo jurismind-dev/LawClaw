@@ -126,4 +126,41 @@ describe('chat execution graph cache', () => {
     expect(screen.getByText('Thinking')).toBeInTheDocument();
     expect(screen.getByText('vision')).toBeInTheDocument();
   });
+
+  it('does not render duplicate finalizing stream content when an active execution graph already covers the image run', () => {
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          id: 'user-image-1',
+          content: '这个图片什么内容',
+          timestamp: 1,
+        },
+        {
+          role: 'assistant',
+          id: 'assistant-image-thinking-1',
+          timestamp: 2,
+          content: [
+            { type: 'thinking', thinking: '先查看图片内容。' },
+            { type: 'tool_use', id: 'tool-image-1', name: 'image', input: { prompt: 'describe image' } },
+          ],
+        },
+      ],
+      sending: true,
+      pendingFinal: true,
+      activeRunId: 'run-image-1',
+      streamingMessage: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: '正在整理图片分析结果。' },
+        ],
+      } satisfies RawMessage,
+    });
+
+    render(<Chat />);
+
+    expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
+    expect(screen.queryByText('Processing tool results...')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('正在整理图片分析结果。')).toHaveLength(1);
+  });
 });

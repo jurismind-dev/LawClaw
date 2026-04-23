@@ -432,4 +432,76 @@ describe('chat stream recovery', () => {
     expect(state.pendingFinal).toBe(false);
     expect(loadHistoryMock).toHaveBeenCalledWith(true);
   });
+
+  it('deduplicates optimistic user image messages when history returns the canonical media-ref user turn', async () => {
+    const optimisticTimestampMs = Date.now();
+
+    useChatStore.setState({
+      sending: true,
+      activeRunId: 'run-image-user-dedupe',
+      lastUserMessageAt: optimisticTimestampMs,
+      messages: [
+        {
+          role: 'user',
+          id: 'optimistic-user-image',
+          content: '这个图片什么内容',
+          timestamp: optimisticTimestampMs / 1000,
+          _attachedFiles: [
+            {
+              fileName: 'test-image.png',
+              mimeType: 'image/png',
+              fileSize: 1024,
+              preview: 'data:image/png;base64,abc',
+              filePath: 'C:\\Users\\fyjw888\\.openclaw\\media\\outbound\\test-image.png',
+              source: 'user-upload',
+            },
+          ],
+        },
+      ],
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [
+              {
+                role: 'user',
+                id: 'gateway-user-image',
+                content:
+                  '这个图片什么内容\n\n[lawclaw-media: C:\\Users\\fyjw888\\.openclaw\\media\\outbound\\test-image.png (image/png) | C:\\Users\\fyjw888\\.openclaw\\media\\outbound\\test-image.png]',
+                timestamp: optimisticTimestampMs / 1000,
+              },
+              {
+                role: 'assistant',
+                id: 'assistant-image-answer',
+                content: '这是一个界面截图。',
+                timestamp: optimisticTimestampMs / 1000 + 1,
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadHistory(true, { force: true });
+
+    const state = useChatStore.getState();
+    const userMessages = state.messages.filter((message) => message.role === 'user');
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]).toMatchObject({
+      role: 'user',
+    });
+    expect(userMessages[0]?._attachedFiles).toEqual([
+      expect.objectContaining({
+        fileName: 'test-image.png',
+        mimeType: 'image/png',
+        filePath: 'C:\\Users\\fyjw888\\.openclaw\\media\\outbound\\test-image.png',
+        preview: 'data:image/png;base64,abc',
+      }),
+    ]);
+    expect(userMessages[0]?.content).toBe('这个图片什么内容');
+  });
 });

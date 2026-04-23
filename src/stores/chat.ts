@@ -1252,6 +1252,29 @@ function normalizeComparableAssistantText(content: unknown): string {
     .trim();
 }
 
+function normalizeComparableUserText(content: unknown): string {
+  return getMessageText(content)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getComparableMessageRefSignature(message: Pick<RawMessage, '_attachedFiles' | 'content'>): string {
+  const attachedFiles = (message._attachedFiles || [])
+    .map((file) => file.filePath || `${file.fileName}|${file.mimeType}`)
+    .filter(Boolean);
+  if (attachedFiles.length > 0) {
+    return attachedFiles.sort().join('::');
+  }
+
+  const text = getMessageText(message.content);
+  const refs = extractMediaRefs(text).map((ref) => ref.filePath).filter(Boolean);
+  if (refs.length > 0) {
+    return refs.sort().join('::');
+  }
+
+  return '';
+}
+
 function getComparableAttachedFileSignature(message: Pick<RawMessage, '_attachedFiles'>): string {
   const files = (message._attachedFiles || [])
     .map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`)
@@ -1353,6 +1376,56 @@ function findDuplicateAssistantFinalMessageIndex(messages: RawMessage[], incomin
 }
 
 function mergeDuplicateAssistantFinal(existing: RawMessage, incoming: RawMessage): RawMessage {
+  return {
+    ...existing,
+    ...incoming,
+    id: pickPreferredMessageId(existing.id, incoming.id),
+    timestamp: existing.timestamp ?? incoming.timestamp,
+    _attachedFiles: mergeAttachedFiles(existing._attachedFiles, incoming._attachedFiles),
+  };
+}
+
+function shouldTreatAsDuplicateUserMessage(existing: RawMessage, incoming: RawMessage): boolean {
+  if (existing.role !== 'user' || incoming.role !== 'user') return false;
+
+  const existingText = normalizeComparableUserText(existing.content);
+  const incomingText = normalizeComparableUserText(incoming.content);
+  const existingRefs = getComparableMessageRefSignature(existing);
+  const incomingRefs = getComparableMessageRefSignature(incoming);
+
+  if (existingText && incomingText && existingText === incomingText) {
+    if (!existingRefs || !incomingRefs) return true;
+    if (existingRefs === incomingRefs) return true;
+  }
+
+  if (existingRefs && incomingRefs && existingRefs === incomingRefs) {
+    if (!existingText || !incomingText || existingText === incomingText) return true;
+  }
+
+  return false;
+}
+
+function findDuplicateUserMessageIndex(messages: RawMessage[], incoming: RawMessage): number {
+  if (incoming.role !== 'user') return -1;
+  if (incoming.id) {
+    const sameIdIndex = messages.findIndex((message) => message.id === incoming.id);
+    if (sameIdIndex >= 0) {
+      return sameIdIndex;
+    }
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index];
+    if (!candidate || candidate.role !== 'user') continue;
+    if (shouldTreatAsDuplicateUserMessage(candidate, incoming)) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function mergeDuplicateUserMessage(existing: RawMessage, incoming: RawMessage): RawMessage {
   return {
     ...existing,
     ...incoming,
@@ -2120,6 +2193,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
             : message;
         });
       };
+      const mergeOptimisticUserMessages = (
+        currentMessages: RawMessage[],
+        hydratedMessages: RawMessage[],
+      ): RawMessage[] => {
+        if (currentMessages.length === 0) {
+          return hydratedMessages;
+        }
+
+        const nextMessages = [...hydratedMessages];
+        for (const currentMessage of currentMessages) {
+          if (currentMessage.role !== 'user') continue;
+          const duplicateIndex = findDuplicateUserMessageIndex(nextMessages, currentMessage);
+          if (duplicateIndex >= 0) {
+            nextMessages[duplicateIndex] = mergeDuplicateUserMessage(
+              nextMessages[duplicateIndex]!,
+              currentMessage,
+            );
+          }
+        }
+        return nextMessages;
+      };
 
       const applyLoadFailure = (errorMessage: string | null) => {
         if (!isCurrentSession() || !isLatestLoadForSession()) return;
@@ -2162,6 +2256,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
           }
         }
+
+        finalMessages = mergeOptimisticUserMessages(get().messages, finalMessages);
 
         set({ messages: finalMessages, thinkingLevel: finalThinkingLevel, loading: false });
         cacheSessionView(requestedSessionKey, finalMessages, finalThinkingLevel);

@@ -14,6 +14,7 @@ const {
   patchOpenClawWebSearchRuntime,
   patchOpenClawKillTreeRuntime,
   patchOpenClawExecRuntime,
+  patchOpenClawModelCatalogRuntime,
   patchOpenClawWindowsSpawnRuntime,
 } = require('./openclaw-bundle-compat.cjs');
 
@@ -23,6 +24,7 @@ const patchedRuntimeFiles = patchOpenClawWebSearchRuntime(openclawDir);
 const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(openclawDir);
 const patchedExecRuntimeFiles = patchOpenClawExecRuntime(openclawDir);
 const patchedKillTreeFiles = patchOpenClawKillTreeRuntime(openclawDir);
+const patchedModelCatalogFiles = patchOpenClawModelCatalogRuntime(openclawDir);
 const patchedPluginSdkCompatFiles = patchOpenClawPluginSdkCompat(openclawDir);
 
 if (patchedRuntimeFiles.length > 0) {
@@ -36,6 +38,9 @@ if (patchedExecRuntimeFiles.length > 0) {
 }
 if (patchedKillTreeFiles.length > 0) {
   console.log(`[dev-setup] Patched OpenClaw Windows kill-tree runtime: ${patchedKillTreeFiles.join(', ')}`);
+}
+if (patchedModelCatalogFiles.length > 0) {
+  console.log(`[dev-setup] Patched OpenClaw model discovery/catalog runtime: ${patchedModelCatalogFiles.join(', ')}`);
 }
 if (patchedPluginSdkCompatFiles.length > 0) {
   console.log(`[dev-setup] Patched OpenClaw plugin-sdk compat/runtime guards: ${patchedPluginSdkCompatFiles.join(', ')}`);

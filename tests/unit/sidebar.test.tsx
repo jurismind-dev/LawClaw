@@ -130,7 +130,7 @@ describe('sidebar clawx alignment', () => {
     expect(screen.getByText('LawClaw')).toBeInTheDocument();
   });
 
-  it('loads sessions and history as soon as the gateway is running, even before gatewayReady', async () => {
+  it('waits for gatewayReady before loading sessions and history, matching ClawX startup behavior', async () => {
     const loadSessions = vi.fn().mockResolvedValue(undefined);
     const loadHistory = vi.fn().mockResolvedValue(undefined);
 
@@ -160,12 +160,23 @@ describe('sidebar clawx alignment', () => {
     });
 
     await waitFor(() => {
+      expect(loadSessions).not.toHaveBeenCalled();
+      expect(loadHistory).not.toHaveBeenCalled();
+    });
+
+    await act(async () => {
+      useGatewayStore.setState({
+        status: { state: 'running', port: 18789, gatewayReady: true, connectedAt: 1 },
+      });
+    });
+
+    await waitFor(() => {
       expect(loadSessions).toHaveBeenCalledTimes(1);
       expect(loadHistory).toHaveBeenCalledTimes(1);
     });
   });
 
-  it('re-entering chat with existing messages only performs quiet history refresh', async () => {
+  it('loads history quietly so startup and re-entry never block the chat view', async () => {
     const loadSessions = vi.fn().mockResolvedValue(undefined);
     const loadHistory = vi.fn().mockResolvedValue(undefined);
 

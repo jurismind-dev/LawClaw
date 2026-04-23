@@ -122,6 +122,68 @@ describe('chat heartbeat filtering', () => {
     ]);
   });
 
+  it('loadHistory 会过滤 BOOT/HEARTBEAT 的 thinking 和工具步骤整段历史', async () => {
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [
+              { role: 'assistant', content: BOOT_CHECK_PROMPT, timestamp: 1 },
+              {
+                role: 'assistant',
+                timestamp: 2,
+                content: [
+                  {
+                    type: 'thinking',
+                    thinking: 'The user is asking me to follow BOOT.md instructions.',
+                  },
+                  {
+                    type: 'tool_use',
+                    id: 'boot-read',
+                    name: 'read',
+                    input: { file: 'BOOT.md' },
+                  },
+                ],
+              },
+              { role: 'toolresult', toolCallId: 'boot-read', content: 'BOOT.md content', timestamp: 3 },
+              { role: 'assistant', content: 'NO_REPLY', timestamp: 4 },
+              { role: 'user', content: HEARTBEAT_PROMPT, timestamp: 5 },
+              {
+                role: 'assistant',
+                timestamp: 6,
+                content: [
+                  {
+                    type: 'thinking',
+                    thinking: 'Let me read the HEARTBEAT.md file to check for tasks.',
+                  },
+                  {
+                    type: 'tool_use',
+                    id: 'heartbeat-read',
+                    name: 'read',
+                    input: { file: 'HEARTBEAT.md' },
+                  },
+                ],
+              },
+              { role: 'toolresult', toolCallId: 'heartbeat-read', content: 'No tasks.', timestamp: 7 },
+              { role: 'assistant', content: 'HEARTBEAT_OK', timestamp: 8 },
+              { role: 'user', content: '真正的问题', timestamp: 9 },
+              { role: 'assistant', content: '真正的回答', timestamp: 10 },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadHistory();
+
+    expect(useChatStore.getState().messages).toEqual([
+      expect.objectContaining({ role: 'user', content: '真正的问题' }),
+      expect.objectContaining({ role: 'assistant', content: '真正的回答' }),
+    ]);
+  });
+
   it('loadHistory 生成会话标题时会忽略 heartbeat 首条消息', async () => {
     useChatStore.setState({
       currentSessionKey: 'agent:lawclaw-main:session-1',
@@ -238,5 +300,30 @@ describe('chat heartbeat filtering', () => {
 
     expect(useChatStore.getState().sending).toBe(false);
     expect(useChatStore.getState().activeRunId).toBeNull();
+  });
+
+  it('空闲状态下的 BOOT/HEARTBEAT 工具流不会进入处理中状态', () => {
+    useChatStore.getState().handleChatEvent({
+      state: 'delta',
+      runId: 'heartbeat-run-3',
+      sessionKey: 'agent:lawclaw-main:main',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'I should read HEARTBEAT.md first.' },
+          {
+            type: 'tool_use',
+            id: 'heartbeat-read',
+            name: 'read',
+            input: { file: 'HEARTBEAT.md' },
+          },
+        ],
+      },
+    });
+
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().activeRunId).toBeNull();
+    expect(useChatStore.getState().streamingMessage).toBeNull();
+    expect(useChatStore.getState().streamingTools).toEqual([]);
   });
 });

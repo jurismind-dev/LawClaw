@@ -37,6 +37,17 @@ type GraphStepCacheEntry = {
 
 const graphStepCacheStore = new Map<string, Record<string, GraphStepCacheEntry>>();
 
+function isRenderableChatMessage(message: RawMessage): boolean {
+  const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
+  if (role === 'toolresult' || role === 'tool_result') return false;
+  const text = extractText(message);
+  if (text.trim().length > 0) return true;
+  if (extractThinking(message)?.trim()) return true;
+  if (extractToolUse(message).length > 0) return true;
+  if (extractImages(message).length > 0) return true;
+  return (message._attachedFiles || []).length > 0;
+}
+
 export function Chat() {
   const { t } = useTranslation('chat');
   const gatewayStatus = useGatewayStore((s) => s.status);
@@ -65,6 +76,7 @@ export function Chat() {
   const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
   const minLoading = useMinLoading(loading && messages.length > 0);
   const graphStepCache = graphStepCacheStore.get(currentSessionKey) ?? {};
+  const hasRenderableMessages = messages.some(isRenderableChatMessage);
 
   const handleOpenGatewaySlowStartGuide = async () => {
     try {
@@ -261,15 +273,7 @@ export function Chat() {
       <div className="min-h-0 flex-1 overflow-hidden px-3 py-2">
         <div ref={scrollRef} className="h-full min-h-0 overflow-y-auto">
           <div ref={contentRef} className="w-full space-y-4">
-            {loading && !isTaskRunning && messages.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-4 py-20 text-center">
-                <LoadingSpinner size="lg" />
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">{t('loadingHistory.title')}</p>
-                  <p className="text-sm text-muted-foreground">{t('loadingHistory.subtitle')}</p>
-                </div>
-              </div>
-            ) : messages.length === 0 && !isTaskRunning ? (
+            {!hasRenderableMessages && !isTaskRunning ? (
               <WelcomeScreen />
             ) : (
               <>

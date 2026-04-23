@@ -635,4 +635,89 @@ describe('openclaw bundle compatibility patches', () => {
 
     expect(patchOpenClawExecRuntime(openclawDir)).toEqual([]);
   });
+
+  it('patches OpenClaw model discovery runtime to merge missing agent models.json entries', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-model-catalog-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const distDir = join(openclawDir, 'dist');
+    mkdirSync(distDir, { recursive: true });
+
+    const discoveryPath = join(distDir, 'pi-model-discovery-test.js');
+    writeFileSync(
+      discoveryPath,
+      [
+        'import { s as normalizeOptionalString } from "./string-coerce-BUSzWgUA.js";',
+        'import { l as isRecord } from "./utils-D5DtWkEu.js";',
+        'import fs from "node:fs";',
+        'function normalizeDiscoveredPiModel(value, agentDir) {',
+        '\treturn value;',
+        '}',
+        'function instantiatePiModelRegistry(authStorage, modelsJsonPath) {',
+        '\treturn authStorage;',
+        '}',
+        'function createOpenClawModelRegistry(authStorage, modelsJsonPath, agentDir) {',
+        '\tconst registry = instantiatePiModelRegistry(authStorage, modelsJsonPath);',
+        '\tconst getAll = registry.getAll.bind(registry);',
+        '\tconst getAvailable = registry.getAvailable.bind(registry);',
+        '\tconst find = registry.find.bind(registry);',
+        '\tregistry.getAll = () => getAll().map((entry) => normalizeDiscoveredPiModel(entry, agentDir));',
+        '\tregistry.getAvailable = () => getAvailable().map((entry) => normalizeDiscoveredPiModel(entry, agentDir));',
+        '\tregistry.find = (provider, modelId) => normalizeDiscoveredPiModel(find(provider, modelId), agentDir);',
+        '\treturn registry;',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { patchOpenClawModelCatalogRuntime } = await loadCompatTools();
+    expect(patchOpenClawModelCatalogRuntime(openclawDir)).toEqual(['pi-model-discovery-test.js']);
+
+    const patchedSource = readFileSync(discoveryPath, 'utf8');
+    expect(patchedSource).toContain('lawclaw model discovery fallback patch v1');
+    expect(patchedSource).toContain('function normalizeModelRegistryKeyPart(value)');
+    expect(patchedSource).toContain('function createModelRegistryKey(provider, modelId)');
+    expect(patchedSource).toContain('function loadFallbackModelsFromAgentFile(modelsJsonPath, agentDir)');
+    expect(patchedSource).toContain('const fallbackModels = (() => {');
+    expect(patchedSource).toContain('const seen = new Set(merged.map((entry) => createModelRegistryKey(entry?.provider, entry?.id)).filter(Boolean));');
+    expect(patchedSource).toContain('return fallbackModels.find((entry) => createModelRegistryKey(entry?.provider, entry?.id) === key);');
+
+    expect(patchOpenClawModelCatalogRuntime(openclawDir)).toEqual([]);
+  });
+
+  it('patches OpenClaw model catalog runtime to use discoverModels fallback-aware registry', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-model-discovery-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const distDir = join(openclawDir, 'dist');
+    mkdirSync(distDir, { recursive: true });
+
+    const catalogPath = join(distDir, 'model-catalog-test.js');
+    writeFileSync(
+      catalogPath,
+      [
+        'async function loadModelCatalog() {',
+        '\tconst { join } = await import("node:path");',
+        '\tconst authStorage = piSdk.discoverAuthStorage(agentDir);',
+        '\tlogStage("auth-storage-ready");',
+        '\tconst registry = instantiatePiModelRegistry(piSdk, authStorage, join(agentDir, "models.json"));',
+        '\tlogStage("registry-ready");',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { patchOpenClawModelCatalogRuntime } = await loadCompatTools();
+    expect(patchOpenClawModelCatalogRuntime(openclawDir)).toEqual(['model-catalog-test.js']);
+
+    const patchedSource = readFileSync(catalogPath, 'utf8');
+    expect(patchedSource).toContain('lawclaw model catalog runtime fallback patch v1');
+    expect(patchedSource).toContain('typeof piSdk.discoverModels === "function" ? piSdk.discoverModels(authStorage, agentDir) : instantiatePiModelRegistry(piSdk, authStorage, join(agentDir, "models.json"))');
+
+    expect(patchOpenClawModelCatalogRuntime(openclawDir)).toEqual([]);
+  });
 });

@@ -26,6 +26,7 @@ const {
   patchOpenClawWebSearchRuntime,
   patchOpenClawKillTreeRuntime,
   patchOpenClawExecRuntime,
+  patchOpenClawModelCatalogRuntime,
   patchOpenClawWindowsSpawnRuntime,
   removeBundledExtensions,
 } = compatTools;
@@ -162,6 +163,11 @@ if (patchedExecRuntimeFiles.length > 0) {
 const patchedKillTreeFiles = patchOpenClawKillTreeRuntime(OUTPUT);
 if (patchedKillTreeFiles.length > 0) {
   echo`   Patched OpenClaw Windows kill-tree runtime: ${patchedKillTreeFiles.join(', ')}`;
+}
+
+const patchedModelCatalogFiles = patchOpenClawModelCatalogRuntime(OUTPUT);
+if (patchedModelCatalogFiles.length > 0) {
+  echo`   Patched OpenClaw model discovery/catalog runtime: ${patchedModelCatalogFiles.join(', ')}`;
 }
 
 const patchedPluginSdkCompatFiles = patchOpenClawPluginSdkCompat(OUTPUT);

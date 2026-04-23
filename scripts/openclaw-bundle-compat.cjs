@@ -11,6 +11,8 @@ const JURISMIND_DOUBAO_PATCH_MARKER = 'lawclaw jurismind doubao plugin v1';
 const LRU_CACHE_COMPAT_MARKER = 'lawclaw lru-cache interop patch v1';
 const PLUGIN_SDK_COMPAT_PATCH_MARKER = 'lawclaw plugin-sdk compat patch v1';
 const MESSAGE_ACTION_DISCOVERY_PATCH_MARKER = 'lawclaw message-action-discovery guard v1';
+const MODEL_DISCOVERY_PATCH_MARKER = 'lawclaw model discovery fallback patch v1';
+const MODEL_CATALOG_RUNTIME_PATCH_MARKER = 'lawclaw model catalog runtime fallback patch v1';
 const REMOVED_OPENCLAW_EXTENSION_IDS = ['qqbot'];
 
 function isPlainObject(value) {
@@ -1395,6 +1397,80 @@ function patchOpenClawWebSearchRuntime(openClawDir) {
   return patchedFiles;
 }
 
+function patchPiModelDiscoveryFile(filePath) {
+  const original = readFileSync(filePath, 'utf8');
+  if (original.includes(MODEL_DISCOVERY_PATCH_MARKER)) {
+    return false;
+  }
+
+  let content = original;
+  let changed = false;
+
+  const beforeRegistry = `function createOpenClawModelRegistry(authStorage, modelsJsonPath, agentDir) {\n\tconst registry = instantiatePiModelRegistry(authStorage, modelsJsonPath);\n\tconst getAll = registry.getAll.bind(registry);\n\tconst getAvailable = registry.getAvailable.bind(registry);\n\tconst find = registry.find.bind(registry);\n\tregistry.getAll = () => getAll().map((entry) => normalizeDiscoveredPiModel(entry, agentDir));\n\tregistry.getAvailable = () => getAvailable().map((entry) => normalizeDiscoveredPiModel(entry, agentDir));\n\tregistry.find = (provider, modelId) => normalizeDiscoveredPiModel(find(provider, modelId), agentDir);\n\treturn registry;\n}`;
+  const afterRegistry = `function normalizeModelRegistryKeyPart(value) {\n\t// ${MODEL_DISCOVERY_PATCH_MARKER}\n\treturn (normalizeOptionalString(value) ?? "").toLowerCase();\n}\nfunction createModelRegistryKey(provider, modelId) {\n\tconst normalizedProvider = normalizeModelRegistryKeyPart(provider);\n\tconst normalizedModelId = normalizeModelRegistryKeyPart(modelId);\n\tif (!normalizedProvider || !normalizedModelId) return "";\n\treturn \`\${normalizedProvider}::\${normalizedModelId}\`;\n}\nfunction loadFallbackModelsFromAgentFile(modelsJsonPath, agentDir) {\n\tlet parsed;\n\ttry {\n\t\tparsed = JSON.parse(fs.readFileSync(modelsJsonPath, "utf8"));\n\t} catch {\n\t\treturn [];\n\t}\n\tif (!isRecord(parsed)) return [];\n\tconst providers = isRecord(parsed.providers) ? parsed.providers : null;\n\tif (!providers) return [];\n\tconst fallback = [];\n\tfor (const [rawProvider, rawProviderConfig] of Object.entries(providers)) {\n\t\tconst provider = normalizeOptionalString(rawProvider) ?? "";\n\t\tif (!provider || !isRecord(rawProviderConfig)) continue;\n\t\tconst providerConfig = rawProviderConfig;\n\t\tconst baseUrl = normalizeOptionalString(providerConfig.baseUrl) ?? void 0;\n\t\tconst api = normalizeOptionalString(providerConfig.api) ?? "openai-completions";\n\t\tconst models = Array.isArray(providerConfig.models) ? providerConfig.models : [];\n\t\tfor (const rawModel of models) {\n\t\t\tif (!isRecord(rawModel)) continue;\n\t\t\tconst id = normalizeOptionalString(rawModel.id) ?? "";\n\t\t\tif (!id) continue;\n\t\t\tconst name = normalizeOptionalString(rawModel.name ?? id) || id;\n\t\t\tconst input = Array.isArray(rawModel.input) ? rawModel.input.filter((entry) => typeof entry === "string" && entry.trim()) : void 0;\n\t\t\tconst maxTokens = typeof rawModel.maxTokens === "number" && Number.isFinite(rawModel.maxTokens) && rawModel.maxTokens > 0 ? rawModel.maxTokens : void 0;\n\t\t\tconst contextWindow = typeof rawModel.contextWindow === "number" && Number.isFinite(rawModel.contextWindow) && rawModel.contextWindow > 0 ? rawModel.contextWindow : void 0;\n\t\t\tconst reasoning = typeof rawModel.reasoning === "boolean" ? rawModel.reasoning : void 0;\n\t\t\tfallback.push(normalizeDiscoveredPiModel({\n\t\t\t\tid,\n\t\t\t\tname,\n\t\t\t\tprovider,\n\t\t\t\tapi,\n\t\t\t\t...(baseUrl ? { baseUrl } : {}),\n\t\t\t\t...(input ? { input } : {}),\n\t\t\t\t...(typeof maxTokens === "number" ? { maxTokens } : {}),\n\t\t\t\t...(typeof contextWindow === "number" ? { contextWindow } : {}),\n\t\t\t\t...(typeof reasoning === "boolean" ? { reasoning } : {})\n\t\t\t}, agentDir));\n\t\t}\n\t}\n\treturn fallback;\n}\nfunction createOpenClawModelRegistry(authStorage, modelsJsonPath, agentDir) {\n\tconst registry = instantiatePiModelRegistry(authStorage, modelsJsonPath);\n\tconst getAll = registry.getAll.bind(registry);\n\tconst getAvailable = registry.getAvailable.bind(registry);\n\tconst find = registry.find.bind(registry);\n\tconst normalizeEntries = (entries) => entries.map((entry) => normalizeDiscoveredPiModel(entry, agentDir));\n\tconst fallbackModels = (() => {\n\t\ttry {\n\t\t\tif (!fs.existsSync(modelsJsonPath)) return [];\n\t\t\treturn loadFallbackModelsFromAgentFile(modelsJsonPath, agentDir);\n\t\t} catch {\n\t\t\treturn [];\n\t\t}\n\t})();\n\tconst mergeEntries = (entries) => {\n\t\tconst merged = normalizeEntries(entries);\n\t\tif (fallbackModels.length === 0) return merged;\n\t\tconst seen = new Set(merged.map((entry) => createModelRegistryKey(entry?.provider, entry?.id)).filter(Boolean));\n\t\tfor (const entry of fallbackModels) {\n\t\t\tconst key = createModelRegistryKey(entry?.provider, entry?.id);\n\t\t\tif (!key || seen.has(key)) continue;\n\t\t\tmerged.push(entry);\n\t\t\tseen.add(key);\n\t\t}\n\t\treturn merged;\n\t};\n\tregistry.getAll = () => mergeEntries(getAll());\n\tregistry.getAvailable = () => mergeEntries(getAvailable());\n\tregistry.find = (provider, modelId) => {\n\t\tconst direct = normalizeDiscoveredPiModel(find(provider, modelId), agentDir);\n\t\tif (direct) return direct;\n\t\tconst key = createModelRegistryKey(provider, modelId);\n\t\tif (!key) return direct;\n\t\treturn fallbackModels.find((entry) => createModelRegistryKey(entry?.provider, entry?.id) === key);\n\t};\n\treturn registry;\n}`;
+
+  if (!content.includes(afterRegistry)) {
+    if (!content.includes(beforeRegistry)) {
+      throw new Error(`[openclaw-runtime-patch] Missing pi-model-discovery registry block in ${filePath}`);
+    }
+    content = content.replace(beforeRegistry, afterRegistry);
+    changed = true;
+  }
+
+  return writePatchedFile(filePath, content, changed);
+}
+
+function patchModelCatalogRuntimeFile(filePath) {
+  const original = readFileSync(filePath, 'utf8');
+  if (original.includes(MODEL_CATALOG_RUNTIME_PATCH_MARKER)) {
+    return false;
+  }
+
+  let content = original;
+  let changed = false;
+
+  const registryPattern = /^(\s*)const registry = instantiatePiModelRegistry\(piSdk, authStorage, join\(agentDir, "models\.json"\)\);$/m;
+  const match = content.match(registryPattern);
+  if (!match) {
+    throw new Error(`[openclaw-runtime-patch] Missing model-catalog registry construction marker in ${filePath}`);
+  }
+
+  const indent = match[1] ?? '';
+  const replacement = `${indent}const registry = typeof piSdk.discoverModels === "function" ? piSdk.discoverModels(authStorage, agentDir) : instantiatePiModelRegistry(piSdk, authStorage, join(agentDir, "models.json"));\n${indent}// ${MODEL_CATALOG_RUNTIME_PATCH_MARKER}`;
+  content = content.replace(registryPattern, replacement);
+  changed = content !== original;
+
+  return writePatchedFile(filePath, content, changed);
+}
+
+function patchOpenClawModelCatalogRuntime(openClawDir) {
+  const distDir = join(openClawDir, 'dist');
+  if (!existsSync(distDir)) {
+    return [];
+  }
+
+  const patchedFiles = [];
+  const fileNames = readdirSync(distDir);
+
+  for (const fileName of fileNames) {
+    const filePath = join(distDir, fileName);
+    if (!existsSync(filePath)) continue;
+
+    let patched = false;
+    if (/^pi-model-discovery-.*\.js$/.test(fileName)) {
+      patched = patchPiModelDiscoveryFile(filePath);
+    } else if (/^model-catalog-.*\.js$/.test(fileName)) {
+      patched = patchModelCatalogRuntimeFile(filePath);
+    }
+
+    if (patched) {
+      patchedFiles.push(fileName);
+    }
+  }
+
+  return patchedFiles;
+}
+
 function patchOpenClawBundleCompat(nodeModulesDir) {
   const patchedPackages = [];
 
@@ -1421,6 +1497,7 @@ module.exports = {
   patchOpenClawWindowsSpawnRuntime,
   patchOpenClawExecRuntime,
   patchOpenClawKillTreeRuntime,
+  patchOpenClawModelCatalogRuntime,
   patchOpenClawPluginSdkCompat,
   patchOpenClawBundleCompat,
   removeBundledExtensions,

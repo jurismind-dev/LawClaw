@@ -116,7 +116,7 @@ interface ChatState {
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
   cleanupEmptySession: () => void;
-  loadHistory: (quiet?: boolean) => Promise<void>;
+  loadHistory: (quiet?: boolean, options?: { force?: boolean }) => Promise<void>;
   sendMessage: (
     text: string,
     attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
@@ -159,6 +159,7 @@ const LABEL_FETCH_CONCURRENCY = 5;
 const SESSION_LABEL_CACHE_TTL_MS = 5 * 60_000;
 const _chatEventDedupe = new Map<string, number>();
 const _sessionLabelFetchedAt = new Map<string, number>();
+const _hiddenInternalRunIds = new Set<string>();
 
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
@@ -423,9 +424,7 @@ function clearSessionViewCache(sessionKey: string): void {
 
 function buildRenderableHistoryMessages(rawMessages: RawMessage[]): RawMessage[] {
   const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-  const filteredMessages = messagesWithToolImages.filter(
-    (message) => !isToolResultRole(message.role) && !isHiddenInternalMessage(message),
-  );
+  const filteredMessages = getUserFacingSessionMessages(messagesWithToolImages);
   return enrichWithCachedImages(filteredMessages);
 }
 
@@ -1156,14 +1155,77 @@ function isHiddenCompletionMessage(message: unknown): boolean {
   return isHeartbeatAckText(text) || isNoReplyText(text) || isAsyncCompletionNoticeText(text);
 }
 
+function isInternalRunMarkerMessage(message: unknown): boolean {
+  if (!message || typeof message !== 'object') return false;
+  const msg = message as Record<string, unknown>;
+  const text = extractTextFromContent(msg.content ?? msg.text ?? '');
+  if (!text) return false;
+  return (
+    isHeartbeatPromptText(text) ||
+    isBootCheckPromptText(text) ||
+    isHeartbeatAckText(text) ||
+    isNoReplyText(text) ||
+    isAsyncCompletionNoticeText(text)
+  );
+}
+
+function clearInternalRunTracking(runId: string): void {
+  if (runId) {
+    _hiddenInternalRunIds.delete(runId);
+  }
+}
+
+function isInternalRunStartMessage(message: RawMessage): boolean {
+  const text = extractTextFromContent(message.content);
+  return isHeartbeatPromptText(text) || isBootCheckPromptText(text);
+}
+
+function isInternalRunCompletionMessage(message: RawMessage): boolean {
+  const text = extractTextFromContent(message.content);
+  return (
+    isHeartbeatAckText(text) ||
+    isNoReplyText(text) ||
+    isAsyncCompletionNoticeText(text)
+  );
+}
+
+function hasPlainUserText(message: RawMessage): boolean {
+  return message.role === 'user' && getMessageText(message.content).trim().length > 0;
+}
+
 function getUserFacingSessionMessages(messages: RawMessage[]): RawMessage[] {
-  return messages.filter((message) => {
-    if (message.role !== 'user' && message.role !== 'assistant') {
-      return false;
+  const visibleMessages: RawMessage[] = [];
+  let hidingInternalRun = false;
+
+  for (const message of messages) {
+    if (isInternalRunStartMessage(message)) {
+      hidingInternalRun = true;
+      continue;
     }
 
-    return !isToolResultRole(message.role) && !isHiddenInternalMessage(message);
-  });
+    if (hidingInternalRun) {
+      if (isInternalRunCompletionMessage(message)) {
+        hidingInternalRun = false;
+        continue;
+      }
+
+      if (hasPlainUserText(message) && !isHiddenInternalMessage(message)) {
+        hidingInternalRun = false;
+      } else {
+        continue;
+      }
+    }
+
+    if (message.role !== 'user' && message.role !== 'assistant') {
+      continue;
+    }
+
+    if (!isToolResultRole(message.role) && !isHiddenInternalMessage(message)) {
+      visibleMessages.push(message);
+    }
+  }
+
+  return visibleMessages;
 }
 
 function getSessionLabelCandidate(messages: RawMessage[]): string | null {
@@ -1528,6 +1590,53 @@ function hasTerminalAssistantOutput(message: RawMessage | undefined): boolean {
   return hasNonToolAssistantContent(message) && !hasToolUseContent(message);
 }
 
+function hasUserFacingMessage(message: RawMessage | undefined): boolean {
+  if (!message || isHiddenInternalMessage(message) || isToolResultRole(message.role)) return false;
+
+  if (message.role === 'user') {
+    return getMessageText(message.content).trim().length > 0;
+  }
+
+  if (message.role === 'assistant') {
+    return hasNonToolAssistantContent(message) || hasToolUseContent(message);
+  }
+
+  return false;
+}
+
+function hasUserFacingTrigger(messages: RawMessage[], lastUserMessageAt: number | null): boolean {
+  if (lastUserMessageAt != null) return true;
+  return messages.some((message) => message.role === 'user' && hasUserFacingMessage(message));
+}
+
+function shouldAdoptIdleRun(eventState: string, event: Record<string, unknown>, state: ChatState): boolean {
+  if (eventState !== 'delta' && eventState !== 'final') return false;
+  if (!event.runId) return false;
+
+  const message = event.message as RawMessage | undefined;
+  if (!message || isHiddenInternalMessage(message) || isToolResultRole(message.role)) {
+    return false;
+  }
+
+  if (message.role === 'user') {
+    return hasUserFacingMessage(message);
+  }
+
+  if (message.role === 'assistant') {
+    if (hasNonToolAssistantContent(message)) {
+      return true;
+    }
+
+    if (hasToolUseContent(message)) {
+      return hasUserFacingTrigger(state.messages, state.lastUserMessageAt);
+    }
+
+    return false;
+  }
+
+  return hasUserFacingTrigger(state.messages, state.lastUserMessageAt);
+}
+
 // ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -1649,6 +1758,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             messages,
             sessionLabels,
             sessionLastActivity,
+            sending,
+            activeRunId,
           } = get();
           const shouldForceDedicatedSession = shouldUseDedicatedFallbackSession(
             currentSessionKey,
@@ -1668,10 +1779,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
           if (!shouldForceDedicatedSession && !dedupedSessions.find((s) => s.key === nextSessionKey)) {
             const currentLocalSession = getSessionEntry(localSessions, nextSessionKey);
-            const shouldPreserveLocalCurrentSession =
+            const isCurrentLocalSession =
               nextSessionKey === currentSessionKey && currentLocalSession != null;
             const hasLocalPendingSession =
-              shouldPreserveLocalCurrentSession &&
+              isCurrentLocalSession &&
               isEphemeralSessionCandidate(
                 nextSessionKey,
                 messages,
@@ -1679,8 +1790,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 sessionLastActivity,
                 currentLocalSession.persisted === true,
               );
+            const shouldPreserveLocalCurrentSession =
+              isCurrentLocalSession &&
+              (
+                currentLocalSession.persisted === true ||
+                hasLocalPendingSession ||
+                sending ||
+                activeRunId != null
+              );
 
-            if (!hasLocalPendingSession && !shouldPreserveLocalCurrentSession) {
+            if (!shouldPreserveLocalCurrentSession) {
               nextSessionKey =
                 pickFallbackSessionKey(dedupedSessions, getAgentIdFromSessionKey(currentSessionKey))
                 ?? DEFAULT_SESSION_KEY;
@@ -1713,7 +1832,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }));
 
           if (currentSessionKey !== nextSessionKey) {
-            void get().loadHistory();
+            void get().loadHistory(true);
           }
 
           const currentState = get();
@@ -1809,7 +1928,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const nextSessionPatch = buildSessionSwitchPatch(get(), nextSessionKey);
     const shouldLoadHistoryQuietly = Array.isArray(nextSessionPatch.messages) && nextSessionPatch.messages.length > 0;
     set(nextSessionPatch);
-    void get().loadHistory(shouldLoadHistoryQuietly);
+    void get().loadHistory(shouldLoadHistoryQuietly, { force: true });
   },
 
   // ── Delete session ──
@@ -1855,7 +1974,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentAgentId: getAgentIdFromSessionKey(nextSession?.key ?? DEFAULT_SESSION_KEY),
       }));
       if (nextSession) {
-        get().loadHistory();
+        get().loadHistory(true);
       }
       return;
     }
@@ -1945,7 +2064,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Load chat history ──
 
-  loadHistory: async (quiet = false) => {
+  loadHistory: async (quiet = false, options?: { force?: boolean }) => {
     const { currentSessionKey } = get();
     const requestedSessionKey = currentSessionKey;
     const isInitialForegroundLoad = !quiet && !_foregroundHistoryLoadSeen.has(requestedSessionKey);
@@ -1960,7 +2079,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const lastLoadAt = _lastHistoryLoadAtBySession.get(requestedSessionKey) || 0;
-    if (quiet && Date.now() - lastLoadAt < HISTORY_LOAD_MIN_INTERVAL_MS) {
+    if (quiet && !options?.force && Date.now() - lastLoadAt < HISTORY_LOAD_MIN_INTERVAL_MS) {
       return;
     }
 
@@ -2467,6 +2586,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     _lastChatEventAt = Date.now();
 
+    const eventMarksInternalRun = runId && isInternalRunMarkerMessage(event.message);
+    if (eventMarksInternalRun) {
+      _hiddenInternalRunIds.add(runId);
+    }
+
+    const currentStateForRun = get();
+    const isTrackedHiddenRun =
+      !!runId &&
+      _hiddenInternalRunIds.has(runId) &&
+      currentStateForRun.activeRunId !== runId;
+    if (isTrackedHiddenRun) {
+      if (resolvedState === 'final' || resolvedState === 'error' || resolvedState === 'aborted') {
+        clearInternalRunTracking(runId);
+      }
+      return;
+    }
+
     if (isHiddenInternalMessage(event.message)) {
       const state = get();
       if (
@@ -2487,6 +2623,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           lastUserMessageAt: null,
         });
       }
+      if (resolvedState === 'final' || resolvedState === 'error' || resolvedState === 'aborted') {
+        clearInternalRunTracking(runId);
+      }
       return;
     }
 
@@ -2498,10 +2637,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       || resolvedState === 'error' || resolvedState === 'aborted';
     if (hasUsefulData) {
       // Adopt run started from another client (e.g. console at 127.0.0.1:18789):
-      // show loading/streaming in the app when this session has an active run.
-      const { sending } = get();
-      if (!sending && runId) {
+      // show loading/streaming only when there is visible user-facing work.
+      const state = get();
+      if (!state.sending && shouldAdoptIdleRun(resolvedState, event, state)) {
         set({ sending: true, activeRunId: runId, error: null });
+      }
+    }
+
+    if (
+      runId &&
+      event.message != null &&
+      (resolvedState === 'delta' || resolvedState === 'final')
+    ) {
+      const stateAfterAdoption = get();
+      if (!stateAfterAdoption.sending && stateAfterAdoption.activeRunId !== runId) {
+        return;
       }
     }
 
@@ -2569,6 +2719,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
           const updates = collectToolUpdates(finalMsg, resolvedState);
           if (isToolResultRole(finalMsg.role)) {
+            if (!get().sending) {
+              break;
+            }
             // Resolve file path from the streaming assistant message's matching tool call
             const currentStreamForPath = get().streamingMessage as RawMessage | null;
             const matchedPath = (currentStreamForPath && finalMsg.toolCallId)
@@ -2701,17 +2854,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
           // tool-use turns (thinking + tool blocks) from the Gateway's authoritative record.
           if (hasOutput && !toolOnly) {
             clearHistoryPoll();
+            clearInternalRunTracking(runId);
             void get().loadHistory(true);
           }
         } else {
           // No message in final event - reload history to get complete data
-          set({ streamingText: '', streamingMessage: null, pendingFinal: true });
-          get().loadHistory();
+          if (get().sending) {
+            set({ streamingText: '', streamingMessage: null, pendingFinal: true });
+            get().loadHistory();
+          } else {
+            void get().loadHistory(true);
+          }
         }
         break;
       }
       case 'error': {
         const errorMsg = String(event.errorMessage || 'An error occurred');
+        clearInternalRunTracking(runId);
         const wasSending = get().sending;
 
         // Snapshot the current streaming message into messages[] so partial
@@ -2770,6 +2929,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       case 'aborted': {
         clearHistoryPoll();
         clearErrorRecoveryTimer();
+        clearInternalRunTracking(runId);
         set({
           sending: false,
           activeRunId: null,
@@ -2807,10 +2967,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Refresh: reload history + sessions ──
 
   refresh: async () => {
-    const { loadHistory, loadSessions, messages } = get();
-    const hadMessages = messages.length > 0;
+    const { loadHistory, loadSessions } = get();
     await loadSessions(true);
-    await loadHistory(hadMessages);
+    await loadHistory(true, { force: true });
   },
 
   clearError: () => set({ error: null }),

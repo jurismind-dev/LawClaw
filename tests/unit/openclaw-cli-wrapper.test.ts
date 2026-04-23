@@ -56,6 +56,10 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(devScript).toContain('patchOpenClawKillTreeRuntime');
     expect(devSetupScript).toContain('patchOpenClawKillTreeRuntime');
     expect(afterPackScript).toContain('patchOpenClawKillTreeRuntime');
+    expect(bundleScript).toContain('patchOpenClawModelCatalogRuntime');
+    expect(devScript).toContain('patchOpenClawModelCatalogRuntime');
+    expect(devSetupScript).toContain('patchOpenClawModelCatalogRuntime');
+    expect(afterPackScript).toContain('patchOpenClawModelCatalogRuntime');
 
     expect(openClawCliSource).toContain('process.env.npm_node_execpath');
     expect(openClawCliSource).toContain('export function getNodeExecForCli');
@@ -132,10 +136,16 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(devScript).toContain('patchOpenClawPluginSdkCompat');
     expect(devSetupScript).toContain('patchOpenClawExecRuntime');
     expect(devSetupScript).toContain('patchOpenClawPluginSdkCompat');
+    expect(bundleScript).toContain('patchOpenClawModelCatalogRuntime');
+    expect(afterPackScript).toContain('patchOpenClawModelCatalogRuntime');
+    expect(devScript).toContain('patchOpenClawModelCatalogRuntime');
+    expect(devSetupScript).toContain('patchOpenClawModelCatalogRuntime');
     expect(compatScript).toContain('https-proxy-agent');
     expect(compatScript).toContain('plugin-sdk compat patch v1');
     expect(compatScript).toContain('lawclaw windows exec powershell utf8 patch v1');
     expect(compatScript).toContain('lawclaw windows kill-tree patch v1');
+    expect(compatScript).toContain('lawclaw model discovery fallback patch v1');
+    expect(compatScript).toContain('lawclaw model catalog runtime fallback patch v1');
   });
 
   it('routes mac builds through the unsigned electron-builder wrapper', () => {

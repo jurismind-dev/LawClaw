@@ -392,4 +392,44 @@ describe('chat stream recovery', () => {
     expect(assistantMessages).toHaveLength(2);
     expect(assistantMessages.map((message) => message.id)).toEqual(['assistant-old', 'assistant-new']);
   });
+
+  it('ignores orphan tool result finals when no visible run is active', () => {
+    useChatStore.getState().handleChatEvent({
+      state: 'final',
+      runId: 'orphan-tool-result',
+      sessionKey: 'agent:lawclaw-main:main',
+      message: {
+        role: 'toolresult',
+        toolCallId: 'tool-1',
+        toolName: 'search',
+        content: [{ type: 'text', text: '工具结果' }],
+      },
+    });
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(false);
+    expect(state.activeRunId).toBeNull();
+    expect(state.pendingFinal).toBe(false);
+    expect(state.messages).toEqual([]);
+    expect(state.streamingTools).toEqual([]);
+  });
+
+  it('does not enter pending-final state for empty final events while idle', () => {
+    const loadHistoryMock = vi.fn().mockResolvedValue(undefined);
+    useChatStore.setState({
+      loadHistory: loadHistoryMock as unknown as (quiet?: boolean) => Promise<void>,
+    });
+
+    useChatStore.getState().handleChatEvent({
+      state: 'final',
+      runId: 'empty-idle-final',
+      sessionKey: 'agent:lawclaw-main:main',
+    });
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(false);
+    expect(state.activeRunId).toBeNull();
+    expect(state.pendingFinal).toBe(false);
+    expect(loadHistoryMock).toHaveBeenCalledWith(true);
+  });
 });

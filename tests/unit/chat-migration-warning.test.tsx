@@ -98,7 +98,7 @@ describe('chat migration warning banner', () => {
     expect(screen.getByRole('button', { name: '关闭预设升级冲突提醒' })).toBeInTheDocument();
   });
 
-  it('shows explicit history restore copy while loading previous conversations', () => {
+  it('keeps the welcome state visible while history refreshes in the background', () => {
     useChatStore.setState({
       loading: true,
       messages: [],
@@ -106,8 +106,9 @@ describe('chat migration warning banner', () => {
 
     render(<Chat />);
 
-    expect(screen.getByText('loadingHistory.title')).toBeInTheDocument();
-    expect(screen.getByText('loadingHistory.subtitle')).toBeInTheDocument();
+    expect(screen.getByText('welcome.title')).toBeInTheDocument();
+    expect(screen.queryByText('loadingHistory.title')).not.toBeInTheDocument();
+    expect(screen.queryByText('loadingHistory.subtitle')).not.toBeInTheDocument();
   });
 
   it('hides dismissed warning for same targetHash and shows it again for a new targetHash', () => {

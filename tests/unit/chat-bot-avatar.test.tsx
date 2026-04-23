@@ -116,6 +116,25 @@ describe('chat bot avatar', () => {
     expect(avatar).toHaveAttribute('src', botAvatar);
   });
 
+  it('shows the welcome state when history only contains invisible tool results', () => {
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'toolresult',
+          content: '后台工具结果',
+        },
+      ],
+      sending: false,
+      activeRunId: null,
+      pendingFinal: false,
+    });
+
+    render(<Chat />);
+
+    expect(screen.getByText('welcome.title')).toBeInTheDocument();
+    expect(screen.queryByText('后台工具结果')).not.toBeInTheDocument();
+  });
+
   it('hides duplicated thinking blocks when process cards already render the run details', () => {
     const message: RawMessage = {
       role: 'assistant',

@@ -27,6 +27,7 @@ const {
   patchOpenClawWebSearchRuntime,
   patchOpenClawKillTreeRuntime,
   patchOpenClawExecRuntime,
+  patchOpenClawModelCatalogRuntime,
   patchOpenClawWindowsSpawnRuntime,
   removeBundledExtensions,
 } = require('./openclaw-bundle-compat.cjs');
@@ -545,6 +546,13 @@ exports.default = async function afterPack(context) {
   if (patchedKillTreeFiles.length > 0) {
     console.log(
       `[after-pack] ✅ Patched OpenClaw Windows kill-tree runtime: ${patchedKillTreeFiles.join(', ')}.`
+    );
+  }
+
+  const patchedModelCatalogFiles = patchOpenClawModelCatalogRuntime(openclawRoot);
+  if (patchedModelCatalogFiles.length > 0) {
+    console.log(
+      `[after-pack] ✅ Patched OpenClaw model discovery/catalog runtime: ${patchedModelCatalogFiles.join(', ')}.`
     );
   }
 

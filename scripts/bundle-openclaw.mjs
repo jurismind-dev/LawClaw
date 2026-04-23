@@ -461,7 +461,6 @@ function cleanupBundle(outputDir) {
 
   // --- known large unused subdirectories ---
   const LARGE_REMOVALS = [
-    'node_modules/pdfjs-dist/legacy',
     'node_modules/pdfjs-dist/types',
     'node_modules/node-llama-cpp/llama',
     'node_modules/koffi/src',

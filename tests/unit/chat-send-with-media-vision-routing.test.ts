@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const registeredHandlers = new Map<string, (...args: unknown[]) => unknown>();
+const pdfExtractModuleUrl = vi.hoisted(() => '/tmp/openclaw/dist/pdf-extract-BQPFOwRi.js');
 
 const secureStorageMock = vi.hoisted(() => ({
   storeApiKey: vi.fn(),
@@ -255,7 +256,7 @@ vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
   syncUpdatedProviderToRuntime: vi.fn(async () => undefined),
 }));
 
-vi.mock('/tmp/openclaw/dist/pdf-extract-BQPFOwRi.js', () => ({
+vi.mock(pdfExtractModuleUrl, () => ({
   t: vi.fn(async () => ({
     text: '',
     images: [
@@ -390,6 +391,82 @@ describe('chat:sendWithMedia vision routing', () => {
       }),
       120000,
     );
+  });
+
+  it('falls back to extracted PDF text when the PDF runtime returns searchable text without page images', async () => {
+    vi.resetModules();
+    registeredHandlers.clear();
+    vi.doMock(pdfExtractModuleUrl, () => ({
+      t: vi.fn(async () => ({
+        text: 'searchable pdf text',
+        images: [],
+      })),
+    }));
+
+    const handler = await registerHandlers();
+    expect(handler).toBeTypeOf('function');
+
+    const invokeResult = await handler?.({}, {
+      sessionKey: 'agent:lawclaw-main:main',
+      message: '请分析这个 PDF',
+      deliver: false,
+      idempotencyKey: 'idem-2b',
+      media: [
+        {
+          filePath: '/tmp/test-file.pdf',
+          mimeType: 'application/pdf',
+          fileName: 'test-file.pdf',
+        },
+      ],
+    }) as { success: boolean; result?: { runId: string } };
+
+    expect(invokeResult.success).toBe(true);
+    expect(gatewayRpc).toHaveBeenCalledTimes(1);
+    expect(gatewayRpc).toHaveBeenCalledWith(
+      'agent',
+      expect.objectContaining({
+        provider: 'jurismind',
+        model: 'doubao',
+        message: expect.stringContaining('searchable pdf text'),
+      }),
+      120000,
+    );
+  });
+
+  it('surfaces PDF extraction warnings when neither text nor page images are available', async () => {
+    vi.resetModules();
+    registeredHandlers.clear();
+    vi.doMock(pdfExtractModuleUrl, () => ({
+      t: vi.fn(async (params: { onImageExtractionError?: (err: unknown) => void }) => {
+        params.onImageExtractionError?.(new Error('canvas runtime missing'));
+        return {
+          text: '',
+          images: [],
+        };
+      }),
+    }));
+
+    const handler = await registerHandlers();
+    expect(handler).toBeTypeOf('function');
+
+    const invokeResult = await handler?.({}, {
+      sessionKey: 'agent:lawclaw-main:main',
+      message: '请分析这个 PDF',
+      deliver: false,
+      idempotencyKey: 'idem-2c',
+      media: [
+        {
+          filePath: '/tmp/test-file.pdf',
+          mimeType: 'application/pdf',
+          fileName: 'test-file.pdf',
+        },
+      ],
+    }) as { success: boolean; error?: string };
+
+    expect(invokeResult.success).toBe(false);
+    expect(invokeResult.error).toContain('PDF extraction produced no usable content');
+    expect(invokeResult.error).toContain('canvas runtime missing');
+    expect(gatewayRpc).not.toHaveBeenCalled();
   });
 
   it('keeps non-Jurismind providers on the original chat.send path', async () => {

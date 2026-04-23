@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
@@ -2671,6 +2672,11 @@ type VisualAttachment = {
   fileName?: string;
 };
 
+type PdfPreparedContent = {
+  attachments: VisualAttachment[];
+  extractedText: string;
+};
+
 type PreparedMediaPayload = {
   attachments: VisualAttachment[];
   messageRefs: string[];
@@ -2712,6 +2718,14 @@ function isFinitePositiveInteger(value: unknown): value is number {
 
 function buildLawClawMediaRef(filePath: string, mimeType: string): string {
   return `[${LAWCLAW_MEDIA_REF_PREFIX}: ${filePath} (${mimeType}) | ${filePath}]`;
+}
+
+function buildExtractedPdfTextBlock(fileName: string, text: string): string {
+  return [
+    `<<<LAWCLAW_PDF_EXTRACTED_TEXT file="${fileName}">>>`,
+    text,
+    '<<<END_LAWCLAW_PDF_EXTRACTED_TEXT>>>',
+  ].join('\n');
 }
 
 function resolveConfiguredPdfMaxPages(config: OpenClawConfigLike | null | undefined): number {
@@ -2763,7 +2777,8 @@ async function loadPdfExtractRuntime(): Promise<{
 }> {
   if (!pdfExtractModulePromise) {
     const entryPath = join(getOpenClawResolvedDir(), 'dist', 'pdf-extract-BQPFOwRi.js');
-    pdfExtractModulePromise = import(entryPath) as Promise<{
+    const entrySpecifier = process.platform === 'win32' ? pathToFileURL(entryPath).href : entryPath;
+    pdfExtractModulePromise = import(entrySpecifier) as Promise<{
       t: (params: {
         buffer: Buffer;
         maxPages: number;
@@ -2779,7 +2794,7 @@ async function loadPdfExtractRuntime(): Promise<{
 async function convertPdfToVisionAttachments(
   file: StagedMediaInput,
   fsP: typeof import('fs/promises'),
-): Promise<VisualAttachment[]> {
+): Promise<PdfPreparedContent> {
   const config = await readOpenClawConfig() as OpenClawConfigLike;
   const maxBytes = resolveConfiguredPdfMaxBytes(config);
   const maxPages = resolveConfiguredPdfMaxPages(config);
@@ -2790,25 +2805,39 @@ async function convertPdfToVisionAttachments(
 
   const buffer = await fsP.readFile(file.filePath);
   const runtime = await loadPdfExtractRuntime();
+  const extractionWarnings: string[] = [];
   const extracted = await runtime.t({
     buffer,
     maxPages,
     maxPixels: PDF_RENDER_MAX_PIXELS,
     minTextChars: PDF_RENDER_MIN_TEXT_CHARS,
     onImageExtractionError: (err) => {
-      logger.warn(`[chat:sendWithMedia] PDF image extraction warning for ${file.fileName}: ${String(err)}`);
+      const warning = String(err);
+      extractionWarnings.push(warning);
+      logger.warn(`[chat:sendWithMedia] PDF image extraction warning for ${file.fileName}: ${warning}`);
     },
   });
 
-  if (!Array.isArray(extracted.images) || extracted.images.length === 0) {
-    throw new Error(`PDF rendering produced no page images for ${file.fileName}`);
+  const extractedText = typeof extracted.text === 'string' ? extracted.text.trim() : '';
+  const attachments = Array.isArray(extracted.images)
+    ? extracted.images.map((image, index) => ({
+        content: image.data,
+        mimeType: image.mimeType || 'image/png',
+        fileName: `${file.fileName}-page-${index + 1}.png`,
+      }))
+    : [];
+
+  if (attachments.length === 0 && extractedText.length === 0) {
+    const warningSuffix = extractionWarnings.length > 0
+      ? `: ${extractionWarnings.join('; ')}`
+      : '';
+    throw new Error(`PDF extraction produced no usable content for ${file.fileName}${warningSuffix}`);
   }
 
-  return extracted.images.map((image, index) => ({
-    content: image.data,
-    mimeType: image.mimeType || 'image/png',
-    fileName: `${file.fileName}-page-${index + 1}.png`,
-  }));
+  return {
+    attachments,
+    extractedText,
+  };
 }
 
 async function prepareMediaPayloadForModel(
@@ -2828,7 +2857,11 @@ async function prepareMediaPayloadForModel(
     messageRefs.push(buildLawClawMediaRef(item.filePath, item.mimeType));
 
     if (item.mimeType === 'application/pdf') {
-      attachments.push(...await convertPdfToVisionAttachments(item, fsP));
+      const preparedPdf = await convertPdfToVisionAttachments(item, fsP);
+      attachments.push(...preparedPdf.attachments);
+      if (preparedPdf.extractedText.length > 0) {
+        messageRefs.push(buildExtractedPdfTextBlock(item.fileName, preparedPdf.extractedText));
+      }
       continue;
     }
 

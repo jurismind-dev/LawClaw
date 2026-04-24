@@ -58,6 +58,9 @@
             "error": "错误"
         }
     },
+    "attachments": {
+        "openFile": "打开文件"
+    },
     "historyBuckets": {
         "today": "今天",
         "yesterday": "昨天",

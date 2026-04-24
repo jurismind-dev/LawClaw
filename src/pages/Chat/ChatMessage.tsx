@@ -9,6 +9,7 @@ import { BotAvatar } from '@/components/common/BotAvatar';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
@@ -447,15 +448,40 @@ function FileIcon({ mimeType, className }: { mimeType: string; className?: strin
 }
 
 function FileCard({ file }: { file: AttachedFileMeta }) {
+  const { t } = useTranslation('chat');
+  const handleOpen = useCallback(() => {
+    if (!file.filePath) return;
+    void window.electron.ipcRenderer.invoke('shell:openPath', file.filePath);
+  }, [file.filePath]);
+
+  const content = (
+    <>
+      <FileIcon mimeType={file.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 overflow-hidden">
+        <span className="block truncate text-xs font-medium">{file.fileName}</span>
+        <span className="block text-[10px] text-muted-foreground">
+          {file.fileSize > 0 ? formatFileSize(file.fileSize) : 'File'}
+        </span>
+      </span>
+    </>
+  );
+
+  if (file.filePath) {
+    return (
+      <button
+        type="button"
+        className="flex max-w-[220px] items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        onClick={handleOpen}
+        title={t('attachments.openFile')}
+      >
+        {content}
+      </button>
+    );
+  }
+
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 bg-muted/30 max-w-[220px]">
-      <FileIcon mimeType={file.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 overflow-hidden">
-        <p className="text-xs font-medium truncate">{file.fileName}</p>
-        <p className="text-[10px] text-muted-foreground">
-          {file.fileSize > 0 ? formatFileSize(file.fileSize) : 'File'}
-        </p>
-      </div>
+      {content}
     </div>
   );
 }

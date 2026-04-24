@@ -54,6 +54,9 @@
             "error": "エラー"
         }
     },
+    "attachments": {
+        "openFile": "ファイルを開く"
+    },
     "historyBuckets": {
         "today": "今日",
         "yesterday": "昨日",

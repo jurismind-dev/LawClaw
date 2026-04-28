@@ -5,6 +5,7 @@ import { execSync } from 'node:child_process';
 
 const REQUIRED_FILES = [
   'connector-runtime/index.js',
+  'connector-runtime/json-output.js',
   'connector-runtime/package.json',
   'connector-runtime/.env.example',
 ];

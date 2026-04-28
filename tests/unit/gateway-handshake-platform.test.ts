@@ -7,12 +7,12 @@ function readRepoFile(relativePath: string): string {
 }
 
 describe('gateway manager handshake identity', () => {
-  it('uses the OpenClaw backend client identity to skip local self-pairing', () => {
+  it('keeps the LawClaw desktop backend identity stable to avoid metadata re-pairing', () => {
     const source = readRepoFile('electron/gateway/manager.ts');
 
     expect(source).toContain("const clientMode = 'backend'");
-    expect(source).toContain("platform: 'node'");
+    expect(source).toContain("platform: 'desktop'");
     expect(source).toContain("const scopes = ['operator.admin', 'operator.approvals', 'operator.pairing']");
-    expect(source).toContain('trusted backend self-connection');
+    expect(source).toContain('pairing-required metadata upgrade');
   });
 });

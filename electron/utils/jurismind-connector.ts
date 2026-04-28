@@ -41,6 +41,14 @@ type PendingPairWaiter = {
   timer: ReturnType<typeof setTimeout>;
 };
 
+function tailText(value: string, maxLength = 2000): string {
+  const text = String(value || '').trim();
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return text.slice(text.length - maxLength);
+}
+
 function buildDefaultH5Url(relayUrl: string): string {
   const trimmed = String(relayUrl || '').trim();
   if (!trimmed) return '';
@@ -314,12 +322,15 @@ class JurismindConnectorManager extends EventEmitter {
       this.connected = false;
       this.connectorProcess = null;
       const reason = `connector process exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`;
-      if (code !== 0 && !this.lastError) {
-        this.lastError = reason;
+      const stderrTail = tailText(this.stderrBuffer);
+      const stdoutTail = tailText(this.stdoutBuffer);
+      const exitDetail = stderrTail || this.lastError || stdoutTail || reason;
+      if (code !== 0) {
+        this.lastError = exitDetail;
       }
-      this.rejectPendingPairWaiters(new Error(reason));
+      this.rejectPendingPairWaiters(new Error(exitDetail));
       this.emit('status', this.getStatus());
-      logger.warn(`[JurismindConnector] ${reason}`);
+      logger.warn(`[JurismindConnector] ${reason}${exitDetail !== reason ? `: ${exitDetail}` : ''}`);
     });
 
     this.emitStatus();

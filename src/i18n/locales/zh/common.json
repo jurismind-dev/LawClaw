@@ -56,6 +56,7 @@
     },
     "brand": {
         "getCoins": "获取钳币",
+        "helpCenter": "帮助中心",
         "profileCenter": "个人中心"
     }
 }

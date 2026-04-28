@@ -4,7 +4,7 @@ import { CHANNEL_META, getChannelIconUrl, getPrimaryChannels } from '@/types/cha
 describe('channel metadata', () => {
   it('uses domestic-friendly primary channels', () => {
     const primaryChannels = getPrimaryChannels();
-    expect(primaryChannels).toEqual(['jurismind', 'feishu', 'openclaw-weixin']);
+    expect(primaryChannels).toEqual(['feishu', 'openclaw-weixin', 'jurismind']);
     expect(primaryChannels).not.toContain('telegram');
     expect(primaryChannels).not.toContain('discord');
     expect(primaryChannels).not.toContain('whatsapp');

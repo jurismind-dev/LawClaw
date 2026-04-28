@@ -471,7 +471,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
  * Get primary supported channels (non-plugin, commonly used)
  */
 export function getPrimaryChannels(): ChannelType[] {
-  return ['jurismind', 'feishu', 'openclaw-weixin'];
+  return ['feishu', 'openclaw-weixin', 'jurismind'];
 }
 
 export function getChannelIconUrl(type: ChannelType): string | undefined {

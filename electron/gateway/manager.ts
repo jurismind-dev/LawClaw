@@ -1596,10 +1596,10 @@ export class GatewayManager extends EventEmitter {
               id: clientId,
               displayName: 'LawClaw',
               version: '0.1.0',
-              // Match OpenClaw's internal backend operator client so the local
-              // desktop app is treated as a trusted backend self-connection
-              // rather than a separately paired UI device.
-              platform: 'node',
+              // Keep the local desktop app's device metadata stable across
+              // upgrades. OpenClaw pins this field per device ID; changing it
+              // forces a pairing-required metadata upgrade.
+              platform: 'desktop',
               mode: clientMode,
             },
             auth: {

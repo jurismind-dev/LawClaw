@@ -11,9 +11,12 @@ import { brandAssets } from '@/assets/branding';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useProviderStore } from '@/stores/providers';
 import logoSvg from '@/assets/logo.svg';
+import helpIconSvg from '../../../icon/help.svg';
 
 const JURISMIND_RECHARGE_URL = 'https://lawclaw.jurismind.com/recharge';
 const JURISMIND_PROFILE_URL = 'https://lawclaw.jurismind.com/profile';
+const LAWCLAW_HELP_CENTER_URL =
+  'https://pcnz0er969s1.feishu.cn/wiki/IJLmwaiy0iIbqikqB9vcvZTinMc?from=from_copylink';
 
 export function TitleBar() {
   const { t } = useTranslation('common');
@@ -38,14 +41,13 @@ export function TitleBar() {
     return (
       <div className="drag-region flex h-10 shrink-0 items-center justify-end border-b bg-background px-3">
         {showCoinAccessButton && (
-          <div className="no-drag flex items-center gap-2">
-            <CoinAccessButton label={t('brand.getCoins')} />
-            <ProfileCenterButton
-              label={t('brand.profileCenter')}
-              avatarUrl={jurismindProvider?.avatar}
-              visible={Boolean(jurismindProvider)}
-            />
-          </div>
+          <TitleBarActions
+            getCoinsLabel={t('brand.getCoins')}
+            helpLabel={t('brand.helpCenter')}
+            profileLabel={t('brand.profileCenter')}
+            profileAvatarUrl={jurismindProvider?.avatar}
+            showProfile={Boolean(jurismindProvider)}
+          />
         )}
       </div>
     );
@@ -107,12 +109,13 @@ function WindowsTitleBar({
 
       {/* Right: Coin entry + Window Controls */}
       <div className="no-drag flex h-full items-center gap-2 pr-1">
-        {showCoinAccessButton && <CoinAccessButton label={t('brand.getCoins')} />}
         {showCoinAccessButton && (
-          <ProfileCenterButton
-            label={t('brand.profileCenter')}
-            avatarUrl={jurismindAvatarUrl}
-            visible={showProfileCenter}
+          <TitleBarActions
+            getCoinsLabel={t('brand.getCoins')}
+            helpLabel={t('brand.helpCenter')}
+            profileLabel={t('brand.profileCenter')}
+            profileAvatarUrl={jurismindAvatarUrl}
+            showProfile={showProfileCenter}
           />
         )}
         <button
@@ -141,36 +144,85 @@ function WindowsTitleBar({
   );
 }
 
+function TitleBarActions({
+  getCoinsLabel,
+  helpLabel,
+  profileLabel,
+  profileAvatarUrl,
+  showProfile,
+}: {
+  getCoinsLabel: string;
+  helpLabel: string;
+  profileLabel: string;
+  profileAvatarUrl?: string;
+  showProfile: boolean;
+}) {
+  return (
+    <div className="no-drag flex h-8 items-center overflow-hidden rounded-full border border-border/60 bg-background/75 shadow-sm dark:bg-muted/30">
+      <CoinAccessButton label={getCoinsLabel} />
+      <span className="h-4 w-px bg-border/70" aria-hidden="true" />
+      <HelpCenterButton label={helpLabel} />
+      {showProfile && (
+        <>
+          <span className="h-4 w-px bg-border/70" aria-hidden="true" />
+          <ProfileCenterButton label={profileLabel} avatarUrl={profileAvatarUrl} />
+        </>
+      )}
+    </div>
+  );
+}
+
 function CoinAccessButton({ label }: { label: string }) {
   return (
     <button
       type="button"
       onClick={openJurismindCenter}
-      className="no-drag inline-flex h-8 items-center gap-2 rounded-full border border-border/70 bg-background/80 px-2.5 text-xs font-medium text-foreground/85 shadow-sm transition-colors hover:bg-accent hover:text-foreground dark:bg-muted/35"
+      className="inline-flex h-full items-center gap-1.5 px-2.5 text-[12px] font-medium text-foreground/80 transition-colors hover:bg-muted/70 hover:text-foreground"
       aria-label={label}
       title={label}
     >
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full">
         <img src={brandAssets.coin} alt="" className="h-full w-full object-cover" />
       </span>
-      <span className="leading-none">{label}</span>
+      <span className="whitespace-nowrap leading-none">{label}</span>
     </button>
+  );
+}
+
+function HelpCenterButton({ label }: { label: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={openHelpCenter}
+          className="flex h-full w-8 items-center justify-center text-muted-foreground/75 transition-colors hover:bg-muted/70 hover:text-foreground"
+          aria-label={label}
+        >
+          <span
+            aria-hidden="true"
+            className="h-4 w-4 bg-current"
+            style={{
+              WebkitMask: `url("${helpIconSvg}") center / contain no-repeat`,
+              mask: `url("${helpIconSvg}") center / contain no-repeat`,
+            }}
+          />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={10} align="end">
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
 function ProfileCenterButton({
   label,
   avatarUrl,
-  visible,
 }: {
   label: string;
   avatarUrl?: string;
-  visible: boolean;
 }) {
-  if (!visible) {
-    return null;
-  }
-
   const normalizedAvatarUrl = avatarUrl?.trim() || '';
 
   return (
@@ -179,13 +231,17 @@ function ProfileCenterButton({
         <button
           type="button"
           onClick={openJurismindProfile}
-          className="no-drag flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-background/85 shadow-sm transition-colors hover:bg-accent"
+          className="flex h-full w-8 items-center justify-center text-muted-foreground/75 transition-colors hover:bg-muted/70 hover:text-foreground"
           aria-label={label}
         >
           {normalizedAvatarUrl ? (
-            <img src={normalizedAvatarUrl} alt="" className="h-full w-full object-cover" />
+            <img
+              src={normalizedAvatarUrl}
+              alt=""
+              className="h-5 w-5 rounded-full object-cover"
+            />
           ) : (
-            <span className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground">
+            <span className="flex h-5 w-5 items-center justify-center">
               <UserRound className="h-4 w-4" />
             </span>
           )}
@@ -214,4 +270,13 @@ function openJurismindProfile() {
   }
 
   window.open(JURISMIND_PROFILE_URL, '_blank', 'noopener,noreferrer');
+}
+
+function openHelpCenter() {
+  if (window.electron?.openExternal) {
+    void window.electron.openExternal(LAWCLAW_HELP_CENTER_URL);
+    return;
+  }
+
+  window.open(LAWCLAW_HELP_CENTER_URL, '_blank', 'noopener,noreferrer');
 }

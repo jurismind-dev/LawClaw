@@ -166,7 +166,12 @@ The LawClaw team has independently developed and carefully curated a series of h
 #### Pre-built Releases (Recommended)
 
 Download the latest version for your platform from OSS (China mirror):
-<!--`https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/`-->
+
+- **Windows x64**: https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-win-x64.exe
+- **Mac x64**: https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-x64.dmg
+- **Mac arm64**: https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-arm64.dmg
+
+Windows pre-built releases are code signed through the SignPath Foundation. This project uses the SignPath Foundation for code signing.
 
 GitHub Releases remains available as a fallback download channel: [Releases](https://github.com/jurismind-dev/LawClaw/releases).
 

@@ -173,6 +173,7 @@ LawClaw 官方团队深度自研并严选了一系列高质量、开源的法律
 - **Mac x64**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-x64.dmg
 - **Mac arm**：https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-arm64.dmg
 
+Windows 预构建版本使用 SignPath Foundation 进行代码签名。This project uses the SignPath Foundation for code signing.
 
 GitHub Releases 仍可作为备用下载渠道：[Releases](https://github.com/jurismind-dev/LawClaw/releases)。
 

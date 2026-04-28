@@ -907,6 +907,7 @@ jobs:
             echo
             echo "### Windows"
             echo "- 安装包 (x64): \`LawClaw-*-win-x64.exe\`"
+            echo "- Windows 预构建版本使用 SignPath Foundation 进行代码签名。This project uses the SignPath Foundation for code signing."
             echo
             echo "## 安装提示"
             echo

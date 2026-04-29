@@ -727,13 +727,20 @@ function registerGatewayHandlers(
         rpcParams.attachments = prepared.attachments;
       }
 
-      logger.info(`[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", attachments=${prepared.attachments.length}, fileRefs=${prepared.messageRefs.length}, visionRouting=${visionRoutingActive}`);
+      const shouldUseVisionAgent = visionRoutingActive && prepared.attachments.length > 0;
+      const rpcMethod = shouldUseVisionAgent ? 'agent' : 'chat.send';
+      let timeoutMs = DEFAULT_CHAT_RPC_TIMEOUT_MS;
+      if (shouldUseVisionAgent) {
+        timeoutMs = VISION_AGENT_ACCEPT_TIMEOUT_MS;
+      } else if (media.length > 0) {
+        timeoutMs = CHAT_SEND_WITH_MEDIA_TIMEOUT_MS;
+      }
 
-      // Attachment-assisted chats often keep the RPC open until the whole
-      // tool-use flow completes, so align them with the renderer's longer
-      // chat.send timeout instead of falling back to the default 30s window.
-      const timeoutMs = media.length > 0 ? 120000 : 30000;
-      const result = visionRoutingActive
+      logger.info(
+        `[chat:sendWithMedia] Sending: route=${rpcMethod}, timeoutMs=${timeoutMs}, message="${message.substring(0, 100)}", attachments=${prepared.attachments.length}, fileRefs=${prepared.messageRefs.length}, visionRouting=${visionRoutingActive}`,
+      );
+
+      const result = shouldUseVisionAgent
         ? await gatewayManager.rpc('agent', {
           ...rpcParams,
           provider: JURISMIND_VISION_PROVIDER,
@@ -2655,6 +2662,9 @@ const JURISMIND_PROVIDER_TYPE = 'jurismind';
 const JURISMIND_VISION_PROVIDER = 'jurismind';
 const JURISMIND_VISION_MODEL_ID = 'doubao';
 const JURISMIND_VISION_MODEL = `${JURISMIND_VISION_PROVIDER}/${JURISMIND_VISION_MODEL_ID}`;
+const DEFAULT_CHAT_RPC_TIMEOUT_MS = 30_000;
+const CHAT_SEND_WITH_MEDIA_TIMEOUT_MS = 120_000;
+const VISION_AGENT_ACCEPT_TIMEOUT_MS = 600_000;
 const DEFAULT_PDF_MAX_PAGES = 20;
 const DEFAULT_PDF_MAX_BYTES_MB = 10;
 const PDF_RENDER_MAX_PIXELS = 4_000_000;

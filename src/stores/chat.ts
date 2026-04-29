@@ -245,8 +245,8 @@ function isDuplicateChatEvent(eventState: string, event: Record<string, unknown>
   return false;
 }
 
-function isRecoverableChatSendTimeout(error: string): boolean {
-  return error.includes('RPC timeout: chat.send');
+function isRecoverableSendAckTimeout(error: string): boolean {
+  return /\bRPC timeout: (?:chat\.send|agent)\b/.test(error);
 }
 
 function shouldThrottleSessionLoad(force: boolean, hasAppliedStartupDefault: boolean): boolean {
@@ -2624,9 +2624,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (!result.success) {
         const errorMsg = result.error || 'Failed to send message';
-        if (isRecoverableChatSendTimeout(errorMsg)) {
-          console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errorMsg}`);
-          set({ error: errorMsg });
+        if (isRecoverableSendAckTimeout(errorMsg)) {
+          console.warn(
+            `[sendMessage] Recoverable send acknowledgement timeout, keeping poll alive: ${errorMsg}`,
+          );
         } else {
           clearHistoryPoll();
           set({ error: errorMsg, sending: false });
@@ -2636,9 +2637,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     } catch (err) {
       const errStr = String(err);
-      if (isRecoverableChatSendTimeout(errStr)) {
-        console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errStr}`);
-        set({ error: errStr });
+      if (isRecoverableSendAckTimeout(errStr)) {
+        console.warn(
+          `[sendMessage] Recoverable send acknowledgement timeout, keeping poll alive: ${errStr}`,
+        );
       } else {
         clearHistoryPoll();
         set({ error: errStr, sending: false });

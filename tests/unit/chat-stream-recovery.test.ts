@@ -51,7 +51,7 @@ describe('chat stream recovery', () => {
 
     const state = useChatStore.getState();
     expect(state.sending).toBe(true);
-    expect(state.error).toContain('RPC timeout: chat.send');
+    expect(state.error).toBeNull();
     expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
       'gateway:rpc',
       'chat.send',
@@ -60,6 +60,46 @@ describe('chat stream recovery', () => {
         message: '继续生成',
       }),
       120_000,
+    );
+  });
+
+  it('keeps sending state alive on recoverable media agent timeout', async () => {
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (channel) => {
+      if (channel === 'chat:sendWithMedia') {
+        return {
+          success: false,
+          error: 'Error: RPC timeout: agent',
+        };
+      }
+      throw new Error(`unexpected invoke: ${String(channel)}`);
+    });
+
+    await useChatStore.getState().sendMessage('帮我分析', [
+      {
+        fileName: 'case.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 1024,
+        stagedPath: '/tmp/case.pdf',
+        preview: null,
+      },
+    ]);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.error).toBeNull();
+    expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+      'chat:sendWithMedia',
+      expect.objectContaining({
+        sessionKey: 'agent:lawclaw-main:main',
+        message: '帮我分析',
+        media: [
+          expect.objectContaining({
+            filePath: '/tmp/case.pdf',
+            mimeType: 'application/pdf',
+            fileName: 'case.pdf',
+          }),
+        ],
+      }),
     );
   });
 

@@ -350,7 +350,7 @@ describe('chat:sendWithMedia vision routing', () => {
           }),
         ],
       }),
-      120000,
+      600000,
     );
     expect(gatewayRpc).not.toHaveBeenCalledWith(
       'chat.send',
@@ -389,11 +389,11 @@ describe('chat:sendWithMedia vision routing', () => {
           expect.objectContaining({ fileName: 'test-file.pdf-page-2.png', content: 'pdf-page-two' }),
         ],
       }),
-      120000,
+      600000,
     );
   });
 
-  it('falls back to extracted PDF text when the PDF runtime returns searchable text without page images', async () => {
+  it('keeps searchable text-only PDF content on the chat.send path', async () => {
     vi.resetModules();
     registeredHandlers.clear();
     vi.doMock(pdfExtractModuleUrl, () => ({
@@ -423,10 +423,8 @@ describe('chat:sendWithMedia vision routing', () => {
     expect(invokeResult.success).toBe(true);
     expect(gatewayRpc).toHaveBeenCalledTimes(1);
     expect(gatewayRpc).toHaveBeenCalledWith(
-      'agent',
+      'chat.send',
       expect.objectContaining({
-        provider: 'jurismind',
-        model: 'doubao',
         message: expect.stringContaining('searchable pdf text'),
       }),
       120000,
@@ -561,7 +559,7 @@ describe('chat:sendWithMedia vision routing', () => {
           }),
         ],
       }),
-      120000,
+      600000,
     );
     expect(gatewayRpc).not.toHaveBeenCalledWith(
       'chat.send',

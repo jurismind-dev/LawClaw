@@ -103,10 +103,43 @@ const DEFAULT_RECONNECT_CONFIG: ReconnectConfig = {
   maxDelay: 30000,
 };
 
+const GATEWAY_RPC_MAX_PAYLOAD_ENV = 'LAWCLAW_GATEWAY_RPC_MAX_PAYLOAD_BYTES';
+const DEFAULT_GATEWAY_RPC_MAX_PAYLOAD_BYTES = 80 * 1024 * 1024;
+const GATEWAY_WS_CLOSE_PAYLOAD_TOO_LARGE = 1009;
+
 function isUnsupportedShutdownRpcError(error: unknown): boolean {
   const message = String(error ?? '');
   return /unknown method:\s*shutdown/i.test(message)
     || /method not found/i.test(message);
+}
+
+function resolveGatewayRpcMaxPayloadBytes(): number {
+  const raw = process.env[GATEWAY_RPC_MAX_PAYLOAD_ENV];
+  const parsed = raw ? Number(raw) : NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.floor(parsed);
+  }
+  return DEFAULT_GATEWAY_RPC_MAX_PAYLOAD_BYTES;
+}
+
+function formatByteSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KiB`;
+  }
+  return `${bytes} B`;
+}
+
+function createGatewaySocketClosedError(code: number, reason: string): Error {
+  if (code === GATEWAY_WS_CLOSE_PAYLOAD_TOO_LARGE) {
+    return new Error(
+      'Gateway WebSocket payload is too large. Reduce PDF pages/attachments or split the request into smaller batches.',
+    );
+  }
+
+  return new Error(`Gateway WebSocket closed (code=${code}, reason=${reason || 'unknown'})`);
 }
 
 /**
@@ -312,6 +345,14 @@ export class GatewayManager extends EventEmitter {
       );
     }
     this.deferredRestartPending = true;
+  }
+
+  private rejectPendingRequests(error: Error): void {
+    for (const [, request] of this.pendingRequests) {
+      clearTimeout(request.timeout);
+      request.reject(error);
+    }
+    this.pendingRequests.clear();
   }
 
   private recordRestartCompleted(): void {
@@ -575,12 +616,7 @@ export class GatewayManager extends EventEmitter {
     }
     this.ownsProcess = false;
     
-    // Reject all pending requests
-    for (const [, request] of this.pendingRequests) {
-      clearTimeout(request.timeout);
-      request.reject(new Error('Gateway stopped'));
-    }
-    this.pendingRequests.clear();
+    this.rejectPendingRequests(new Error('Gateway stopped'));
     
     this.setStatus({
       state: 'stopped',
@@ -683,6 +719,22 @@ export class GatewayManager extends EventEmitter {
       }
       
       const id = crypto.randomUUID();
+      const request = {
+        type: 'req',
+        id,
+        method,
+        params,
+      };
+
+      const serializedRequest = JSON.stringify(request);
+      const payloadBytes = Buffer.byteLength(serializedRequest, 'utf8');
+      const maxPayloadBytes = resolveGatewayRpcMaxPayloadBytes();
+      if (payloadBytes > maxPayloadBytes) {
+        reject(new Error(
+          `Gateway RPC payload is too large (${formatByteSize(payloadBytes)} > ${formatByteSize(maxPayloadBytes)}). Reduce PDF pages/attachments or split the request into smaller batches.`,
+        ));
+        return;
+      }
       
       // Set timeout for request
       const timeout = setTimeout(() => {
@@ -697,16 +749,8 @@ export class GatewayManager extends EventEmitter {
         timeout,
       });
       
-      // Send request using OpenClaw protocol format
-      const request = {
-        type: 'req',
-        id,
-        method,
-        params,
-      };
-      
       try {
-        this.ws.send(JSON.stringify(request));
+        this.ws.send(serializedRequest);
       } catch (error) {
         this.pendingRequests.delete(id);
         clearTimeout(timeout);
@@ -1699,9 +1743,11 @@ export class GatewayManager extends EventEmitter {
           rejectOnce(new Error(`WebSocket closed before handshake: ${reasonStr}`));
           return;
         }
+        const closeError = createGatewaySocketClosedError(code, reasonStr);
         cleanupHandshakeRequest();
+        this.rejectPendingRequests(closeError);
         if (this.status.state === 'running') {
-          this.setStatus({ state: 'stopped' });
+          this.setStatus({ state: 'stopped', error: closeError.message });
           this.scheduleReconnect();
         }
       });

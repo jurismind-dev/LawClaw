@@ -148,13 +148,11 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(compatScript).toContain('lawclaw model catalog runtime fallback patch v1');
   });
 
-  it('keeps the pdfjs legacy runtime in the bundled OpenClaw package for PDF extraction', () => {
+  it('keeps bundled OpenClaw pdfjs package selection stable', () => {
     const bundleScript = readRepoFile('scripts/bundle-openclaw.mjs');
-    const ipcHandlersSource = readRepoFile('electron/main/ipc-handlers.ts');
 
     expect(bundleScript).toContain("'node_modules/pdfjs-dist/types'");
     expect(bundleScript).not.toContain("'node_modules/pdfjs-dist/legacy'");
-    expect(ipcHandlersSource).toContain("process.platform === 'win32' ? pathToFileURL(entryPath).href : entryPath");
   });
 
   it('routes mac builds through the unsigned electron-builder wrapper', () => {

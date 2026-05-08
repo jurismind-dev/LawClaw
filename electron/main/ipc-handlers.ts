@@ -7,7 +7,6 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
@@ -32,7 +31,6 @@ import {
   getOpenClawSkillsDir,
   getResourcesDir,
   ensureDir,
-  getOpenClawResolvedDir,
 } from '../utils/paths';
 import { applyBundledNpmToCliEnv, getNodeExecForCli, getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { parseJsonText, stringifyJsonText, stripUtf8Bom } from '../utils/text-encoding';
@@ -45,9 +43,7 @@ import {
 } from '../utils/store';
 import {
   clearJurismindMultimodalConfig,
-  clearJurismindWebSearchConfig,
   syncJurismindMultimodalConfig,
-  syncJurismindWebSearchConfig,
 } from '../utils/openclaw-auth';
 import {
   getInternalAutomationConfig,
@@ -709,7 +705,7 @@ function registerGatewayHandlers(
       const visionRoutingActive = media.length > 0 && await isJurismindVisionRoutingActive();
       const prepared = media.length > 0
         ? await prepareMediaPayloadForModel(media)
-        : { attachments: [], messageRefs: [], sourceFiles: [] };
+        : { attachments: [], messageRefs: [] };
 
       if (prepared.messageRefs.length > 0) {
         const refs = prepared.messageRefs.join('\n');
@@ -2657,7 +2653,7 @@ function mimeToExt(mimeType: string): string {
 }
 
 const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
-const LAWCLAW_MEDIA_REF_PREFIX = 'lawclaw-media';
+const LAWCLAW_MEDIA_REF_PREFIX = 'media attached';
 const JURISMIND_PROVIDER_TYPE = 'jurismind';
 const JURISMIND_VISION_PROVIDER = 'jurismind';
 const JURISMIND_VISION_MODEL_ID = 'doubao';
@@ -2665,10 +2661,12 @@ const JURISMIND_VISION_MODEL = `${JURISMIND_VISION_PROVIDER}/${JURISMIND_VISION_
 const DEFAULT_CHAT_RPC_TIMEOUT_MS = 30_000;
 const CHAT_SEND_WITH_MEDIA_TIMEOUT_MS = 120_000;
 const VISION_AGENT_ACCEPT_TIMEOUT_MS = 600_000;
-const DEFAULT_PDF_MAX_PAGES = 20;
-const DEFAULT_PDF_MAX_BYTES_MB = 10;
-const PDF_RENDER_MAX_PIXELS = 4_000_000;
-const PDF_RENDER_MIN_TEXT_CHARS = 200;
+const VISION_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/bmp',
+  'image/webp',
+]);
 
 type StagedMediaInput = {
   filePath: string;
@@ -2682,22 +2680,16 @@ type VisualAttachment = {
   fileName?: string;
 };
 
-type PdfPreparedContent = {
-  attachments: VisualAttachment[];
-  extractedText: string;
-};
-
 type PreparedMediaPayload = {
   attachments: VisualAttachment[];
   messageRefs: string[];
-  sourceFiles: StagedMediaInput[];
 };
 
 type OpenClawConfigLike = {
   agents?: {
     defaults?: {
-      pdfMaxPages?: unknown;
-      pdfMaxBytesMb?: unknown;
+      imageModel?: unknown;
+      pdfModel?: unknown;
       [key: string]: unknown;
     };
     [key: string]: unknown;
@@ -2705,48 +2697,8 @@ type OpenClawConfigLike = {
   [key: string]: unknown;
 };
 
-type PdfRenderResult = {
-  text: string;
-  images: Array<{
-    type: 'image';
-    data: string;
-    mimeType: string;
-  }>;
-};
-
-let pdfExtractModulePromise: Promise<{ t: (params: {
-  buffer: Buffer;
-  maxPages: number;
-  maxPixels: number;
-  minTextChars: number;
-  onImageExtractionError?: (err: unknown) => void;
-}) => Promise<PdfRenderResult> }> | null = null;
-
-function isFinitePositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0;
-}
-
 function buildLawClawMediaRef(filePath: string, mimeType: string): string {
   return `[${LAWCLAW_MEDIA_REF_PREFIX}: ${filePath} (${mimeType}) | ${filePath}]`;
-}
-
-function buildExtractedPdfTextBlock(fileName: string, text: string): string {
-  return [
-    `<<<LAWCLAW_PDF_EXTRACTED_TEXT file="${fileName}">>>`,
-    text,
-    '<<<END_LAWCLAW_PDF_EXTRACTED_TEXT>>>',
-  ].join('\n');
-}
-
-function resolveConfiguredPdfMaxPages(config: OpenClawConfigLike | null | undefined): number {
-  const raw = config?.agents?.defaults?.pdfMaxPages;
-  return isFinitePositiveInteger(raw) ? Math.max(1, Math.floor(raw)) : DEFAULT_PDF_MAX_PAGES;
-}
-
-function resolveConfiguredPdfMaxBytes(config: OpenClawConfigLike | null | undefined): number {
-  const raw = config?.agents?.defaults?.pdfMaxBytesMb;
-  const mb = isFinitePositiveInteger(raw) ? raw : DEFAULT_PDF_MAX_BYTES_MB;
-  return Math.max(1, Math.floor(mb)) * 1024 * 1024;
 }
 
 async function isJurismindVisionRoutingActive(): Promise<boolean> {
@@ -2776,80 +2728,6 @@ async function isJurismindVisionRoutingActive(): Promise<boolean> {
     && (imageModel === JURISMIND_VISION_MODEL || pdfModel === JURISMIND_VISION_MODEL);
 }
 
-async function loadPdfExtractRuntime(): Promise<{
-  t: (params: {
-    buffer: Buffer;
-    maxPages: number;
-    maxPixels: number;
-    minTextChars: number;
-    onImageExtractionError?: (err: unknown) => void;
-  }) => Promise<PdfRenderResult>;
-}> {
-  if (!pdfExtractModulePromise) {
-    const entryPath = join(getOpenClawResolvedDir(), 'dist', 'pdf-extract-BQPFOwRi.js');
-    const entrySpecifier = process.platform === 'win32' ? pathToFileURL(entryPath).href : entryPath;
-    pdfExtractModulePromise = import(entrySpecifier) as Promise<{
-      t: (params: {
-        buffer: Buffer;
-        maxPages: number;
-        maxPixels: number;
-        minTextChars: number;
-        onImageExtractionError?: (err: unknown) => void;
-      }) => Promise<PdfRenderResult>;
-    }>;
-  }
-  return pdfExtractModulePromise;
-}
-
-async function convertPdfToVisionAttachments(
-  file: StagedMediaInput,
-  fsP: typeof import('fs/promises'),
-): Promise<PdfPreparedContent> {
-  const config = await readOpenClawConfig() as OpenClawConfigLike;
-  const maxBytes = resolveConfiguredPdfMaxBytes(config);
-  const maxPages = resolveConfiguredPdfMaxPages(config);
-  const stat = await fsP.stat(file.filePath);
-  if (stat.size > maxBytes) {
-    throw new Error(`PDF exceeds configured size limit (${stat.size} > ${maxBytes} bytes): ${file.fileName}`);
-  }
-
-  const buffer = await fsP.readFile(file.filePath);
-  const runtime = await loadPdfExtractRuntime();
-  const extractionWarnings: string[] = [];
-  const extracted = await runtime.t({
-    buffer,
-    maxPages,
-    maxPixels: PDF_RENDER_MAX_PIXELS,
-    minTextChars: PDF_RENDER_MIN_TEXT_CHARS,
-    onImageExtractionError: (err) => {
-      const warning = String(err);
-      extractionWarnings.push(warning);
-      logger.warn(`[chat:sendWithMedia] PDF image extraction warning for ${file.fileName}: ${warning}`);
-    },
-  });
-
-  const extractedText = typeof extracted.text === 'string' ? extracted.text.trim() : '';
-  const attachments = Array.isArray(extracted.images)
-    ? extracted.images.map((image, index) => ({
-        content: image.data,
-        mimeType: image.mimeType || 'image/png',
-        fileName: `${file.fileName}-page-${index + 1}.png`,
-      }))
-    : [];
-
-  if (attachments.length === 0 && extractedText.length === 0) {
-    const warningSuffix = extractionWarnings.length > 0
-      ? `: ${extractionWarnings.join('; ')}`
-      : '';
-    throw new Error(`PDF extraction produced no usable content for ${file.fileName}${warningSuffix}`);
-  }
-
-  return {
-    attachments,
-    extractedText,
-  };
-}
-
 async function prepareMediaPayloadForModel(
   media: StagedMediaInput[],
 ): Promise<PreparedMediaPayload> {
@@ -2866,16 +2744,7 @@ async function prepareMediaPayloadForModel(
 
     messageRefs.push(buildLawClawMediaRef(item.filePath, item.mimeType));
 
-    if (item.mimeType === 'application/pdf') {
-      const preparedPdf = await convertPdfToVisionAttachments(item, fsP);
-      attachments.push(...preparedPdf.attachments);
-      if (preparedPdf.extractedText.length > 0) {
-        messageRefs.push(buildExtractedPdfTextBlock(item.fileName, preparedPdf.extractedText));
-      }
-      continue;
-    }
-
-    if (item.mimeType.startsWith('image/')) {
+    if (VISION_MIME_TYPES.has(item.mimeType)) {
       const fileBuffer = await fsP.readFile(item.filePath);
       const base64Data = fileBuffer.toString('base64');
       logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);
@@ -2890,7 +2759,6 @@ async function prepareMediaPayloadForModel(
   return {
     attachments,
     messageRefs,
-    sourceFiles: media,
   };
 }
 

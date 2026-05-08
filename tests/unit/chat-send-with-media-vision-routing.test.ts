@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const registeredHandlers = new Map<string, (...args: unknown[]) => unknown>();
-const pdfExtractModuleUrl = vi.hoisted(() => '/tmp/openclaw/dist/pdf-extract-BQPFOwRi.js');
 
 const secureStorageMock = vi.hoisted(() => ({
   storeApiKey: vi.fn(),
@@ -256,16 +255,6 @@ vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
   syncUpdatedProviderToRuntime: vi.fn(async () => undefined),
 }));
 
-vi.mock(pdfExtractModuleUrl, () => ({
-  t: vi.fn(async () => ({
-    text: '',
-    images: [
-      { type: 'image', data: 'pdf-page-one', mimeType: 'image/png' },
-      { type: 'image', data: 'pdf-page-two', mimeType: 'image/png' },
-    ],
-  })),
-}));
-
 vi.mock('fs/promises', () => fsPromisesMock);
 
 describe('chat:sendWithMedia vision routing', () => {
@@ -359,7 +348,7 @@ describe('chat:sendWithMedia vision routing', () => {
     );
   });
 
-  it('renders PDF pages to images and sends them through the Jurismind vision model', async () => {
+  it('keeps PDF files as path references on the chat.send path', async () => {
     const handler = await registerHandlers();
     expect(handler).toBeTypeOf('function');
 
@@ -380,29 +369,18 @@ describe('chat:sendWithMedia vision routing', () => {
     expect(invokeResult.success).toBe(true);
     expect(gatewayRpc).toHaveBeenCalledTimes(1);
     expect(gatewayRpc).toHaveBeenCalledWith(
-      'agent',
+      'chat.send',
       expect.objectContaining({
-        provider: 'jurismind',
-        model: 'doubao',
-        attachments: [
-          expect.objectContaining({ fileName: 'test-file.pdf-page-1.png', content: 'pdf-page-one' }),
-          expect.objectContaining({ fileName: 'test-file.pdf-page-2.png', content: 'pdf-page-two' }),
-        ],
+        message: expect.stringContaining(
+          '[media attached: /tmp/test-file.pdf (application/pdf) | /tmp/test-file.pdf]',
+        ),
       }),
-      600000,
+      120000,
     );
+    expect(fsPromisesMock.readFile).not.toHaveBeenCalled();
   });
 
-  it('keeps searchable text-only PDF content on the chat.send path', async () => {
-    vi.resetModules();
-    registeredHandlers.clear();
-    vi.doMock(pdfExtractModuleUrl, () => ({
-      t: vi.fn(async () => ({
-        text: 'searchable pdf text',
-        images: [],
-      })),
-    }));
-
+  it('does not require PDF extraction before accepting PDF file references', async () => {
     const handler = await registerHandlers();
     expect(handler).toBeTypeOf('function');
 
@@ -425,46 +403,10 @@ describe('chat:sendWithMedia vision routing', () => {
     expect(gatewayRpc).toHaveBeenCalledWith(
       'chat.send',
       expect.objectContaining({
-        message: expect.stringContaining('searchable pdf text'),
+        message: expect.stringContaining('/tmp/test-file.pdf'),
       }),
       120000,
     );
-  });
-
-  it('surfaces PDF extraction warnings when neither text nor page images are available', async () => {
-    vi.resetModules();
-    registeredHandlers.clear();
-    vi.doMock(pdfExtractModuleUrl, () => ({
-      t: vi.fn(async (params: { onImageExtractionError?: (err: unknown) => void }) => {
-        params.onImageExtractionError?.(new Error('canvas runtime missing'));
-        return {
-          text: '',
-          images: [],
-        };
-      }),
-    }));
-
-    const handler = await registerHandlers();
-    expect(handler).toBeTypeOf('function');
-
-    const invokeResult = await handler?.({}, {
-      sessionKey: 'agent:lawclaw-main:main',
-      message: '请分析这个 PDF',
-      deliver: false,
-      idempotencyKey: 'idem-2c',
-      media: [
-        {
-          filePath: '/tmp/test-file.pdf',
-          mimeType: 'application/pdf',
-          fileName: 'test-file.pdf',
-        },
-      ],
-    }) as { success: boolean; error?: string };
-
-    expect(invokeResult.success).toBe(false);
-    expect(invokeResult.error).toContain('PDF extraction produced no usable content');
-    expect(invokeResult.error).toContain('canvas runtime missing');
-    expect(gatewayRpc).not.toHaveBeenCalled();
   });
 
   it('keeps non-Jurismind providers on the original chat.send path', async () => {

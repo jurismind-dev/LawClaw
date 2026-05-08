@@ -2559,7 +2559,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       clearHistoryPoll();
       set({
-        error: 'No response received from the model. The provider may be unavailable or the API key may have insufficient quota. Please check your provider settings.',
+        error: 'No response received from the model within 90 seconds. The local Gateway connection may have been interrupted, the request may be too large, or the provider has not started streaming yet. Check the Gateway/provider logs for the exact error.',
         sending: false,
         activeRunId: null,
         lastUserMessageAt: null,

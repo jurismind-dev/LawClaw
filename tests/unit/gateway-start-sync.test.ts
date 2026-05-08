@@ -380,4 +380,53 @@ describe('gateway start pre-sync', () => {
       vi.useRealTimers();
     }
   });
+
+  it('rejects oversized RPC payloads before sending them over WebSocket', async () => {
+    const previousLimit = process.env.LAWCLAW_GATEWAY_RPC_MAX_PAYLOAD_BYTES;
+    process.env.LAWCLAW_GATEWAY_RPC_MAX_PAYLOAD_BYTES = '256';
+
+    try {
+      const { GatewayManager } = await import('@electron/gateway/manager');
+      const manager = new GatewayManager();
+      const send = vi.fn();
+      (manager as unknown as { ws: { readyState: number; send: typeof send } }).ws = {
+        readyState: 1,
+        send,
+      };
+
+      await expect(
+        manager.rpc('agent', { message: 'x'.repeat(1024) }, 30000),
+      ).rejects.toThrow(/Gateway RPC payload is too large/);
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      if (previousLimit === undefined) {
+        delete process.env.LAWCLAW_GATEWAY_RPC_MAX_PAYLOAD_BYTES;
+      } else {
+        process.env.LAWCLAW_GATEWAY_RPC_MAX_PAYLOAD_BYTES = previousLimit;
+      }
+    }
+  });
+
+  it('rejects pending RPC requests immediately when the Gateway socket fails', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const send = vi.fn();
+    const managerInternals = manager as unknown as {
+      ws: { readyState: number; send: typeof send };
+      rejectPendingRequests: (error: Error) => void;
+    };
+    managerInternals.ws = {
+      readyState: 1,
+      send,
+    };
+
+    const pending = manager.rpc('chat.send', { message: 'hello' }, 30000);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    managerInternals.rejectPendingRequests(
+      new Error('Gateway WebSocket payload is too large. Reduce PDF pages/attachments.'),
+    );
+
+    await expect(pending).rejects.toThrow(/payload is too large/);
+  });
 });

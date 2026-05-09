@@ -292,6 +292,42 @@ describe('gateway start pre-sync', () => {
     expect(runtimeMocks.clearJurismindMultimodalConfig).toHaveBeenCalledTimes(1);
   });
 
+  it('does not inject LawClaw managed OPENAI_API_KEY into the Gateway environment', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    (manager as unknown as { status: { state: string; port: number } }).status = {
+      state: 'starting',
+      port: 4317,
+    };
+
+    providerRegistryMocks.getProviderEnvVar.mockImplementation((providerType: string) => {
+      if (providerType === 'openai') return 'OPENAI_API_KEY';
+      return undefined;
+    });
+    providerRegistryMocks.getKeyableProviderTypes.mockReturnValue(['openai']);
+    secureStorageMocks.getAllProviders.mockResolvedValue([
+      {
+        id: 'provider-openai',
+        type: 'openai',
+      },
+    ]);
+    secureStorageMocks.getApiKey.mockImplementation(async (providerId: string) => {
+      if (providerId === 'provider-openai') return 'lawclaw-openai-key';
+      if (providerId === 'openai') return 'lawclaw-openai-type-key';
+      return null;
+    });
+    secureStorageMocks.getDefaultProvider.mockResolvedValue('provider-openai');
+    secureStorageMocks.getProvider.mockResolvedValue({
+      id: 'provider-openai',
+      type: 'openai',
+    });
+
+    await (manager as unknown as { startProcess: () => Promise<void> }).startProcess();
+
+    const spawnOptions = runtimeMocks.spawn.mock.calls[0][2] as { env: Record<string, string> };
+    expect(spawnOptions.env.OPENAI_API_KEY).toBeUndefined();
+  });
+
   it('prepends the packaged runtime bridge only to the gateway child environment', async () => {
     const previousPath = process.env.PATH;
     const previousResourcesPath = process.resourcesPath;

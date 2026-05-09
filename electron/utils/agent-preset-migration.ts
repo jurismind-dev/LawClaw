@@ -138,7 +138,8 @@ const LEGACY_ACP_AGENT_WORKSPACE = '~/.openclaw/workspace-lawclaw-codex';
 const JURISMIND_ACP_AGENT_ID = 'lawclaw-jurismind-xhigh';
 const JURISMIND_ACP_AGENT_NAME = 'Jurismind xHigh';
 const JURISMIND_ACP_AGENT_WORKSPACE = '~/.openclaw/workspace-lawclaw-jurismind-xhigh';
-const JURISMIND_ACP_HARNESS_ID = 'jurismind-xhigh';
+const CODEX_ACP_HARNESS_ID = 'codex';
+const LEGACY_JURISMIND_ACP_HARNESS_ID = 'jurismind-xhigh';
 const ACP_RUNTIME_MODES = new Set(['persistent', 'oneshot']);
 
 const emitter = new EventEmitter();
@@ -590,6 +591,94 @@ function normalizeJurismindAcpAgentPreset(config: Record<string, unknown>): {
   return { next, changed };
 }
 
+function normalizeJurismindAcpRuntimeConfig(config: Record<string, unknown>): {
+  next: Record<string, unknown>;
+  changed: boolean;
+} {
+  const agents = isRecord(config.agents) ? config.agents : undefined;
+  const list = Array.isArray(agents?.list) ? agents.list : undefined;
+  if (!list) {
+    return { next: config, changed: false };
+  }
+
+  const next = deepClone(config);
+  const nextAgents = isRecord(next.agents) ? next.agents : {};
+  const nextList = Array.isArray(nextAgents.list) ? nextAgents.list : [];
+  let changed = false;
+
+  for (const entry of nextList) {
+    if (!isRecord(entry) || entry.id !== JURISMIND_ACP_AGENT_ID) {
+      continue;
+    }
+
+    const runtime = isRecord(entry.runtime) ? entry.runtime : {};
+    if (entry.runtime !== runtime) {
+      entry.runtime = runtime;
+      changed = true;
+    }
+
+    if (runtime.type !== 'acp') {
+      runtime.type = 'acp';
+      changed = true;
+    }
+
+    const acp = isRecord(runtime.acp) ? runtime.acp : {};
+    if (runtime.acp !== acp) {
+      runtime.acp = acp;
+      changed = true;
+    }
+
+    if (acp.agent !== CODEX_ACP_HARNESS_ID) {
+      acp.agent = CODEX_ACP_HARNESS_ID;
+      changed = true;
+    }
+
+    if (acp.backend !== 'acpx') {
+      acp.backend = 'acpx';
+      changed = true;
+    }
+
+    if (acp.mode !== undefined && !ACP_RUNTIME_MODES.has(String(acp.mode))) {
+      acp.mode = 'persistent';
+      changed = true;
+    }
+  }
+
+  return { next, changed };
+}
+
+function normalizeAllowedAcpAgents(value: unknown): { next: string[]; changed: boolean } {
+  const source = Array.isArray(value) ? value : [];
+  const next: string[] = [];
+  let changed = !Array.isArray(value);
+
+  for (const item of source) {
+    if (typeof item !== 'string') {
+      changed = true;
+      continue;
+    }
+
+    if (item === LEGACY_JURISMIND_ACP_HARNESS_ID) {
+      changed = true;
+      continue;
+    }
+
+    if (!next.includes(item)) {
+      next.push(item);
+      continue;
+    }
+
+    changed = true;
+  }
+
+  if (!next.includes(CODEX_ACP_HARNESS_ID)) {
+    next.unshift(CODEX_ACP_HARNESS_ID);
+    changed = true;
+  }
+
+  return { next, changed };
+}
+
 function normalizeAcpTopLevelConfig(config: Record<string, unknown>): {
   next: Record<string, unknown>;
   changed: boolean;
@@ -603,19 +692,72 @@ function normalizeAcpTopLevelConfig(config: Record<string, unknown>): {
   const nextAcp = isRecord(next.acp) ? next.acp : {};
   let changed = false;
 
-  if (nextAcp.defaultAgent === 'codex') {
-    nextAcp.defaultAgent = JURISMIND_ACP_HARNESS_ID;
+  if (nextAcp.defaultAgent === LEGACY_JURISMIND_ACP_HARNESS_ID) {
+    nextAcp.defaultAgent = CODEX_ACP_HARNESS_ID;
     changed = true;
   }
 
-  if (Array.isArray(nextAcp.allowedAgents)) {
-    if (!nextAcp.allowedAgents.includes(JURISMIND_ACP_HARNESS_ID)) {
-      nextAcp.allowedAgents = [JURISMIND_ACP_HARNESS_ID, ...nextAcp.allowedAgents];
-      changed = true;
-    }
+  const allowedAgents = normalizeAllowedAcpAgents(nextAcp.allowedAgents);
+  if (allowedAgents.changed) {
+    nextAcp.allowedAgents = allowedAgents.next;
+    changed = true;
   }
 
   next.acp = nextAcp;
+  return { next, changed };
+}
+
+function normalizeNativeCodexAcpPluginConfig(config: Record<string, unknown>): {
+  next: Record<string, unknown>;
+  changed: boolean;
+} {
+  const plugins = isRecord(config.plugins) ? config.plugins : undefined;
+  const entries = isRecord(plugins?.entries) ? plugins.entries : undefined;
+  const acpx = isRecord(entries?.acpx) ? entries.acpx : undefined;
+  const acpxConfig = isRecord(acpx?.config) ? acpx.config : undefined;
+  if (!acpxConfig || !isRecord(acpxConfig.agents)) {
+    return { next: config, changed: false };
+  }
+
+  const next = deepClone(config);
+  const nextPlugins = isRecord(next.plugins) ? next.plugins : {};
+  const nextEntries = isRecord(nextPlugins.entries) ? nextPlugins.entries : {};
+  const nextAcpx = isRecord(nextEntries.acpx) ? nextEntries.acpx : {};
+  const nextAcpxConfig = isRecord(nextAcpx.config) ? nextAcpx.config : {};
+  const nextAgents = isRecord(nextAcpxConfig.agents) ? nextAcpxConfig.agents : {};
+  let changed = false;
+
+  for (const agentId of [LEGACY_JURISMIND_ACP_HARNESS_ID, CODEX_ACP_HARNESS_ID]) {
+    const agent = nextAgents[agentId];
+    if (!isRecord(agent)) {
+      continue;
+    }
+
+    const command = typeof agent.command === 'string' ? agent.command : '';
+    const isLawClawManagedCodexCommand = (
+      command === 'lawclaw-codex-acp'
+      || command.includes('@zed-industries/codex-acp')
+    );
+    if (!isLawClawManagedCodexCommand) {
+      continue;
+    }
+
+    delete nextAgents[agentId];
+    changed = true;
+  }
+
+  if (changed) {
+    if (Object.keys(nextAgents).length === 0) {
+      delete nextAcpxConfig.agents;
+    } else {
+      nextAcpxConfig.agents = nextAgents;
+    }
+    nextAcpx.config = nextAcpxConfig;
+    nextEntries.acpx = nextAcpx;
+    nextPlugins.entries = nextEntries;
+    next.plugins = nextPlugins;
+  }
+
   return { next, changed };
 }
 
@@ -805,9 +947,17 @@ function computeNextConfig(context: RuntimeTaskContext): { nextConfig: Record<st
   const basePatch = loadConfigPatchFromVUpdate(context.vUpdateDir, context.manifest);
   const cleaned = removeInvalidAcpAgentRuntime(context.config);
   const normalizedAgent = normalizeJurismindAcpAgentPreset(cleaned.next);
-  const normalizedAcp = normalizeAcpTopLevelConfig(normalizedAgent.next);
-  let nextConfig = normalizedAcp.next;
-  let changed = cleaned.changed || normalizedAgent.changed || normalizedAcp.changed;
+  const normalizedRuntime = normalizeJurismindAcpRuntimeConfig(normalizedAgent.next);
+  const normalizedAcp = normalizeAcpTopLevelConfig(normalizedRuntime.next);
+  const normalizedPlugin = normalizeNativeCodexAcpPluginConfig(normalizedAcp.next);
+  let nextConfig = normalizedPlugin.next;
+  let changed = (
+    cleaned.changed
+    || normalizedAgent.changed
+    || normalizedRuntime.changed
+    || normalizedAcp.changed
+    || normalizedPlugin.changed
+  );
 
   if (basePatch) {
     const merged = mergeRecordAdditive(nextConfig, basePatch);

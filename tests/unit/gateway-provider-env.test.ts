@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyProviderEnvFallbacks } from '../../electron/gateway/provider-env';
+import {
+  applyProviderEnvFallbacks,
+  shouldInjectLawClawProviderEnv,
+} from '../../electron/gateway/provider-env';
 
 describe('gateway provider env fallbacks', () => {
   it('为缺失的 provider env 注入占位值', () => {
@@ -46,5 +49,10 @@ describe('gateway provider env fallbacks', () => {
     expect(result.fallbackCount).toBe(1);
     expect(result.providerEnv.OPENAI_API_KEY).toBeUndefined();
     expect(result.providerEnv.SILICONFLOW_API_KEY).toBe('__CLAWX_PLACEHOLDER_SILICONFLOW_API_KEY__');
+  });
+
+  it('不会把 LawClaw 管理的 OPENAI_API_KEY 注入 Gateway，避免 Codex ACP 继承它', () => {
+    expect(shouldInjectLawClawProviderEnv('OPENAI_API_KEY')).toBe(false);
+    expect(shouldInjectLawClawProviderEnv('JURISMIND_API_KEY')).toBe(true);
   });
 });

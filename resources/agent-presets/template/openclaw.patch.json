@@ -22,7 +22,7 @@
         "runtime": {
           "type": "acp",
           "acp": {
-            "agent": "jurismind-xhigh",
+            "agent": "codex",
             "backend": "acpx",
             "mode": "persistent"
           }
@@ -36,9 +36,8 @@
       "enabled": true
     },
     "backend": "acpx",
-    "defaultAgent": "jurismind-xhigh",
+    "defaultAgent": "codex",
     "allowedAgents": [
-      "jurismind-xhigh",
       "codex"
     ]
   },
@@ -49,12 +48,7 @@
         "config": {
           "permissionMode": "approve-all",
           "nonInteractivePermissions": "deny",
-          "timeoutSeconds": 180,
-          "agents": {
-            "jurismind-xhigh": {
-              "command": "env -u OPENAI_API_KEY -u CODEX_API_KEY npx @zed-industries/codex-acp@^0.11.1"
-            }
-          }
+          "timeoutSeconds": 180
         }
       }
     }

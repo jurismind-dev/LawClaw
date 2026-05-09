@@ -77,20 +77,6 @@ function getRuntimeBridgeDir(): string | null {
   return app.isPackaged ? getPackagedRuntimeBridgeDir() : getDevRuntimeBridgeDir();
 }
 
-function getWindowsUtf8CmdWrapperPath(): string | null {
-  if (process.platform !== 'win32') {
-    return null;
-  }
-
-  const runtimeBridgeDir = getRuntimeBridgeDir();
-  if (!runtimeBridgeDir) {
-    return null;
-  }
-
-  const wrapperPath = join(runtimeBridgeDir, 'cmd-utf8.cmd');
-  return existsSync(wrapperPath) ? wrapperPath : null;
-}
-
 function getBundledBinDir(): string {
   if (app.isPackaged) {
     return join(process.resourcesPath, 'bin');
@@ -177,11 +163,6 @@ export function applyBundledRuntimeToEnv(
         env.SystemRoot = 'C:\\Windows';
       }
     }
-  }
-
-  const utf8CmdWrapper = getWindowsUtf8CmdWrapperPath();
-  if (utf8CmdWrapper) {
-    env.ComSpec = utf8CmdWrapper;
   }
 
   if (!app.isPackaged) {

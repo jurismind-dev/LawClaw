@@ -120,7 +120,7 @@ describe('lawclaw session guard', () => {
 
   it('mergeAcpUserTurnsIntoHistory 会从 ACP state 补回缺失的用户提问', async () => {
     const workspace = join(tempDir, '.openclaw', 'workspace-lawclaw-main');
-    const sessionKey = 'agent:jurismind-xhigh:acp:test-session';
+    const sessionKey = 'agent:codex:acp:test-session';
     writeConfig({
       agents: {
         list: [
@@ -183,7 +183,7 @@ describe('lawclaw session guard', () => {
     };
 
     expect(mod.mergeAcpUserTurnsIntoHistory(result, {
-      sessionKey: 'agent:jurismind-xhigh:acp:test-session',
+      sessionKey: 'agent:codex:acp:test-session',
     })).toBe(result);
   });
 });

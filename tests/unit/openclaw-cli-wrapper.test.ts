@@ -70,12 +70,13 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(bundledRuntimeSource).toContain('LAWCLAW_BUNDLED_UV_EXE');
     expect(bundledRuntimeSource).toContain("join(systemRoot, 'System32')");
     expect(bundledRuntimeSource).toContain("env.Path = nextPath");
+    expect(bundledRuntimeSource).not.toContain('env.ComSpec =');
     expect(feishuOnboardingSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
     expect(ipcHandlersSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
     expect(gatewayManagerSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
   });
 
-  it('ships runtime-bridge wrappers for node, npm, and managed python', () => {
+  it('ships runtime-bridge wrappers for node, shell, and managed python', () => {
     const builderConfig = readRepoFile('electron-builder.yml');
     const posixNode = readRepoFile('resources/runtime-bridge/posix/node');
     const posixPython = readRepoFile('resources/runtime-bridge/posix/python');

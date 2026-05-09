@@ -353,7 +353,7 @@ describe('chat:sendWithMedia vision routing', () => {
     expect(handler).toBeTypeOf('function');
 
     const invokeResult = await handler?.({}, {
-      sessionKey: 'agent:jurismind-xhigh:acp:test-session',
+      sessionKey: 'agent:codex:acp:test-session',
       message: '请看这个图片',
       deliver: false,
       idempotencyKey: 'idem-acp-image',
@@ -371,7 +371,7 @@ describe('chat:sendWithMedia vision routing', () => {
     expect(gatewayRpc).toHaveBeenCalledWith(
       'chat.send',
       expect.objectContaining({
-        sessionKey: 'agent:jurismind-xhigh:acp:test-session',
+        sessionKey: 'agent:codex:acp:test-session',
         message: expect.stringContaining(
           '[media attached: /tmp/test-image.png (image/png) | /tmp/test-image.png]',
         ),

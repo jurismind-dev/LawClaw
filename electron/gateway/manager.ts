@@ -29,7 +29,7 @@ import {
   syncGatewayTokenToConfig,
   syncJurismindMultimodalConfig,
 } from '../utils/openclaw-auth';
-import { applyProviderEnvFallbacks } from './provider-env';
+import { applyProviderEnvFallbacks, shouldInjectLawClawProviderEnv } from './provider-env';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
 import { applyBundledRuntimeToEnv, getBundledRuntimePathEntries } from '../utils/bundled-runtime';
@@ -1127,7 +1127,7 @@ export class GatewayManager extends EventEmitter {
         const defaultProviderKey = await getApiKey(defaultProviderId);
         if (defaultProviderType && defaultProviderKey) {
           const envVar = getProviderEnvVar(defaultProviderType);
-          if (envVar) {
+          if (shouldInjectLawClawProviderEnv(envVar)) {
             providerEnv[envVar] = defaultProviderKey;
             loadedProviderKeyCount++;
           }
@@ -1142,7 +1142,7 @@ export class GatewayManager extends EventEmitter {
       const providers = await getAllProviders();
       for (const provider of providers) {
         const envVar = getProviderEnvVar(provider.type);
-        if (!envVar || providerEnv[envVar]) {
+        if (!shouldInjectLawClawProviderEnv(envVar) || providerEnv[envVar]) {
           continue;
         }
         const key = await getApiKey(provider.id);
@@ -1161,7 +1161,7 @@ export class GatewayManager extends EventEmitter {
         const key = await getApiKey(providerType);
         if (key) {
           const envVar = getProviderEnvVar(providerType);
-          if (envVar && !providerEnv[envVar]) {
+          if (shouldInjectLawClawProviderEnv(envVar) && !providerEnv[envVar]) {
             providerEnv[envVar] = key;
             loadedProviderKeyCount++;
           }

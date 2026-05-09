@@ -4,9 +4,9 @@ import { useChatStore } from '@/stores/chat';
 
 const MAIN_SESSION_KEY = 'agent:lawclaw-main:main';
 const JURISMIND_AGENT_ID = 'lawclaw-jurismind-xhigh';
-const JURISMIND_ACP_ALIAS = 'jurismind-xhigh';
-const JURISMIND_ACP_SESSION_KEY = `agent:${JURISMIND_ACP_ALIAS}:acp:test-session`;
-const JURISMIND_NEW_ACP_SESSION_KEY = `agent:${JURISMIND_ACP_ALIAS}:acp:new-session`;
+const CODEX_ACP_HARNESS_ID = 'codex';
+const JURISMIND_ACP_SESSION_KEY = `agent:${CODEX_ACP_HARNESS_ID}:acp:test-session`;
+const JURISMIND_NEW_ACP_SESSION_KEY = `agent:${CODEX_ACP_HARNESS_ID}:acp:new-session`;
 const ACP_POLL_TICK_MS = 500;
 
 async function flushMicrotasks(): Promise<void> {
@@ -45,7 +45,7 @@ function resetStores(): void {
         runtime: {
           type: 'acp',
           acp: {
-            agent: JURISMIND_ACP_ALIAS,
+            agent: CODEX_ACP_HARNESS_ID,
             backend: 'acpx',
             mode: 'persistent',
           },
@@ -155,7 +155,7 @@ describe('chat ACP runtime routing', () => {
   it('routes stale ACP alias current agents back to the configured ACP agent', async () => {
     useChatStore.setState({
       currentSessionKey: JURISMIND_ACP_SESSION_KEY,
-      currentAgentId: JURISMIND_ACP_ALIAS,
+      currentAgentId: CODEX_ACP_HARNESS_ID,
       sessions: [
         { key: MAIN_SESSION_KEY, persisted: true },
         { key: JURISMIND_ACP_SESSION_KEY, persisted: true },
@@ -193,7 +193,7 @@ describe('chat ACP runtime routing', () => {
       'gateway:rpc',
       'chat.send',
       expect.objectContaining({
-        sessionKey: `agent:${JURISMIND_ACP_ALIAS}:main`,
+        sessionKey: `agent:${CODEX_ACP_HARNESS_ID}:main`,
       }),
       expect.anything(),
     );
@@ -204,7 +204,7 @@ describe('chat ACP runtime routing', () => {
 
     useChatStore.setState({
       currentSessionKey: JURISMIND_ACP_SESSION_KEY,
-      currentAgentId: JURISMIND_ACP_ALIAS,
+      currentAgentId: CODEX_ACP_HARNESS_ID,
       sessions: [
         { key: MAIN_SESSION_KEY, persisted: true },
         { key: JURISMIND_ACP_SESSION_KEY, persisted: true },
@@ -297,7 +297,7 @@ describe('chat ACP runtime routing', () => {
       'gateway:rpc',
       'chat.send',
       expect.objectContaining({
-        sessionKey: `agent:${JURISMIND_ACP_ALIAS}:main`,
+        sessionKey: `agent:${CODEX_ACP_HARNESS_ID}:main`,
       }),
       expect.anything(),
     );

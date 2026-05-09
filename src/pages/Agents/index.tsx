@@ -495,6 +495,39 @@ function AgentModelModal({
   onClose: () => void;
 }) {
   const { t } = useTranslation('agents');
+  if (agent.runtime?.type === 'acp') {
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <Card className={cn('w-full max-w-xl', modalCardClasses)}>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div>
+              <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+                {t('settingsDialog.modelLabel')}
+              </CardTitle>
+              <CardDescription>
+                {t('settingsDialog.acpRuntimeDescription')}
+              </CardDescription>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4 p-6 pt-2">
+            <div className={infoTileClasses}>
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
+                {t('settingsDialog.acpRuntimeLabel')}
+              </p>
+              <p className="mt-1 font-mono text-sm">
+                {agent.runtime.acp?.backend || 'acp'} / {agent.runtime.acp?.agent || agent.id}
+              </p>
+            </div>
+            <Button onClick={onClose}>{t('common:actions.close')}</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const providers = useProviderStore((state) => state.providers);
   const defaultProviderId = useProviderStore((state) => state.defaultProviderId);
   const updateAgentModel = useAgentsStore((state) => state.updateAgentModel);

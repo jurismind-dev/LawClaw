@@ -117,4 +117,73 @@ describe('lawclaw session guard', () => {
       'agent:research:main',
     ]);
   });
+
+  it('mergeAcpUserTurnsIntoHistory 会从 ACP state 补回缺失的用户提问', async () => {
+    const workspace = join(tempDir, '.openclaw', 'workspace-lawclaw-main');
+    const sessionKey = 'agent:jurismind-xhigh:acp:test-session';
+    writeConfig({
+      agents: {
+        list: [
+          { id: 'lawclaw-main', workspace },
+          { id: 'lawclaw-jurismind-xhigh', workspace: join(tempDir, '.openclaw', 'workspace-lawclaw-jurismind-xhigh') },
+        ],
+      },
+    });
+    mkdirSync(join(workspace, 'state', 'sessions'), { recursive: true });
+    writeFileSync(
+      join(workspace, 'state', 'sessions', `${encodeURIComponent(sessionKey)}.json`),
+      JSON.stringify({
+        schema: 'acpx.session.v1',
+        messages: [
+          {
+            User: {
+              id: 'user-1',
+              content: [{ Text: '[Sat 2026-05-09 15:51 GMT+8] 你好呀' }],
+            },
+          },
+          { Agent: { content: [{ Text: '你好，我在。' }] } },
+          {
+            User: {
+              id: 'user-2',
+              content: [{ Text: '[Sat 2026-05-09 15:53 GMT+8] 你是用的什么模型' }],
+            },
+          },
+          { Agent: { content: [{ Text: '我运行在 Codex CLI / OpenAI agent 环境。' }] } },
+        ],
+      }),
+      'utf-8',
+    );
+    const mod = await importModule();
+
+    const merged = mod.mergeAcpUserTurnsIntoHistory(
+      {
+        messages: [
+          { role: 'assistant', id: 'assistant-1', content: '你好，我在。' },
+          { role: 'assistant', id: 'assistant-2', content: '我运行在 Codex CLI / OpenAI agent 环境。' },
+        ],
+      },
+      { sessionKey },
+    ) as { messages: Array<{ role: string; content: string; id?: string }> };
+
+    expect(merged.messages).toEqual([
+      { role: 'user', id: 'user-1', content: '你好呀' },
+      { role: 'assistant', id: 'assistant-1', content: '你好，我在。' },
+      { role: 'user', id: 'user-2', content: '你是用的什么模型' },
+      { role: 'assistant', id: 'assistant-2', content: '我运行在 Codex CLI / OpenAI agent 环境。' },
+    ]);
+  });
+
+  it('mergeAcpUserTurnsIntoHistory 在 Gateway 已返回用户消息时不重复补写', async () => {
+    const mod = await importModule();
+    const result = {
+      messages: [
+        { role: 'user', id: 'user-1', content: '你好呀' },
+        { role: 'assistant', id: 'assistant-1', content: '你好，我在。' },
+      ],
+    };
+
+    expect(mod.mergeAcpUserTurnsIntoHistory(result, {
+      sessionKey: 'agent:jurismind-xhigh:acp:test-session',
+    })).toBe(result);
+  });
 });

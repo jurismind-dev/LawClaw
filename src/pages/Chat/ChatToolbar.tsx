@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useChatStore } from '@/stores/chat';
 import { useAgentsStore } from '@/stores/agents';
 import { cn } from '@/lib/utils';
+import { getAgentDisplayName } from '@/lib/agent-display';
 import { useTranslation } from 'react-i18next';
 
 export function ChatToolbar() {
@@ -21,8 +22,7 @@ export function ChatToolbar() {
   const { t } = useTranslation('chat');
 
   const currentTargetName = useMemo(() => {
-    return (agents ?? []).find((agent) => agent.id === currentAgentId)?.name
-      ?? (currentAgentId === 'lawclaw-main' ? 'LawClaw' : currentAgentId || 'LawClaw');
+    return getAgentDisplayName(agents ?? [], currentAgentId);
   }, [agents, currentAgentId]);
 
   return (

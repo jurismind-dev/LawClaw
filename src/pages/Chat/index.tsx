@@ -22,6 +22,7 @@ import { deriveTaskSteps } from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { useAgentPresetMigrationStore } from '@/stores/agent-preset-migration';
 import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
+import { getAgentDisplayName } from '@/lib/agent-display';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useMinLoading } from '@/hooks/use-min-loading';
 import type { TaskStep } from './task-visualization';
@@ -142,8 +143,7 @@ export function Chat() {
       showThinking,
     });
 
-    const segmentAgentLabel =
-      agents.find((agent) => agent.id === currentAgentId)?.name || currentAgentId;
+    const segmentAgentLabel = getAgentDisplayName(agents, currentAgentId);
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
 
     if (steps.length === 0) {

@@ -84,6 +84,7 @@ import {
 } from '../utils/agent-preset-migration';
 import {
   filterLawClawSessions,
+  mergeAcpUserTurnsIntoHistory,
   normalizeLawClawSessionKey,
   normalizeSessionKeyParam,
 } from '../utils/lawclaw-session';
@@ -684,7 +685,11 @@ function registerGatewayHandlers(
     try {
       const normalizedParams = normalizeSessionKeyParam(params);
       const result = await gatewayManager.rpc(method, normalizedParams, timeoutMs);
-      const finalResult = method === 'sessions.list' ? filterLawClawSessions(result) : result;
+      const finalResult = method === 'sessions.list'
+        ? filterLawClawSessions(result)
+        : method === 'chat.history'
+          ? mergeAcpUserTurnsIntoHistory(result, normalizedParams)
+          : result;
       return { success: true, result: finalResult };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -702,9 +707,10 @@ function registerGatewayHandlers(
       const normalizedSessionKey = normalizeLawClawSessionKey(params.sessionKey);
       let message = params.message;
       const media = Array.isArray(params.media) ? params.media : [];
-      const visionRoutingActive = media.length > 0 && await isJurismindVisionRoutingActive();
+      const isAcpSession = ACP_SESSION_KEY_PATTERN.test(normalizedSessionKey);
+      const visionRoutingActive = !isAcpSession && media.length > 0 && await isJurismindVisionRoutingActive();
       const prepared = media.length > 0
-        ? await prepareMediaPayloadForModel(media)
+        ? await prepareMediaPayloadForModel(media, { includeAttachments: !isAcpSession })
         : { attachments: [], messageRefs: [] };
 
       if (prepared.messageRefs.length > 0) {
@@ -719,11 +725,12 @@ function registerGatewayHandlers(
         idempotencyKey: params.idempotencyKey,
       };
 
-      if (prepared.attachments.length > 0) {
-        rpcParams.attachments = prepared.attachments;
+      const outboundAttachments = isAcpSession ? [] : prepared.attachments;
+      if (outboundAttachments.length > 0) {
+        rpcParams.attachments = outboundAttachments;
       }
 
-      const shouldUseVisionAgent = visionRoutingActive && prepared.attachments.length > 0;
+      const shouldUseVisionAgent = visionRoutingActive && outboundAttachments.length > 0;
       const rpcMethod = shouldUseVisionAgent ? 'agent' : 'chat.send';
       let timeoutMs = DEFAULT_CHAT_RPC_TIMEOUT_MS;
       if (shouldUseVisionAgent) {
@@ -733,7 +740,7 @@ function registerGatewayHandlers(
       }
 
       logger.info(
-        `[chat:sendWithMedia] Sending: route=${rpcMethod}, timeoutMs=${timeoutMs}, message="${message.substring(0, 100)}", attachments=${prepared.attachments.length}, fileRefs=${prepared.messageRefs.length}, visionRouting=${visionRoutingActive}`,
+        `[chat:sendWithMedia] Sending: route=${rpcMethod}, timeoutMs=${timeoutMs}, message="${message.substring(0, 100)}", attachments=${outboundAttachments.length}, fileRefs=${prepared.messageRefs.length}, visionRouting=${visionRoutingActive}, acpSession=${isAcpSession}`,
       );
 
       const result = shouldUseVisionAgent
@@ -2658,6 +2665,7 @@ const JURISMIND_PROVIDER_TYPE = 'jurismind';
 const JURISMIND_VISION_PROVIDER = 'jurismind';
 const JURISMIND_VISION_MODEL_ID = 'doubao';
 const JURISMIND_VISION_MODEL = `${JURISMIND_VISION_PROVIDER}/${JURISMIND_VISION_MODEL_ID}`;
+const ACP_SESSION_KEY_PATTERN = /^agent:[^:]+:acp:/;
 const DEFAULT_CHAT_RPC_TIMEOUT_MS = 30_000;
 const CHAT_SEND_WITH_MEDIA_TIMEOUT_MS = 120_000;
 const VISION_AGENT_ACCEPT_TIMEOUT_MS = 600_000;
@@ -2730,8 +2738,10 @@ async function isJurismindVisionRoutingActive(): Promise<boolean> {
 
 async function prepareMediaPayloadForModel(
   media: StagedMediaInput[],
+  options: { includeAttachments?: boolean } = {},
 ): Promise<PreparedMediaPayload> {
   const fsP = await import('fs/promises');
+  const includeAttachments = options.includeAttachments !== false;
   const attachments: VisualAttachment[] = [];
   const messageRefs: string[] = [];
 
@@ -2744,7 +2754,7 @@ async function prepareMediaPayloadForModel(
 
     messageRefs.push(buildLawClawMediaRef(item.filePath, item.mimeType));
 
-    if (VISION_MIME_TYPES.has(item.mimeType)) {
+    if (includeAttachments && VISION_MIME_TYPES.has(item.mimeType)) {
       const fileBuffer = await fsP.readFile(item.filePath);
       const base64Data = fileBuffer.toString('base64');
       logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);

@@ -348,6 +348,45 @@ describe('chat:sendWithMedia vision routing', () => {
     );
   });
 
+  it('keeps ACP sessions on chat.send with path refs only even when Jurismind vision routing is active', async () => {
+    const handler = await registerHandlers();
+    expect(handler).toBeTypeOf('function');
+
+    const invokeResult = await handler?.({}, {
+      sessionKey: 'agent:jurismind-xhigh:acp:test-session',
+      message: '请看这个图片',
+      deliver: false,
+      idempotencyKey: 'idem-acp-image',
+      media: [
+        {
+          filePath: '/tmp/test-image.png',
+          mimeType: 'image/png',
+          fileName: 'test-image.png',
+        },
+      ],
+    }) as { success: boolean; result?: { runId: string } };
+
+    expect(invokeResult.success).toBe(true);
+    expect(gatewayRpc).toHaveBeenCalledTimes(1);
+    expect(gatewayRpc).toHaveBeenCalledWith(
+      'chat.send',
+      expect.objectContaining({
+        sessionKey: 'agent:jurismind-xhigh:acp:test-session',
+        message: expect.stringContaining(
+          '[media attached: /tmp/test-image.png (image/png) | /tmp/test-image.png]',
+        ),
+      }),
+      120000,
+    );
+    expect(gatewayRpc.mock.calls[0]?.[1]).not.toHaveProperty('attachments');
+    expect(fsPromisesMock.readFile).not.toHaveBeenCalled();
+    expect(gatewayRpc).not.toHaveBeenCalledWith(
+      'agent',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it('keeps PDF files as path references on the chat.send path', async () => {
     const handler = await registerHandlers();
     expect(handler).toBeTypeOf('function');

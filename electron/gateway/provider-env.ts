@@ -7,6 +7,11 @@ export interface ApplyProviderEnvFallbacksParams {
 
 const PLACEHOLDER_PREFIX = '__CLAWX_PLACEHOLDER_';
 const PLACEHOLDER_SUFFIX = '__';
+const PLACEHOLDER_UNSAFE_ENV_VARS = new Set([
+  // Codex ACP treats OPENAI_API_KEY as an auth method. A placeholder here
+  // overrides `codex login` / ~/.codex/auth.json and causes 401s.
+  'OPENAI_API_KEY',
+]);
 
 function hasNonEmptyValue(value: string | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
@@ -22,6 +27,7 @@ export function applyProviderEnvFallbacks(
   for (const providerType of params.providerTypes) {
     const envVar = params.getEnvVar(providerType);
     if (!envVar) continue;
+    if (PLACEHOLDER_UNSAFE_ENV_VARS.has(envVar)) continue;
 
     if (hasNonEmptyValue(nextProviderEnv[envVar])) continue;
     if (hasNonEmptyValue(baseEnv[envVar])) continue;

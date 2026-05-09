@@ -132,6 +132,14 @@ const CLEAR_DIRECTORY_RETRY_DELAYS_MS = [100, 250, 500];
 const CLEAR_DIRECTORY_RETRY_CODES = new Set(['ENOTEMPTY', 'EPERM', 'EBUSY']);
 const DEDICATED_AGENT_ID = 'lawclaw-main';
 const DEDICATED_AGENT_WORKSPACE = '~/.openclaw/workspace-lawclaw-main';
+const LEGACY_ACP_AGENT_ID = 'lawclaw-codex';
+const LEGACY_ACP_AGENT_NAME = 'LawClaw Codex (ACP)';
+const LEGACY_ACP_AGENT_WORKSPACE = '~/.openclaw/workspace-lawclaw-codex';
+const JURISMIND_ACP_AGENT_ID = 'lawclaw-jurismind-xhigh';
+const JURISMIND_ACP_AGENT_NAME = 'Jurismind xHigh';
+const JURISMIND_ACP_AGENT_WORKSPACE = '~/.openclaw/workspace-lawclaw-jurismind-xhigh';
+const JURISMIND_ACP_HARNESS_ID = 'jurismind-xhigh';
+const ACP_RUNTIME_MODES = new Set(['persistent', 'oneshot']);
 
 const emitter = new EventEmitter();
 let running = false;
@@ -491,6 +499,126 @@ function mergeRecordAdditive(
   return { next, changed };
 }
 
+function removeInvalidAcpAgentRuntime(config: Record<string, unknown>): {
+  next: Record<string, unknown>;
+  changed: boolean;
+} {
+  const agents = isRecord(config.agents) ? config.agents : undefined;
+  const list = Array.isArray(agents?.list) ? agents.list : undefined;
+  if (!list) {
+    return { next: config, changed: false };
+  }
+
+  let changed = false;
+  const next = deepClone(config);
+  const nextAgents = isRecord(next.agents) ? next.agents : {};
+  const nextList = Array.isArray(nextAgents.list) ? nextAgents.list : [];
+
+  for (const entry of nextList) {
+    if (!isRecord(entry) || !('runtime' in entry)) {
+      continue;
+    }
+
+    if (entry.runtime === 'acp') {
+      delete entry.runtime;
+      changed = true;
+      continue;
+    }
+
+    if (!isRecord(entry.runtime)) {
+      continue;
+    }
+
+    if (entry.runtime.type !== 'acp') {
+      continue;
+    }
+
+    const acp = isRecord(entry.runtime.acp) ? entry.runtime.acp : undefined;
+    const mode = acp?.mode;
+    if (typeof mode === 'string' && !ACP_RUNTIME_MODES.has(mode)) {
+      delete entry.runtime;
+      changed = true;
+    }
+  }
+
+  return { next, changed };
+}
+
+function isLegacyManagedAcpAgent(entry: Record<string, unknown>): boolean {
+  return (
+    entry.id === LEGACY_ACP_AGENT_ID &&
+    (entry.name === undefined || entry.name === LEGACY_ACP_AGENT_NAME) &&
+    (entry.workspace === undefined || entry.workspace === LEGACY_ACP_AGENT_WORKSPACE)
+  );
+}
+
+function normalizeJurismindAcpAgentPreset(config: Record<string, unknown>): {
+  next: Record<string, unknown>;
+  changed: boolean;
+} {
+  const agents = isRecord(config.agents) ? config.agents : undefined;
+  const list = Array.isArray(agents?.list) ? agents.list : undefined;
+  if (!list) {
+    return { next: config, changed: false };
+  }
+
+  const next = deepClone(config);
+  const nextAgents = isRecord(next.agents) ? next.agents : {};
+  const nextList = Array.isArray(nextAgents.list) ? nextAgents.list : [];
+  let changed = false;
+
+  const existingJurismind = nextList.find(
+    (item): item is Record<string, unknown> => isRecord(item) && item.id === JURISMIND_ACP_AGENT_ID
+  );
+  const legacyIndex = nextList.findIndex(
+    (item): item is Record<string, unknown> => isRecord(item) && isLegacyManagedAcpAgent(item)
+  );
+
+  if (existingJurismind && legacyIndex >= 0) {
+    nextList.splice(legacyIndex, 1);
+    changed = true;
+  } else if (!existingJurismind && legacyIndex >= 0) {
+    const legacy = nextList[legacyIndex];
+    if (isRecord(legacy)) {
+      legacy.id = JURISMIND_ACP_AGENT_ID;
+      legacy.name = JURISMIND_ACP_AGENT_NAME;
+      legacy.workspace = JURISMIND_ACP_AGENT_WORKSPACE;
+      changed = true;
+    }
+  }
+
+  return { next, changed };
+}
+
+function normalizeAcpTopLevelConfig(config: Record<string, unknown>): {
+  next: Record<string, unknown>;
+  changed: boolean;
+} {
+  const acp = isRecord(config.acp) ? config.acp : undefined;
+  if (!acp) {
+    return { next: config, changed: false };
+  }
+
+  const next = deepClone(config);
+  const nextAcp = isRecord(next.acp) ? next.acp : {};
+  let changed = false;
+
+  if (nextAcp.defaultAgent === 'codex') {
+    nextAcp.defaultAgent = JURISMIND_ACP_HARNESS_ID;
+    changed = true;
+  }
+
+  if (Array.isArray(nextAcp.allowedAgents)) {
+    if (!nextAcp.allowedAgents.includes(JURISMIND_ACP_HARNESS_ID)) {
+      nextAcp.allowedAgents = [JURISMIND_ACP_HARNESS_ID, ...nextAcp.allowedAgents];
+      changed = true;
+    }
+  }
+
+  next.acp = nextAcp;
+  return { next, changed };
+}
+
 function expandOpenClawPath(pathValue: string, openClawConfigDir: string): string {
   if (pathValue.startsWith('~/.openclaw')) {
     return join(openClawConfigDir, pathValue.slice('~/.openclaw'.length));
@@ -675,8 +803,11 @@ async function prepareRuntimeContext(options: AgentPresetMigrationOptions): Prom
 
 function computeNextConfig(context: RuntimeTaskContext): { nextConfig: Record<string, unknown>; changed: boolean } {
   const basePatch = loadConfigPatchFromVUpdate(context.vUpdateDir, context.manifest);
-  let nextConfig = context.config;
-  let changed = false;
+  const cleaned = removeInvalidAcpAgentRuntime(context.config);
+  const normalizedAgent = normalizeJurismindAcpAgentPreset(cleaned.next);
+  const normalizedAcp = normalizeAcpTopLevelConfig(normalizedAgent.next);
+  let nextConfig = normalizedAcp.next;
+  let changed = cleaned.changed || normalizedAgent.changed || normalizedAcp.changed;
 
   if (basePatch) {
     const merged = mergeRecordAdditive(nextConfig, basePatch);

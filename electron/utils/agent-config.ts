@@ -29,6 +29,18 @@ interface AgentModelConfig {
   [key: string]: unknown;
 }
 
+interface AgentAcpRuntimeConfig {
+  agent?: string;
+  backend?: string;
+  mode?: string;
+  cwd?: string;
+}
+
+interface AgentRuntimeConfig {
+  type: 'acp';
+  acp?: AgentAcpRuntimeConfig;
+}
+
 interface AgentDefaultsConfig {
   workspace?: string;
   model?: string | AgentModelConfig;
@@ -42,6 +54,7 @@ interface AgentListEntry extends Record<string, unknown> {
   workspace?: string;
   agentDir?: string;
   model?: string | AgentModelConfig;
+  runtime?: unknown;
 }
 
 interface AgentsConfig extends Record<string, unknown> {
@@ -81,6 +94,7 @@ export interface AgentSummary {
   agentDir: string;
   mainSessionKey: string;
   channelTypes: string[];
+  runtime?: AgentRuntimeConfig;
 }
 
 export interface AgentsSnapshot {
@@ -140,6 +154,40 @@ function formatModelLabel(model: unknown): string | null {
   if (!modelRef) return null;
   const parts = modelRef.split('/');
   return parts[parts.length - 1] || modelRef;
+}
+
+function normalizeAcpRuntimeConfig(value: unknown): AgentRuntimeConfig | undefined {
+  if (!isRecord(value) || value.type !== 'acp') {
+    return undefined;
+  }
+
+  const acpRecord = isRecord(value.acp) ? value.acp : undefined;
+  const acp: AgentAcpRuntimeConfig = {};
+  if (typeof acpRecord?.agent === 'string' && acpRecord.agent.trim()) {
+    acp.agent = acpRecord.agent.trim();
+  }
+  if (typeof acpRecord?.backend === 'string' && acpRecord.backend.trim()) {
+    acp.backend = acpRecord.backend.trim();
+  }
+  if (typeof acpRecord?.mode === 'string' && acpRecord.mode.trim()) {
+    acp.mode = acpRecord.mode.trim();
+  }
+  if (typeof acpRecord?.cwd === 'string' && acpRecord.cwd.trim()) {
+    acp.cwd = acpRecord.cwd.trim();
+  }
+
+  return Object.keys(acp).length > 0
+    ? { type: 'acp', acp }
+    : { type: 'acp' };
+}
+
+function formatRuntimeModelLabel(runtime: AgentRuntimeConfig | undefined): string | null {
+  if (runtime?.type !== 'acp') {
+    return null;
+  }
+
+  const backend = runtime.acp?.backend || 'acp';
+  return `ACP / ${backend}`;
 }
 
 function normalizeMainKey(value: unknown): string {
@@ -314,7 +362,9 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
 
   const agents: AgentSummary[] = entries.map((entry) => {
     const explicitModelRef = resolveModelRef(entry.model);
-    const modelLabel = formatModelLabel(entry.model) || defaultModelLabel || 'Not configured';
+    const runtime = normalizeAcpRuntimeConfig(entry.runtime);
+    const runtimeLabel = formatRuntimeModelLabel(runtime);
+    const modelLabel = runtimeLabel || formatModelLabel(entry.model) || defaultModelLabel || 'Not configured';
     const entryKey = normalizeAgentId(entry.id);
     const channelTypes = [...(agentChannelSets.get(entryKey) ?? new Set<string>())].sort();
 
@@ -323,13 +373,14 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
       name: entry.name || (entry.id === DEFAULT_AGENT_ID ? DEFAULT_AGENT_NAME : entry.id),
       isDefault: entry.id === defaultAgentId,
       modelDisplay: modelLabel,
-      modelRef: explicitModelRef || defaultModelRef || null,
+      modelRef: runtime ? null : explicitModelRef || defaultModelRef || null,
       overrideModelRef: explicitModelRef,
-      inheritedModel: !explicitModelRef && Boolean(defaultModelLabel),
+      inheritedModel: !runtime && !explicitModelRef && Boolean(defaultModelLabel),
       workspace: entry.workspace || (entry.id === DEFAULT_AGENT_ID ? getDefaultWorkspacePath(config) : `~/.openclaw/workspace-${entry.id}`),
       agentDir: entry.agentDir || getDefaultAgentDirPath(entry.id),
       mainSessionKey: buildAgentMainSessionKey(config, entry.id),
       channelTypes,
+      ...(runtime ? { runtime } : {}),
     };
   });
 

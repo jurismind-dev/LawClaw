@@ -6,6 +6,8 @@
 import { create } from 'zustand';
 import { useAgentsStore } from './agents';
 import { useGatewayStore } from './gateway';
+import type { AgentSummary } from '@/types/agent';
+import { findAgentByIdOrAcpAlias } from '@/lib/agent-display';
 import {
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
   classifyHistoryStartupRetryError,
@@ -273,7 +275,12 @@ function shouldUseDedicatedFallbackSession(
 const DEFAULT_CANONICAL_PREFIX = 'agent:lawclaw-main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
 const INTERNAL_MIGRATION_SESSION_PREFIX = `${DEFAULT_CANONICAL_PREFIX}:__internal_migration__:`;
+const INTERNAL_ACP_BOOTSTRAP_SESSION_PREFIX = `${DEFAULT_CANONICAL_PREFIX}:__internal_acp_bootstrap__:`;
 const LEGACY_MIGRATION_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:lawclaw-upgrade-migration`;
+const ACP_SESSION_KEY_REGEX = /^agent:([^:]+):acp:[^:]+(?:.*)?$/;
+const ACP_SPAWNED_SESSION_REGEX = /Spawned ACP session\s+(agent:[^\s)]+)/i;
+const ACP_SESSION_POLL_INTERVAL_MS = 500;
+const ACP_SESSION_POLL_TIMEOUT_MS = 30_000;
 
 function normalizeAgentId(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase() || 'lawclaw-main';
@@ -285,15 +292,390 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   return normalizeAgentId(agentId);
 }
 
+function getDisplayAgentIdFromSessionKey(sessionKey: string): string {
+  const acpHarnessId = parseAcpSessionHarnessId(sessionKey);
+  if (acpHarnessId) {
+    const agent = findAgentByIdOrAcpAlias(useAgentsStore.getState().agents, acpHarnessId);
+    if (agent?.id) {
+      return normalizeAgentId(agent.id);
+    }
+  }
+  return getAgentIdFromSessionKey(sessionKey);
+}
+
 function buildFallbackMainSessionKey(agentId: string): string {
   return `agent:${normalizeAgentId(agentId)}:main`;
+}
+
+function buildEphemeralSessionKeyForAgent(agentId: string): string {
+  return `agent:${normalizeAgentId(agentId)}:session-${Date.now()}`;
 }
 
 function resolveMainSessionKeyForAgent(agentId: string | undefined | null): string | null {
   if (!agentId) return null;
   const normalizedAgentId = normalizeAgentId(agentId);
-  const summary = useAgentsStore.getState().agents.find((agent) => agent.id === normalizedAgentId);
+  const summary = getAgentSummary(normalizedAgentId);
   return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
+}
+
+function getAgentSummary(agentId: string | undefined | null): AgentSummary | undefined {
+  if (!agentId) return undefined;
+  return findAgentByIdOrAcpAlias(useAgentsStore.getState().agents, agentId);
+}
+
+function isAcpRuntimeAgent(agent: AgentSummary | undefined): agent is AgentSummary {
+  return agent?.runtime?.type === 'acp';
+}
+
+function resolveAcpHarnessAgentId(agent: AgentSummary): string {
+  return normalizeAgentId(agent.runtime?.acp?.agent || agent.id);
+}
+
+function resolveAcpRuntimeMode(agent: AgentSummary): 'persistent' | 'oneshot' {
+  return agent.runtime?.acp?.mode === 'oneshot' ? 'oneshot' : 'persistent';
+}
+
+function buildAcpSessionPrefix(harnessAgentId: string): string {
+  return `agent:${normalizeAgentId(harnessAgentId)}:acp:`;
+}
+
+function parseAcpSessionHarnessId(sessionKey: string): string | null {
+  const match = sessionKey.match(ACP_SESSION_KEY_REGEX);
+  return match?.[1] ? normalizeAgentId(match[1]) : null;
+}
+
+function isAcpSessionKeyForHarness(sessionKey: string, harnessAgentId: string): boolean {
+  return sessionKey.startsWith(buildAcpSessionPrefix(harnessAgentId));
+}
+
+function isAcpSessionKey(sessionKey: string): boolean {
+  return parseAcpSessionHarnessId(sessionKey) != null;
+}
+
+function shouldCreateFreshAcpSession(
+  state: Pick<ChatState, 'currentSessionKey' | 'messages' | 'sessions'>,
+  agent: AgentSummary,
+): boolean {
+  const currentSessionKey = state.currentSessionKey;
+  const configuredAgentId = normalizeAgentId(agent.id);
+  if (!currentSessionKey.startsWith(`agent:${configuredAgentId}:`)) {
+    return false;
+  }
+  if (currentSessionKey.endsWith(':main') || isAcpSessionKey(currentSessionKey)) {
+    return false;
+  }
+
+  const currentSession = getSessionEntry(state.sessions, currentSessionKey);
+  return currentSession?.persisted !== true && state.messages.length === 0;
+}
+
+function getAcpSessionActivity(state: Pick<ChatState, 'sessionLastActivity'>, session: ChatSession): number {
+  return session.updatedAt ?? state.sessionLastActivity[session.key] ?? 0;
+}
+
+function findReusableAcpSession(
+  state: Pick<ChatState, 'sessions' | 'sessionLastActivity'>,
+  harnessAgentId: string,
+): string | null {
+  const normalizedHarness = normalizeAgentId(harnessAgentId);
+  const candidates = state.sessions
+    .filter((session) => isAcpSessionKeyForHarness(session.key, normalizedHarness))
+    .sort((left, right) => getAcpSessionActivity(state, right) - getAcpSessionActivity(state, left));
+  return candidates[0]?.key ?? null;
+}
+
+function extractSpawnedAcpSessionKey(messages: RawMessage[], harnessAgentId: string): string | null {
+  const normalizedHarness = normalizeAgentId(harnessAgentId);
+  for (const message of [...messages].reverse()) {
+    const text = getMessageText(message.content);
+    const match = text.match(ACP_SPAWNED_SESSION_REGEX);
+    const sessionKey = match?.[1]?.trim();
+    if (sessionKey && isAcpSessionKeyForHarness(sessionKey, normalizedHarness)) {
+      return sessionKey;
+    }
+  }
+  return null;
+}
+
+async function requestGatewayRpc<T>(
+  method: string,
+  params?: unknown,
+  timeoutMs?: number,
+): Promise<T> {
+  const result = await window.electron.ipcRenderer.invoke(
+    'gateway:rpc',
+    method,
+    params,
+    timeoutMs,
+  ) as { success: boolean; result?: T; error?: string };
+
+  if (!result.success) {
+    throw new Error(result.error || `${method} failed`);
+  }
+
+  return result.result as T;
+}
+
+async function listGatewaySessions(limit = 100): Promise<ChatSession[]> {
+  const data = await requestGatewayRpc<Record<string, unknown>>('sessions.list', { limit });
+  const rawSessions = Array.isArray(data?.sessions) ? data.sessions : [];
+  return rawSessions
+    .map((session) => {
+      const raw = session as Record<string, unknown>;
+      return {
+        key: String(raw.key || ''),
+        label: raw.label ? String(raw.label) : undefined,
+        displayName: raw.displayName ? String(raw.displayName) : undefined,
+        thinkingLevel: raw.thinkingLevel ? String(raw.thinkingLevel) : undefined,
+        model: raw.model ? String(raw.model) : undefined,
+        updatedAt: parseSessionUpdatedAtMs(raw.updatedAt),
+        persisted: true,
+      } satisfies ChatSession;
+    })
+    .filter((session) => session.key);
+}
+
+async function readSessionMessages(sessionKey: string, limit = 20): Promise<RawMessage[]> {
+  const data = await requestGatewayRpc<Record<string, unknown>>(
+    'chat.history',
+    { sessionKey, limit },
+    30_000,
+  );
+  return Array.isArray(data?.messages) ? data.messages as RawMessage[] : [];
+}
+
+async function switchToSession(
+  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
+  get: () => ChatState,
+  targetSessionKey: string,
+  options: { loadHistory?: boolean } = {},
+): Promise<void> {
+  if (targetSessionKey === get().currentSessionKey) {
+    return;
+  }
+
+  const current = get();
+  const currentSession = getSessionEntry(current.sessions, current.currentSessionKey);
+  const leavingEmpty = isEphemeralSessionCandidate(
+    current.currentSessionKey,
+    current.messages,
+    current.sessionLabels,
+    current.sessionLastActivity,
+    currentSession?.persisted === true,
+  );
+
+  if (leavingEmpty) {
+    clearSessionViewCache(current.currentSessionKey);
+  } else {
+    cacheSessionView(current.currentSessionKey, current.messages, current.thinkingLevel);
+  }
+
+  const cachedNextView = getCachedSessionView(targetSessionKey);
+  set((state) => ({
+    currentSessionKey: targetSessionKey,
+    currentAgentId: getDisplayAgentIdFromSessionKey(targetSessionKey),
+    sessions: ensureSessionEntry(
+      leavingEmpty
+        ? state.sessions.filter((session) => session.key !== current.currentSessionKey)
+        : state.sessions,
+      targetSessionKey,
+    ),
+    sessionLabels: leavingEmpty
+      ? clearSessionEntryFromMap(state.sessionLabels, current.currentSessionKey)
+      : state.sessionLabels,
+    sessionLastActivity: leavingEmpty
+      ? clearSessionEntryFromMap(state.sessionLastActivity, current.currentSessionKey)
+      : state.sessionLastActivity,
+    messages: cachedNextView?.messages ?? [],
+    streamingText: '',
+    streamingMessage: null,
+    streamingTools: [],
+    activeRunId: null,
+    error: null,
+    pendingFinal: false,
+    lastUserMessageAt: null,
+    pendingToolImages: [],
+    thinkingLevel: cachedNextView?.thinkingLevel ?? null,
+  }));
+
+  if (options.loadHistory !== false) {
+    await get().loadHistory(true);
+  }
+}
+
+async function switchToEphemeralSessionForAgent(
+  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
+  get: () => ChatState,
+  agent: AgentSummary,
+): Promise<string> {
+  const configuredAgentId = normalizeAgentId(agent.id);
+  const currentSessionKey = get().currentSessionKey;
+  const isCurrentEphemeralForAgent = (
+    currentSessionKey.startsWith(`agent:${configuredAgentId}:`) &&
+    !currentSessionKey.endsWith(':main') &&
+    !isAcpSessionKey(currentSessionKey)
+  );
+
+  if (isCurrentEphemeralForAgent) {
+    return currentSessionKey;
+  }
+
+  const nextSessionKey = buildEphemeralSessionKeyForAgent(configuredAgentId);
+  await switchToSession(set, get, nextSessionKey, { loadHistory: false });
+  return nextSessionKey;
+}
+
+function mergeSessionMessagesForRebind(baseMessages: RawMessage[], overlayMessages: RawMessage[]): RawMessage[] {
+  let nextMessages = [...baseMessages];
+  for (const message of overlayMessages) {
+    if (message.role === 'user') {
+      const duplicateIndex = findDuplicateUserMessageIndex(nextMessages, message);
+      if (duplicateIndex >= 0) {
+        nextMessages[duplicateIndex] = mergeDuplicateUserMessage(nextMessages[duplicateIndex]!, message);
+        continue;
+      }
+    }
+    nextMessages = [...nextMessages, message];
+  }
+  return nextMessages;
+}
+
+function rebindOptimisticSession(
+  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
+  get: () => ChatState,
+  fromSessionKey: string,
+  toSessionKey: string,
+): void {
+  if (fromSessionKey === toSessionKey) {
+    return;
+  }
+
+  const state = get();
+  const fromCachedView = getCachedSessionView(fromSessionKey);
+  const toCachedView = getCachedSessionView(toSessionKey);
+  const fromMessages = state.currentSessionKey === fromSessionKey
+    ? state.messages
+    : fromCachedView?.messages ?? [];
+  const nextMessages = mergeSessionMessagesForRebind(toCachedView?.messages ?? [], fromMessages);
+  const nextThinkingLevel = state.currentSessionKey === fromSessionKey
+    ? state.thinkingLevel
+    : fromCachedView?.thinkingLevel ?? toCachedView?.thinkingLevel ?? null;
+  const fromLabel = state.sessionLabels[fromSessionKey];
+  const fromActivity = state.sessionLastActivity[fromSessionKey];
+
+  cacheSessionView(toSessionKey, nextMessages, nextThinkingLevel);
+  clearSessionViewCache(fromSessionKey);
+
+  set((current) => {
+    const shouldSwitchVisibleSession = current.currentSessionKey === fromSessionKey;
+    const nextSessionLabels = clearSessionEntryFromMap(current.sessionLabels, fromSessionKey);
+    if (fromLabel && !nextSessionLabels[toSessionKey]) {
+      nextSessionLabels[toSessionKey] = fromLabel;
+    }
+
+    const nextSessionLastActivity = clearSessionEntryFromMap(current.sessionLastActivity, fromSessionKey);
+    if (fromActivity != null && nextSessionLastActivity[toSessionKey] == null) {
+      nextSessionLastActivity[toSessionKey] = fromActivity;
+    }
+
+    return {
+      currentSessionKey: shouldSwitchVisibleSession ? toSessionKey : current.currentSessionKey,
+      currentAgentId: shouldSwitchVisibleSession
+        ? getDisplayAgentIdFromSessionKey(toSessionKey)
+        : current.currentAgentId,
+      sessions: ensureSessionEntry(
+        current.sessions.filter((session) => session.key !== fromSessionKey),
+        toSessionKey,
+      ),
+      sessionLabels: nextSessionLabels,
+      sessionLastActivity: nextSessionLastActivity,
+      messages: shouldSwitchVisibleSession ? nextMessages : current.messages,
+      thinkingLevel: shouldSwitchVisibleSession ? nextThinkingLevel : current.thinkingLevel,
+    };
+  });
+}
+
+async function resolveOrCreateAcpSessionForAgent(
+  get: () => ChatState,
+  agent: AgentSummary,
+  options: { reuseExisting?: boolean } = {},
+): Promise<string> {
+  const harnessAgentId = resolveAcpHarnessAgentId(agent);
+  const reuseExisting = options.reuseExisting !== false;
+  if (reuseExisting) {
+    const existing = findReusableAcpSession(get(), harnessAgentId);
+    if (existing) {
+      return existing;
+    }
+
+    await get().loadSessions(true);
+    const discovered = findReusableAcpSession(get(), harnessAgentId);
+    if (discovered) {
+      return discovered;
+    }
+  }
+
+  const beforeSessions = await listGatewaySessions();
+  const beforeKeys = new Set(beforeSessions.map((session) => session.key));
+  const bootstrapSessionKey = `${INTERNAL_ACP_BOOTSTRAP_SESSION_PREFIX}${harnessAgentId}:${crypto.randomUUID()}`;
+
+  const mode = resolveAcpRuntimeMode(agent);
+  const cwdArg = agent.runtime?.acp?.cwd ? ` --cwd ${JSON.stringify(agent.runtime.acp.cwd)}` : '';
+  const idempotencyKey = crypto.randomUUID();
+  const spawnCommand = `/acp spawn ${harnessAgentId} --mode ${mode} --thread off${cwdArg}`;
+  const spawnResult = await window.electron.ipcRenderer.invoke(
+    'gateway:rpc',
+    'chat.send',
+    {
+      sessionKey: bootstrapSessionKey,
+      message: spawnCommand,
+      deliver: false,
+      idempotencyKey,
+    },
+    120_000,
+  ) as { success: boolean; result?: { runId?: string }; error?: string };
+
+  if (!spawnResult.success) {
+    throw new Error(spawnResult.error || `Failed to spawn ACP session for ${agent.name}`);
+  }
+
+  const startedAt = Date.now();
+  let lastError: unknown = null;
+  while (Date.now() - startedAt < ACP_SESSION_POLL_TIMEOUT_MS) {
+    await sleep(ACP_SESSION_POLL_INTERVAL_MS);
+
+    try {
+      const sessions = await listGatewaySessions();
+      const newSession = sessions.find(
+        (session) => !beforeKeys.has(session.key) && isAcpSessionKeyForHarness(session.key, harnessAgentId),
+      );
+      if (newSession) {
+        return newSession.key;
+      }
+
+      if (reuseExisting) {
+        const reusable = sessions.find((session) => isAcpSessionKeyForHarness(session.key, harnessAgentId));
+        if (reusable) {
+          return reusable.key;
+        }
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    try {
+      const bootstrapMessages = await readSessionMessages(bootstrapSessionKey, 20);
+      const parsedSessionKey = extractSpawnedAcpSessionKey(bootstrapMessages, harnessAgentId);
+      if (parsedSessionKey) {
+        return parsedSessionKey;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const detail = lastError instanceof Error ? ` Last error: ${lastError.message}` : '';
+  throw new Error(`ACP session was not created for ${agent.name} within 30 seconds.${detail}`);
 }
 
 function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession[] {
@@ -483,7 +865,7 @@ function buildSessionSwitchPatch(
 
   return {
     currentSessionKey: nextSessionKey,
-    currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+    currentAgentId: getDisplayAgentIdFromSessionKey(nextSessionKey),
     sessions: ensureSessionEntry(nextSessions, nextSessionKey),
     sessionLabels: leavingEmpty
       ? clearSessionEntryFromMap(state.sessionLabels, state.currentSessionKey)
@@ -986,7 +1368,8 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
 function isInternalMigrationSessionKey(key: string): boolean {
   return (
     key === LEGACY_MIGRATION_SESSION_KEY ||
-    key.startsWith(INTERNAL_MIGRATION_SESSION_PREFIX)
+    key.startsWith(INTERNAL_MIGRATION_SESSION_PREFIX) ||
+    key.startsWith(INTERNAL_ACP_BOOTSTRAP_SESSION_PREFIX)
   );
 }
 
@@ -1471,6 +1854,17 @@ function shouldFetchSessionLabel(
 }
 
 function pickFallbackSessionKey(sessions: ChatSession[], preferredAgentId: string): string | null {
+  const preferredAgent = getAgentSummary(preferredAgentId);
+  if (isAcpRuntimeAgent(preferredAgent)) {
+    const acpSessionKey = findReusableAcpSession(
+      { sessions, sessionLastActivity: useChatStore.getState().sessionLastActivity },
+      resolveAcpHarnessAgentId(preferredAgent),
+    );
+    if (acpSessionKey) {
+      return acpSessionKey;
+    }
+  }
+
   const fallbackCandidates = [
     resolveMainSessionKeyForAgent(preferredAgentId),
     buildFallbackMainSessionKey(preferredAgentId),
@@ -1910,7 +2304,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set((state) => ({
             sessions: sessionsWithCurrent,
             currentSessionKey: nextSessionKey,
-            currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+            currentAgentId: getDisplayAgentIdFromSessionKey(nextSessionKey),
             hasAppliedStartupDefault: true,
             sessionLastActivity: {
               ...state.sessionLastActivity,
@@ -2058,7 +2452,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         lastUserMessageAt: null,
         pendingToolImages: [],
         currentSessionKey: nextSession?.key ?? DEFAULT_SESSION_KEY,
-        currentAgentId: getAgentIdFromSessionKey(nextSession?.key ?? DEFAULT_SESSION_KEY),
+        currentAgentId: getDisplayAgentIdFromSessionKey(nextSession?.key ?? DEFAULT_SESSION_KEY),
       }));
       if (nextSession) {
         get().loadHistory(true);
@@ -2088,8 +2482,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessionLastActivity,
       currentSession?.persisted === true,
     );
+    const currentAgent = getAgentSummary(get().currentAgentId);
+    const nextAgentId = currentAgent?.id ?? getDisplayAgentIdFromSessionKey(currentSessionKey);
     const nextPrefix = currentSessionKey.startsWith('agent:')
-      ? currentSessionKey.split(':').slice(0, 2).join(':')
+      ? `agent:${normalizeAgentId(nextAgentId)}`
       : DEFAULT_CANONICAL_PREFIX;
     const newKey = `${nextPrefix}:session-${Date.now()}`;
     const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
@@ -2100,7 +2496,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     set((s) => ({
       currentSessionKey: newKey,
-      currentAgentId: getAgentIdFromSessionKey(newKey),
+      currentAgentId: normalizeAgentId(nextAgentId),
       sessions: [
         ...(leavingEmptySession
           ? s.sessions.filter((session) => session.key !== currentSessionKey)
@@ -2207,7 +2603,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
             : message;
         });
       };
-      const mergeOptimisticUserMessages = (
+      const insertLocalUserMessage = (
+        messages: RawMessage[],
+        incoming: RawMessage,
+      ): RawMessage[] => {
+        if (isHiddenInternalMessage(incoming)) {
+          return messages;
+        }
+
+        const nextMessages = [...messages];
+        const incomingMs = incoming.timestamp != null ? toMs(incoming.timestamp) : null;
+        if (incomingMs == null) {
+          nextMessages.push(incoming);
+          return nextMessages;
+        }
+
+        const insertIndex = nextMessages.findIndex((message) => (
+          message.timestamp != null && toMs(message.timestamp) > incomingMs
+        ));
+        if (insertIndex < 0) {
+          nextMessages.push(incoming);
+        } else {
+          nextMessages.splice(insertIndex, 0, incoming);
+        }
+        return nextMessages;
+      };
+      const mergeLocalUserMessages = (
         currentMessages: RawMessage[],
         hydratedMessages: RawMessage[],
       ): RawMessage[] => {
@@ -2223,6 +2644,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
             nextMessages[duplicateIndex] = mergeDuplicateUserMessage(
               nextMessages[duplicateIndex]!,
               currentMessage,
+            );
+          } else {
+            nextMessages.splice(
+              0,
+              nextMessages.length,
+              ...insertLocalUserMessage(nextMessages, currentMessage),
             );
           }
         }
@@ -2271,7 +2698,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        finalMessages = mergeOptimisticUserMessages(get().messages, finalMessages);
+        finalMessages = mergeLocalUserMessages(get().messages, finalMessages);
 
         set({ messages: finalMessages, thinkingLevel: finalThinkingLevel, loading: false });
         cacheSessionView(requestedSessionKey, finalMessages, finalThinkingLevel);
@@ -2436,43 +2863,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
 
-    const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
+    const effectiveAgentId = targetAgentId ?? get().currentAgentId;
+    const requestedAgent = getAgentSummary(effectiveAgentId);
+    const previousSessionKey = get().currentSessionKey;
+    let targetSessionKey = get().currentSessionKey;
+    let acpSessionResolution: Promise<string> | null = null;
+    let optimisticAcpSessionKey: string | null = null;
+    if (isAcpRuntimeAgent(requestedAgent)) {
+      const harnessAgentId = resolveAcpHarnessAgentId(requestedAgent);
+      const shouldCreateFresh = shouldCreateFreshAcpSession(get(), requestedAgent);
+      const currentIsRequestedAcp = isAcpSessionKeyForHarness(get().currentSessionKey, harnessAgentId);
+      const reusableSessionKey = shouldCreateFresh ? null : findReusableAcpSession(get(), harnessAgentId);
+
+      if (currentIsRequestedAcp && !targetAgentId && !shouldCreateFresh) {
+        targetSessionKey = get().currentSessionKey;
+      } else if (reusableSessionKey) {
+        targetSessionKey = reusableSessionKey;
+      } else {
+        targetSessionKey = await switchToEphemeralSessionForAgent(set, get, requestedAgent);
+        optimisticAcpSessionKey = targetSessionKey;
+        acpSessionResolution = resolveOrCreateAcpSessionForAgent(get, requestedAgent, {
+          reuseExisting: !shouldCreateFresh,
+        });
+      }
+    } else {
+      targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? targetSessionKey;
+    }
+
     if (targetSessionKey !== get().currentSessionKey) {
-      const current = get();
-      const currentSession = getSessionEntry(current.sessions, current.currentSessionKey);
-      const leavingEmpty = isEphemeralSessionCandidate(
-        current.currentSessionKey,
-        current.messages,
-        current.sessionLabels,
-        current.sessionLastActivity,
-        currentSession?.persisted === true,
-      );
-      set((state) => ({
-        currentSessionKey: targetSessionKey,
-        currentAgentId: getAgentIdFromSessionKey(targetSessionKey),
-        sessions: ensureSessionEntry(
-          leavingEmpty
-            ? state.sessions.filter((session) => session.key !== current.currentSessionKey)
-            : state.sessions,
-          targetSessionKey,
-        ),
-        sessionLabels: leavingEmpty
-          ? clearSessionEntryFromMap(state.sessionLabels, current.currentSessionKey)
-          : state.sessionLabels,
-        sessionLastActivity: leavingEmpty
-          ? clearSessionEntryFromMap(state.sessionLastActivity, current.currentSessionKey)
-          : state.sessionLastActivity,
-        messages: [],
-        streamingText: '',
-        streamingMessage: null,
-        streamingTools: [],
-        activeRunId: null,
-        error: null,
-        pendingFinal: false,
-        lastUserMessageAt: null,
-        pendingToolImages: [],
-      }));
-      await get().loadHistory(true);
+      await switchToSession(set, get, targetSessionKey, {
+        loadHistory: !isAcpRuntimeAgent(requestedAgent),
+      });
     }
 
     const currentSessionKey = targetSessionKey;
@@ -2523,6 +2944,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
     }));
 
+    if (acpSessionResolution && optimisticAcpSessionKey) {
+      try {
+        const resolvedAcpSessionKey = await acpSessionResolution;
+        if (resolvedAcpSessionKey !== optimisticAcpSessionKey) {
+          rebindOptimisticSession(set, get, optimisticAcpSessionKey, resolvedAcpSessionKey);
+          targetSessionKey = resolvedAcpSessionKey;
+        }
+      } catch (error) {
+        if (get().currentSessionKey !== previousSessionKey && get().currentSessionKey !== optimisticAcpSessionKey) {
+          await switchToSession(set, get, previousSessionKey, { loadHistory: false });
+        }
+        set({ error: error instanceof Error ? error.message : String(error), sending: false });
+        return;
+      }
+    }
+
     // Start the history poll and safety timeout IMMEDIATELY (before the
     // RPC await) because the gateway's chat.send RPC may block until the
     // entire agentic conversation finishes — the poll must run in parallel.
@@ -2532,14 +2969,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const POLL_START_DELAY = 3_000;
     const POLL_INTERVAL = 4_000;
+    const resolvedSendSessionKey = targetSessionKey;
+    const forceAcpHistoryPoll = isAcpSessionKey(resolvedSendSessionKey);
     const pollHistory = () => {
       const state = get();
       if (!state.sending) { clearHistoryPoll(); return; }
-      if (Date.now() - _lastChatEventAt < HISTORY_POLL_SILENCE_WINDOW_MS) {
+      if (state.currentSessionKey !== resolvedSendSessionKey) { clearHistoryPoll(); return; }
+      if (!forceAcpHistoryPoll && Date.now() - _lastChatEventAt < HISTORY_POLL_SILENCE_WINDOW_MS) {
         _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
         return;
       }
-      state.loadHistory(true);
+      if (forceAcpHistoryPoll) {
+        state.loadHistory(true, { force: true });
+      } else {
+        state.loadHistory(true);
+      }
       _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
     };
     _historyPollTimer = setTimeout(pollHistory, POLL_START_DELAY);
@@ -2595,7 +3039,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         result = await window.electron.ipcRenderer.invoke(
           'chat:sendWithMedia',
           {
-            sessionKey: currentSessionKey,
+            sessionKey: resolvedSendSessionKey,
             message: trimmed || 'Process the attached file(s).',
             deliver: false,
             idempotencyKey,
@@ -2611,7 +3055,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           'gateway:rpc',
           'chat.send',
           {
-            sessionKey: currentSessionKey,
+            sessionKey: resolvedSendSessionKey,
             message: trimmed,
             deliver: false,
             idempotencyKey,

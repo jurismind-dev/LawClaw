@@ -37,6 +37,8 @@
         "modelIdPlaceholder": "model-id",
         "modelPreview": "プレビュー",
         "modelOverrideDescription": "この Agent の Provider とモデル ID を選択します。",
+        "acpRuntimeLabel": "ACP Runtime",
+        "acpRuntimeDescription": "この Agent は OpenClaw/acpx 経由の ACP runtime を使用するため、通常モデルの設定は不要です。",
         "unsavedChangesTitle": "未保存の変更",
         "unsavedChangesMessage": "未保存の変更があります。閉じると変更が破棄されます。",
         "closeWithoutSaving": "保存せずに閉じる",

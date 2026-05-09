@@ -37,6 +37,8 @@
         "modelIdPlaceholder": "model-id",
         "modelPreview": "预览",
         "modelOverrideDescription": "为该 Agent 选择 Provider 和模型 ID。",
+        "acpRuntimeLabel": "ACP Runtime",
+        "acpRuntimeDescription": "该 Agent 使用 ACP runtime，由 OpenClaw/acpx 启动外部编码智能体；这里不需要配置普通模型。",
         "unsavedChangesTitle": "未保存的修改",
         "unsavedChangesMessage": "你有未保存的修改。关闭后这些修改将被丢弃。",
         "closeWithoutSaving": "不保存并关闭",

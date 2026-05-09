@@ -1,3 +1,15 @@
+export interface AgentAcpRuntimeConfig {
+  agent?: string;
+  backend?: string;
+  mode?: string;
+  cwd?: string;
+}
+
+export interface AgentRuntimeConfig {
+  type: 'acp';
+  acp?: AgentAcpRuntimeConfig;
+}
+
 export interface AgentSummary {
   id: string;
   name: string;
@@ -10,6 +22,7 @@ export interface AgentSummary {
   agentDir: string;
   mainSessionKey: string;
   channelTypes: string[];
+  runtime?: AgentRuntimeConfig;
 }
 
 export interface AgentsSnapshot {

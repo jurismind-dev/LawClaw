@@ -41,6 +41,46 @@
       "agentId": "lawclaw-main",
       "source": "workspaces/lawclaw-main/HEARTBEAT.md",
       "target": "HEARTBEAT.md"
+    },
+    {
+      "agentId": "lawclaw-jurismind-xhigh",
+      "source": "workspaces/lawclaw-main/SOUL.md",
+      "target": "SOUL.md"
+    },
+    {
+      "agentId": "lawclaw-jurismind-xhigh",
+      "source": "workspaces/lawclaw-main/AGENTS.md",
+      "target": "AGENTS.md"
+    },
+    {
+      "agentId": "lawclaw-jurismind-xhigh",
+      "source": "workspaces/lawclaw-main/IDENTITY.md",
+      "target": "IDENTITY.md"
+    },
+    {
+      "agentId": "lawclaw-jurismind-xhigh",
+      "source": "workspaces/lawclaw-main/TOOLS.md",
+      "target": "TOOLS.md"
+    },
+    {
+      "agentId": "lawclaw-jurismind-xhigh",
+      "source": "workspaces/lawclaw-main/BOOTSTRAP.md",
+      "target": "BOOTSTRAP.md"
+    },
+    {
+      "agentId": "lawclaw-jurismind-xhigh",
+      "source": "workspaces/lawclaw-main/USER.md",
+      "target": "USER.md"
+    },
+    {
+      "agentId": "lawclaw-jurismind-xhigh",
+      "source": "workspaces/lawclaw-main/BOOT.md",
+      "target": "BOOT.md"
+    },
+    {
+      "agentId": "lawclaw-jurismind-xhigh",
+      "source": "workspaces/lawclaw-main/HEARTBEAT.md",
+      "target": "HEARTBEAT.md"
     }
   ],
   "configPatch": "openclaw.patch.json"

@@ -30,4 +30,21 @@ describe('gateway provider env fallbacks', () => {
     expect(result.providerEnv.OPENAI_API_KEY).toBe('real-key');
     expect(result.providerEnv.SILICONFLOW_API_KEY).toBeUndefined();
   });
+
+  it('不会为 OPENAI_API_KEY 注入占位值以免覆盖 Codex 登录态', () => {
+    const result = applyProviderEnvFallbacks({
+      providerEnv: {},
+      providerTypes: ['openai', 'siliconflow'],
+      getEnvVar: (type) => {
+        if (type === 'openai') return 'OPENAI_API_KEY';
+        if (type === 'siliconflow') return 'SILICONFLOW_API_KEY';
+        return undefined;
+      },
+      baseEnv: {},
+    });
+
+    expect(result.fallbackCount).toBe(1);
+    expect(result.providerEnv.OPENAI_API_KEY).toBeUndefined();
+    expect(result.providerEnv.SILICONFLOW_API_KEY).toBe('__CLAWX_PLACEHOLDER_SILICONFLOW_API_KEY__');
+  });
 });

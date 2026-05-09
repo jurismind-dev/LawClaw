@@ -1,20 +1,62 @@
 ﻿{
-    "agents":  {
-                   "defaults":  {
-                                    "subagents":  {
-                                                      "maxSpawnDepth":  2,
-                                                      "maxChildrenPerAgent":  5,
-                                                      "runTimeoutSeconds":  1200,
-                                                      "archiveAfterMinutes":  120
-                                                  }
-                                },
-                   "list":  [
-                                {
-                                    "id":  "lawclaw-main",
-                                    "name":  "LawClaw 涓绘櫤鑳戒綋",
-                                    "workspace":  "~/.openclaw/workspace-lawclaw-main",
-                                    "default":  true
-                                }
-                            ]
-               }
+  "agents": {
+    "defaults": {
+      "subagents": {
+        "maxSpawnDepth": 2,
+        "maxChildrenPerAgent": 5,
+        "runTimeoutSeconds": 1200,
+        "archiveAfterMinutes": 120
+      }
+    },
+    "list": [
+      {
+        "id": "lawclaw-main",
+        "name": "LawClaw 主智能体",
+        "workspace": "~/.openclaw/workspace-lawclaw-main",
+        "default": true
+      },
+      {
+        "id": "lawclaw-jurismind-xhigh",
+        "name": "Jurismind xHigh",
+        "workspace": "~/.openclaw/workspace-lawclaw-jurismind-xhigh",
+        "runtime": {
+          "type": "acp",
+          "acp": {
+            "agent": "jurismind-xhigh",
+            "backend": "acpx",
+            "mode": "persistent"
+          }
+        }
+      }
+    ]
+  },
+  "acp": {
+    "enabled": true,
+    "dispatch": {
+      "enabled": true
+    },
+    "backend": "acpx",
+    "defaultAgent": "jurismind-xhigh",
+    "allowedAgents": [
+      "jurismind-xhigh",
+      "codex"
+    ]
+  },
+  "plugins": {
+    "entries": {
+      "acpx": {
+        "enabled": true,
+        "config": {
+          "permissionMode": "approve-all",
+          "nonInteractivePermissions": "deny",
+          "timeoutSeconds": 180,
+          "agents": {
+            "jurismind-xhigh": {
+              "command": "env -u OPENAI_API_KEY -u CODEX_API_KEY npx @zed-industries/codex-acp@^0.11.1"
+            }
+          }
+        }
+      }
+    }
+  }
 }

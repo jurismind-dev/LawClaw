@@ -545,6 +545,56 @@ describe('chat stream recovery', () => {
     expect(userMessages[0]?.content).toBe('这个图片什么内容');
   });
 
+  it('keeps local user turns visible when refreshed history omits them', async () => {
+    const sentAtMs = Date.now();
+
+    useChatStore.setState({
+      sending: false,
+      activeRunId: null,
+      lastUserMessageAt: sentAtMs,
+      messages: [
+        {
+          role: 'user',
+          id: 'optimistic-user-text',
+          content: '你好呀',
+          timestamp: sentAtMs / 1000,
+        },
+        {
+          role: 'assistant',
+          id: 'streamed-assistant-answer',
+          content: '你好，我是 Jurismind xHigh。',
+          timestamp: sentAtMs / 1000 + 1,
+        },
+      ],
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [
+              {
+                role: 'assistant',
+                id: 'gateway-assistant-answer',
+                content: '你好，我是 Jurismind xHigh。',
+                timestamp: sentAtMs / 1000 + 1,
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadHistory(true, { force: true });
+
+    expect(useChatStore.getState().messages).toEqual([
+      expect.objectContaining({ role: 'user', content: '你好呀' }),
+      expect.objectContaining({ role: 'assistant', content: '你好，我是 Jurismind xHigh。' }),
+    ]);
+  });
+
   it('merges realtime canonical user image echo into the optimistic user message', () => {
     const optimisticTimestampMs = Date.now();
 

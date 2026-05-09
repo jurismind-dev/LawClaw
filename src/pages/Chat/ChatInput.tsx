@@ -11,6 +11,7 @@ import { Send, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, L
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { findAgentByIdOrAcpAlias } from '@/lib/agent-display';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import { useTranslation } from 'react-i18next';
@@ -98,13 +99,17 @@ export function ChatInput({
   const isComposingRef = useRef(false);
   const agents = useAgentsStore((state) => state.agents);
   const currentAgentId = useChatStore((state) => state.currentAgentId);
-  const currentAgentName = useMemo(
-    () => (agents ?? []).find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,
+  const currentAgent = useMemo(
+    () => findAgentByIdOrAcpAlias(agents ?? [], currentAgentId) ?? null,
     [agents, currentAgentId],
   );
+  const currentAgentName = useMemo(
+    () => currentAgent?.name ?? currentAgentId,
+    [currentAgent, currentAgentId],
+  );
   const mentionableAgents = useMemo(
-    () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
-    [agents, currentAgentId],
+    () => (agents ?? []).filter((agent) => agent.id !== currentAgent?.id),
+    [agents, currentAgent],
   );
   const selectedTarget = useMemo(
     () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
@@ -137,7 +142,7 @@ export function ChatInput({
 
   useEffect(() => {
     if (!targetAgentId) return;
-    if (targetAgentId === currentAgentId) {
+    if (targetAgentId === currentAgentId || targetAgentId === currentAgent?.id) {
       setTargetAgentId(null);
       setPickerOpen(false);
       return;
@@ -146,7 +151,7 @@ export function ChatInput({
       setTargetAgentId(null);
       setPickerOpen(false);
     }
-  }, [agents, currentAgentId, targetAgentId]);
+  }, [agents, currentAgent, currentAgentId, targetAgentId]);
 
   useEffect(() => {
     if (!pickerOpen) return;

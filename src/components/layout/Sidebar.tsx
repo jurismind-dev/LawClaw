@@ -93,9 +93,22 @@ function getSessionBucket(activityMs: number, nowMs: number): SessionBucketKey {
 
 const INITIAL_NOW_MS = Date.now();
 
-function getAgentLabelFromSession(session: ChatSession): string {
+function resolveSessionAgentLabel(
+  session: ChatSession,
+  agents: ReturnType<typeof useAgentsStore.getState>['agents'],
+  agentNameById: Record<string, string>,
+): string {
   const parts = session.key.split(':');
-  return parts[1] || 'LawClaw';
+  const agentId = parts[1] || 'lawclaw-main';
+  const runtimeKind = parts[2] || '';
+  if (runtimeKind === 'acp') {
+    const owner = (agents ?? []).find((agent) => agent.runtime?.type === 'acp' && agent.runtime.acp?.agent === agentId);
+    if (owner) {
+      return owner.name;
+    }
+  }
+
+  return agentNameById[agentId] || (agentId === 'lawclaw-main' ? 'LawClaw' : agentId);
 }
 
 export function Sidebar() {
@@ -259,8 +272,7 @@ export function Sidebar() {
                     {bucket.label}
                   </div>
                   {bucket.sessions.map((session) => {
-                    const agentId = getAgentLabelFromSession(session);
-                    const agentLabel = agentNameById[agentId] || (agentId === 'lawclaw-main' ? 'LawClaw' : agentId);
+                    const agentLabel = resolveSessionAgentLabel(session, agents, agentNameById);
                     const label = getSessionLabel(session.key, session.displayName, session.label);
 
                     return (

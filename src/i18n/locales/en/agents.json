@@ -37,6 +37,8 @@
         "modelIdPlaceholder": "model-id",
         "modelPreview": "Preview",
         "modelOverrideDescription": "Select the provider and model ID for this agent.",
+        "acpRuntimeLabel": "ACP Runtime",
+        "acpRuntimeDescription": "This agent uses an ACP runtime through OpenClaw/acpx, so no normal model is configured here.",
         "unsavedChangesTitle": "Unsaved changes",
         "unsavedChangesMessage": "You have unsaved changes. Closing now will discard them.",
         "closeWithoutSaving": "Close without saving",

@@ -40,6 +40,7 @@ describe('bundled openclaw CLI wrappers', () => {
     const devSetupScript = readRepoFile('scripts/dev-setup.mjs');
     const openClawCliSource = readRepoFile('electron/utils/openclaw-cli.ts');
     const bundledRuntimeSource = readRepoFile('electron/utils/bundled-runtime.ts');
+    const windowsHidePreload = readRepoFile('resources/runtime/lawclaw-child-process-windows-hide.cjs');
     const feishuOnboardingSource = readRepoFile('electron/utils/feishu-onboarding.ts');
     const ipcHandlersSource = readRepoFile('electron/main/ipc-handlers.ts');
     const gatewayManagerSource = readRepoFile('electron/gateway/manager.ts');
@@ -71,6 +72,16 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(bundledRuntimeSource).toContain("join(systemRoot, 'System32')");
     expect(bundledRuntimeSource).toContain("env.Path = nextPath");
     expect(bundledRuntimeSource).not.toContain('env.ComSpec =');
+    expect(bundledRuntimeSource).toContain('lawclaw-child-process-windows-hide.cjs');
+    expect(bundledRuntimeSource).toContain('applyWindowsChildProcessHidePreloadToEnv');
+    expect(bundledRuntimeSource).toContain('appendNodeRequireToNodeOptions');
+    expect(windowsHidePreload).toContain('withWindowsHide');
+    expect(windowsHidePreload).toContain("patch('spawn'");
+    expect(windowsHidePreload).toContain("patch('exec'");
+    expect(windowsHidePreload).toContain('patchNodePtyLoader');
+    expect(windowsHidePreload).toContain("request === '@lydell/node-pty'");
+    expect(windowsHidePreload).toContain('hide: true');
+    expect(windowsHidePreload).toContain('syncBuiltinESMExports');
     expect(feishuOnboardingSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
     expect(ipcHandlersSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');
     expect(gatewayManagerSource).toContain('const commandEnv = applyBundledNpmToCliEnv({ ...process.env });');

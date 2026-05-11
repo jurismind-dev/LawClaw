@@ -247,6 +247,9 @@ describe('gateway start pre-sync', () => {
     expect(runtimeMocks.syncGatewayTokenToConfig).toHaveBeenCalledWith('gw-token');
     expect(runtimeMocks.syncBrowserConfigToOpenClaw).toHaveBeenCalledTimes(1);
     expect(runtimeMocks.spawn).toHaveBeenCalledTimes(1);
+    expect(runtimeMocks.spawn.mock.calls[0][2]).toEqual(
+      expect.objectContaining({ windowsHide: true })
+    );
   });
 
   it('injects type env var from provider instance key, and falls back to placeholder when missing', async () => {

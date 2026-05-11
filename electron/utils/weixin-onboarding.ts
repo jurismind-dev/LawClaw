@@ -687,6 +687,7 @@ class WeixinOnboardingManager extends EventEmitter {
         cwd: status.dir,
         env: cliEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stdout = '';

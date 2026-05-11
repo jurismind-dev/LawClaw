@@ -309,7 +309,8 @@ export class ClawHubService {
             await installManagedPythonRequirements(requirementsPath);
         } catch (error) {
             throw new Error(
-                `Skill ${slug} installed but failed to prepare Python runtime from ${requirementsPath}: ${getErrorMessage(error)}`
+                `Skill ${slug} installed but failed to prepare Python runtime from ${requirementsPath}: ${getErrorMessage(error)}`,
+                { cause: error }
             );
         }
     }
@@ -354,6 +355,7 @@ export class ClawHubService {
                     ...env,
                     CLAWHUB_WORKDIR: this.workDir,
                 },
+                windowsHide: true,
             });
 
             let stdout = '';

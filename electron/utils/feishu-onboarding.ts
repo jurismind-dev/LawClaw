@@ -825,6 +825,7 @@ class FeishuOnboardingManager extends EventEmitter {
         cwd,
         env: commandEnv,
         shell: useShell,
+        windowsHide: true,
       });
 
       let stdout = '';

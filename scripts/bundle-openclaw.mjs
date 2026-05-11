@@ -28,6 +28,7 @@ const {
   patchOpenClawExecRuntime,
   patchOpenClawModelCatalogRuntime,
   patchOpenClawWindowsSpawnRuntime,
+  patchOpenClawAcpxNpmCliRuntime,
   removeBundledExtensions,
 } = compatTools;
 
@@ -158,6 +159,11 @@ if (patchedWindowsSpawnFiles.length > 0) {
 const patchedExecRuntimeFiles = patchOpenClawExecRuntime(OUTPUT);
 if (patchedExecRuntimeFiles.length > 0) {
   echo`   Patched OpenClaw Windows exec runtime: ${patchedExecRuntimeFiles.join(', ')}`;
+}
+
+const patchedAcpxNpmCliRuntimeFiles = patchOpenClawAcpxNpmCliRuntime(OUTPUT);
+if (patchedAcpxNpmCliRuntimeFiles.length > 0) {
+  echo`   Patched OpenClaw ACPx npm runtime: ${patchedAcpxNpmCliRuntimeFiles.join(', ')}`;
 }
 
 const patchedKillTreeFiles = patchOpenClawKillTreeRuntime(OUTPUT);

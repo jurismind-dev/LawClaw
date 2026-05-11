@@ -281,6 +281,7 @@ class JurismindConnectorManager extends EventEmitter {
       cwd: runtime.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       env,
+      windowsHide: true,
     });
 
     this.connectorProcess = child;

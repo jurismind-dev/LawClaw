@@ -236,7 +236,10 @@ function readVersionFromPackageJson(packageDir: string): string | undefined {
 async function extractTarGzArchive(archivePath: string): Promise<{ tempDir: string; packageDir: string }> {
   const tempDir = mkdtempSync(join(tmpdir(), 'lawclaw-preset-artifact-'));
   await new Promise<void>((resolvePromise, rejectPromise) => {
-    const child = spawn('tar', ['-xzf', archivePath, '-C', tempDir], { shell: false });
+    const child = spawn('tar', ['-xzf', archivePath, '-C', tempDir], {
+      shell: false,
+      windowsHide: true,
+    });
     let stderr = '';
     child.stderr.on('data', (data) => {
       stderr += data.toString();

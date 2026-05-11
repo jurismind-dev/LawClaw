@@ -875,7 +875,7 @@ export class GatewayManager extends EventEmitter {
 
         const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
           import('child_process').then(cp => {
-            cp.exec(cmd, { timeout: 5000 }, (err, stdout) => {
+            cp.exec(cmd, { timeout: 5000, windowsHide: true }, (err, stdout) => {
               if (err) resolve({ stdout: '' });
               else resolve({ stdout });
             });
@@ -903,7 +903,7 @@ export class GatewayManager extends EventEmitter {
                    if (process.platform === 'win32') {
                      // On Windows, use taskkill for reliable process group termination
                      import('child_process').then(cp => {
-                       cp.exec(`taskkill /PID ${pid} /T /F`, { timeout: 5000 }, () => {});
+                       cp.exec(`taskkill /PID ${pid} /T /F`, { timeout: 5000, windowsHide: true }, () => {});
                      }).catch(() => {});
                    } else {
                      // SIGTERM first so the gateway can clean up its lock file.
@@ -1256,6 +1256,7 @@ export class GatewayManager extends EventEmitter {
         detached: false,
         shell: !app.isPackaged && process.platform === 'win32' && mode === 'dev-pnpm',
         env: spawnEnv,
+        windowsHide: true,
       });
       const child = this.process;
       this.ownsProcess = true;
@@ -1357,6 +1358,7 @@ export class GatewayManager extends EventEmitter {
         cwd: openclawDir,
         env: spawnEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let settled = false;
@@ -1427,6 +1429,7 @@ export class GatewayManager extends EventEmitter {
         cwd,
         env: commandEnv,
         shell: useShell,
+        windowsHide: true,
       });
 
       let stdout = '';
@@ -1509,6 +1512,7 @@ export class GatewayManager extends EventEmitter {
         cwd: openclawDir,
         env: cliEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stdout = '';

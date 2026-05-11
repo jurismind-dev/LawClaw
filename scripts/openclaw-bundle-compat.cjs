@@ -3,7 +3,7 @@ const { join } = require('path');
 
 const DOUBAO_DEFAULT_BASE_URL = 'http://101.132.245.215:3001/v1';
 const DOUBAO_DEFAULT_MODEL = 'doubao';
-const WINDOWS_SPAWN_PATCH_MARKER = 'lawclaw windows spawn patch v1';
+const WINDOWS_SPAWN_PATCH_MARKER = 'lawclaw windows spawn patch v2';
 const WINDOWS_KILL_TREE_PATCH_MARKER = 'lawclaw windows kill-tree patch v1';
 const WINDOWS_EXEC_POWERSHELL_UTF8_PATCH_MARKER = 'lawclaw windows exec powershell utf8 patch v1';
 const JURISMIND_DOUBAO_PLUGIN_ID = 'jurismind-doubao';
@@ -13,6 +13,7 @@ const PLUGIN_SDK_COMPAT_PATCH_MARKER = 'lawclaw plugin-sdk compat patch v1';
 const MESSAGE_ACTION_DISCOVERY_PATCH_MARKER = 'lawclaw message-action-discovery guard v1';
 const MODEL_DISCOVERY_PATCH_MARKER = 'lawclaw model discovery fallback patch v1';
 const MODEL_CATALOG_RUNTIME_PATCH_MARKER = 'lawclaw model catalog runtime fallback patch v1';
+const ACPX_NPM_CLI_RUNTIME_PATCH_MARKER = 'lawclaw acpx npm cli runtime patch v1';
 const REMOVED_OPENCLAW_EXTENSION_IDS = ['qqbot'];
 
 function isPlainObject(value) {
@@ -1081,7 +1082,8 @@ function applyWindowsSpawnProgramPolicy(params) {
 		command: params.candidate.command,
 		leadingArgv: [],
 		resolution: "shell-fallback",
-		shell: true
+		shell: true,
+		windowsHide: true
 	};
 	throw new Error(path.basename(params.candidate.command) + " wrapper resolved, but no executable/Node entrypoint could be resolved without shell execution.");
 }
@@ -1256,6 +1258,67 @@ function patchOpenClawExecRuntime(openClawDir) {
     }
 
     if (patchOpenClawExecRuntimeFile(filePath)) {
+      patchedFiles.push(relativeName);
+    }
+  });
+
+  return patchedFiles;
+}
+
+function patchOpenClawAcpxNpmCliRuntimeFile(filePath) {
+  const original = readFileSync(filePath, 'utf8');
+  if (original.includes(ACPX_NPM_CLI_RUNTIME_PATCH_MARKER)) {
+    return false;
+  }
+  if (!original.includes('function defaultResolveNpmCliPath(execPath)')) {
+    return false;
+  }
+
+  const before = `function defaultResolveNpmCliPath(execPath) {
+\tconst candidate = path.resolve(path.dirname(execPath), "..", "lib", "node_modules", "npm", "bin", "npm-cli.js");
+\tif (!fs.existsSync(candidate)) throw new Error(\`npm CLI not found for execPath: \${execPath}\`);
+\treturn candidate;
+}`;
+  const after = `function defaultResolveNpmCliPath(execPath) {
+\tconst lawclawBundledNpmCli = process.env.LAWCLAW_BUNDLED_NPM_CLI_JS;
+\tif (typeof lawclawBundledNpmCli === "string" && lawclawBundledNpmCli.trim() && fs.existsSync(lawclawBundledNpmCli)) return lawclawBundledNpmCli;
+\t// ${ACPX_NPM_CLI_RUNTIME_PATCH_MARKER}
+\tconst candidate = path.resolve(path.dirname(execPath), "..", "lib", "node_modules", "npm", "bin", "npm-cli.js");
+\tif (!fs.existsSync(candidate)) throw new Error(\`npm CLI not found for execPath: \${execPath}\`);
+\treturn candidate;
+}`;
+  const result = replaceRequired(
+    original,
+    filePath,
+    'acpx bundled npm CLI resolver',
+    before,
+    after
+  );
+
+  if (result.changed) {
+    writeFileSync(filePath, result.content, 'utf8');
+  }
+  return result.changed;
+}
+
+function patchOpenClawAcpxNpmCliRuntime(openClawDir) {
+  const distDir = join(openClawDir, 'dist');
+  if (!existsSync(distDir)) {
+    return [];
+  }
+
+  const patchedFiles = [];
+  walkFiles(distDir, (filePath) => {
+    const relativeName = filePath.slice(distDir.length + 1).replace(/\\/g, '/');
+    const basename = relativeName.split('/').pop() || '';
+    const isAcpxRegisterRuntime =
+      /^register\.runtime-.*\.js$/.test(basename)
+      || relativeName === 'extensions/acpx/register.runtime.js';
+    if (!isAcpxRegisterRuntime) {
+      return;
+    }
+
+    if (patchOpenClawAcpxNpmCliRuntimeFile(filePath)) {
       patchedFiles.push(relativeName);
     }
   });
@@ -1496,6 +1559,7 @@ module.exports = {
   patchOpenClawWebSearchRuntime,
   patchOpenClawWindowsSpawnRuntime,
   patchOpenClawExecRuntime,
+  patchOpenClawAcpxNpmCliRuntime,
   patchOpenClawKillTreeRuntime,
   patchOpenClawModelCatalogRuntime,
   patchOpenClawPluginSdkCompat,

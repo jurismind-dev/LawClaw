@@ -887,6 +887,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
         const child = spawn(getNodeExecForCli(), [status.entryPath, ...args], {
           cwd: openclawConfigDir,
           env: cliEnv,
+          windowsHide: true,
         });
 
         let stdout = '';
@@ -949,6 +950,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
         cwd,
         env: commandEnv,
         shell: useShell,
+        windowsHide: true,
       });
 
       let stdout = '';

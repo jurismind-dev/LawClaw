@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -363,8 +363,9 @@ describe('openclaw bundle compatibility patches', () => {
     expect(patchOpenClawWindowsSpawnRuntime(openclawDir)).toEqual([windowsSpawnFixture.relative]);
 
     const patchedSource = readFileSync(windowsSpawnCopy, 'utf8');
-    expect(patchedSource).toContain('lawclaw windows spawn patch v1');
+    expect(patchedSource).toContain('lawclaw windows spawn patch v2');
     expect(patchedSource).toContain('const WRAPPER_TEXT_ENCODINGS = ["utf8", "utf-16le", "gbk"]');
+    expect(patchedSource).toContain('resolution: "shell-fallback",\n\t\tshell: true,\n\t\twindowsHide: true');
 
     const mod = await import(pathToFileURL(windowsSpawnCopy).href) as {
       a: (params: {
@@ -377,6 +378,21 @@ describe('openclaw bundle compatibility patches', () => {
         command: string;
         leadingArgv: string[];
         resolution: string;
+        windowsHide?: boolean;
+      };
+      t: (params: {
+        candidate: {
+          command: string;
+          leadingArgv: string[];
+          resolution: string;
+          windowsHide?: boolean;
+        };
+        allowShellFallback?: boolean;
+      }) => {
+        command: string;
+        leadingArgv: string[];
+        resolution: string;
+        shell?: boolean;
         windowsHide?: boolean;
       };
       r: (command: string, env: NodeJS.ProcessEnv) => string;
@@ -452,6 +468,38 @@ describe('openclaw bundle compatibility patches', () => {
       command: gbkExe,
       leadingArgv: [],
       resolution: 'exe-entrypoint',
+      windowsHide: true,
+    });
+
+    const unresolvedWrapper = join(gbkDir, 'unresolved.cmd');
+    writeFileSync(unresolvedWrapper, '@echo off\r\nunknown-tool %*\r\n', 'utf8');
+
+    expect(mod.a({
+      command: unresolvedWrapper,
+      env: {
+        PATH: gbkDir,
+        PATHEXT: '.CMD;.EXE',
+      },
+      platform: 'win32',
+      execPath: '/mock/node.exe',
+      packageName: 'acpx',
+    })).toEqual({
+      command: unresolvedWrapper,
+      leadingArgv: [],
+      resolution: 'unresolved-wrapper',
+    });
+
+    expect(mod.t({
+      candidate: {
+        command: unresolvedWrapper,
+        leadingArgv: [],
+        resolution: 'unresolved-wrapper',
+      },
+    })).toEqual({
+      command: unresolvedWrapper,
+      leadingArgv: [],
+      resolution: 'shell-fallback',
+      shell: true,
       windowsHide: true,
     });
 
@@ -634,6 +682,60 @@ describe('openclaw bundle compatibility patches', () => {
     expect(patchedSource).toContain('const normalizedArgs = !useCmdWrapper && isWindowsPowerShellCommand(resolvedCommand) ? injectWindowsPowerShellUtf8CommandArgs(commandArgs) : commandArgs;');
 
     expect(patchOpenClawExecRuntime(openclawDir)).toEqual([]);
+  });
+
+  it('patches OpenClaw acpx runtime to use the LawClaw bundled npm CLI for package exec', async () => {
+    const tempRoot = mkdtempSync(join(process.cwd(), '.tmp-lawclaw-openclaw-acpx-npm-runtime-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const distDir = join(openclawDir, 'dist');
+    mkdirSync(distDir, { recursive: true });
+
+    const registerRuntimePath = join(distDir, 'register.runtime-test.js');
+    writeFileSync(
+      registerRuntimePath,
+      [
+        'import fs from "node:fs";',
+        'import path from "node:path";',
+        'function defaultResolveNpmCliPath(execPath) {',
+        '\tconst candidate = path.resolve(path.dirname(execPath), "..", "lib", "node_modules", "npm", "bin", "npm-cli.js");',
+        '\tif (!fs.existsSync(candidate)) throw new Error(`npm CLI not found for execPath: ${execPath}`);',
+        '\treturn candidate;',
+        '}',
+        'export { defaultResolveNpmCliPath as r };',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const { patchOpenClawAcpxNpmCliRuntime } = await loadCompatTools();
+    expect(patchOpenClawAcpxNpmCliRuntime(openclawDir)).toEqual(['register.runtime-test.js']);
+
+    const patchedSource = readFileSync(registerRuntimePath, 'utf8');
+    expect(patchedSource).toContain('lawclaw acpx npm cli runtime patch v1');
+    expect(patchedSource).toContain('process.env.LAWCLAW_BUNDLED_NPM_CLI_JS');
+
+    const bundledNpmCli = join(tempRoot, 'npm-runtime', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    mkdirSync(dirname(bundledNpmCli), { recursive: true });
+    writeFileSync(bundledNpmCli, '', 'utf8');
+
+    const previousBundledNpmCli = process.env.LAWCLAW_BUNDLED_NPM_CLI_JS;
+    process.env.LAWCLAW_BUNDLED_NPM_CLI_JS = bundledNpmCli;
+    try {
+      const mod = await import(pathToFileURL(registerRuntimePath).href) as {
+        r: (execPath: string) => string;
+      };
+      expect(mod.r(join(tempRoot, 'LawClaw.exe'))).toBe(bundledNpmCli);
+    } finally {
+      if (previousBundledNpmCli === undefined) {
+        delete process.env.LAWCLAW_BUNDLED_NPM_CLI_JS;
+      } else {
+        process.env.LAWCLAW_BUNDLED_NPM_CLI_JS = previousBundledNpmCli;
+      }
+    }
+
+    expect(patchOpenClawAcpxNpmCliRuntime(openclawDir)).toEqual([]);
   });
 
   it('patches OpenClaw model discovery runtime to merge missing agent models.json entries', async () => {

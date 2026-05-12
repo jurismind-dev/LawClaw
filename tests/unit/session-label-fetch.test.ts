@@ -4,6 +4,7 @@ import { useGatewayStore } from '@/stores/gateway';
 
 const MAIN_SESSION_KEY = 'agent:lawclaw-main:main';
 const PREFETCHED_SESSION_KEY = 'agent:lawclaw-main:session-prefetched-view';
+const SUBAGENT_SESSION_KEY = 'agent:lawclaw-main:session-subagent-label';
 
 describe('session label fetch concurrency', () => {
   beforeEach(() => {
@@ -122,6 +123,51 @@ describe('session label fetch concurrency', () => {
     await useChatStore.getState().loadSessions(false);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores subagent notices when prefetching sidebar labels', async () => {
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'sessions.list') {
+        return {
+          success: true,
+          result: {
+            sessions: [
+              { key: MAIN_SESSION_KEY },
+              { key: SUBAGENT_SESSION_KEY },
+            ],
+          },
+        };
+      }
+
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    useGatewayStore.setState({
+      rpc: vi.fn(async (method: string) => {
+        if (method !== 'chat.history') {
+          throw new Error(`unexpected gateway method: ${method}`);
+        }
+
+        return {
+          messages: [
+            {
+              role: 'user',
+              content: '[Subagent reviewer completed] Reviewed the generated answer.',
+              timestamp: 10,
+            },
+            { role: 'user', content: '真正的历史会话标题', timestamp: 11 },
+            { role: 'assistant', content: '正常回答', timestamp: 12 },
+          ],
+        };
+      }),
+    });
+
+    await useChatStore.getState().loadSessions(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const state = useChatStore.getState();
+    expect(state.sessionLabels[SUBAGENT_SESSION_KEY]).toBe('真正的历史会话标题');
+    expect(state.sessionLastActivity[SUBAGENT_SESSION_KEY]).toBe(12_000);
   });
 
   it('reuses prefetched history so switching sessions renders immediately without foreground loading', async () => {

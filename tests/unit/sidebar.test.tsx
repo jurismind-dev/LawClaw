@@ -66,6 +66,8 @@ describe('sidebar clawx alignment', () => {
         { key: 'agent:lawclaw-main:main' },
         { key: 'agent:lawclaw-main:session-1' },
       ],
+      sessionsLoading: false,
+      sessionsError: null,
       currentSessionKey: 'agent:lawclaw-main:session-1',
       currentAgentId: 'lawclaw-main',
       sessionLabels: {
@@ -131,7 +133,11 @@ describe('sidebar clawx alignment', () => {
   });
 
   it('waits for gatewayReady before loading sessions and history, matching ClawX startup behavior', async () => {
-    const loadSessions = vi.fn().mockResolvedValue(undefined);
+    let resolveSessions: (() => void) | null = null;
+    const sessionsPromise = new Promise<void>((resolve) => {
+      resolveSessions = resolve;
+    });
+    const loadSessions = vi.fn(() => sessionsPromise);
     const loadHistory = vi.fn().mockResolvedValue(undefined);
 
     useGatewayStore.setState({
@@ -173,7 +179,29 @@ describe('sidebar clawx alignment', () => {
     await waitFor(() => {
       expect(loadSessions).toHaveBeenCalledTimes(1);
       expect(loadHistory).toHaveBeenCalledTimes(1);
+      expect(loadHistory).toHaveBeenCalledWith(false, { force: true });
     });
+
+    act(() => {
+      resolveSessions?.();
+    });
+  });
+
+  it('shows a history sync hint while the gateway is ready but sessions are still loading', () => {
+    useChatStore.setState({
+      sessions: [],
+      sessionsLoading: true,
+      sessionsError: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('chat:historyLoading.sidebarTitle')).toBeInTheDocument();
+    expect(screen.getByText('chat:historyLoading.sidebarSubtitle')).toBeInTheDocument();
   });
 
   it('loads history quietly so startup and re-entry never block the chat view', async () => {
@@ -197,7 +225,7 @@ describe('sidebar clawx alignment', () => {
 
     await waitFor(() => {
       expect(loadSessions).toHaveBeenCalledTimes(1);
-      expect(loadHistory).toHaveBeenCalledWith(true);
+      expect(loadHistory).toHaveBeenCalledWith(true, { force: true });
     });
   });
 });

@@ -17,6 +17,14 @@
         "title": "正在整理历史会话",
         "subtitle": "LawClaw 正在读取并渲染本地聊天记录，请稍候。"
     },
+    "historyLoading": {
+        "title": "正在同步历史会话",
+        "subtitle": "网关已启动，LawClaw 正在读取本地会话记录，稍后会自动显示。",
+        "sidebarTitle": "正在同步历史",
+        "sidebarSubtitle": "网关已启动，正在读取本地会话记录。",
+        "sidebarRetryTitle": "历史会话仍在同步",
+        "sidebarRetrySubtitle": "本地记录加载较慢，稍后会自动刷新。"
+    },
     "inputPlaceholder": "将合同或案件材料导入工作区，即可开始处理",
     "inputGenerating": "生成中{{dots}}",
     "inputDisabledPlaceholder": "网关未连接...",

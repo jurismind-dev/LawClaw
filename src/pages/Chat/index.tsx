@@ -58,6 +58,9 @@ export function Chat() {
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
   const loading = useChatStore((s) => s.loading);
+  const startupHistoryLoading = useChatStore((s) => s.startupHistoryLoading);
+  const sessionsLoading = useChatStore((s) => s.sessionsLoading);
+  const hasAppliedStartupDefault = useChatStore((s) => s.hasAppliedStartupDefault);
   const sending = useChatStore((s) => s.sending);
   const activeRunId = useChatStore((s) => s.activeRunId);
   const error = useChatStore((s) => s.error);
@@ -110,6 +113,10 @@ export function Chat() {
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
   const isTaskRunning = sending || pendingFinal || activeRunId !== null;
+  const isStartupHistoryLoading = isGatewayRunning
+    && !hasRenderableMessages
+    && !isTaskRunning
+    && (sessionsLoading || startupHistoryLoading || !hasAppliedStartupDefault);
   const hasAnyStreamContent =
     hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
   const nextUserMessageIndexes = new Array<number>(messages.length).fill(-1);
@@ -276,7 +283,9 @@ export function Chat() {
       <div className="min-h-0 flex-1 overflow-hidden px-3 py-2">
         <div ref={scrollRef} className="h-full min-h-0 overflow-y-auto">
           <div ref={contentRef} className="w-full space-y-4">
-            {!hasRenderableMessages && !isTaskRunning ? (
+            {isStartupHistoryLoading ? (
+              <HistoryLoadingScreen />
+            ) : !hasRenderableMessages && !isTaskRunning ? (
               <WelcomeScreen />
             ) : (
               <>
@@ -392,6 +401,19 @@ export function Chat() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function HistoryLoadingScreen() {
+  const { t } = useTranslation('chat');
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <div className="mb-5 rounded-full border border-border bg-background p-3 shadow-sm">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+      <h2 className="mb-2 text-xl font-semibold">{t('historyLoading.title')}</h2>
+      <p className="max-w-md text-sm text-muted-foreground">{t('historyLoading.subtitle')}</p>
     </div>
   );
 }

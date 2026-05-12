@@ -43,8 +43,11 @@ describe('chat bot avatar', () => {
     useChatStore.setState({
       messages: [],
       loading: false,
+      startupHistoryLoading: false,
       sending: false,
       error: null,
+      sessionsLoading: false,
+      hasAppliedStartupDefault: true,
       showThinking: false,
       streamingMessage: null,
       streamingTools: [],

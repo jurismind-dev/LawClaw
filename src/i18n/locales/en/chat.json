@@ -17,6 +17,14 @@
         "title": "Restoring conversation history",
         "subtitle": "LawClaw is reading and rendering your local chat records."
     },
+    "historyLoading": {
+        "title": "Syncing conversation history",
+        "subtitle": "The Gateway is running. LawClaw is reading your local session records and will show them automatically.",
+        "sidebarTitle": "Syncing history",
+        "sidebarSubtitle": "The Gateway is running and local sessions are being loaded.",
+        "sidebarRetryTitle": "History is still syncing",
+        "sidebarRetrySubtitle": "Local records are taking longer to load and will refresh automatically."
+    },
     "inputPlaceholder": "Import a contract or case file into the workspace to begin.",
     "inputGenerating": "Generating{{dots}}",
     "inputDisabledPlaceholder": "Gateway not connected...",

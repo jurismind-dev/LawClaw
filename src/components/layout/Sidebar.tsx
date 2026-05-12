@@ -15,6 +15,8 @@ import {
   Plus,
   Trash2,
   Radio,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
@@ -103,6 +105,8 @@ export function Sidebar() {
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
 
   const sessions = useChatStore((state) => state.sessions);
+  const sessionsLoading = useChatStore((state) => state.sessionsLoading);
+  const sessionsError = useChatStore((state) => state.sessionsError);
   const currentSessionKey = useChatStore((state) => state.currentSessionKey);
   const sessionLabels = useChatStore((state) => state.sessionLabels);
   const sessionLastActivity = useChatStore((state) => state.sessionLastActivity);
@@ -115,6 +119,7 @@ export function Sidebar() {
   const gatewayStatus = useGatewayStore((state) => state.status);
   const isGatewayRunning = gatewayStatus.state === 'running';
   const isGatewayReady = isGatewayRunning && gatewayStatus.gatewayReady !== false;
+  const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port ?? 'none'}`;
   const agents = useAgentsStore((state) => state.agents);
   const fetchAgents = useAgentsStore((state) => state.fetchAgents);
 
@@ -130,14 +135,15 @@ export function Sidebar() {
     let cancelled = false;
     const hasExistingMessages = useChatStore.getState().messages.length > 0;
     (async () => {
-      await loadSessions();
+      const sessionsPromise = loadSessions();
+      const historyPromise = loadHistory(hasExistingMessages, { force: true });
+      await Promise.allSettled([sessionsPromise, historyPromise]);
       if (cancelled) return;
-      await loadHistory(hasExistingMessages);
     })();
     return () => {
       cancelled = true;
     };
-  }, [isGatewayReady, loadHistory, loadSessions]);
+  }, [gatewayRuntimeKey, isGatewayReady, loadHistory, loadSessions]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -250,6 +256,28 @@ export function Sidebar() {
       </div>
 
       <div className="min-h-0 flex-1 px-3 pb-3">
+        {!sidebarCollapsed && sessions.length === 0 && (sessionsLoading || sessionsError) && (
+          <div className="px-1 pt-3">
+            <div className="rounded-xl border border-border/60 bg-muted/35 px-3 py-3">
+              <div className="flex items-start gap-2.5">
+                {sessionsLoading ? (
+                  <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
+                ) : (
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <div className="min-w-0">
+                  <p className="text-[12px] font-medium text-foreground/85">
+                    {t(sessionsLoading ? 'chat:historyLoading.sidebarTitle' : 'chat:historyLoading.sidebarRetryTitle')}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                    {t(sessionsLoading ? 'chat:historyLoading.sidebarSubtitle' : 'chat:historyLoading.sidebarRetrySubtitle')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!sidebarCollapsed && sessions.length > 0 && (
           <div className="h-full space-y-2 overflow-y-auto overflow-x-hidden pt-1">
             {sessionBuckets.map((bucket) =>

@@ -103,6 +103,43 @@ describe('chat stream recovery', () => {
     );
   });
 
+  it('normalizes stale no-response provider wording from gateway errors', () => {
+    useChatStore.setState({
+      sending: true,
+      activeRunId: 'run-no-response-wording',
+    });
+
+    useChatStore.getState().handleChatEvent({
+      state: 'error',
+      runId: 'run-no-response-wording',
+      errorMessage:
+        'No response received from the model. The provider may be unavailable or the API key may have insufficient quota. Please check your provider settings.',
+    });
+
+    const error = useChatStore.getState().error ?? '';
+    expect(error).toContain('本轮运行暂时没有收到模型响应');
+    expect(error).not.toMatch(/api key|quota|provider settings/i);
+  });
+
+  it('uses non-misleading wording for local no-response timeout', async () => {
+    vi.useFakeTimers();
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation((channel, method) => {
+      if (channel === 'gateway:rpc' && method === 'chat.send') {
+        return new Promise(() => {});
+      }
+      throw new Error(`unexpected invoke: ${String(channel)} ${String(method)}`);
+    });
+
+    void useChatStore.getState().sendMessage('测试无首包超时');
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(91_000);
+
+    const error = useChatStore.getState().error ?? '';
+    expect(error).toContain('本轮运行暂时没有收到模型响应');
+    expect(error).not.toMatch(/api key|quota|provider settings/i);
+    expect(useChatStore.getState().sending).toBe(false);
+  });
+
   it('does not let empty delta overwrite existing streamed content', () => {
     useChatStore.setState({
       sending: true,

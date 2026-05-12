@@ -9,6 +9,7 @@ const ASYNC_COMPLETION_NOTICE = `System (untrusted): [2026-04-22 12:16:27 CST] E
 An async command you ran earlier has completed. Review the result and continue from there.
 
 Current time: Tuesday, April 22nd, 2026 — 12:16 PM (Asia/Shanghai) / 2026-04-22 04:16 UTC`;
+const SUBAGENT_NOTICE = '[Subagent reviewer completed] Checked the draft implementation and returned notes.';
 const BOOT_CHECK_PROMPT = `You are running a boot check. Follow BOOT.md instructions exactly.
 
 BOOT.md:
@@ -214,6 +215,42 @@ describe('chat heartbeat filtering', () => {
     const state = useChatStore.getState();
     expect(state.sessionLabels['agent:lawclaw-main:session-1']).toBe('真正的首条问题');
     expect(state.sessionLastActivity['agent:lawclaw-main:session-1']).toBe(4_000);
+  });
+
+  it('loadHistory 会过滤 subagent 内部通知并避免污染会话标题', async () => {
+    useChatStore.setState({
+      currentSessionKey: 'agent:lawclaw-main:session-subagent',
+      sessions: [{ key: 'agent:lawclaw-main:session-subagent', persisted: true }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [
+              { role: 'user', content: SUBAGENT_NOTICE, timestamp: 1 },
+              { role: 'assistant', content: '真正回答前的内部状态', timestamp: 2 },
+              { role: 'user', content: '真正需要显示的会话标题', timestamp: 3 },
+              { role: 'assistant', content: '正常回答', timestamp: 4 },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadHistory();
+
+    const state = useChatStore.getState();
+    expect(state.messages).toEqual([
+      expect.objectContaining({ role: 'assistant', content: '真正回答前的内部状态' }),
+      expect.objectContaining({ role: 'user', content: '真正需要显示的会话标题' }),
+      expect.objectContaining({ role: 'assistant', content: '正常回答' }),
+    ]);
+    expect(state.sessionLabels['agent:lawclaw-main:session-subagent']).toBe('真正需要显示的会话标题');
   });
 
   it('实时 heartbeat 事件不会出现在界面中，并会清理误占用的运行态', () => {

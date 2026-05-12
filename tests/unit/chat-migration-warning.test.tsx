@@ -54,8 +54,11 @@ describe('chat migration warning banner', () => {
     useChatStore.setState({
       messages: [],
       loading: false,
+      startupHistoryLoading: false,
       sending: false,
       error: null,
+      sessionsLoading: false,
+      hasAppliedStartupDefault: true,
       showThinking: false,
       streamingMessage: null,
       streamingTools: [],
@@ -101,14 +104,29 @@ describe('chat migration warning banner', () => {
   it('keeps the welcome state visible while history refreshes in the background', () => {
     useChatStore.setState({
       loading: true,
+      startupHistoryLoading: false,
       messages: [],
     });
 
     render(<Chat />);
 
     expect(screen.getByText('welcome.title')).toBeInTheDocument();
-    expect(screen.queryByText('loadingHistory.title')).not.toBeInTheDocument();
-    expect(screen.queryByText('loadingHistory.subtitle')).not.toBeInTheDocument();
+    expect(screen.queryByText('historyLoading.title')).not.toBeInTheDocument();
+    expect(screen.queryByText('historyLoading.subtitle')).not.toBeInTheDocument();
+  });
+
+  it('shows a startup history sync hint before the first local history load finishes', () => {
+    useChatStore.setState({
+      loading: true,
+      startupHistoryLoading: true,
+      messages: [],
+    });
+
+    render(<Chat />);
+
+    expect(screen.getByText('historyLoading.title')).toBeInTheDocument();
+    expect(screen.getByText('historyLoading.subtitle')).toBeInTheDocument();
+    expect(screen.queryByText('welcome.title')).not.toBeInTheDocument();
   });
 
   it('hides dismissed warning for same targetHash and shows it again for a new targetHash', () => {

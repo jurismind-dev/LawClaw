@@ -48,8 +48,11 @@ describe('chat execution graph cache', () => {
     useChatStore.setState({
       messages: [],
       loading: false,
+      startupHistoryLoading: false,
       sending: false,
       error: null,
+      sessionsLoading: false,
+      hasAppliedStartupDefault: true,
       showThinking: true,
       streamingMessage: null,
       streamingTools: [],

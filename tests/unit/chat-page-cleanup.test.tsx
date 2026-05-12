@@ -40,8 +40,11 @@ describe('chat page cleanup behavior', () => {
     useChatStore.setState({
       messages: [],
       loading: false,
+      startupHistoryLoading: false,
       sending: false,
       error: null,
+      sessionsLoading: false,
+      hasAppliedStartupDefault: true,
       showThinking: false,
       streamingMessage: null,
       streamingTools: [],

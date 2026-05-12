@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import enSetup from '@/i18n/locales/en/setup.json';
-import jaSetup from '@/i18n/locales/ja/setup.json';
 import zhSetup from '@/i18n/locales/zh/setup.json';
 
 function readSetupSource(): string {
@@ -18,10 +17,8 @@ describe('setup navigation and install flow', () => {
     expect(source).not.toContain('const handleSkip =');
     expect(source).not.toContain('onSkip={');
     expect(enSetup.nav).not.toHaveProperty('skipSetup');
-    expect(jaSetup.nav).not.toHaveProperty('skipSetup');
     expect(zhSetup.nav).not.toHaveProperty('skipSetup');
     expect(enSetup.installing).not.toHaveProperty('skip');
-    expect(jaSetup.installing).not.toHaveProperty('skip');
     expect(zhSetup.installing).not.toHaveProperty('skip');
   });
 

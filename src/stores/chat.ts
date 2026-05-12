@@ -85,6 +85,7 @@ interface ChatState {
   // Messages
   messages: RawMessage[];
   loading: boolean;
+  startupHistoryLoading: boolean;
   error: string | null;
 
   // Streaming
@@ -100,6 +101,8 @@ interface ChatState {
 
   // Sessions
   sessions: ChatSession[];
+  sessionsLoading: boolean;
+  sessionsError: string | null;
   currentSessionKey: string;
   currentAgentId: string;
   hasAppliedStartupDefault: boolean;
@@ -147,6 +150,8 @@ let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
 let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let _loadSessionsInFlight: Promise<void> | null = null;
 let _lastLoadSessionsAt = 0;
+let _foregroundHistoryLoadToken = 0;
+let _activeForegroundHistoryLoadToken: number | null = null;
 const _historyLoadInFlight = new Map<string, { promise: Promise<void>; quiet: boolean; requestId: number }>();
 const _historyLoadRequestIdBySession = new Map<string, number>();
 const _lastHistoryLoadAtBySession = new Map<string, number>();
@@ -247,6 +252,24 @@ function isDuplicateChatEvent(eventState: string, event: Record<string, unknown>
 
 function isRecoverableSendAckTimeout(error: string): boolean {
   return /\bRPC timeout: (?:chat\.send|agent)\b/.test(error);
+}
+
+const MODEL_NO_RESPONSE_ERROR =
+  '本轮运行暂时没有收到模型响应。通常是本地网关、运行状态同步或模型输出链路暂时卡住。请稍等片刻；如果长时间没有变化，可以停止后重试，或重启网关后再试。';
+
+function normalizeUserFacingChatError(error: string): string {
+  const normalized = error.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (
+    normalized.includes('no response received from the model') ||
+    (
+      normalized.includes('provider may be unavailable') &&
+      normalized.includes('insufficient quota')
+    )
+  ) {
+    return MODEL_NO_RESPONSE_ERROR;
+  }
+
+  return error;
 }
 
 function shouldThrottleSessionLoad(force: boolean, hasAppliedStartupDefault: boolean): boolean {
@@ -498,6 +521,7 @@ function buildSessionSwitchPatch(
     streamingTools: [],
     activeRunId: null,
     error: null,
+    startupHistoryLoading: false,
     thinkingLevel: cachedNextView?.thinkingLevel ?? null,
     pendingFinal: false,
     lastUserMessageAt: null,
@@ -1116,6 +1140,21 @@ function isAsyncCompletionNoticeText(text: string): boolean {
   );
 }
 
+function isSubagentInternalNoticeText(text: string): boolean {
+  if (!text) return false;
+  const normalized = normalizeHeartbeatText(text).toLowerCase();
+  return (
+    normalized.startsWith('[subagent') ||
+    (normalized.startsWith('subagent ') &&
+      (
+        normalized.includes('completed') ||
+        normalized.includes('yielded') ||
+        normalized.includes('finished') ||
+        normalized.includes('returned')
+      ))
+  );
+}
+
 function isBootCheckPromptText(text: string): boolean {
   if (!text) return false;
   const normalized = normalizeHeartbeatText(text).toLowerCase();
@@ -1139,7 +1178,12 @@ function isHiddenInternalMessage(message: unknown): boolean {
   if (!text) return false;
 
   if (role === 'assistant' || role === 'user' || !role) {
-    return isNoReplyText(text) || isAsyncCompletionNoticeText(text) || isBootCheckPromptText(text);
+    return (
+      isNoReplyText(text) ||
+      isAsyncCompletionNoticeText(text) ||
+      isSubagentInternalNoticeText(text) ||
+      isBootCheckPromptText(text)
+    );
   }
 
   return false;
@@ -1152,7 +1196,12 @@ function isHiddenCompletionMessage(message: unknown): boolean {
   const text = extractTextFromContent(msg.content ?? msg.text ?? '');
 
   if (!text || role === 'user') return false;
-  return isHeartbeatAckText(text) || isNoReplyText(text) || isAsyncCompletionNoticeText(text);
+  return (
+    isHeartbeatAckText(text) ||
+    isNoReplyText(text) ||
+    isAsyncCompletionNoticeText(text) ||
+    isSubagentInternalNoticeText(text)
+  );
 }
 
 function isInternalRunMarkerMessage(message: unknown): boolean {
@@ -1165,7 +1214,8 @@ function isInternalRunMarkerMessage(message: unknown): boolean {
     isBootCheckPromptText(text) ||
     isHeartbeatAckText(text) ||
     isNoReplyText(text) ||
-    isAsyncCompletionNoticeText(text)
+    isAsyncCompletionNoticeText(text) ||
+    isSubagentInternalNoticeText(text)
   );
 }
 
@@ -1185,7 +1235,8 @@ function isInternalRunCompletionMessage(message: RawMessage): boolean {
   return (
     isHeartbeatAckText(text) ||
     isNoReplyText(text) ||
-    isAsyncCompletionNoticeText(text)
+    isAsyncCompletionNoticeText(text) ||
+    isSubagentInternalNoticeText(text)
   );
 }
 
@@ -1729,6 +1780,7 @@ function shouldAdoptIdleRun(eventState: string, event: Record<string, unknown>, 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   loading: false,
+  startupHistoryLoading: false,
   error: null,
 
   sending: false,
@@ -1741,6 +1793,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingToolImages: [],
 
   sessions: [],
+  sessionsLoading: false,
+  sessionsError: null,
   currentSessionKey: DEFAULT_SESSION_KEY,
   currentAgentId: 'lawclaw-main',
   hasAppliedStartupDefault: false,
@@ -1768,6 +1822,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     ) {
       return;
     }
+
+    set({ sessionsLoading: true, sessionsError: null });
 
     _loadSessionsInFlight = (async () => {
       try {
@@ -1912,6 +1968,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             currentSessionKey: nextSessionKey,
             currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
             hasAppliedStartupDefault: true,
+            sessionsError: null,
             sessionLastActivity: {
               ...state.sessionLastActivity,
               ...discoveredActivity,
@@ -1982,18 +2039,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
             })();
           }
         } else if (lastError != null) {
+          const errorMessage = String(lastError);
           if (isInitialStartupLoad && classifyStartupRetryError(lastError)) {
             console.warn('[sessions.list] startup retry exhausted', {
               gatewayState: useGatewayStore.getState().status.state,
-              error: String(lastError),
+              error: errorMessage,
             });
           }
+          set({ sessionsError: errorMessage });
           console.warn('Failed to load sessions:', lastError);
         }
       } catch (err) {
+        set({ sessionsError: String(err) });
         console.warn('Failed to load sessions:', err);
       } finally {
         _lastLoadSessionsAt = Date.now();
+        set({ sessionsLoading: false });
       }
     })();
 
@@ -2053,6 +2114,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         streamingTools: [],
         activeRunId: null,
         error: null,
+        startupHistoryLoading: false,
         thinkingLevel: cachedNextView?.thinkingLevel ?? null,
         pendingFinal: false,
         lastUserMessageAt: null,
@@ -2120,6 +2182,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingTools: [],
       activeRunId: null,
       error: null,
+      startupHistoryLoading: false,
       pendingFinal: false,
       lastUserMessageAt: null,
       pendingToolImages: [],
@@ -2154,7 +2217,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadHistory: async (quiet = false, options?: { force?: boolean }) => {
     const { currentSessionKey } = get();
     const requestedSessionKey = currentSessionKey;
-    const isInitialForegroundLoad = !quiet && !_foregroundHistoryLoadSeen.has(requestedSessionKey);
+    const gatewayStatus = useGatewayStore.getState().status;
+    const foregroundLoadKey = [
+      gatewayStatus.pid ?? 'none',
+      gatewayStatus.connectedAt ?? 'none',
+      gatewayStatus.port ?? 'none',
+      requestedSessionKey,
+    ].join(':');
+    const isInitialForegroundLoad = !quiet && !_foregroundHistoryLoadSeen.has(foregroundLoadKey);
     const historyTimeoutOverride = getStartupHistoryTimeoutOverride(isInitialForegroundLoad);
     const existingLoad = _historyLoadInFlight.get(requestedSessionKey);
     if (existingLoad) {
@@ -2170,12 +2240,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    if (!quiet) set({ loading: true, error: null });
+    const foregroundHistoryLoadToken = quiet ? null : ++_foregroundHistoryLoadToken;
+    if (!quiet) {
+      _activeForegroundHistoryLoadToken = foregroundHistoryLoadToken;
+      set({
+        loading: true,
+        startupHistoryLoading: isInitialForegroundLoad,
+        error: null,
+      });
+    }
+
+    const clearForegroundHistoryLoading = () => {
+      if (foregroundHistoryLoadToken == null) return;
+      if (_activeForegroundHistoryLoadToken !== foregroundHistoryLoadToken) return;
+      _activeForegroundHistoryLoadToken = null;
+      set({ loading: false, startupHistoryLoading: false });
+    };
 
     let loadingTimedOut = false;
     const loadingSafetyTimer = quiet ? null : setTimeout(() => {
       loadingTimedOut = true;
-      set({ loading: false });
+      clearForegroundHistoryLoading();
     }, getHistoryLoadingSafetyTimeout(isInitialForegroundLoad));
     const requestId = (_historyLoadRequestIdBySession.get(requestedSessionKey) || 0) + 1;
     _historyLoadRequestIdBySession.set(requestedSessionKey, requestId);
@@ -2235,6 +2320,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const hasMessages = state.messages.length > 0;
           return {
             loading: false,
+            startupHistoryLoading: false,
             error: !quiet && errorMessage ? errorMessage : state.error,
             ...(hasMessages ? {} : { messages: [] as RawMessage[] }),
           };
@@ -2273,7 +2359,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         finalMessages = mergeOptimisticUserMessages(get().messages, finalMessages);
 
-        set({ messages: finalMessages, thinkingLevel: finalThinkingLevel, loading: false });
+        set({
+          messages: finalMessages,
+          thinkingLevel: finalThinkingLevel,
+          loading: false,
+          startupHistoryLoading: false,
+        });
         cacheSessionView(requestedSessionKey, finalMessages, finalThinkingLevel);
 
         if (!requestedSessionKey.endsWith(':main')) {
@@ -2388,7 +2479,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
           if (applied && isInitialForegroundLoad) {
-            _foregroundHistoryLoadSeen.add(requestedSessionKey);
+            _foregroundHistoryLoadSeen.add(foregroundLoadKey);
           }
         } else {
           if (isCurrentSession() && isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
@@ -2415,6 +2506,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await loadPromise;
     } finally {
       if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
+      clearForegroundHistoryLoading();
       if (!loadingTimedOut && (_historyLoadRequestIdBySession.get(requestedSessionKey) || 0) === requestId) {
         _lastHistoryLoadAtBySession.set(requestedSessionKey, Date.now());
       }
@@ -2468,6 +2560,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         streamingTools: [],
         activeRunId: null,
         error: null,
+        startupHistoryLoading: false,
         pendingFinal: false,
         lastUserMessageAt: null,
         pendingToolImages: [],
@@ -2559,7 +2652,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       clearHistoryPoll();
       set({
-        error: 'No response received from the model within 90 seconds. The local Gateway connection may have been interrupted, the request may be too large, or the provider has not started streaming yet. Check the Gateway/provider logs for the exact error.',
+        error: MODEL_NO_RESPONSE_ERROR,
         sending: false,
         activeRunId: null,
         lastUserMessageAt: null,
@@ -2630,7 +2723,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           );
         } else {
           clearHistoryPoll();
-          set({ error: errorMsg, sending: false });
+          set({ error: normalizeUserFacingChatError(errorMsg), sending: false });
         }
       } else if (result.result?.runId) {
         set({ activeRunId: result.result.runId });
@@ -2643,7 +2736,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         );
       } else {
         clearHistoryPoll();
-        set({ error: errStr, sending: false });
+        set({ error: normalizeUserFacingChatError(errStr), sending: false });
       }
     }
   },
@@ -2664,7 +2757,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         { sessionKey: currentSessionKey },
       );
     } catch (err) {
-      set({ error: String(err) });
+      set({ error: normalizeUserFacingChatError(String(err)) });
     }
   },
 
@@ -3008,7 +3101,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         break;
       }
       case 'error': {
-        const errorMsg = String(event.errorMessage || 'An error occurred');
+        const errorMsg = normalizeUserFacingChatError(String(event.errorMessage || 'An error occurred'));
         clearInternalRunTracking(runId);
         const wasSending = get().sending;
 

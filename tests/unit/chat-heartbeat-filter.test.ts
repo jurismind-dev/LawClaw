@@ -217,6 +217,41 @@ describe('chat heartbeat filtering', () => {
     expect(state.sessionLastActivity['agent:lawclaw-main:session-1']).toBe(4_000);
   });
 
+  it('loadHistory 会过滤简化 heartbeat 标记并避免污染会话标题', async () => {
+    useChatStore.setState({
+      currentSessionKey: 'agent:lawclaw-main:session-heartbeat-marker',
+      sessions: [{ key: 'agent:lawclaw-main:session-heartbeat-marker', persisted: true }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [
+              { role: 'user', content: 'heartbeat', timestamp: 1 },
+              { role: 'assistant', content: 'HEARTBEAT_OK', timestamp: 2 },
+              { role: 'user', content: '真正的用户问题', timestamp: 3 },
+              { role: 'assistant', content: '正常回答', timestamp: 4 },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadHistory();
+
+    const state = useChatStore.getState();
+    expect(state.messages).toEqual([
+      expect.objectContaining({ role: 'user', content: '真正的用户问题' }),
+      expect.objectContaining({ role: 'assistant', content: '正常回答' }),
+    ]);
+    expect(state.sessionLabels['agent:lawclaw-main:session-heartbeat-marker']).toBe('真正的用户问题');
+  });
+
   it('loadHistory 会过滤 subagent 内部通知并避免污染会话标题', async () => {
     useChatStore.setState({
       currentSessionKey: 'agent:lawclaw-main:session-subagent',

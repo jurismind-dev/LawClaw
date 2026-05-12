@@ -170,6 +170,55 @@ describe('session label fetch concurrency', () => {
     expect(state.sessionLastActivity[SUBAGENT_SESSION_KEY]).toBe(12_000);
   });
 
+  it('does not surface heartbeat metadata labels from sessions.list', async () => {
+    const heartbeatSessionKey = 'agent:lawclaw-main:session-heartbeat-label';
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'sessions.list') {
+        return {
+          success: true,
+          result: {
+            sessions: [
+              { key: MAIN_SESSION_KEY },
+              {
+                key: heartbeatSessionKey,
+                label: 'heartbeat',
+                displayName: '[heartbeat]',
+              },
+            ],
+          },
+        };
+      }
+
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    useGatewayStore.setState({
+      rpc: vi.fn(async (method: string) => {
+        if (method !== 'chat.history') {
+          throw new Error(`unexpected gateway method: ${method}`);
+        }
+
+        return {
+          messages: [
+            { role: 'user', content: 'heartbeat', timestamp: 10 },
+            { role: 'assistant', content: 'HEARTBEAT_OK', timestamp: 11 },
+            { role: 'user', content: '真正的历史会话标题', timestamp: 12 },
+            { role: 'assistant', content: '正常回答', timestamp: 13 },
+          ],
+        };
+      }),
+    });
+
+    await useChatStore.getState().loadSessions(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const state = useChatStore.getState();
+    const session = state.sessions.find((item) => item.key === heartbeatSessionKey);
+    expect(session?.label).toBeUndefined();
+    expect(session?.displayName).toBeUndefined();
+    expect(state.sessionLabels[heartbeatSessionKey]).toBe('真正的历史会话标题');
+  });
+
   it('reuses prefetched history so switching sessions renders immediately without foreground loading', async () => {
     useChatStore.setState({
       sessions: [

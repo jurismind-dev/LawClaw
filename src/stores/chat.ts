@@ -1114,6 +1114,11 @@ function isHeartbeatAckText(text: string): boolean {
   return normalizeHeartbeatText(text) === 'HEARTBEAT_OK';
 }
 
+function isHeartbeatMarkerText(text: string): boolean {
+  const normalized = normalizeHeartbeatText(text).toLowerCase();
+  return normalized === 'heartbeat' || normalized === '[heartbeat]';
+}
+
 function isHiddenHeartbeatMessage(message: unknown): boolean {
   if (!message || typeof message !== 'object') return false;
   const msg = message as Record<string, unknown>;
@@ -1121,6 +1126,7 @@ function isHiddenHeartbeatMessage(message: unknown): boolean {
   const text = extractTextFromContent(msg.content ?? msg.text ?? '');
 
   if (!text) return false;
+  if ((role === 'user' || role === 'assistant' || !role) && isHeartbeatMarkerText(text)) return true;
   if ((role === 'user' || !role) && isHeartbeatPromptText(text)) return true;
   if ((role === 'assistant' || !role) && isHeartbeatAckText(text)) return true;
   return false;
@@ -1167,6 +1173,25 @@ function isBootCheckPromptText(text: string): boolean {
   );
 }
 
+function isInternalSessionLabelText(text: string): boolean {
+  return (
+    isHeartbeatMarkerText(text) ||
+    isHeartbeatPromptText(text) ||
+    isHeartbeatAckText(text) ||
+    isNoReplyText(text) ||
+    isAsyncCompletionNoticeText(text) ||
+    isSubagentInternalNoticeText(text) ||
+    isBootCheckPromptText(text)
+  );
+}
+
+function sanitizeSessionMetadataLabel(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  const text = String(value).trim();
+  if (!text || isInternalSessionLabelText(text)) return undefined;
+  return text;
+}
+
 function isHiddenInternalMessage(message: unknown): boolean {
   if (!message || typeof message !== 'object') return false;
   const msg = message as Record<string, unknown>;
@@ -1211,6 +1236,7 @@ function isInternalRunMarkerMessage(message: unknown): boolean {
   if (!text) return false;
   return (
     isHeartbeatPromptText(text) ||
+    isHeartbeatMarkerText(text) ||
     isBootCheckPromptText(text) ||
     isHeartbeatAckText(text) ||
     isNoReplyText(text) ||
@@ -1227,7 +1253,7 @@ function clearInternalRunTracking(runId: string): void {
 
 function isInternalRunStartMessage(message: RawMessage): boolean {
   const text = extractTextFromContent(message.content);
-  return isHeartbeatPromptText(text) || isBootCheckPromptText(text);
+  return isHeartbeatPromptText(text) || isHeartbeatMarkerText(text) || isBootCheckPromptText(text);
 }
 
 function isInternalRunCompletionMessage(message: RawMessage): boolean {
@@ -1866,8 +1892,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
           const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
             key: String(s.key || ''),
-            label: s.label ? String(s.label) : undefined,
-            displayName: s.displayName ? String(s.displayName) : undefined,
+            label: sanitizeSessionMetadataLabel(s.label),
+            displayName: sanitizeSessionMetadataLabel(s.displayName),
             thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
             model: s.model ? String(s.model) : undefined,
             updatedAt: parseSessionUpdatedAtMs(s.updatedAt),

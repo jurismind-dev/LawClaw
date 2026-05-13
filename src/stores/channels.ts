@@ -264,12 +264,6 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       console.error('Failed to log out channel from gateway:', error);
     }
 
-    try {
-      await window.electron.ipcRenderer.invoke('gateway:restart');
-    } catch (error) {
-      console.error('Failed to restart gateway after channel deletion:', error);
-    }
-
     // Remove from local state
     set((state) => ({
       channels: state.channels.filter((c) => c.id !== channelId),

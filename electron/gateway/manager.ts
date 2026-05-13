@@ -59,6 +59,8 @@ import {
 } from './process-policy';
 import { waitForGatewayReady } from './ws-client';
 
+const DEFAULT_RESTART_DEBOUNCE_MS = process.platform === 'win32' ? 8_000 : 2_000;
+
 /**
  * Gateway connection status
  */
@@ -253,6 +255,7 @@ export class GatewayManager extends EventEmitter {
   private gatewayReadyFallbackTimer: NodeJS.Timeout | null = null;
   private deviceIdentity: DeviceIdentity | null = null;
   private restartDebounceTimer: NodeJS.Timeout | null = null;
+  private restartInFlight: Promise<void> | null = null;
   private deferredRestartPending = false;
   private deferredRestartRequestedAt = 0;
   private lastRestartCompletedAt = 0;
@@ -637,11 +640,23 @@ export class GatewayManager extends EventEmitter {
       this.markDeferredRestart('restart');
       return;
     }
-    await this.stop();
-    try {
+
+    if (this.restartInFlight) {
+      logger.debug('Gateway restart already in progress, joining existing request');
+      await this.restartInFlight;
+      return;
+    }
+
+    this.restartInFlight = (async () => {
+      await this.stop();
       await this.start();
+    })();
+
+    try {
+      await this.restartInFlight;
       this.recordRestartCompleted();
     } finally {
+      this.restartInFlight = null;
       this.flushDeferredRestart('restart:finally');
     }
   }
@@ -653,7 +668,7 @@ export class GatewayManager extends EventEmitter {
    * provider:setDefault and channel:saveConfig all fire within seconds
    * of each other during setup.
    */
-  debouncedRestart(delayMs = 2000): void {
+  debouncedRestart(delayMs = DEFAULT_RESTART_DEBOUNCE_MS): void {
     if (this.restartDebounceTimer) {
       clearTimeout(this.restartDebounceTimer);
     }

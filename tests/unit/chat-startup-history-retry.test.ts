@@ -88,4 +88,35 @@ describe('chat history startup retry', () => {
       },
     ]);
   });
+
+  it('does not show a red error when startup chat.history timeouts are exhausted', async () => {
+    let historyCalls = 0;
+
+    useGatewayStore.setState({
+      status: { state: 'running', port: 18789, pid: 1234, connectedAt: Date.now() },
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'chat.history') {
+        historyCalls += 1;
+        return {
+          success: false,
+          error: 'Error: RPC timeout: chat.history',
+        };
+      }
+
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    const loadPromise = useChatStore.getState().loadHistory();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(800 + 2_000 + 4_000 + 8_000);
+    await loadPromise;
+
+    expect(historyCalls).toBe(5);
+    expect(useChatStore.getState().error).toBeNull();
+    expect(useChatStore.getState().loading).toBe(false);
+    expect(useChatStore.getState().startupHistoryLoading).toBe(false);
+  });
 });

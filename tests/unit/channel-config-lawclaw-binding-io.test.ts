@@ -113,12 +113,9 @@ describe('channel config lawclaw binding io', () => {
         dmPolicy: 'open',
         allowFrom: ['*'],
         streaming: true,
-        threadSession: true,
         requireMention: true,
-        footer: {
-          elapsed: true,
-          status: true,
-        },
+        typingIndicator: true,
+        resolveSenderNames: true,
       },
     });
   });
@@ -159,12 +156,41 @@ describe('channel config lawclaw binding io', () => {
         appSecret: 'secret_test',
         enabled: true,
         streaming: false,
-        threadSession: true,
         requireMention: true,
+        typingIndicator: true,
+        resolveSenderNames: true,
         footer: {
           elapsed: false,
-          status: true,
         },
+      },
+    });
+  });
+
+  it('serializes concurrent channel config saves without losing either channel', async () => {
+    const mod = await import('@electron/utils/channel-config');
+
+    await Promise.all([
+      mod.saveChannelConfig('feishu', {
+        appId: 'cli_feishu',
+        appSecret: 'secret_feishu',
+      }),
+      mod.saveChannelConfig('telegram', {
+        botToken: 'telegram-token',
+        allowedUsers: '123, 456',
+      }),
+    ]);
+
+    const next = await readConfig(homeDir);
+    expect(next.channels).toMatchObject({
+      feishu: {
+        appId: 'cli_feishu',
+        appSecret: 'secret_feishu',
+        enabled: true,
+      },
+      telegram: {
+        botToken: 'telegram-token',
+        allowFrom: ['123', '456'],
+        enabled: true,
       },
     });
   });

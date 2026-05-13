@@ -857,8 +857,6 @@ function AddChannelDialog({
         type: 'whatsapp',
         name: channelName || 'WhatsApp',
       }).then(() => {
-        // Restart gateway to pick up the new session
-        window.electron.ipcRenderer.invoke('gateway:restart').catch(console.error);
         onChannelAdded();
       });
     };

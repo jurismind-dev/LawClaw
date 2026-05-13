@@ -10,6 +10,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { getOpenClawResolvedDir } from './paths';
 import { applyFeishuChannelDefaults } from './feishu-channel-defaults';
+import { withConfigLock } from './config-mutex';
 import {
     WEIXIN_CHANNEL_ID,
     clearWeixinStoredState,
@@ -263,21 +264,25 @@ export function removeLawClawChannelBinding(config: OpenClawConfig, channelType:
 }
 
 export async function enforceLawClawChannelBinding(channelType: string): Promise<boolean> {
-    const config = await readOpenClawConfig();
-    const changed = upsertLawClawChannelBinding(config, channelType);
-    if (changed) {
-        await writeOpenClawConfig(config);
-    }
-    return changed;
+    return withConfigLock(async () => {
+        const config = await readOpenClawConfig();
+        const changed = upsertLawClawChannelBinding(config, channelType);
+        if (changed) {
+            await writeOpenClawConfig(config);
+        }
+        return changed;
+    });
 }
 
 export async function clearLawClawChannelBinding(channelType: string): Promise<boolean> {
-    const config = await readOpenClawConfig();
-    const changed = removeLawClawChannelBinding(config, channelType);
-    if (changed) {
-        await writeOpenClawConfig(config);
-    }
-    return changed;
+    return withConfigLock(async () => {
+        const config = await readOpenClawConfig();
+        const changed = removeLawClawChannelBinding(config, channelType);
+        if (changed) {
+            await writeOpenClawConfig(config);
+        }
+        return changed;
+    });
 }
 
 /**
@@ -287,7 +292,7 @@ async function ensureConfigDir(): Promise<void> {
     await mkdir(OPENCLAW_DIR, { recursive: true });
 }
 
-export async function readOpenClawConfig(): Promise<OpenClawConfig> {
+async function readOpenClawConfigUnlocked(): Promise<OpenClawConfig> {
     await ensureConfigDir();
 
     if (!(await fileExists(CONFIG_FILE))) {
@@ -308,11 +313,22 @@ export async function readOpenClawConfig(): Promise<OpenClawConfig> {
     }
 }
 
-export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void> {
+export async function readOpenClawConfig(): Promise<OpenClawConfig> {
+    return withConfigLock(readOpenClawConfigUnlocked);
+}
+
+async function writeOpenClawConfigUnlocked(config: OpenClawConfig): Promise<void> {
     await ensureConfigDir();
 
     try {
-        await writeFile(CONFIG_FILE, stringifyJsonText(config), 'utf-8');
+        const nextContent = stringifyJsonText(config);
+        if (await fileExists(CONFIG_FILE)) {
+            const currentContent = await readFile(CONFIG_FILE, 'utf-8');
+            if (currentContent === nextContent) {
+                return;
+            }
+        }
+        await writeFile(CONFIG_FILE, nextContent, 'utf-8');
     } catch (error) {
         logger.error('Failed to write OpenClaw config', error);
         console.error('Failed to write OpenClaw config:', error);
@@ -320,9 +336,15 @@ export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void>
     }
 }
 
+export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void> {
+    return withConfigLock(async () => {
+        await writeOpenClawConfigUnlocked(config);
+    });
+}
+
 // ── Channel operations ───────────────────────────────────────────
 
-export async function saveChannelConfig(
+async function saveChannelConfigUnlocked(
     channelType: string,
     config: ChannelConfigData,
     accountId?: string
@@ -531,6 +553,14 @@ export async function saveChannelConfig(
     console.log(`Saved channel config for ${normalizedChannelType}`);
 }
 
+export async function saveChannelConfig(
+    channelType: string,
+    config: ChannelConfigData,
+    accountId?: string
+): Promise<void> {
+    return withConfigLock(() => saveChannelConfigUnlocked(channelType, config, accountId));
+}
+
 export async function getChannelConfig(channelType: string): Promise<ChannelConfigData | undefined> {
     const config = await readOpenClawConfig();
     return config.channels?.[channelType];
@@ -651,7 +681,7 @@ async function deleteWeixinChannelConfig(accountId?: string): Promise<DeleteChan
     };
 }
 
-export async function deleteChannelConfig(
+async function deleteChannelConfigUnlocked(
     channelType: string,
     accountId?: string
 ): Promise<DeleteChannelConfigResult> {
@@ -698,6 +728,13 @@ export async function deleteChannelConfig(
     return { stillConfigured: false };
 }
 
+export async function deleteChannelConfig(
+    channelType: string,
+    accountId?: string
+): Promise<DeleteChannelConfigResult> {
+    return withConfigLock(() => deleteChannelConfigUnlocked(channelType, accountId));
+}
+
 export async function listConfiguredChannels(): Promise<string[]> {
     const config = await readOpenClawConfig();
     const channels: string[] = [];
@@ -741,7 +778,7 @@ export async function listConfiguredChannels(): Promise<string[]> {
     return Array.from(new Set(channels));
 }
 
-export async function setChannelEnabled(channelType: string, enabled: boolean): Promise<void> {
+async function setChannelEnabledUnlocked(channelType: string, enabled: boolean): Promise<void> {
     const currentConfig = await readOpenClawConfig();
     cleanupLegacyBuiltInChannelPluginRegistration(currentConfig, channelType);
 
@@ -761,6 +798,10 @@ export async function setChannelEnabled(channelType: string, enabled: boolean): 
     syncBuiltinChannelsWithPluginAllowlist(currentConfig, enabled ? [channelType] : []);
     await writeOpenClawConfig(currentConfig);
     console.log(`Set channel ${channelType} enabled: ${enabled}`);
+}
+
+export async function setChannelEnabled(channelType: string, enabled: boolean): Promise<void> {
+    return withConfigLock(() => setChannelEnabledUnlocked(channelType, enabled));
 }
 
 // ── Validation ───────────────────────────────────────────────────

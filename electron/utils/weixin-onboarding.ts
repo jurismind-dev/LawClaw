@@ -10,6 +10,7 @@ import {
   writeOpenClawConfig,
   deleteChannelConfig,
 } from './channel-config';
+import { withConfigLock } from './config-mutex';
 import { logger } from './logger';
 import { applyOpenClawConfigEnvFallbacks } from './openclaw-config-env';
 import { applyBundledNpmToCliEnv, getNodeExecForCli } from './openclaw-cli';
@@ -587,39 +588,41 @@ class WeixinOnboardingManager extends EventEmitter {
       cdnBaseUrl: this.resolveCdnBaseUrl(settings),
       routeTag: this.resolveRouteTag(settings),
     });
-    await saveChannelConfig(WEIXIN_CHANNEL_ID, { enabled: true }, normalizedAccountId);
+    await withConfigLock(async () => {
+      await saveChannelConfig(WEIXIN_CHANNEL_ID, { enabled: true }, normalizedAccountId);
 
-    const config = await readOpenClawConfig();
-    const nextConfig: OpenClawConfig = {
-      ...config,
-    };
+      const config = await readOpenClawConfig();
+      const nextConfig: OpenClawConfig = {
+        ...config,
+      };
 
-    const pluginEntries = asObject(nextConfig.plugins?.entries);
-    if (pluginEntries?.[WEIXIN_CHANNEL_ID]) {
-      delete pluginEntries[WEIXIN_CHANNEL_ID];
-      if (Object.keys(pluginEntries).length === 0 && nextConfig.plugins) {
-        delete nextConfig.plugins.entries;
+      const pluginEntries = asObject(nextConfig.plugins?.entries);
+      if (pluginEntries?.[WEIXIN_CHANNEL_ID]) {
+        delete pluginEntries[WEIXIN_CHANNEL_ID];
+        if (Object.keys(pluginEntries).length === 0 && nextConfig.plugins) {
+          delete nextConfig.plugins.entries;
+        }
       }
-    }
 
-    if (Array.isArray(nextConfig.plugins?.allow)) {
-      const nextAllow = nextConfig.plugins.allow.filter((item) => item !== WEIXIN_CHANNEL_ID);
-      if (nextAllow.length > 0 && nextConfig.plugins) {
-        nextConfig.plugins.allow = nextAllow;
-      } else if (nextConfig.plugins) {
-        delete nextConfig.plugins.allow;
+      if (Array.isArray(nextConfig.plugins?.allow)) {
+        const nextAllow = nextConfig.plugins.allow.filter((item) => item !== WEIXIN_CHANNEL_ID);
+        if (nextAllow.length > 0 && nextConfig.plugins) {
+          nextConfig.plugins.allow = nextAllow;
+        } else if (nextConfig.plugins) {
+          delete nextConfig.plugins.allow;
+        }
       }
-    }
 
-    if (
-      nextConfig.plugins
-      && Object.keys(nextConfig.plugins).length === 0
-    ) {
-      delete nextConfig.plugins;
-    }
+      if (
+        nextConfig.plugins
+        && Object.keys(nextConfig.plugins).length === 0
+      ) {
+        delete nextConfig.plugins;
+      }
 
-    upsertLawClawChannelBinding(nextConfig, WEIXIN_CHANNEL_ID);
-    await writeOpenClawConfig(nextConfig);
+      upsertLawClawChannelBinding(nextConfig, WEIXIN_CHANNEL_ID);
+      await writeOpenClawConfig(nextConfig);
+    });
 
     this.setStatus({
       phase: 'configured',

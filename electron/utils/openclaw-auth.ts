@@ -392,7 +392,15 @@ function writeOpenClawConfig(config: Record<string, unknown>): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(configPath, stringifyJsonText(config, { trailingNewline: false }), 'utf-8');
+  const nextContent = stringifyJsonText(config, { trailingNewline: false });
+  try {
+    if (existsSync(configPath) && readFileSync(configPath, 'utf-8') === nextContent) {
+      return;
+    }
+  } catch {
+    // Fall through and write below.
+  }
+  writeFileSync(configPath, nextContent, 'utf-8');
 }
 
 function upsertAuthProfile(store: AuthProfilesStore, providerId: string, apiKey: string): void {

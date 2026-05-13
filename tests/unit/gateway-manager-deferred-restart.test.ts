@@ -186,6 +186,40 @@ describe('GatewayManager deferred restart', () => {
     expect(startSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('coalesces concurrent restart requests into one stop/start cycle', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+
+    (manager as unknown as { status: { state: 'running'; port: number } }).status = {
+      state: 'running',
+      port: 4317,
+    };
+
+    let resolveStopStarted!: () => void;
+    let releaseStop!: () => void;
+    const stopStarted = new Promise<void>((resolve) => {
+      resolveStopStarted = resolve;
+    });
+    const stopBlock = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    const stopSpy = vi.spyOn(manager, 'stop').mockImplementation(async () => {
+      resolveStopStarted();
+      await stopBlock;
+    });
+    const startSpy = vi.spyOn(manager, 'start').mockResolvedValue(undefined);
+
+    const firstRestart = manager.restart();
+    await stopStarted;
+    const secondRestart = manager.restart();
+    releaseStop();
+
+    await Promise.all([firstRestart, secondRestart]);
+
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+    expect(startSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('routes agent protocol events only through notifications', async () => {
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();

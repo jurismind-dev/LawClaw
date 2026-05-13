@@ -2353,6 +2353,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       };
 
+      const applyTransientStartupHistoryFailure = (
+        errorKind: ReturnType<typeof classifyHistoryStartupRetryError>,
+        error: unknown,
+      ): boolean => {
+        const isStartupTransient = shouldRetryStartupHistoryLoad(
+          useGatewayStore.getState().status,
+          errorKind,
+        );
+        if (
+          !isInitialForegroundLoad
+          || !isStartupTransient
+          || !isCurrentSession()
+          || !isLatestLoadForSession()
+        ) {
+          return false;
+        }
+
+        console.warn('[chat.history] suppressing transient startup history error', {
+          sessionKey: requestedSessionKey,
+          gatewayState: useGatewayStore.getState().status.state,
+          errorKind,
+          error: String(error),
+        });
+        set((state) => ({
+          loading: false,
+          startupHistoryLoading: false,
+          error: state.error,
+          ...(state.messages.length > 0 ? {} : { messages: [] as RawMessage[] }),
+        }));
+        return true;
+      };
+
       const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
         if (!isCurrentSession() || !isLatestLoadForSession()) return false;
 
@@ -2508,12 +2540,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
             _foregroundHistoryLoadSeen.add(foregroundLoadKey);
           }
         } else {
-          if (isCurrentSession() && isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
+          const errorKind = classifyHistoryStartupRetryError(lastError);
+          if (isCurrentSession() && isInitialForegroundLoad && errorKind) {
             console.warn('[chat.history] startup retry exhausted', {
               sessionKey: requestedSessionKey,
               gatewayState: useGatewayStore.getState().status.state,
+              errorKind,
               error: String(lastError),
             });
+          }
+
+          if (applyTransientStartupHistoryFailure(errorKind, lastError)) {
+            return;
           }
 
           applyLoadFailure(
@@ -2523,6 +2561,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       } catch (err) {
         console.warn('Failed to load chat history:', err);
+        if (applyTransientStartupHistoryFailure(classifyHistoryStartupRetryError(err), err)) {
+          return;
+        }
         applyLoadFailure(String(err));
       }
     })();

@@ -20,6 +20,7 @@ import {
   upsertLawClawChannelBinding,
   writeOpenClawConfig,
 } from './channel-config';
+import { withConfigLock } from './config-mutex';
 import {
   detectPluginInstallationState,
   publishPreparedPluginInstallDir,
@@ -620,55 +621,57 @@ class FeishuOnboardingManager extends EventEmitter {
   }
 
   private async preparePluginInstallState(reinstallOfficialPlugin: boolean): Promise<void> {
-    const config = await readOpenClawConfig();
-    const plugins = typeof config.plugins === 'object' && config.plugins && !Array.isArray(config.plugins)
-      ? { ...config.plugins }
-      : {};
-    const entries = typeof plugins.entries === 'object' && plugins.entries && !Array.isArray(plugins.entries)
-      ? { ...(plugins.entries as Record<string, unknown>) }
-      : {};
+    await withConfigLock(async () => {
+      const config = await readOpenClawConfig();
+      const plugins = typeof config.plugins === 'object' && config.plugins && !Array.isArray(config.plugins)
+        ? { ...config.plugins }
+        : {};
+      const entries = typeof plugins.entries === 'object' && plugins.entries && !Array.isArray(plugins.entries)
+        ? { ...(plugins.entries as Record<string, unknown>) }
+        : {};
 
-    entries.feishu = {
-      ...(typeof entries.feishu === 'object' && entries.feishu && !Array.isArray(entries.feishu)
-        ? entries.feishu as Record<string, unknown>
-        : {}),
-      enabled: false,
-    };
+      entries.feishu = {
+        ...(typeof entries.feishu === 'object' && entries.feishu && !Array.isArray(entries.feishu)
+          ? entries.feishu as Record<string, unknown>
+          : {}),
+        enabled: false,
+      };
 
-    delete entries['feishu-openclaw-plugin'];
-    delete entries['@larksuite/openclaw-lark'];
-    if (reinstallOfficialPlugin) {
-      delete entries[FEISHU_OFFICIAL_PLUGIN_ID];
-    }
-
-    const allow = Array.isArray(plugins.allow)
-      ? plugins.allow.filter((item): item is string => typeof item === 'string')
-      : [];
-    const nextAllow = allow.filter((item) => {
-      if (
-        item === 'feishu'
-        || item === 'feishu-openclaw-plugin'
-        || item === 'openclaw-lark'
-        || item === '@larksuite/openclaw-lark'
-      ) {
-        return false;
+      delete entries['feishu-openclaw-plugin'];
+      delete entries['@larksuite/openclaw-lark'];
+      if (reinstallOfficialPlugin) {
+        delete entries[FEISHU_OFFICIAL_PLUGIN_ID];
       }
-      if (reinstallOfficialPlugin && item === FEISHU_OFFICIAL_PLUGIN_ID) {
-        return false;
-      }
-      return true;
+
+      const allow = Array.isArray(plugins.allow)
+        ? plugins.allow.filter((item): item is string => typeof item === 'string')
+        : [];
+      const nextAllow = allow.filter((item) => {
+        if (
+          item === 'feishu'
+          || item === 'feishu-openclaw-plugin'
+          || item === 'openclaw-lark'
+          || item === '@larksuite/openclaw-lark'
+        ) {
+          return false;
+        }
+        if (reinstallOfficialPlugin && item === FEISHU_OFFICIAL_PLUGIN_ID) {
+          return false;
+        }
+        return true;
+      });
+
+      const nextConfig: OpenClawConfig = {
+        ...config,
+        plugins: {
+          ...plugins,
+          allow: nextAllow,
+          entries,
+        },
+      };
+
+      await writeOpenClawConfig(nextConfig);
     });
-
-    const nextConfig: OpenClawConfig = {
-      ...config,
-      plugins: {
-        ...plugins,
-        allow: nextAllow,
-        entries,
-      },
-    };
-
-    await writeOpenClawConfig(nextConfig);
 
     const openclawConfigDir = getOpenClawConfigDir();
     const conflictDir = join(openclawConfigDir, 'extensions', FEISHU_CONFLICT_EXTENSION_DIR);
@@ -692,14 +695,16 @@ class FeishuOnboardingManager extends EventEmitter {
   }
 
   private async normalizeOfficialPluginConfig(options: { seedDisabledWhenEmpty: boolean }): Promise<void> {
-    const config = await readOpenClawConfig();
-    const finalized = finalizeFeishuOfficialPluginConfig(config as Record<string, unknown>, {
-      seedDisabledWhenEmpty: options.seedDisabledWhenEmpty,
-    });
+    await withConfigLock(async () => {
+      const config = await readOpenClawConfig();
+      const finalized = finalizeFeishuOfficialPluginConfig(config as Record<string, unknown>, {
+        seedDisabledWhenEmpty: options.seedDisabledWhenEmpty,
+      });
 
-    if (finalized.changed) {
-      await writeOpenClawConfig(finalized.config as OpenClawConfig);
-    }
+      if (finalized.changed) {
+        await writeOpenClawConfig(finalized.config as OpenClawConfig);
+      }
+    });
   }
 
   private async applySuccessfulOnboarding(
@@ -707,18 +712,20 @@ class FeishuOnboardingManager extends EventEmitter {
     appSecret: string,
     openId?: string | null
   ): Promise<void> {
-    const config = await readOpenClawConfig();
-    const finalized = finalizeFeishuOfficialPluginConfig(config as Record<string, unknown>, {
-      credentials: {
-        appId,
-        appSecret,
-        openId,
-      },
-    });
+    await withConfigLock(async () => {
+      const config = await readOpenClawConfig();
+      const finalized = finalizeFeishuOfficialPluginConfig(config as Record<string, unknown>, {
+        credentials: {
+          appId,
+          appSecret,
+          openId,
+        },
+      });
 
-    const nextConfig = finalized.config as OpenClawConfig;
-    upsertLawClawChannelBinding(nextConfig, 'feishu');
-    await writeOpenClawConfig(nextConfig);
+      const nextConfig = finalized.config as OpenClawConfig;
+      upsertLawClawChannelBinding(nextConfig, 'feishu');
+      await writeOpenClawConfig(nextConfig);
+    });
 
     this.setStatus({
       phase: 'configured',

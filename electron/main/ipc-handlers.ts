@@ -126,6 +126,22 @@ function normalizeChannelType(channelType: string): string {
   return channelType.trim().toLowerCase();
 }
 
+const BACKGROUND_GATEWAY_RESTART_DELAY_MS = process.platform === 'win32' ? 8_000 : 3_000;
+
+function scheduleGatewayRestart(
+  gatewayManager: GatewayManager,
+  reason: string,
+  delayMs = BACKGROUND_GATEWAY_RESTART_DELAY_MS
+): void {
+  if (gatewayManager.getStatus().state === 'stopped') {
+    logger.debug(`Skipping Gateway restart scheduling while stopped (${reason})`);
+    return;
+  }
+
+  logger.info(`Scheduling Gateway restart (${reason}) in ${delayMs}ms`);
+  gatewayManager.debouncedRestart(delayMs);
+}
+
 async function getLawClawManagedChannels(): Promise<string[]> {
   const value = await getSetting('lawclawManagedChannels');
   if (!Array.isArray(value)) {
@@ -178,7 +194,7 @@ export function registerIpcHandlers(
   registerMarketplaceHandlers('jurismindhub', jurismindHubService);
 
   // OpenClaw handlers
-  const openClawPluginInstallerBridge = registerOpenClawHandlers();
+  const openClawPluginInstallerBridge = registerOpenClawHandlers(gatewayManager);
 
   // Preset install handlers
   registerPresetInstallHandlers(
@@ -839,7 +855,7 @@ export function registerAgentPresetMigrationHandlers(mainWindow: BrowserWindow):
  * OpenClaw-related IPC handlers
  * For checking package status and channel configuration
  */
-function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
+function registerOpenClawHandlers(gatewayManager: GatewayManager): OpenClawPluginInstallerBridge {
   const runOpenClawCli = async (args: string[]): Promise<{
     success: boolean;
     stdout: string;
@@ -1302,6 +1318,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
         await enforceLawClawChannelBinding(normalizedChannelType);
       }
 
+      scheduleGatewayRestart(gatewayManager, `channel:saveConfig:${normalizedChannelType || channelType}`);
       return { success: true };
     } catch (error) {
       console.error('Failed to save channel config:', error);
@@ -1348,6 +1365,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
         }
       }
 
+      scheduleGatewayRestart(gatewayManager, `channel:deleteConfig:${normalizedChannelType || channelType}`);
       return { success: true };
     } catch (error) {
       console.error('Failed to delete channel config:', error);
@@ -1370,6 +1388,7 @@ function registerOpenClawHandlers(): OpenClawPluginInstallerBridge {
   ipcMain.handle('channel:setEnabled', async (_, channelType: string, enabled: boolean) => {
     try {
       await setChannelEnabled(channelType, enabled);
+      scheduleGatewayRestart(gatewayManager, `channel:setEnabled:${normalizeChannelType(channelType) || channelType}`);
       return { success: true };
     } catch (error) {
       console.error('Failed to set channel enabled:', error);
@@ -1476,9 +1495,7 @@ function registerPresetInstallHandlers(
     const result = await presetInstaller.run(phase);
 
     if (result.success && result.installed.some((item) => item.startsWith('plugin:'))) {
-      await gatewayManager.restart().catch((error) => {
-        logger.warn('Failed to restart gateway after preset plugin install', error);
-      });
+      scheduleGatewayRestart(gatewayManager, 'presetInstall:run');
     }
 
     return result;
@@ -1489,9 +1506,7 @@ function registerPresetInstallHandlers(
     const result = await presetInstaller.retry(phase);
 
     if (result.success && result.installed.some((item) => item.startsWith('plugin:'))) {
-      await gatewayManager.restart().catch((error) => {
-        logger.warn('Failed to restart gateway after preset plugin retry', error);
-      });
+      scheduleGatewayRestart(gatewayManager, 'presetInstall:retry');
     }
 
     return result;
@@ -1701,9 +1716,7 @@ function registerFeishuOnboardingHandlers(
       logger.warn('Failed to update LawClaw managed channel settings after Feishu onboarding', error);
     }
 
-    await gatewayManager.restart().catch((error) => {
-      logger.warn('Failed to restart gateway after Feishu onboarding', error);
-    });
+    scheduleGatewayRestart(gatewayManager, 'feishu:onboardingConnected');
 
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('feishu:connected', data);
@@ -1763,9 +1776,7 @@ function registerWeixinOnboardingHandlers(
         );
       }
 
-      await gatewayManager.restart().catch((error) => {
-        logger.warn('Failed to restart gateway after clearing Weixin binding', error);
-      });
+      scheduleGatewayRestart(gatewayManager, 'weixin:clearBinding');
 
       return { success: true, status };
     } catch (error) {
@@ -1791,9 +1802,7 @@ function registerWeixinOnboardingHandlers(
       logger.warn('Failed to update LawClaw managed channel settings after Weixin onboarding', error);
     }
 
-    await gatewayManager.restart().catch((error) => {
-      logger.warn('Failed to restart gateway after Weixin onboarding', error);
-    });
+    scheduleGatewayRestart(gatewayManager, 'weixin:onboardingConnected');
 
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('weixin:connected', data);

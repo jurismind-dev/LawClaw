@@ -171,7 +171,7 @@ Download the latest version for your platform from OSS (China mirror):
 - **Mac x64**: https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-x64.dmg
 - **Mac arm64**: https://lawclaw.oss-cn-shanghai.aliyuncs.com/latest/LawClaw-mac-arm64.dmg
 
-Windows pre-built releases are code signed through the SignPath Foundation. This project uses the SignPath Foundation for code signing.
+Windows pre-built releases are code signed through Racent remote code signing.
 
 GitHub Releases remains available as a fallback download channel: [Releases](https://github.com/jurismind-dev/LawClaw/releases).
 

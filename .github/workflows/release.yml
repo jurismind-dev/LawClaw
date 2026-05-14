@@ -250,6 +250,65 @@ jobs:
             Start-Sleep -Seconds $delay
           }
 
+      - name: Prepare Racent Windows code signing
+        if: matrix.platform == 'win'
+        shell: pwsh
+        env:
+          SIGNTOOL_ACCESS_KEY: ${{ secrets.RACENT_ACCESS_KEY }}
+          SIGNTOOL_ACCESS_SECRET: ${{ secrets.RACENT_ACCESS_SECRET }}
+          SIGNTOOL_CERT_CODE: ${{ secrets.RACENT_CERT_CODE }}
+          RACENT_SIGNTOOL_BASE64: ${{ secrets.RACENT_SIGNTOOL_BASE64 }}
+          RACENT_SIGNTOOL_URL: ${{ secrets.RACENT_SIGNTOOL_URL }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          foreach ($name in @('SIGNTOOL_ACCESS_KEY', 'SIGNTOOL_ACCESS_SECRET', 'SIGNTOOL_CERT_CODE')) {
+            if ([string]::IsNullOrWhiteSpace((Get-Item "Env:$name").Value)) {
+              throw "Missing GitHub secret for $name"
+            }
+          }
+
+          $toolDir = Join-Path $PWD 'signtool'
+          New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
+          $toolPath = Join-Path $toolDir 'signtool.exe'
+
+          if (-not [string]::IsNullOrWhiteSpace($env:RACENT_SIGNTOOL_BASE64)) {
+            [IO.File]::WriteAllBytes($toolPath, [Convert]::FromBase64String($env:RACENT_SIGNTOOL_BASE64))
+          } elseif (-not [string]::IsNullOrWhiteSpace($env:RACENT_SIGNTOOL_URL)) {
+            $downloadPath = Join-Path $toolDir 'racent-signtool-download'
+            Invoke-WebRequest -Uri $env:RACENT_SIGNTOOL_URL -OutFile $downloadPath
+
+            $downloadFileName = [IO.Path]::GetFileName(([Uri]$env:RACENT_SIGNTOOL_URL).AbsolutePath)
+            if ($downloadFileName -like '*.zip') {
+              $extractDir = Join-Path $toolDir 'extracted'
+              New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+              Expand-Archive -Path $downloadPath -DestinationPath $extractDir -Force
+
+              $candidate = Get-ChildItem -Path $extractDir -Recurse -File -Filter '*.exe' |
+                Where-Object { $_.Name -match '^signtool.*\.exe$' } |
+                Select-Object -First 1
+
+              if ($null -eq $candidate) {
+                throw "No signtool executable found in downloaded Racent archive"
+              }
+
+              Copy-Item -Path $candidate.FullName -Destination $toolPath -Force
+            } else {
+              Copy-Item -Path $downloadPath -Destination $toolPath -Force
+            }
+          } else {
+            throw "Missing RACENT_SIGNTOOL_BASE64 or RACENT_SIGNTOOL_URL. Configure one of them as a GitHub secret."
+          }
+
+          if (-not (Test-Path $toolPath)) {
+            throw "Racent SignTool was not prepared at $toolPath"
+          }
+
+          "RACENT_SIGNTOOL_PATH=$toolPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SIGNTOOL_ACCESS_KEY=$env:SIGNTOOL_ACCESS_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SIGNTOOL_ACCESS_SECRET=$env:SIGNTOOL_ACCESS_SECRET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SIGNTOOL_CERT_CODE=$env:SIGNTOOL_CERT_CODE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Prepare macOS signing and notarization env
         if: matrix.platform == 'mac'
         id: mac_signing
@@ -337,7 +396,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm run bundle:preset-artifacts:offline
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Invoke-WithRetry { pnpm exec electron-builder --win --x64 --publish never }
+          Invoke-WithRetry { pnpm exec electron-builder --config electron-builder.racent.cjs --win --x64 --publish never }
 
       - name: Validate artifact file names include release tag version
         shell: bash
@@ -907,7 +966,7 @@ jobs:
             echo
             echo "### Windows"
             echo "- 安装包 (x64): \`LawClaw-*-win-x64.exe\`"
-            echo "- Windows 预构建版本使用 SignPath Foundation 进行代码签名。This project uses the SignPath Foundation for code signing."
+            echo "- Windows 预构建版本使用锐成信息远程代码签名服务进行代码签名。"
             echo
             echo "## 安装提示"
             echo

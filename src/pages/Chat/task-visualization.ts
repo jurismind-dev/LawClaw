@@ -1,5 +1,10 @@
 import type { RawMessage, ToolStatus } from '@/stores/chat';
-import { extractThinking, extractToolUse } from './message-utils';
+import {
+  extractText,
+  extractTextSegments,
+  extractThinkingSegments,
+  extractToolUse,
+} from './message-utils';
 
 export type TaskStepStatus = 'running' | 'completed' | 'error';
 
@@ -7,26 +12,101 @@ export interface TaskStep {
   id: string;
   label: string;
   status: TaskStepStatus;
-  kind: 'thinking' | 'tool' | 'system';
+  kind: 'thinking' | 'tool' | 'system' | 'message';
   detail?: string;
   depth: number;
   parentId?: string;
+  url?: string;
 }
 
-const MAX_TASK_STEPS = 8;
+export function findReplyMessageIndex(messages: RawMessage[], hasStreamingReply: boolean): number {
+  if (hasStreamingReply) return -1;
+  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+    const message = messages[idx];
+    if (!message || message.role !== 'assistant') continue;
+    if (extractText(message).trim().length === 0) continue;
+    return idx;
+  }
+  return -1;
+}
+
+export function hasActiveStreamingReplyInRun(
+  isLatestOpenRun: boolean,
+  hasAnyStreamContent: boolean,
+  streamingReplyText: string | null
+): boolean {
+  return isLatestOpenRun && (hasAnyStreamContent || streamingReplyText != null);
+}
+
+export function buildRunSegmentMessageIndices(
+  messages: RawMessage[],
+  nextUserMessageIndexes: number[],
+  isRunTrigger: (message: RawMessage, index: number) => boolean
+): Set<number> {
+  const indices = new Set<number>();
+  messages.forEach((message, triggerIndex) => {
+    if (!isRunTrigger(message, triggerIndex)) return;
+    const nextUserIndex = nextUserMessageIndexes[triggerIndex];
+    const segmentEnd = nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1;
+    for (let idx = triggerIndex + 1; idx <= segmentEnd; idx += 1) {
+      indices.add(idx);
+    }
+  });
+
+  let firstTriggerIndex = -1;
+  for (let idx = 0; idx < messages.length; idx += 1) {
+    if (isRunTrigger(messages[idx], idx)) {
+      firstTriggerIndex = idx;
+      break;
+    }
+  }
+  if (firstTriggerIndex > 0) {
+    for (let idx = 0; idx < firstTriggerIndex; idx += 1) {
+      if (messages[idx]?.role === 'assistant') {
+        indices.add(idx);
+      }
+    }
+  }
+
+  return indices;
+}
+
+export function getPostTriggerSegmentMessages(
+  messages: RawMessage[],
+  triggerIndex: number,
+  nextUserIndex: number
+): RawMessage[] {
+  const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
+  return messages.slice(triggerIndex + 1, segmentEnd);
+}
+
+export function getRunSegmentMessages(
+  messages: RawMessage[],
+  triggerIndex: number,
+  nextUserIndex: number,
+  isRunTrigger: (message: RawMessage, index: number) => boolean
+): RawMessage[] {
+  const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
+  const core = messages.slice(triggerIndex + 1, segmentEnd);
+  const hasEarlierUser = messages.some((message, index) => index < triggerIndex && isRunTrigger(message, index));
+  if (hasEarlierUser || triggerIndex === 0) return core;
+  const orphans = messages.slice(0, triggerIndex).filter((message) => message.role === 'assistant');
+  return [...orphans, ...core];
+}
 
 interface DeriveTaskStepsInput {
   messages: RawMessage[];
   streamingMessage: unknown | null;
   streamingTools: ToolStatus[];
-  sending: boolean;
-  pendingFinal: boolean;
-  showThinking: boolean;
+  sending?: boolean;
+  pendingFinal?: boolean;
+  showThinking?: boolean;
+  omitLastStreamingMessageSegment?: boolean;
 }
 
 function normalizeText(text: string | null | undefined): string | undefined {
   if (!text) return undefined;
-  const normalized = text.replace(/\s+/g, ' ').trim();
+  const normalized = text.replace(/[ \t]+/g, ' ').trim();
   return normalized || undefined;
 }
 
@@ -97,7 +177,7 @@ function attachTopology(steps: TaskStep[]): TaskStep[] {
       continue;
     }
 
-    if (step.kind === 'thinking') {
+    if (step.kind === 'thinking' || step.kind === 'message') {
       withTopology.push({
         ...step,
         depth: activeBranchNodeId ? 3 : 1,
@@ -126,13 +206,40 @@ function attachTopology(steps: TaskStep[]): TaskStep[] {
   return withTopology;
 }
 
+function appendDetailSegments(
+  segments: string[],
+  options: {
+    idPrefix: string;
+    label: string;
+    kind: Extract<TaskStep['kind'], 'thinking' | 'message'>;
+    running: boolean;
+    upsertStep: (step: TaskStep) => void;
+  }
+): void {
+  const normalizedSegments = segments
+    .map((segment) => normalizeText(segment))
+    .filter((segment): segment is string => !!segment);
+
+  normalizedSegments.forEach((detail, index) => {
+    options.upsertStep({
+      id: `${options.idPrefix}-${index}`,
+      label: options.label,
+      status: options.running && index === normalizedSegments.length - 1 ? 'running' : 'completed',
+      kind: options.kind,
+      detail,
+      depth: 1,
+    });
+  });
+}
+
 export function deriveTaskSteps({
   messages,
   streamingMessage,
   streamingTools,
-  sending,
-  pendingFinal,
-  showThinking,
+  sending = false,
+  pendingFinal = false,
+  showThinking = true,
+  omitLastStreamingMessageSegment = false,
 }: DeriveTaskStepsInput): TaskStep[] {
   const steps: TaskStep[] = [];
   const stepIndexById = new Map<string, number>();
@@ -153,55 +260,72 @@ export function deriveTaskSteps({
     };
   };
 
-  const streamMessage = streamingMessage && typeof streamingMessage === 'object'
-    ? (streamingMessage as RawMessage)
-    : null;
+  const streamMessage =
+    streamingMessage && typeof streamingMessage === 'object' ? (streamingMessage as RawMessage) : null;
+  const replyIndex = findReplyMessageIndex(messages, streamMessage != null);
 
-  const relevantAssistantMessages = messages.filter((message) => {
-    if (!message || message.role !== 'assistant') return false;
-    if (extractToolUse(message).length > 0) return true;
-    return showThinking && !!extractThinking(message);
-  });
+  for (const [messageIndex, message] of messages.entries()) {
+    if (!message || message.role !== 'assistant') continue;
 
-  for (const [messageIndex, assistantMessage] of relevantAssistantMessages.entries()) {
     if (showThinking) {
-      const thinking = extractThinking(assistantMessage);
-      if (thinking) {
-        upsertStep({
-          id: `history-thinking-${assistantMessage.id || messageIndex}`,
-          label: 'Thinking',
-          status: 'completed',
-          kind: 'thinking',
-          detail: normalizeText(thinking),
-          depth: 1,
-        });
-      }
+      appendDetailSegments(extractThinkingSegments(message), {
+        idPrefix: `history-thinking-${message.id || messageIndex}`,
+        label: 'Thinking',
+        kind: 'thinking',
+        running: false,
+        upsertStep,
+      });
     }
 
-    extractToolUse(assistantMessage).forEach((tool, index) => {
+    const toolUses = extractToolUse(message);
+    const narrationSegments = extractTextSegments(message);
+    const graphNarrationSegments =
+      messageIndex === replyIndex ? narrationSegments.slice(0, -1) : narrationSegments;
+    appendDetailSegments(graphNarrationSegments, {
+      idPrefix: `history-message-${message.id || messageIndex}`,
+      label: 'Message',
+      kind: 'message',
+      running: false,
+      upsertStep,
+    });
+
+    toolUses.forEach((tool, index) => {
+      const input = tool.input as Record<string, unknown>;
+      const url = tool.name === 'web_fetch' && typeof input?.url === 'string' ? input.url : undefined;
       upsertStep({
-        id: tool.id || makeToolId(`history-tool-${assistantMessage.id || messageIndex}`, tool.name, index),
+        id: tool.id || makeToolId(`history-tool-${message.id || messageIndex}`, tool.name, index),
         label: tool.name,
         status: 'completed',
         kind: 'tool',
         detail: normalizeText(JSON.stringify(tool.input, null, 2)),
         depth: 1,
+        url,
       });
     });
   }
 
-  if (streamMessage && showThinking) {
-    const thinking = extractThinking(streamMessage);
-    if (thinking) {
-      upsertStep({
-        id: 'stream-thinking',
+  if (streamMessage) {
+    if (showThinking && !omitLastStreamingMessageSegment) {
+      appendDetailSegments(extractThinkingSegments(streamMessage), {
+        idPrefix: 'stream-thinking',
         label: 'Thinking',
-        status: 'running',
         kind: 'thinking',
-        detail: normalizeText(thinking),
-        depth: 1,
+        running: true,
+        upsertStep,
       });
     }
+
+    const streamNarrationSegments = extractTextSegments(streamMessage);
+    const graphStreamNarrationSegments = omitLastStreamingMessageSegment
+      ? streamNarrationSegments.slice(0, -1)
+      : streamNarrationSegments;
+    appendDetailSegments(graphStreamNarrationSegments, {
+      idPrefix: 'stream-message',
+      label: 'Message',
+      kind: 'message',
+      running: !omitLastStreamingMessageSegment,
+      upsertStep,
+    });
   }
 
   const activeToolIds = new Set<string>();
@@ -226,6 +350,8 @@ export function deriveTaskSteps({
     extractToolUse(streamMessage).forEach((tool, index) => {
       const id = tool.id || makeToolId('stream-tool', tool.name, index);
       if (activeToolIds.has(id) || activeToolNamesWithoutIds.has(tool.name)) return;
+      const input = tool.input as Record<string, unknown>;
+      const url = tool.name === 'web_fetch' && typeof input?.url === 'string' ? input.url : undefined;
       upsertStep({
         id,
         label: tool.name,
@@ -233,6 +359,7 @@ export function deriveTaskSteps({
         kind: 'tool',
         detail: normalizeText(JSON.stringify(tool.input, null, 2)),
         depth: 1,
+        url,
       });
     });
   }
@@ -257,8 +384,5 @@ export function deriveTaskSteps({
     });
   }
 
-  const withTopology = attachTopology(steps);
-  return withTopology.length > MAX_TASK_STEPS
-    ? withTopology.slice(-MAX_TASK_STEPS)
-    : withTopology;
+  return attachTopology(steps);
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { Chat } from '@/pages/Chat';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -19,7 +19,41 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
 }));
 
 vi.mock('@/pages/Chat/ChatMessage', () => ({
-  ChatMessage: () => <div data-testid="chat-message" />,
+  ChatMessage: ({
+    message,
+    textOverride,
+    isStreaming,
+  }: {
+    message: { role?: string; content?: unknown };
+    textOverride?: string;
+    isStreaming?: boolean;
+  }) => {
+    const content = message.content;
+    const text = textOverride ?? (
+      typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content
+              .map((block) => {
+                if (block && typeof block === 'object' && 'text' in block) {
+                  return String((block as { text?: unknown }).text ?? '');
+                }
+                return '';
+              })
+              .filter(Boolean)
+              .join('\n')
+          : ''
+    );
+    return (
+      <div
+        data-testid="chat-message"
+        data-role={message.role}
+        data-streaming={isStreaming ? 'true' : 'false'}
+      >
+        {text}
+      </div>
+    );
+  },
 }));
 
 vi.mock('@/components/common/LoadingSpinner', () => ({
@@ -80,5 +114,38 @@ describe('chat page cleanup behavior', () => {
     expect(cleanupEmptySession).not.toHaveBeenCalled();
     view.unmount();
     expect(cleanupEmptySession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render the same assistant reply from history and streaming at the same time', () => {
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          id: 'user-1',
+          content: '审核合同',
+        },
+        {
+          role: 'assistant',
+          id: 'assistant-history-1',
+          content: '好的，开始审核合同。创建副本并提取文本。',
+        },
+      ],
+      sending: true,
+      activeRunId: 'run-1',
+      streamingMessage: {
+        role: 'assistant',
+        content: '好的，开始审核合同。创建副本并提取文本。',
+      },
+      pendingFinal: false,
+    });
+
+    render(<Chat />);
+
+    const assistantMessages = screen
+      .getAllByTestId('chat-message')
+      .filter((element) => element.getAttribute('data-role') === 'assistant');
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0]).toHaveAttribute('data-streaming', 'true');
+    expect(assistantMessages[0]).toHaveTextContent('好的，开始审核合同。创建副本并提取文本。');
   });
 });

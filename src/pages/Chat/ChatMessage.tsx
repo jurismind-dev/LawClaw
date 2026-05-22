@@ -18,6 +18,7 @@ import { extractText, extractThinking, extractImages, extractToolUse, formatTime
 interface ChatMessageProps {
   message: RawMessage;
   showThinking: boolean;
+  textOverride?: string;
   suppressToolCards?: boolean;
   suppressProcessAttachments?: boolean;
   isStreaming?: boolean;
@@ -43,6 +44,7 @@ function imageSrc(img: ExtractedImage): string | null {
 export const ChatMessage = memo(function ChatMessage({
   message,
   showThinking,
+  textOverride,
   suppressToolCards = false,
   suppressProcessAttachments = false,
   isStreaming = false,
@@ -51,7 +53,7 @@ export const ChatMessage = memo(function ChatMessage({
   const isUser = message.role === 'user';
   const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
   const isToolResult = role === 'toolresult' || role === 'tool_result';
-  const text = extractText(message);
+  const text = textOverride ?? extractText(message);
   const hasText = text.trim().length > 0;
   const thinking = extractThinking(message);
   const images = extractImages(message);

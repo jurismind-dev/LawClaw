@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -164,6 +164,56 @@ describe('feishu official plugin installer', () => {
     };
     expect(installedManifest.version).toBe(FEISHU_OFFICIAL_PLUGIN_VERSION);
     expect(existsSync(join(installedPluginDir, 'stale.txt'))).toBe(false);
+  });
+
+  it('quarantines duplicate feishu plugin directories before gateway startup', async () => {
+    const resourcesDir = join(tempRoot, 'resources');
+    const openclawConfigDir = join(tempRoot, '.openclaw');
+    const installedPluginDir = join(openclawConfigDir, 'extensions', 'openclaw-lark');
+    const duplicatePluginDir = join(openclawConfigDir, 'extensions', 'feishu-openclaw-plugin');
+
+    for (const pluginDir of [installedPluginDir, duplicatePluginDir]) {
+      mkdirSync(join(pluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk'), { recursive: true });
+      mkdirSync(join(pluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs'), { recursive: true });
+      mkdirSync(join(pluginDir, 'node_modules', 'zod'), { recursive: true });
+      writeFileSync(
+        join(pluginDir, 'package.json'),
+        `${JSON.stringify({
+          name: '@larksuite/openclaw-lark',
+          version: FEISHU_OFFICIAL_PLUGIN_VERSION,
+        }, null, 2)}\n`,
+        'utf-8'
+      );
+      writeFileSync(join(pluginDir, 'openclaw.plugin.json'), '{"id":"openclaw-lark"}\n', 'utf-8');
+      writeFileSync(join(pluginDir, 'index.js'), 'export {};\n', 'utf-8');
+      writeFileSync(join(pluginDir, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'), '{}\n', 'utf-8');
+      writeFileSync(
+        join(pluginDir, 'node_modules', '@sinclair', 'typebox', 'build', 'cjs', 'index.js'),
+        'module.exports = {};\n',
+        'utf-8'
+      );
+      writeFileSync(join(pluginDir, 'node_modules', 'zod', 'package.json'), '{}\n', 'utf-8');
+    }
+
+    const runCommand = vi.fn(async () => ({ success: true, stdout: '', stderr: '' }));
+    const result = await repairInstalledFeishuOfficialPluginIfNeeded({
+      openClawConfigDir: openclawConfigDir,
+      isPackaged: false,
+      resourcesDir,
+      runCommand,
+    });
+
+    expect(result.repaired).toBe(true);
+    expect(result.reason).toBe('repaired');
+    expect(result.quarantinedDuplicateDirs).toHaveLength(1);
+    expect(existsSync(installedPluginDir)).toBe(true);
+    expect(existsSync(duplicatePluginDir)).toBe(false);
+    expect(
+      readdirSync(join(openclawConfigDir, 'extensions')).some((name) =>
+        name.startsWith('feishu-openclaw-plugin.disabled-duplicate-')
+      )
+    ).toBe(true);
+    expect(runCommand).not.toHaveBeenCalled();
   });
 
   it('repairs an installed feishu plugin when ESM runtime imports are extensionless', async () => {

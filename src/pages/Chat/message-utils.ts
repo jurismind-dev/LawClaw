@@ -25,6 +25,104 @@ function cleanUserText(text: string): string {
     .trim();
 }
 
+function stripAssistantMediaTags(text: string): string {
+  if (!text) return text;
+  const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
+  const tagged = new RegExp(
+    `(^|[\\s(\\[{>])(?:MEDIA|media):(?:\\/|~\\/)[^\\n"'()\\[\\],<>]*?\\.(?:${exts})(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`,
+    'g'
+  );
+  return text
+    .replace(tagged, (_, lead: string) => lead)
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function normalizeProgressiveText(text: string | undefined): string {
+  return typeof text === 'string' ? text.replace(/\r\n/g, '\n').trim() : '';
+}
+
+function compactProgressiveParts(parts: string[]): string[] {
+  const compacted: string[] = [];
+
+  for (const part of parts) {
+    const current = normalizeProgressiveText(part);
+    if (!current) continue;
+
+    const previous = compacted.at(-1);
+    if (!previous) {
+      compacted.push(part);
+      continue;
+    }
+
+    const normalizedPrevious = normalizeProgressiveText(previous);
+    if (!normalizedPrevious) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    if (current === normalizedPrevious || normalizedPrevious.startsWith(current)) {
+      continue;
+    }
+
+    if (current.startsWith(normalizedPrevious)) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    compacted.push(part);
+  }
+
+  return compacted;
+}
+
+function splitProgressiveParts(parts: string[]): string[] {
+  const segments: string[] = [];
+  let previous = '';
+
+  for (const part of parts) {
+    const current = normalizeProgressiveText(part);
+    if (!current) continue;
+
+    if (!previous) {
+      segments.push(current);
+      previous = current;
+      continue;
+    }
+
+    if (current === previous || previous.startsWith(current)) {
+      continue;
+    }
+
+    if (current.startsWith(previous)) {
+      const incremental = current.slice(previous.length).trim();
+      if (incremental) {
+        segments.push(incremental);
+      }
+      previous = current;
+      continue;
+    }
+
+    segments.push(current);
+    previous = current;
+  }
+
+  return segments;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function consumeLeadingSegment(text: string, segment: string): number {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return 0;
+  const pattern = new RegExp(`^\\s*${tokens.map(escapeRegExp).join('\\s+')}\\s*`, 'u');
+  const match = text.match(pattern);
+  return match ? match[0].length : 0;
+}
+
 /**
  * Extract displayable text from a message's content field.
  * Handles both string content and array-of-blocks content.
@@ -49,7 +147,7 @@ export function extractText(message: RawMessage | unknown): string {
         }
       }
     }
-    const combined = parts.join('\n\n');
+    const combined = compactProgressiveParts(parts).join('\n\n');
     result = combined.trim().length > 0 ? combined : '';
   } else if (typeof msg.text === 'string') {
     // Fallback: try .text field
@@ -59,9 +157,46 @@ export function extractText(message: RawMessage | unknown): string {
   // Strip Gateway metadata from user messages for clean display
   if (isUser && result) {
     result = cleanUserText(result);
+  } else if (!isUser && result) {
+    result = stripAssistantMediaTags(result);
   }
 
   return result;
+}
+
+export function extractTextSegments(message: RawMessage | unknown): string[] {
+  if (!message || typeof message !== 'object') return [];
+  const msg = message as Record<string, unknown>;
+  const content = msg.content;
+  const isUser = msg.role === 'user';
+
+  let segments: string[] = [];
+
+  if (typeof content === 'string') {
+    const cleaned = content.trim();
+    segments = cleaned ? [cleaned] : [];
+  } else if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content as ContentBlock[]) {
+      if (block.type === 'text' && block.text && block.text.trim()) {
+        parts.push(block.text);
+      }
+    }
+    segments = splitProgressiveParts(parts);
+  } else if (typeof msg.text === 'string') {
+    const cleaned = msg.text.trim();
+    segments = cleaned ? [cleaned] : [];
+  }
+
+  if (isUser) {
+    return segments
+      .map((segment) => cleanUserText(segment))
+      .filter((segment) => segment.length > 0);
+  }
+
+  return segments
+    .map((segment) => stripAssistantMediaTags(segment))
+    .filter((segment) => segment.length > 0);
 }
 
 /**
@@ -85,8 +220,45 @@ export function extractThinking(message: RawMessage | unknown): string | null {
     }
   }
 
-  const combined = parts.join('\n\n').trim();
+  const combined = compactProgressiveParts(parts).join('\n\n').trim();
   return combined.length > 0 ? combined : null;
+}
+
+export function extractThinkingSegments(message: RawMessage | unknown): string[] {
+  if (!message || typeof message !== 'object') return [];
+  const msg = message as Record<string, unknown>;
+  const content = msg.content;
+
+  if (!Array.isArray(content)) return [];
+
+  const parts: string[] = [];
+  for (const block of content as ContentBlock[]) {
+    if (block.type === 'thinking' && block.thinking) {
+      const cleaned = block.thinking.trim();
+      if (cleaned) {
+        parts.push(cleaned);
+      }
+    }
+  }
+
+  return splitProgressiveParts(parts);
+}
+
+export function stripProcessMessagePrefix(text: string, processSegments: string[]): string {
+  let remaining = text;
+  let strippedAny = false;
+
+  for (const segment of processSegments) {
+    const normalizedSegment = normalizeProgressiveText(segment);
+    if (!normalizedSegment) continue;
+    const consumed = consumeLeadingSegment(remaining, normalizedSegment);
+    if (consumed === 0) break;
+    remaining = remaining.slice(consumed);
+    strippedAny = true;
+  }
+
+  const trimmed = remaining.trimStart();
+  return strippedAny && trimmed ? trimmed : text;
 }
 
 /**
@@ -147,6 +319,10 @@ export function extractImages(message: RawMessage | unknown): Array<{ mimeType: 
   }
 
   return images;
+}
+
+export function normalizeMessageRole(role: unknown): string {
+  return typeof role === 'string' ? role.trim().toLowerCase() : '';
 }
 
 /**

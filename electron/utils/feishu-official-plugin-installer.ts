@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -169,6 +170,7 @@ export interface RepairInstalledFeishuOfficialPluginResult {
   reason: 'not-installed' | 'healthy' | 'repaired' | 'failed';
   pluginDir: string;
   missingPaths: string[];
+  quarantinedDuplicateDirs?: string[];
   error?: string;
   details?: string;
 }
@@ -209,6 +211,52 @@ function parseJsonObject(filePath: string): JsonObject | null {
   } catch {
     return null;
   }
+}
+
+function getPluginManifestId(packageDir: string): string | null {
+  const manifest = parseJsonObject(join(packageDir, 'openclaw.plugin.json'));
+  const id = manifest?.id;
+  return typeof id === 'string' && id.trim() ? id.trim() : null;
+}
+
+function getNextQuarantineDirPath(basePath: string): string {
+  let candidate = `${basePath}.disabled-duplicate-${Date.now()}`;
+  let index = 1;
+  while (existsSync(candidate)) {
+    candidate = `${basePath}.disabled-duplicate-${Date.now()}-${index}`;
+    index++;
+  }
+  return candidate;
+}
+
+function quarantineDuplicateFeishuOfficialPluginDirs(openClawConfigDir: string): string[] {
+  const extensionsDir = join(openClawConfigDir, 'extensions');
+  if (!existsSync(extensionsDir)) {
+    return [];
+  }
+
+  const quarantinedDirs: string[] = [];
+  const entries = readdirSync(extensionsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (
+      !entry.isDirectory()
+      || entry.name === FEISHU_OFFICIAL_PLUGIN_ID
+      || entry.name.includes('.disabled-duplicate-')
+    ) {
+      continue;
+    }
+
+    const candidateDir = join(extensionsDir, entry.name);
+    if (getPluginManifestId(candidateDir) !== FEISHU_OFFICIAL_PLUGIN_ID) {
+      continue;
+    }
+
+    const quarantineDir = getNextQuarantineDirPath(candidateDir);
+    renameSync(candidateDir, quarantineDir);
+    quarantinedDirs.push(quarantineDir);
+  }
+
+  return quarantinedDirs;
 }
 
 function formatMissingRuntimePaths(missingPaths: string[]): string {
@@ -692,6 +740,19 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
     };
   }
 
+  let quarantinedDuplicateDirs: string[] = [];
+  try {
+    quarantinedDuplicateDirs = quarantineDuplicateFeishuOfficialPluginDirs(options.openClawConfigDir);
+  } catch (error) {
+    return {
+      repaired: false,
+      reason: 'failed',
+      pluginDir,
+      missingPaths: [],
+      error: `Failed to quarantine duplicate Feishu official plugin dirs: ${String(error)}`,
+    };
+  }
+
   const installedVersion = getInstalledFeishuOfficialPluginVersion(options.openClawConfigDir);
   const missingPaths = getFeishuOfficialPluginMissingRuntimePaths(pluginDir);
   const invalidEntryPaths = getFeishuOfficialPluginInvalidEntryPaths(pluginDir);
@@ -700,6 +761,16 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
     && invalidEntryPaths.length === 0
     && installedVersion === FEISHU_OFFICIAL_PLUGIN_VERSION
   ) {
+    if (quarantinedDuplicateDirs.length > 0) {
+      return {
+        repaired: true,
+        reason: 'repaired',
+        pluginDir,
+        missingPaths: [],
+        quarantinedDuplicateDirs,
+      };
+    }
+
     return {
       repaired: false,
       reason: 'healthy',
@@ -715,6 +786,7 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
       reason: 'failed',
       pluginDir,
       missingPaths,
+      quarantinedDuplicateDirs,
       error: prepared.error || 'Failed to prepare Feishu official plugin repair payload',
       details: prepared.details,
     };
@@ -757,6 +829,7 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
         reason: 'failed',
         pluginDir,
         missingPaths: missingAfterRepair,
+        quarantinedDuplicateDirs,
         error: 'Feishu official plugin repair completed but validation failed',
         details: details.join('\n'),
       };
@@ -767,6 +840,7 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
       reason: 'repaired',
       pluginDir,
       missingPaths,
+      quarantinedDuplicateDirs,
     };
   } catch (error) {
     return {
@@ -774,6 +848,7 @@ export async function repairInstalledFeishuOfficialPluginIfNeeded(
       reason: 'failed',
       pluginDir,
       missingPaths,
+      quarantinedDuplicateDirs,
       error: String(error),
     };
   } finally {

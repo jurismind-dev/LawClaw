@@ -10,8 +10,9 @@ describe('chat layout source guard', () => {
     expect(chatPageSource).toContain('className="flex h-full min-h-0 flex-col"');
     expect(chatPageSource).toContain('flex w-full justify-end');
     expect(chatPageSource).toContain('relative w-full rounded-lg');
-    expect(chatPageSource).toContain("const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);");
-    expect(chatPageSource).toContain('className="min-h-0 flex-1 overflow-hidden px-3 py-2"');
+    expect(chatPageSource).toContain('const stickToBottom = useStickToBottomInstant(currentSessionKey);');
+    expect(chatPageSource).toContain('const { contentRef, scrollRef } = stickToBottom;');
+    expect(chatPageSource).toContain('className="relative min-h-0 flex-1 overflow-hidden px-3 py-2"');
     expect(chatPageSource).toContain('ref={scrollRef}');
     expect(chatPageSource).toContain('className="h-full min-h-0 overflow-y-auto"');
     expect(chatPageSource).toContain('ref={contentRef}');

@@ -5,7 +5,7 @@
  * the toolbar keeps quick refresh and thinking controls.
  */
 import { useEffect } from 'react';
-import { AlertCircle, ExternalLink, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
+import { AlertCircle, ArrowDownToLine, ExternalLink, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
 import { BotAvatar } from '@/components/common/BotAvatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,8 +17,22 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
-import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
-import { deriveTaskSteps } from './task-visualization';
+import {
+  extractImages,
+  extractText,
+  extractThinking,
+  extractToolUse,
+  normalizeMessageRole,
+  stripProcessMessagePrefix,
+} from './message-utils';
+import {
+  buildRunSegmentMessageIndices,
+  deriveTaskSteps,
+  findReplyMessageIndex,
+  getPostTriggerSegmentMessages,
+  getRunSegmentMessages,
+  hasActiveStreamingReplyInRun,
+} from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { useAgentPresetMigrationStore } from '@/stores/agent-preset-migration';
 import { GATEWAY_SLOW_START_GUIDE_URL } from '@/lib/gateway-support';
@@ -35,6 +49,12 @@ type GraphStepCacheEntry = {
   triggerIndex: number;
 };
 
+type UserRunCard = GraphStepCacheEntry & {
+  active: boolean;
+  messageStepTexts: string[];
+  streamingReplyText: string | null;
+};
+
 const graphStepCacheStore = new Map<string, Record<string, GraphStepCacheEntry>>();
 
 function isRenderableChatMessage(message: RawMessage): boolean {
@@ -46,6 +66,20 @@ function isRenderableChatMessage(message: RawMessage): boolean {
   if (extractToolUse(message).length > 0) return true;
   if (extractImages(message).length > 0) return true;
   return (message._attachedFiles || []).length > 0;
+}
+
+function getPrimaryMessageStepTexts(steps: TaskStep[]): string[] {
+  return steps
+    .filter((step) => step.kind === 'message' && step.parentId === 'agent-run' && !!step.detail)
+    .map((step) => step.detail!);
+}
+
+function isRealUserMessage(message: RawMessage): boolean {
+  if (normalizeMessageRole(message.role) !== 'user') return false;
+  const content = message.content;
+  if (!Array.isArray(content)) return true;
+  const blocks = content as Array<{ type?: string }>;
+  return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
 }
 
 export function Chat() {
@@ -76,7 +110,9 @@ export function Chat() {
   const isCurrentWarningVisible = useAgentPresetMigrationStore((s) => s.isCurrentWarningVisible);
   const dismissCurrentWarning = useAgentPresetMigrationStore((s) => s.dismissCurrentWarning);
   const agents = useAgentsStore((s) => s.agents);
-  const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
+  const stickToBottom = useStickToBottomInstant(currentSessionKey);
+  const { contentRef, scrollRef } = stickToBottom;
+  const { scrollToBottom, isAtBottom } = stickToBottom;
   const minLoading = useMinLoading(loading && messages.length > 0);
   const graphStepCache = graphStepCacheStore.get(currentSessionKey) ?? {};
   const hasRenderableMessages = messages.some(isRenderableChatMessage);
@@ -112,6 +148,7 @@ export function Chat() {
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
+  const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
   const isTaskRunning = sending || pendingFinal || activeRunId !== null;
   const isStartupHistoryLoading = isGatewayRunning
     && !hasRenderableMessages
@@ -119,43 +156,136 @@ export function Chat() {
     && (sessionsLoading || startupHistoryLoading || !hasAppliedStartupDefault);
   const hasAnyStreamContent =
     hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
+  const shouldRenderStreaming =
+    isTaskRunning && (hasStreamText || hasStreamTools || hasStreamImages || hasStreamToolStatus);
+  const showScrollToLatest = (hasRenderableMessages || isTaskRunning) && !isAtBottom;
   const nextUserMessageIndexes = new Array<number>(messages.length).fill(-1);
   let nextUserMessageIndex = -1;
   for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
     nextUserMessageIndexes[idx] = nextUserMessageIndex;
-    if (messages[idx]?.role === 'user') {
+    if (isRealUserMessage(messages[idx])) {
       nextUserMessageIndex = idx;
     }
   }
 
-  const userRunCards = messages.flatMap((message, idx) => {
-    if (message.role !== 'user') return [];
+  const isRunTrigger = (message: RawMessage, index: number) => {
+    void index;
+    return isRealUserMessage(message);
+  };
+
+  const runSegmentMessageIndices = buildRunSegmentMessageIndices(
+    messages,
+    nextUserMessageIndexes,
+    isRunTrigger
+  );
+  const foldedNarrationIndices = new Set<number>();
+
+  const userRunCards: UserRunCard[] = messages.flatMap((message, idx) => {
+    if (!isRealUserMessage(message)) return [];
 
     const runKey = message.id
       ? `msg-${message.id}`
       : `${currentSessionKey}:trigger-${idx}`;
     const nextUserIndex = nextUserMessageIndexes[idx];
-    const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
-    const segmentMessages = messages.slice(idx + 1, segmentEnd);
-    const replyIndexOffset = segmentMessages.findIndex((candidate) => candidate.role === 'assistant');
-    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
-    const isLatestOpenRun = nextUserIndex === -1 && (isTaskRunning || hasAnyStreamContent);
-    const steps = deriveTaskSteps({
-      messages: segmentMessages,
-      streamingMessage: isLatestOpenRun ? streamingMessage : null,
-      streamingTools: isLatestOpenRun ? streamingTools : [],
-      sending: isLatestOpenRun ? sending : false,
-      pendingFinal: isLatestOpenRun ? pendingFinal : false,
-      showThinking,
+    const postTriggerMessages = getPostTriggerSegmentMessages(messages, idx, nextUserIndex);
+    const segmentMessages = getRunSegmentMessages(messages, idx, nextUserIndex, isRunTrigger);
+    const hasToolActivity = postTriggerMessages.some(
+      (candidate) => candidate.role === 'assistant' && extractToolUse(candidate).length > 0
+    );
+    let lastToolUseOffset = -1;
+    for (let offset = postTriggerMessages.length - 1; offset >= 0; offset -= 1) {
+      const candidate = postTriggerMessages[offset];
+      if (candidate.role === 'assistant' && extractToolUse(candidate).length > 0) {
+        lastToolUseOffset = offset;
+        break;
+      }
+    }
+    const hasFinalReply = postTriggerMessages.some((candidate, offset) => {
+      if (offset <= lastToolUseOffset) return false;
+      if (candidate.role !== 'assistant') return false;
+      if (extractText(candidate).trim().length === 0) return false;
+      const content = candidate.content;
+      if (!Array.isArray(content)) return true;
+      return !(content as Array<{ type?: string }>).some(
+        (block) => block.type === 'tool_use' || block.type === 'toolCall'
+      );
     });
+    const runStillExecutingTools = hasToolActivity && !hasFinalReply;
+    const isLatestRunSegment = nextUserIndex === -1;
+    const isLatestOpenRun =
+      isLatestRunSegment &&
+      (isTaskRunning || hasAnyStreamContent || (runStillExecutingTools && !!activeRunId));
+
+    const buildSteps = (omitLastStreamingMessageSegment: boolean): TaskStep[] =>
+      deriveTaskSteps({
+        messages: segmentMessages,
+        streamingMessage: isLatestOpenRun ? streamingMessage : null,
+        streamingTools: isLatestOpenRun ? streamingTools : [],
+        sending: isLatestOpenRun ? sending : false,
+        pendingFinal: isLatestOpenRun ? pendingFinal : false,
+        showThinking,
+        omitLastStreamingMessageSegment: isLatestOpenRun ? omitLastStreamingMessageSegment : false,
+      });
+
+    const allToolsCompleted = streamingTools.length > 0 && !hasRunningStreamToolStatus;
+    const canPromoteStreamToBubble =
+      pendingFinal ||
+      allToolsCompleted ||
+      hasToolActivity ||
+      (!hasToolActivity && (hasStreamText || hasStreamImages));
+    const rawStreamingReplyCandidate =
+      isLatestOpenRun &&
+      canPromoteStreamToBubble &&
+      (hasStreamText || hasStreamImages) &&
+      streamTools.length === 0 &&
+      !hasRunningStreamToolStatus;
+
+    let steps = buildSteps(rawStreamingReplyCandidate);
+    let streamingReplyText: string | null = null;
+    if (rawStreamingReplyCandidate) {
+      const trimmedReplyText = stripProcessMessagePrefix(streamText, getPrimaryMessageStepTexts(steps));
+      if (trimmedReplyText.trim().length > 0 || hasStreamImages) {
+        streamingReplyText = trimmedReplyText;
+      } else {
+        steps = buildSteps(false);
+      }
+    }
+
+    const hasActiveStreamingReply = hasActiveStreamingReplyInRun(
+      isLatestOpenRun,
+      hasAnyStreamContent,
+      streamingReplyText
+    );
+    const replyIndexOffset = findReplyMessageIndex(postTriggerMessages, hasActiveStreamingReply);
+    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
 
     const segmentAgentLabel =
       agents.find((agent) => agent.id === currentAgentId)?.name || currentAgentId;
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
 
     if (steps.length === 0) {
+      if (isLatestOpenRun && streamingReplyText == null) {
+        const historyReplyOffset = findReplyMessageIndex(postTriggerMessages, false);
+        if (historyReplyOffset >= 0 && !hasActiveStreamingReply) {
+          return [];
+        }
+        return [{
+          triggerIndex: idx,
+          replyIndex,
+          active: true,
+          agentLabel: segmentAgentLabel,
+          sessionLabel: segmentSessionLabel,
+          segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
+          steps: [],
+          messageStepTexts: [],
+          streamingReplyText: null,
+        }];
+      }
       const cached = graphStepCache[runKey];
       if (!cached) return [];
+      const cleanedSteps = cached.steps.filter(
+        (step) => !(step.kind === 'message' && step.id.startsWith('stream-message'))
+      );
       return [{
         triggerIndex: idx,
         replyIndex: cached.replyIndex,
@@ -163,8 +293,21 @@ export function Chat() {
         agentLabel: cached.agentLabel,
         sessionLabel: cached.sessionLabel,
         segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
-        steps: cached.steps,
+        steps: cleanedSteps,
+        messageStepTexts: getPrimaryMessageStepTexts(cleanedSteps),
+        streamingReplyText: null,
       }];
+    }
+
+    const segmentReplyOffset = findReplyMessageIndex(postTriggerMessages, hasActiveStreamingReply);
+    for (let offset = 0; offset < postTriggerMessages.length; offset += 1) {
+      if (offset === segmentReplyOffset) continue;
+      const candidate = postTriggerMessages[offset];
+      if (!candidate || candidate.role !== 'assistant') continue;
+      const hasNarrationText = extractText(candidate).trim().length > 0;
+      const hasThinking = !!extractThinking(candidate);
+      if (!hasNarrationText && !hasThinking) continue;
+      foldedNarrationIndices.add(idx + 1 + offset);
     }
 
     return [{
@@ -175,15 +318,46 @@ export function Chat() {
       sessionLabel: segmentSessionLabel,
       segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
       steps,
+      messageStepTexts: getPrimaryMessageStepTexts(steps),
+      streamingReplyText,
     }];
   });
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
-  const streamHasRenderableReply = hasStreamText || hasStreamImages;
-  const canRenderStreamingAlongsideGraph = !hasActiveExecutionGraph || streamHasRenderableReply;
-  const shouldRenderStreaming =
-    isTaskRunning &&
-    canRenderStreamingAlongsideGraph &&
-    (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
+  const replyTextOverrides = new Map<number, string>();
+  for (const card of userRunCards) {
+    if (card.replyIndex == null) continue;
+    const replyMessage = messages[card.replyIndex];
+    if (!replyMessage || replyMessage.role !== 'assistant') continue;
+    const fullReplyText = extractText(replyMessage);
+    const trimmedReplyText = stripProcessMessagePrefix(fullReplyText, card.messageStepTexts);
+    if (trimmedReplyText !== fullReplyText) {
+      replyTextOverrides.set(card.replyIndex, trimmedReplyText);
+    }
+  }
+  const streamingReplyText =
+    userRunCards.find((card) => card.streamingReplyText != null)?.streamingReplyText ?? null;
+
+  useEffect(() => {
+    if (!isTaskRunning && !shouldRenderStreaming && !hasActiveExecutionGraph) return;
+    if (!isAtBottom) return;
+    void scrollToBottom({
+      animation: 'smooth',
+      wait: true,
+      duration: 160,
+    });
+  }, [
+    activeRunId,
+    hasActiveExecutionGraph,
+    hasAnyStreamContent,
+    isAtBottom,
+    isTaskRunning,
+    messages.length,
+    pendingFinal,
+    scrollToBottom,
+    shouldRenderStreaming,
+    streamText,
+    streamingTools,
+  ]);
 
   useEffect(() => {
     if (userRunCards.length === 0) return;
@@ -280,7 +454,7 @@ export function Chat() {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-hidden px-3 py-2">
+      <div className="relative min-h-0 flex-1 overflow-hidden px-3 py-2">
         <div ref={scrollRef} className="h-full min-h-0 overflow-y-auto">
           <div ref={contentRef} className="w-full space-y-4">
             {isStartupHistoryLoading ? (
@@ -290,9 +464,17 @@ export function Chat() {
             ) : (
               <>
                 {messages.map((msg, idx) => {
-                  const suppressToolCards = userRunCards.some((card) =>
-                    idx > card.triggerIndex && idx <= card.segmentEnd,
-                  );
+                  if (foldedNarrationIndices.has(idx)) return null;
+
+                  const suppressToolCards = runSegmentMessageIndices.has(idx);
+                  const isToolOnlyAssistant =
+                    normalizeMessageRole(msg.role) === 'assistant' &&
+                    extractToolUse(msg).length > 0 &&
+                    extractText(msg).trim().length === 0 &&
+                    !extractThinking(msg);
+                  if (suppressToolCards && isToolOnlyAssistant && !(msg._attachedFiles?.length)) {
+                    return null;
+                  }
 
                   return (
                     <div
@@ -304,6 +486,7 @@ export function Chat() {
                       <ChatMessage
                         message={msg}
                         showThinking={showThinking}
+                        textOverride={replyTextOverrides.get(idx)}
                         suppressToolCards={suppressToolCards}
                         suppressProcessAttachments={suppressToolCards}
                       />
@@ -336,9 +519,13 @@ export function Chat() {
                 })}
 
                 {shouldRenderStreaming && (
+                  streamingReplyText != null ||
+                  !hasActiveExecutionGraph ||
+                  (hasStreamText && streamTools.length === 0)
+                ) && (
                   <ChatMessage
-                    message={
-                      (streamMsg
+                    message={(() => {
+                      const base = streamMsg
                         ? {
                             ...(streamMsg as Record<string, unknown>),
                             role: (typeof streamMsg.role === 'string'
@@ -348,13 +535,25 @@ export function Chat() {
                             timestamp: streamMsg.timestamp,
                           }
                         : {
-                            role: 'assistant',
+                            role: 'assistant' as const,
                             content: streamText,
-                          }) as RawMessage
-                    }
+                          };
+                      if (streamingReplyText != null && Array.isArray(base.content)) {
+                        return {
+                          ...base,
+                          content: (base.content as Array<{ type?: string }>).filter(
+                            (block) => block.type !== 'thinking'
+                          ),
+                        } as RawMessage;
+                      }
+                      return base as RawMessage;
+                    })()}
                     showThinking={showThinking}
+                    textOverride={streamingReplyText ?? undefined}
+                    suppressToolCards={hasActiveExecutionGraph || runSegmentMessageIndices.size > 0}
+                    suppressProcessAttachments={hasActiveExecutionGraph || runSegmentMessageIndices.size > 0}
                     isStreaming
-                    streamingTools={streamingTools}
+                    streamingTools={streamingReplyText != null ? [] : streamingTools}
                   />
                 )}
 
@@ -367,6 +566,19 @@ export function Chat() {
             )}
           </div>
         </div>
+        {showScrollToLatest && (
+          <button
+            type="button"
+            onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
+            className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:shadow-black/30"
+            aria-label={t('scrollToLatest', '跳转到最新对话')}
+            title={t('scrollToLatest', '跳转到最新对话')}
+            data-testid="chat-scroll-to-latest"
+          >
+            <ArrowDownToLine className="h-3.5 w-3.5" />
+            <span>{t('scrollToLatest', '跳转到最新对话')}</span>
+          </button>
+        )}
       </div>
 
       {error && (

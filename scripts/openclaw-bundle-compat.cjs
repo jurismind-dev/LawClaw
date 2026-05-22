@@ -13,6 +13,7 @@ const PLUGIN_SDK_COMPAT_PATCH_MARKER = 'lawclaw plugin-sdk compat patch v1';
 const MESSAGE_ACTION_DISCOVERY_PATCH_MARKER = 'lawclaw message-action-discovery guard v1';
 const MODEL_DISCOVERY_PATCH_MARKER = 'lawclaw model discovery fallback patch v1';
 const MODEL_CATALOG_RUNTIME_PATCH_MARKER = 'lawclaw model catalog runtime fallback patch v1';
+const BONJOUR_SERVICE_NAME_PATCH_MARKER = 'lawclaw bonjour service-name dns-label patch v1';
 const REMOVED_OPENCLAW_EXTENSION_IDS = ['qqbot'];
 
 function isPlainObject(value) {
@@ -271,6 +272,42 @@ function patchOpenClawPluginSdkCompat(openClawDir) {
   }
 
   return patchedFiles;
+}
+
+function patchOpenClawBonjourServiceNameRuntimeFile(filePath) {
+  const original = readFileSync(filePath, 'utf8');
+  if (original.includes(BONJOUR_SERVICE_NAME_PATCH_MARKER)) {
+    return false;
+  }
+
+  const before = `function safeServiceName(name) {\n\tconst trimmed = name.trim();\n\treturn trimmed.length > 0 ? trimmed : "OpenClaw";\n}`;
+  const after = `const DNS_LABEL_MAX_BYTES = 63;\nconst BONJOUR_INSTANCE_SUFFIX = " (OpenClaw)";\nfunction utf8ByteLength(value) {\n\treturn Buffer.byteLength(value, "utf8");\n}\nfunction truncateUtf8ToMaxBytes(value, maxBytes) {\n\tlet out = "";\n\tlet bytes = 0;\n\tfor (const char of value) {\n\t\tconst nextBytes = utf8ByteLength(char);\n\t\tif (bytes + nextBytes > maxBytes) break;\n\t\tout += char;\n\t\tbytes += nextBytes;\n\t}\n\treturn out;\n}\nfunction boundDnsLabelUtf8(value, maxBytes = DNS_LABEL_MAX_BYTES) {\n\tconst trimmed = value.trim();\n\tconst candidate = trimmed.length > 0 ? trimmed : "OpenClaw";\n\tif (utf8ByteLength(candidate) <= maxBytes) return candidate;\n\tif (/\\s+\\(OpenClaw\\)\\s*$/i.test(candidate)) {\n\t\tconst base = candidate.replace(/\\s+\\(OpenClaw\\)\\s*$/i, "").trim();\n\t\tconst baseMaxBytes = Math.max(1, maxBytes - utf8ByteLength(BONJOUR_INSTANCE_SUFFIX));\n\t\tconst boundedBase = truncateUtf8ToMaxBytes(base, baseMaxBytes).trim();\n\t\tconst withSuffix = \`\${boundedBase || "OpenClaw"}\${BONJOUR_INSTANCE_SUFFIX}\`;\n\t\tif (utf8ByteLength(withSuffix) <= maxBytes) return withSuffix;\n\t}\n\treturn truncateUtf8ToMaxBytes(candidate, maxBytes).trim() || "OpenClaw";\n}\nfunction safeServiceName(name) {\n\t// ${BONJOUR_SERVICE_NAME_PATCH_MARKER}\n\treturn boundDnsLabelUtf8(name);\n}`;
+
+  const { content, changed } = replaceRequired(
+    original,
+    filePath,
+    'bonjour safeServiceName dns label guard',
+    before,
+    after
+  );
+
+  return writePatchedFile(filePath, content, changed);
+}
+
+function patchOpenClawBonjourServiceNameRuntime(openClawDir) {
+  const distDir = join(openClawDir, 'dist');
+  if (!existsSync(distDir)) {
+    return [];
+  }
+
+  const serverImplPath = findDistChunkByPattern(distDir, /^server\.impl-.*\.js$/);
+  if (!serverImplPath) {
+    return [];
+  }
+
+  return patchOpenClawBonjourServiceNameRuntimeFile(serverImplPath)
+    ? [serverImplPath.slice(distDir.length + 1).replace(/\\/g, '/')]
+    : [];
 }
 
 function readOpenClawPackageVersion(openClawDir) {
@@ -1499,6 +1536,7 @@ module.exports = {
   patchOpenClawKillTreeRuntime,
   patchOpenClawModelCatalogRuntime,
   patchOpenClawPluginSdkCompat,
+  patchOpenClawBonjourServiceNameRuntime,
   patchOpenClawBundleCompat,
   removeBundledExtensions,
 };

@@ -28,6 +28,7 @@ const {
   patchOpenClawExecRuntime,
   patchOpenClawModelCatalogRuntime,
   patchOpenClawWindowsSpawnRuntime,
+  patchOpenClawBonjourServiceNameRuntime,
   removeBundledExtensions,
 } = compatTools;
 
@@ -148,6 +149,11 @@ fs.cpSync(openclawReal, OUTPUT, { recursive: true, dereference: true });
 const patchedRuntimeFiles = patchOpenClawWebSearchRuntime(OUTPUT);
 if (patchedRuntimeFiles.length > 0) {
   echo`   Patched OpenClaw doubao web_search runtime: ${patchedRuntimeFiles.join(', ')}`;
+}
+
+const patchedBonjourServiceNameFiles = patchOpenClawBonjourServiceNameRuntime(OUTPUT);
+if (patchedBonjourServiceNameFiles.length > 0) {
+  echo`   Patched OpenClaw Bonjour service-name runtime: ${patchedBonjourServiceNameFiles.join(', ')}`;
 }
 
 const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(OUTPUT);

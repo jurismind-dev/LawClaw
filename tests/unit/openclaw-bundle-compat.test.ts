@@ -187,6 +187,47 @@ describe('openclaw bundle compatibility patches', () => {
     expect(patchOpenClawPluginSdkCompat(openclawDir)).toEqual([]);
   });
 
+  it('patches OpenClaw Bonjour service names to stay within DNS label limits', async () => {
+    const tempRoot = mkdtempSync(join(process.cwd(), '.tmp-lawclaw-openclaw-bonjour-'));
+    tempDirs.push(tempRoot);
+
+    const openclawDir = join(tempRoot, 'openclaw');
+    const distDir = join(openclawDir, 'dist');
+    mkdirSync(distDir, { recursive: true });
+    const serverImplPath = join(distDir, 'server.impl-test.js');
+    writeFileSync(
+      serverImplPath,
+      [
+        'function safeServiceName(name) {',
+        '\tconst trimmed = name.trim();',
+        '\treturn trimmed.length > 0 ? trimmed : "OpenClaw";',
+        '}',
+        'export { safeServiceName };',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { patchOpenClawBonjourServiceNameRuntime } = await loadCompatTools();
+    expect(patchOpenClawBonjourServiceNameRuntime(openclawDir)).toEqual(['server.impl-test.js']);
+
+    const patchedSource = readFileSync(serverImplPath, 'utf8');
+    expect(patchedSource).toContain('lawclaw bonjour service-name dns-label patch v1');
+    expect(patchedSource).toContain('Buffer.byteLength(value, "utf8")');
+
+    const mod = await import(pathToFileURL(serverImplPath).href) as {
+      safeServiceName: (name: string) => string;
+    };
+
+    const originalName = '陕西稼轩（宝鸡）律师事务所的MacBook Air (OpenClaw)';
+    const boundedName = mod.safeServiceName(originalName);
+    expect(Buffer.byteLength(boundedName, 'utf8')).toBeLessThanOrEqual(63);
+    expect(boundedName).toMatch(/ \(OpenClaw\)$/);
+    expect(mod.safeServiceName('   ')).toBe('OpenClaw');
+
+    expect(patchOpenClawBonjourServiceNameRuntime(openclawDir)).toEqual([]);
+  });
+
   it('patches legacy lru-cache bundles to expose the constructor via named exports', async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'lawclaw-openclaw-bundle-'));
     tempDirs.push(tempRoot);

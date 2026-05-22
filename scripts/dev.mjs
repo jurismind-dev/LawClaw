@@ -16,11 +16,13 @@ const {
   patchOpenClawExecRuntime,
   patchOpenClawModelCatalogRuntime,
   patchOpenClawWindowsSpawnRuntime,
+  patchOpenClawBonjourServiceNameRuntime,
 } = require('./openclaw-bundle-compat.cjs');
 
 const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const openclawDir = path.join(projectRoot, 'node_modules', 'openclaw');
 const patchedRuntimeFiles = patchOpenClawWebSearchRuntime(openclawDir);
+const patchedBonjourServiceNameFiles = patchOpenClawBonjourServiceNameRuntime(openclawDir);
 const patchedWindowsSpawnFiles = patchOpenClawWindowsSpawnRuntime(openclawDir);
 const patchedExecRuntimeFiles = patchOpenClawExecRuntime(openclawDir);
 const patchedKillTreeFiles = patchOpenClawKillTreeRuntime(openclawDir);
@@ -29,6 +31,9 @@ const patchedPluginSdkCompatFiles = patchOpenClawPluginSdkCompat(openclawDir);
 
 if (patchedRuntimeFiles.length > 0) {
   console.log(`[dev] Patched OpenClaw doubao web_search runtime: ${patchedRuntimeFiles.join(', ')}`);
+}
+if (patchedBonjourServiceNameFiles.length > 0) {
+  console.log(`[dev] Patched OpenClaw Bonjour service-name runtime: ${patchedBonjourServiceNameFiles.join(', ')}`);
 }
 if (patchedWindowsSpawnFiles.length > 0) {
   console.log(`[dev] Patched OpenClaw Windows spawn runtime: ${patchedWindowsSpawnFiles.join(', ')}`);

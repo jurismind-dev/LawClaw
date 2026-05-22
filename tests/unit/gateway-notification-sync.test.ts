@@ -155,6 +155,42 @@ describe('gateway notification sync', () => {
     });
   });
 
+  it('keeps running state on non-terminal phase end events', async () => {
+    const sessionKey = 'agent:lawclaw-main:phase-end';
+    useChatStore.setState({
+      activeRunId: 'run-2a',
+      currentSessionKey: sessionKey,
+      sessions: [{ key: sessionKey, persisted: true }],
+      sending: true,
+      pendingFinal: true,
+    });
+
+    const listener = getListener('gateway:notification');
+    expect(listener).toBeDefined();
+
+    listener?.({
+      method: 'agent',
+      params: {
+        phase: 'end',
+        runId: 'run-2a',
+        sessionKey,
+      },
+    });
+
+    await waitFor(() => {
+      expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+        'gateway:rpc',
+        'chat.history',
+        { sessionKey, limit: 200 },
+        undefined,
+      );
+    });
+
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().activeRunId).toBe('run-2a');
+    expect(useChatStore.getState().pendingFinal).toBe(true);
+  });
+
   it('deduplicates the same final chat event delivered through notification and chat-message channels', async () => {
     const handleChatEvent = vi.spyOn(useChatStore.getState(), 'handleChatEvent');
     useChatStore.setState({

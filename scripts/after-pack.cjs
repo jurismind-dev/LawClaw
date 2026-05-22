@@ -29,6 +29,7 @@ const {
   patchOpenClawExecRuntime,
   patchOpenClawModelCatalogRuntime,
   patchOpenClawWindowsSpawnRuntime,
+  patchOpenClawBonjourServiceNameRuntime,
   removeBundledExtensions,
 } = require('./openclaw-bundle-compat.cjs');
 const { prepareBundledFeishuResourcePlugin } = require('./bundled-resource-plugin.cjs');
@@ -525,6 +526,13 @@ exports.default = async function afterPack(context) {
   if (patchedRuntimeFiles.length > 0) {
     console.log(
       `[after-pack] ✅ Patched OpenClaw doubao web_search runtime: ${patchedRuntimeFiles.join(', ')}.`
+    );
+  }
+
+  const patchedBonjourServiceNameFiles = patchOpenClawBonjourServiceNameRuntime(openclawRoot);
+  if (patchedBonjourServiceNameFiles.length > 0) {
+    console.log(
+      `[after-pack] ✅ Patched OpenClaw Bonjour service-name runtime: ${patchedBonjourServiceNameFiles.join(', ')}.`
     );
   }
 

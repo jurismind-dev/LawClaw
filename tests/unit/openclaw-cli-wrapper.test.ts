@@ -60,6 +60,10 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(devScript).toContain('patchOpenClawModelCatalogRuntime');
     expect(devSetupScript).toContain('patchOpenClawModelCatalogRuntime');
     expect(afterPackScript).toContain('patchOpenClawModelCatalogRuntime');
+    expect(bundleScript).toContain('patchOpenClawBonjourServiceNameRuntime');
+    expect(devScript).toContain('patchOpenClawBonjourServiceNameRuntime');
+    expect(devSetupScript).toContain('patchOpenClawBonjourServiceNameRuntime');
+    expect(afterPackScript).toContain('patchOpenClawBonjourServiceNameRuntime');
 
     expect(openClawCliSource).toContain('process.env.npm_node_execpath');
     expect(openClawCliSource).toContain('export function getNodeExecForCli');
@@ -140,12 +144,17 @@ describe('bundled openclaw CLI wrappers', () => {
     expect(afterPackScript).toContain('patchOpenClawModelCatalogRuntime');
     expect(devScript).toContain('patchOpenClawModelCatalogRuntime');
     expect(devSetupScript).toContain('patchOpenClawModelCatalogRuntime');
+    expect(bundleScript).toContain('patchOpenClawBonjourServiceNameRuntime');
+    expect(afterPackScript).toContain('patchOpenClawBonjourServiceNameRuntime');
+    expect(devScript).toContain('patchOpenClawBonjourServiceNameRuntime');
+    expect(devSetupScript).toContain('patchOpenClawBonjourServiceNameRuntime');
     expect(compatScript).toContain('https-proxy-agent');
     expect(compatScript).toContain('plugin-sdk compat patch v1');
     expect(compatScript).toContain('lawclaw windows exec powershell utf8 patch v1');
     expect(compatScript).toContain('lawclaw windows kill-tree patch v1');
     expect(compatScript).toContain('lawclaw model discovery fallback patch v1');
     expect(compatScript).toContain('lawclaw model catalog runtime fallback patch v1');
+    expect(compatScript).toContain('lawclaw bonjour service-name dns-label patch v1');
   });
 
   it('keeps bundled OpenClaw pdfjs package selection stable', () => {

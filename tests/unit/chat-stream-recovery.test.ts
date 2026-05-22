@@ -346,6 +346,55 @@ describe('chat stream recovery', () => {
     expect(state.pendingFinal).toBe(true);
   });
 
+  it('does not infer completion from a text assistant message in history', async () => {
+    useChatStore.setState({
+      sending: true,
+      activeRunId: 'run-text-history',
+      pendingFinal: true,
+      lastUserMessageAt: 1_000,
+      messages: [
+        {
+          role: 'user',
+          content: '分块审查合同',
+          timestamp: 1,
+          id: 'user-1',
+        },
+      ],
+    });
+
+    vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation(async (_channel, method) => {
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [
+              {
+                role: 'user',
+                content: '分块审查合同',
+                timestamp: 1,
+                id: 'user-1',
+              },
+              {
+                role: 'assistant',
+                timestamp: 2,
+                id: 'assistant-block-1',
+                content: '块1完成（修改5处，失败0项）。',
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    await useChatStore.getState().loadHistory(true);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-text-history');
+    expect(state.pendingFinal).toBe(true);
+  });
+
   it('keeps the run active when a final assistant event still contains tool_use', () => {
     useChatStore.setState({
       sending: true,

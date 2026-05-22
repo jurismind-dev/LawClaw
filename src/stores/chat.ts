@@ -2474,16 +2474,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        if (pendingFinal || get().pendingFinal) {
-          const recentAssistant = [...filteredMessages].reverse().find((msg) => {
-            if (msg.role !== 'assistant') return false;
-            return isAfterUserMsg(msg);
-          });
-          if (hasTerminalAssistantOutput(recentAssistant)) {
-            clearHistoryPoll();
-            set({ sending: false, activeRunId: null, pendingFinal: false });
-          }
-        }
+        // Do not infer run completion from chat.history. Intermediate agent
+        // chunks can be persisted as assistant messages before the full run is
+        // done; lifecycle completion is owned by gateway terminal phases or
+        // realtime final events.
 
         return true;
       };

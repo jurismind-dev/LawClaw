@@ -238,8 +238,15 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
               .catch(() => {});
           }
 
-          // When the agent run completes, reload history to get the final response.
-          if (phase === 'completed' || phase === 'done' || phase === 'finished' || phase === 'end') {
+          // `phase: end` is emitted per assistant message, including intermediate
+          // tool/narration rounds. Keep the run state alive until the gateway
+          // sends an actual terminal phase.
+          const isPerMessageEnd = phase === 'end';
+          const isRunCompletion = phase === 'completed' || phase === 'done' || phase === 'finished';
+          const isRunFailure =
+            phase === 'error' || phase === 'failed' || phase === 'aborted' || phase === 'cancelled';
+          const isRunTerminal = isRunCompletion || isRunFailure;
+          if (isPerMessageEnd || isRunTerminal) {
             import('./chat')
               .then(({ useChatStore }) => {
                 const state = useChatStore.getState();
@@ -258,18 +265,32 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                   runId != null && state.activeRunId != null && String(runId) === state.activeRunId;
 
                 if (matchesCurrentSession || matchesActiveRun) {
-                  // Let chat store/history recovery own the final transition so
-                  // the UI keeps the stop state until authoritative final data lands.
+                  // Refresh history opportunistically for per-message end events
+                  // and force a final refresh when the run actually terminates.
                   void state.loadHistory(true);
                 }
 
-                if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
+                if (isRunFailure && (matchesCurrentSession || matchesActiveRun)) {
+                  const errorMessage = String(
+                    data.errorMessage ?? p.errorMessage ?? data.error ?? p.error ?? '',
+                  ).trim();
+                  if (errorMessage) {
+                    state.handleChatEvent({
+                      state: 'error',
+                      errorMessage,
+                      runId,
+                      sessionKey: resolvedSessionKey ?? undefined,
+                    });
+                  }
+                }
+
+                if (isRunTerminal && (matchesCurrentSession || matchesActiveRun) && state.sending) {
                   useChatStore.setState({
                     sending: false,
                     activeRunId: null,
                     pendingFinal: false,
                     lastUserMessageAt: null,
-                    error: null,
+                    error: isRunFailure ? state.error : null,
                   });
                 }
               })

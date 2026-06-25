@@ -67,13 +67,19 @@ export const ChatMessage = memo(function ChatMessage({
   const attachedFiles = suppressProcessAttachments && hasProcessContent
     ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result')
     : (message._attachedFiles || []);
+  // LawClaw: 助手回复不再回显图片卡片（用户只是询问图片内容，不应把图片返还）。
+  // 仅用户消息显示图片；助手侧附件仅保留非图片文件。
+  const displayImages = isUser ? images : [];
+  const displayAttachedFiles = isUser
+    ? attachedFiles
+    : attachedFiles.filter((file) => !file.mimeType?.startsWith('image/'));
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
 
   const hasStreamingToolStatus = isStreaming && streamingTools.length > 0;
-  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0 && !hasStreamingToolStatus) return null;
+  if (!hasText && !visibleThinking && displayImages.length === 0 && visibleTools.length === 0 && displayAttachedFiles.length === 0 && !hasStreamingToolStatus) return null;
 
   return (
     <div
@@ -178,53 +184,13 @@ export const ChatMessage = memo(function ChatMessage({
           />
         )}
 
-        {/* Images from content blocks — assistant messages (below text) */}
-        {!isUser && images.length > 0 && (
+        {/* File attachments — assistant messages (below text). */}
+        {/* LawClaw: 图片不再回显，仅展示助手产出的非图片文件卡片。 */}
+        {!isUser && displayAttachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {images.map((img, i) => {
-              const src = imageSrc(img);
-              if (!src) return null;
-              return (
-                <ImagePreviewCard
-                  key={`content-${i}`}
-                  src={src}
-                  fileName="image"
-                  base64={img.data}
-                  mimeType={img.mimeType}
-                  onPreview={() => setLightboxImg({ src, fileName: 'image', base64: img.data, mimeType: img.mimeType })}
-                />
-              );
-            })}
-          </div>
-        )}
-
-        {/* File attachments — assistant messages (below text) */}
-        {!isUser && attachedFiles.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {attachedFiles.map((file, i) => {
-              const isImage = file.mimeType.startsWith('image/');
-              if (isImage && images.length > 0) return null;
-              if (isImage && file.preview) {
-                return (
-                  <ImagePreviewCard
-                    key={`local-${i}`}
-                    src={file.preview}
-                    fileName={file.fileName}
-                    filePath={file.filePath}
-                    mimeType={file.mimeType}
-                    onPreview={() => setLightboxImg({ src: file.preview!, fileName: file.fileName, filePath: file.filePath, mimeType: file.mimeType })}
-                  />
-                );
-              }
-              if (isImage && !file.preview) {
-                return (
-                  <div key={`local-${i}`} className="w-36 h-36 rounded-xl border overflow-hidden bg-muted flex items-center justify-center text-muted-foreground">
-                    <File className="h-8 w-8" />
-                  </div>
-                );
-              }
-              return <FileCard key={`local-${i}`} file={file} />;
-            })}
+            {displayAttachedFiles.map((file, i) => (
+              <FileCard key={`local-${i}`} file={file} />
+            ))}
           </div>
         )}
 
@@ -513,37 +479,6 @@ function ImageThumbnail({
     >
       <img src={src} alt={fileName} className="w-full h-full object-cover" />
       <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/25 transition-colors flex items-center justify-center">
-        <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover/img:opacity-100 transition-opacity drop-shadow" />
-      </div>
-    </div>
-  );
-}
-
-// ── Image Preview Card (assistant bubble — natural size with overlay actions) ──
-
-function ImagePreviewCard({
-  src,
-  fileName,
-  filePath,
-  base64,
-  mimeType,
-  onPreview,
-}: {
-  src: string;
-  fileName: string;
-  filePath?: string;
-  base64?: string;
-  mimeType?: string;
-  onPreview: () => void;
-}) {
-  void filePath; void base64; void mimeType;
-  return (
-    <div
-      className="relative max-w-xs rounded-lg border overflow-hidden group/img cursor-zoom-in"
-      onClick={onPreview}
-    >
-      <img src={src} alt={fileName} className="block w-full" />
-      <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors flex items-center justify-center">
         <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover/img:opacity-100 transition-opacity drop-shadow" />
       </div>
     </div>
